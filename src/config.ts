@@ -42,6 +42,15 @@ export const configSchema = z.object({
   monologueTimeLocal: hhmm.default('19:30'),
   /** 日常之谜节奏（每周期望个数） */
   mysteryDailyPerWeek: z.number().positive().default(1.5),
+  /** 季度之谜（星野旧案）：手工给定的阶段大纲，不设则不启用 */
+  seasonalMystery: z
+    .object({
+      title: z.string(),
+      premise: z.string(),
+      stages: z.array(z.string()).min(1),
+      resolution: z.string(),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
