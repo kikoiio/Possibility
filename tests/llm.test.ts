@@ -26,7 +26,7 @@ function chatCompletion(content: string, tokensIn = 100, tokensOut = 50) {
 let nextReply = '';
 
 const stubFetch: typeof fetch = async (input) => {
-  const url = typeof input === 'string' ? input : input.url;
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (url.includes('/chat/completions')) {
     return new Response(JSON.stringify(chatCompletion(nextReply)), {
       status: 200,

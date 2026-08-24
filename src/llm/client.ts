@@ -35,7 +35,7 @@ async function recordUsage(
   ctx: LlmContext,
   purpose: UsagePurpose,
   tier: Tier,
-  usage: { inputTokens?: number; outputTokens?: number } | undefined,
+  usage: { inputTokens?: number | undefined; outputTokens?: number | undefined } | undefined,
 ): Promise<void> {
   const t = ctx.config.modelTiers[tier];
   const tokensIn = usage?.inputTokens ?? 0;
