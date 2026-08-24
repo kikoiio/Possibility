@@ -34,8 +34,8 @@
    实现中断续跑（N4）。KV：运行配置（每 tick 读取 = 热生效）。
 
 5. **人格档案目录**
-   personas/<居民id>/profile.md，随代码打包部署；
-   新增居民 = 加一个目录 + 重新部署（一条命令，不改代码）。
+   personas/<居民id>/profile.md 为源文件；发布脚本写入 D1 profiles 表，
+   运行时从 D1 读取。新增居民 = 加文件 + 运行发布命令，零代码改动。
 
 **认知模块是多驱动器复用的核心**：cron tick（本期）、访客会话
 （二期 Worker 路由）、语音管线（三期 WebSocket + LiveKit/CF Calls）
@@ -117,7 +117,7 @@
 **依赖：** config、store。预留：STT/TTS provider 类型（三期）。
 
 ### persona
-**职责：** profile.md 解析与校验（打包文本资源 + gray-matter + zod）；
+**职责：** profile.md 解析与校验（D1 profiles 表读取 + gray-matter + zod）；
 载入时过护栏。
 **接口：** `loadAll(): ResidentProfile[] | throws ProfileError(field)`。
 **依赖：** guard。
@@ -261,7 +261,7 @@ virtual-neighbor/
 | 记忆检索 | 近因×显著度×FTS5 关键词 | 斯坦福三元组；不引向量库，接口预留 embedding |
 | 反思触发 | 显著度累积超阈值 | 斯坦福验证的机制；省调用更自然 |
 | 模拟节奏 | 心跳+夜间休眠+每日计划层+激活率 | spec F1/F5；Concordia 激活率防刷屏感 |
-| 人格档案 | profile.md（frontmatter+小节），字段对齐 chara_card_v2，随代码打包 | 远期兼容角色卡生态（UGC 创建） |
+| 人格档案 | profile.md（frontmatter+小节），字段对齐 chara_card_v2；源文件在 personas/，发布脚本写入 D1 | 远期兼容角色卡生态（UGC 创建）；档案即数据，新增居民零代码改动 |
 | 内容护栏 | 规则+词表，覆盖条目与档案 | 本期够用且零成本；预留 LLM 审查位 |
 | 前端 | TS + Vite 构建的静态单页，轮询 30s | 产物纯静态；Pages/博客仓库任意托管，iframe 嵌入 |
 | 平台解耦 | store 为唯一平台耦合模块；engine/config 接口化 | 保留迁回 VPS（Oracle 免费层后备）的能力 |
