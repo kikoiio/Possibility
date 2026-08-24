@@ -18,6 +18,10 @@ export interface WorldState {
   pendingEvents: string[];
   /** 今日已产出独白的居民 id（防重复） */
   monologuedToday: Record<string, string>; // residentId → YYYY-MM-DD
+  /** 今日已生成计划的居民 id */
+  plannedToday: Record<string, string>; // residentId → YYYY-MM-DD
+  /** 相遇对话冷却：pairKey(id1|id2) → 上次对话 ts */
+  lastConverseTs: Record<string, number>;
 }
 
 /** cognition 感知世界的视图（assemble 的输入之一） */
