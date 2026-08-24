@@ -20,8 +20,7 @@
     {
       "binding": "DB",
       "database_name": "virtual-neighbor",
-      // T22 创建 D1 后填入真实 id
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "80e0156f-5568-4678-a9d0-31523f33af46",
       "migrations_dir": "migrations"
     }
   ],
@@ -29,8 +28,7 @@
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
-      // T22 创建 KV 后填入真实 id
-      "id": "00000000000000000000000000000000"
+      "id": "1636e7c93dab4dc8bcda5977ff042713"
     }
   ],
 
@@ -45,8 +43,7 @@
         {
           "binding": "DB",
           "database_name": "virtual-neighbor-demo",
-          // T22 创建后填入
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "fe92786e-f672-46b7-a301-b49de1f442c9",
           "migrations_dir": "migrations"
         }
       ]
