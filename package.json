@@ -4,12 +4,16 @@
   "private": true,
   "type": "module",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "workerd"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   },
   "scripts": {
     "dev": "wrangler dev",
     "dev:scheduled": "wrangler dev --test-scheduled",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
+    "build:web": "vite build web",
     "test": "vitest run",
     "deploy": "wrangler deploy",
     "deploy:demo": "wrangler deploy --env demo",
@@ -29,6 +33,7 @@
     "@types/node": "^26.2.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.125.0"
   }

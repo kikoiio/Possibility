@@ -6,6 +6,7 @@ declare global {
     interface Env {
       DB: D1Database;
       CONFIG_KV: KVNamespace;
+      ASSETS: Fetcher;
       TEST_MIGRATIONS: Awaited<ReturnType<typeof readD1Migrations>>;
       LLM_API_KEY: string;
       ADMIN_TOKEN: string;

@@ -10,6 +10,12 @@
     "crons": ["*/30 * * * *"]
   },
 
+  // 信息流前端静态资源（vite build 产物）
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS"
+  },
+
   "d1_databases": [
     {
       "binding": "DB",

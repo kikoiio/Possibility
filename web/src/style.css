@@ -1,0 +1,249 @@
+/* web/src/style.css — 临海商店街：纸感、墨色、喫茶店暖意 */
+
+:root {
+  --paper: #f6f1e8;
+  --paper-card: #fffdf8;
+  --ink: #2e2a25;
+  --ink-soft: #6f675c;
+  --line: #e4dccd;
+  --accent-activity: #8a8378;
+  --accent-dialogue: #4a7a9c;
+  --accent-monologue: #7d5ba6;
+  --accent-mystery: #b8862e;
+  --shadow: 0 1px 4px rgba(46, 42, 37, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family:
+    'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  line-height: 1.75;
+}
+
+#app {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+/* 头部 */
+.site-header h1 {
+  font-size: 1.75rem;
+  letter-spacing: 0.15em;
+  margin: 0 0 4px;
+}
+
+.tagline {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  margin: 0 0 16px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.chip {
+  display: inline-block;
+  padding: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-card);
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+
+.chip.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* 条目卡片 */
+.entry-card {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  border-left: 3px solid var(--accent-activity);
+}
+
+.entry-card.type-dialogue {
+  border-left-color: var(--accent-dialogue);
+}
+
+.entry-card.type-monologue {
+  border-left-color: var(--accent-monologue);
+}
+
+.entry-card.type-mystery {
+  border-left-color: var(--accent-mystery);
+}
+
+.entry-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.entry-badge {
+  font-size: 0.72rem;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: var(--accent-activity);
+  color: #fff;
+  letter-spacing: 0.1em;
+}
+
+.type-dialogue .entry-badge {
+  background: var(--accent-dialogue);
+}
+
+.type-monologue .entry-badge {
+  background: var(--accent-monologue);
+}
+
+.type-mystery .entry-badge {
+  background: var(--accent-mystery);
+}
+
+.entry-who {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.entry-who a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--ink-soft);
+}
+
+.entry-title {
+  font-size: 1.05rem;
+  margin: 4px 0 8px;
+  color: var(--accent-mystery);
+}
+
+.entry-content p {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+.type-dialogue .entry-content {
+  color: #35566b;
+}
+
+.type-monologue .entry-content {
+  color: #4c3a5e;
+}
+
+/* 加载更多 */
+.load-more {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.load-more:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.empty-hint {
+  text-align: center;
+  color: var(--ink-soft);
+  padding: 48px 0;
+}
+
+/* 居民主页 */
+.resident-page {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow);
+}
+
+.resident-head h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: 0.1em;
+}
+
+.resident-role {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin: 2px 0 12px;
+}
+
+.resident-desc {
+  font-size: 0.92rem;
+}
+
+.resident-line {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.back-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: var(--accent-dialogue);
+  text-decoration: none;
+}
+
+/* 页脚 */
+.site-footer {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+/* 移动端微调 */
+@media (max-width: 480px) {
+  #app {
+    padding: 16px 12px 48px;
+  }
+
+  .site-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .entry-card {
+    padding: 14px;
+  }
+}

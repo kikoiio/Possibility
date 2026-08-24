@@ -2,6 +2,7 @@
 export interface Env {
   DB: D1Database;
   CONFIG_KV: KVNamespace;
+  ASSETS: Fetcher;
   LLM_API_KEY: string;
   ADMIN_TOKEN: string;
 }

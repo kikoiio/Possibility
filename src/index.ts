@@ -12,6 +12,9 @@ app.get('/api/health', (c) => c.json({ ok: true, service: 'virtual-neighbor' }))
 app.route('/api/admin', adminApi);
 app.route('/api', publicApi);
 
+// 非 API 请求 → 前端静态资源
+app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
+
 export default {
   fetch: app.fetch,
 

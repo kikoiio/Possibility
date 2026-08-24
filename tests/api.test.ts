@@ -89,6 +89,13 @@ describe('public api', () => {
     const put = await SELF.fetch('http://test/api/residents', { method: 'PUT' });
     expect([404, 405]).toContain(put.status);
   });
+
+  it('GET / 返回前端页面（静态资源托管）', async () => {
+    const res = await SELF.fetch('http://test/');
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('临海商店街');
+  });
 });
 
 describe('admin api', () => {
