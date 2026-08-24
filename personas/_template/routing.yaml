@@ -1,8 +1,0 @@
-# 该人格的模型路由偏好（可选）。空值 = 用 backend/litellm/router.yaml 全局默认。
-
-preferred_aliases:
-  default_fast: null      # e.g. deepseek_v4_fast
-  default_smart: null     # e.g. qwen_3_6_plus
-  vision: null
-  long_context: null
-  cheap: null

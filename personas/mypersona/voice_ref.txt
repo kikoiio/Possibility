@@ -1,1 +1,0 @@
-（把 voice_ref.wav 这段参考音对应的文字写在这里。CosyVoice 2 zero-shot 需要它对齐声学特征；与音频内容必须一字不差。）

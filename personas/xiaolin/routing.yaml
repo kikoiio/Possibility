@@ -1,8 +1,0 @@
-# 晓林的模型路由偏好（可选）。空值 = 用 backend/litellm/router.yaml 全局默认。
-
-preferred_aliases:
-  default_fast: null
-  default_smart: null
-  vision: null
-  long_context: null
-  cheap: null

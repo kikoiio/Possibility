@@ -1,4 +1,0 @@
-{
-  "human": "（用一句话描述主人；会注入到系统 prompt 固定前缀以命中 prompt cache）",
-  "persona_extras": ""
-}
