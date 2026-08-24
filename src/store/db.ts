@@ -277,6 +277,30 @@ export async function recentMemories(
   return results.map(rowToMemory);
 }
 
+/** 未参与过反思的记忆（按时间倒序），供 maybeReflect 累计显著度 */
+export async function unreflectedMemories(
+  db: D1Database,
+  residentId: string,
+  limit: number,
+): Promise<MemoryEntry[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT * FROM memories WHERE resident_id = ? AND reflected = 0 ORDER BY ts DESC, id DESC LIMIT ?',
+    )
+    .bind(residentId, limit)
+    .all<MemoryRow>();
+  return results.map(rowToMemory);
+}
+
+export async function markReflected(db: D1Database, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => '?').join(',');
+  await db
+    .prepare(`UPDATE memories SET reflected = 1 WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .run();
+}
+
 /**
  * FTS5 关键词检索。query 为 FTS5 MATCH 语法（空格分隔关键词 = AND）。
  * 中文分词不可靠，关键词体系依赖 memories.tags（LLM 抽取、空格分隔）。
