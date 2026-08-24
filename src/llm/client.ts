@@ -52,6 +52,23 @@ async function recordUsage(
   });
 }
 
+/** AI SDK v7：system 消息须从 messages 拆出，走 instructions 选项 */
+function extractInstructions(messages: ModelMessage[]): {
+  instructions: string | undefined;
+  rest: ModelMessage[];
+} {
+  const systemTexts: string[] = [];
+  const rest: ModelMessage[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') {
+      systemTexts.push(typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+    } else {
+      rest.push(m);
+    }
+  }
+  return { instructions: systemTexts.length > 0 ? systemTexts.join('\n\n') : undefined, rest };
+}
+
 /** 文本生成。每次调用自动记录用量。 */
 export async function complete(
   ctx: LlmContext,
@@ -60,7 +77,12 @@ export async function complete(
   messages: ModelMessage[],
 ): Promise<string> {
   const { model } = resolveModel(tier, ctx);
-  const result = await generateText({ model, messages });
+  const { instructions, rest } = extractInstructions(messages);
+  const result = await generateText({
+    model,
+    ...(instructions !== undefined ? { instructions } : {}),
+    messages: rest,
+  });
   await recordUsage(ctx, purpose, tier, result.usage);
   return result.text;
 }
@@ -77,9 +99,11 @@ export async function structured<T>(
   messages: ModelMessage[],
 ): Promise<T> {
   const { model } = resolveModel(tier, ctx);
+  const { instructions, rest } = extractInstructions(messages);
   const result = await generateText({
     model,
-    messages,
+    ...(instructions !== undefined ? { instructions } : {}),
+    messages: rest,
     output: Output.object({ schema }),
   });
   await recordUsage(ctx, purpose, tier, result.usage);
