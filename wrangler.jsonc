@@ -1,0 +1,49 @@
+{
+  // 虚拟邻居 — Cloudflare Worker 配置
+  "name": "virtual-neighbor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 世界心跳：每 30 分钟一个 tick（休眠窗口在 tick 内判断 no-op）
+  "triggers": {
+    "crons": ["*/30 * * * *"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "virtual-neighbor",
+      // T22 创建 D1 后填入真实 id
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "CONFIG_KV",
+      // T22 创建 KV 后填入真实 id
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+
+  // 演示环境：独立 D1 + 加密心跳（5 分钟），不对外的预览域名
+  "env": {
+    "demo": {
+      "name": "virtual-neighbor-demo",
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "virtual-neighbor-demo",
+          // T22 创建后填入
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
