@@ -440,6 +440,56 @@ export async function insertModerationLog(
 }
 
 // ---------------------------------------------------------------------------
+// tick_log
+// ---------------------------------------------------------------------------
+
+export interface TickLogInput {
+  ts: number;
+  slept: boolean;
+  entriesPublished: number;
+  durationMs: number;
+  error?: string | null;
+}
+
+export async function insertTickLog(db: D1Database, input: TickLogInput): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO tick_log (ts, slept, entries_published, duration_ms, error)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .bind(input.ts, input.slept ? 1 : 0, input.entriesPublished, input.durationMs, input.error ?? null)
+    .run();
+}
+
+export interface TickLogRow {
+  id: number;
+  ts: number;
+  slept: boolean;
+  entriesPublished: number;
+  durationMs: number;
+  error: string | null;
+}
+
+export async function recentTickLog(db: D1Database, limit: number): Promise<TickLogRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, ts, slept, entries_published AS entriesPublished,
+              duration_ms AS durationMs, error
+       FROM tick_log ORDER BY ts DESC LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      id: number;
+      ts: number;
+      slept: number;
+      entriesPublished: number;
+      durationMs: number;
+      error: string | null;
+    }>();
+  return results.map((r) => ({ ...r, slept: r.slept === 1 }));
+}
+
+// ---------------------------------------------------------------------------
 // world_snapshots
 // ---------------------------------------------------------------------------
 

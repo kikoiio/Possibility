@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env';
 import { dailyReport } from '../llm/usage';
 import { parseProfile, ProfileError, upsertProfileRow } from '../persona/profile';
-import { insertModerationLog, setEntryStatus } from '../store/db';
+import { insertModerationLog, recentTickLog, setEntryStatus } from '../store/db';
 import { tick } from '../world/engine';
 
 export const adminApi = new Hono<{ Bindings: Env }>();
@@ -45,6 +45,12 @@ adminApi.get('/usage/daily', async (c) => {
 adminApi.post('/tick', async (c) => {
   const result = await tick(c.env);
   return c.json(result);
+});
+
+// 心跳日志：监测程序的数据源（判断世界是否真停了 vs 按设计静默）
+adminApi.get('/tick-log', async (c) => {
+  const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 200);
+  return c.json({ ticks: await recentTickLog(c.env.DB, limit) });
 });
 
 // 档案发布：上传 profile.md 原文 → 校验 → 写 D1（新增居民的发布通道，G4）

@@ -8,7 +8,7 @@ import { publishAll, type EntryCandidate } from '../feed/entries';
 import type { LlmContext } from '../llm/client';
 import { maybeReflect, write } from '../memory/store';
 import { loadAll, type ResidentProfile } from '../persona/profile';
-import { listMysteries, loadSnapshot, saveSnapshot } from '../store/db';
+import { insertTickLog, listMysteries, loadSnapshot, saveSnapshot } from '../store/db';
 import { rollEvents } from './events';
 import { advanceDaily, maybeAdvanceSeasonal, maybeSpawnDaily, markInvestigating } from './mystery';
 import type { WorldState, WorldView } from './types';
@@ -135,7 +135,42 @@ export interface TickResult {
   rejectedProfiles: number;
 }
 
+/** tick 外包装：每次心跳都写 tick_log（成败均记），监测程序据此判断世界死活 */
 export async function tick(
+  env: Env,
+  opts: { rng?: () => number; fetchImpl?: typeof fetch } = {},
+): Promise<TickResult> {
+  const start = Date.now();
+  try {
+    const result = await tickBody(env, opts);
+    try {
+      await insertTickLog(env.DB, {
+        ts: start,
+        slept: result.slept,
+        entriesPublished: result.entriesPublished,
+        durationMs: Date.now() - start,
+      });
+    } catch (e) {
+      console.warn('tick_log 写入失败', e);
+    }
+    return result;
+  } catch (e) {
+    try {
+      await insertTickLog(env.DB, {
+        ts: start,
+        slept: false,
+        entriesPublished: 0,
+        durationMs: Date.now() - start,
+        error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+      });
+    } catch (logError) {
+      console.warn('tick_log 写入失败', logError);
+    }
+    throw e;
+  }
+}
+
+async function tickBody(
   env: Env,
   opts: { rng?: () => number; fetchImpl?: typeof fetch } = {},
 ): Promise<TickResult> {
