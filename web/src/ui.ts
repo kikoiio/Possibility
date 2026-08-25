@@ -1,179 +1,65 @@
-// web/src/ui.ts — 渲染：条目卡片 / 筛选条 / 居民主页 / 此刻状态带
-import type { NowResponse, PublicEntry, PublicResident } from './api';
+// web/src/ui.ts — 纯文字流渲染：按日分节，段落即故事
+import type { PublicEntry } from './api';
 
-export const TYPE_LABEL: Record<PublicEntry['type'], string> = {
-  activity: '动态',
-  dialogue: '对话',
-  monologue: '独白',
-  mystery: '谜团',
-};
-
-function formatTime(ts: number): string {
+function dayLabel(ts: number): string {
   const d = new Date(ts);
-  const now = Date.now();
-  const diffDays = Math.floor((now - ts) / 86400000);
-  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (diffDays <= 0) return `今天 ${hhmm}`;
-  if (diffDays === 1) return `昨天 ${hhmm}`;
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+function timeLabel(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function namesOf(entry: PublicEntry, byId: Map<string, PublicResident>): string {
-  return entry.residentIds.map((id) => byId.get(id)?.name ?? id).join('、');
-}
+function entryParagraph(entry: PublicEntry): HTMLElement {
+  const p = document.createElement('p');
+  p.className = `story ${entry.type}`;
 
-export function entryCard(entry: PublicEntry, byId: Map<string, PublicResident>): HTMLElement {
-  const card = document.createElement('article');
-  card.className = `entry-card type-${entry.type}`;
-
-  const meta = document.createElement('div');
-  meta.className = 'entry-meta';
-
-  const badge = document.createElement('span');
-  badge.className = 'entry-badge';
-  badge.textContent = TYPE_LABEL[entry.type];
-  meta.append(badge);
-
-  const who = namesOf(entry, byId);
-  if (who) {
-    const whoEl = document.createElement('span');
-    whoEl.className = 'entry-who';
-    if (entry.residentIds.length === 1) {
-      const link = document.createElement('a');
-      link.href = `#/u/${entry.residentIds[0]}`;
-      link.textContent = who;
-      whoEl.append(link);
-    } else {
-      whoEl.textContent = who;
-    }
-    meta.append(whoEl);
-  }
-
-  const loc = document.createElement('span');
-  loc.className = 'entry-loc';
-  loc.textContent = entry.location;
-  meta.append(loc);
-
-  const time = document.createElement('time');
-  time.textContent = formatTime(entry.ts);
-  meta.append(time);
-
-  card.append(meta);
+  const time = document.createElement('span');
+  time.className = 'story-time';
+  time.textContent = timeLabel(entry.ts);
+  p.append(time);
 
   if (entry.title) {
-    const title = document.createElement('h3');
-    title.className = 'entry-title';
-    title.textContent = entry.title;
-    card.append(title);
+    const title = document.createElement('strong');
+    title.className = 'story-title';
+    title.textContent = `【${entry.title}】`;
+    p.append(title);
   }
 
-  const content = document.createElement('div');
-  content.className = 'entry-content';
-  for (const line of entry.content.split('\n')) {
-    const p = document.createElement('p');
-    p.innerHTML = escapeHtml(line);
-    content.append(p);
+  // 对话按行展开，其余整段呈现
+  const lines = entry.content.split('\n');
+  for (const [i, line] of lines.entries()) {
+    if (i > 0) p.append(document.createElement('br'));
+    p.append(document.createTextNode(line));
   }
-  card.append(content);
-
-  return card;
+  return p;
 }
 
-export function renderChips(
-  container: HTMLElement,
-  residents: PublicResident[],
-  activeId: string | null,
-): void {
-  container.replaceChildren();
+/** 把条目渲染为按日分节的连续文字流（条目须已按时间倒序） */
+export function renderStream(entries: PublicEntry[]): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  let lastDay = '';
 
-  const all = document.createElement('a');
-  all.className = `chip${activeId === null ? ' active' : ''}`;
-  all.href = '#/';
-  all.textContent = '全街';
-  container.append(all);
-
-  for (const r of residents) {
-    const chip = document.createElement('a');
-    chip.className = `chip${activeId === r.id ? ' active' : ''}`;
-    chip.href = `#/r/${r.id}`;
-    chip.textContent = r.name;
-    container.append(chip);
+  // 按时间正序书写（小说从下往上读），分节标题插在日期变化处
+  const chronological = [...entries].sort((a, b) => a.ts - b.ts);
+  for (const entry of chronological) {
+    const day = dayLabel(entry.ts);
+    if (day !== lastDay) {
+      lastDay = day;
+      const divider = document.createElement('div');
+      divider.className = 'day-divider';
+      divider.textContent = day;
+      frag.append(divider);
+    }
+    frag.append(entryParagraph(entry));
   }
-}
 
-/** 「此刻」状态带：每位居民现在在哪、在做什么 + 天气时间 */
-export function nowStrip(now: NowResponse): HTMLElement {
-  const strip = document.createElement('section');
-  strip.className = 'now-strip';
-
-  const world = document.createElement('div');
-  world.className = 'now-world';
-  world.textContent = `${now.localTime} · ${now.period} · ${now.weather}`;
-  strip.append(world);
-
-  const cards = document.createElement('div');
-  cards.className = 'now-cards';
-  for (const r of now.residents) {
-    const card = document.createElement('a');
-    card.className = 'now-card';
-    card.href = `#/u/${r.id}`;
-
-    const name = document.createElement('span');
-    name.className = 'now-name';
-    name.textContent = r.name;
-
-    const loc = document.createElement('span');
-    loc.className = 'now-loc';
-    loc.textContent = r.location;
-
-    const act = document.createElement('span');
-    act.className = 'now-act';
-    act.textContent = r.activity;
-
-    card.append(name, loc, act);
-    cards.append(card);
+  if (entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'story empty';
+    empty.textContent = '故事还没有开始。';
+    frag.append(empty);
   }
-  strip.append(cards);
-  return strip;
-}
-
-export function residentProfilePage(resident: PublicResident): HTMLElement {  const page = document.createElement('section');
-  page.className = 'resident-page';
-
-  const head = document.createElement('div');
-  head.className = 'resident-head';
-  const name = document.createElement('h2');
-  name.textContent = resident.name;
-  const role = document.createElement('p');
-  role.className = 'resident-role';
-  role.textContent = `${resident.age} 岁 · ${resident.role}`;
-  head.append(name, role);
-
-  const desc = document.createElement('p');
-  desc.className = 'resident-desc';
-  desc.textContent = resident.description;
-
-  const personality = document.createElement('p');
-  personality.className = 'resident-line';
-  personality.innerHTML = `<strong>性格</strong>：${escapeHtml(resident.personality)}`;
-
-  const style = document.createElement('p');
-  style.className = 'resident-line';
-  style.innerHTML = `<strong>说话方式</strong>：${escapeHtml(resident.speechStyle)}`;
-
-  const back = document.createElement('a');
-  back.className = 'back-link';
-  back.href = `#/r/${resident.id}`;
-  back.textContent = '看 TA 的动态 →';
-
-  page.append(head, desc, personality, style, back);
-  return page;
+  return frag;
 }

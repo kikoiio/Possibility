@@ -1,154 +1,60 @@
-// web/src/main.ts — 信息流单页：路由 / 轮询 / 筛选 / 加载更多
-// 页面零输入控件（筛选全部走 hash 链接导航）。
+// web/src/main.ts — 纯文字流：只呈现故事本身
+// 无筛选、无角色页、无介绍——标题、此刻一行、连续的文字、加载更早。
 
-import { fetchNow, fetchResidents, fetchTimeline, type PublicEntry, type PublicResident } from './api';
-import { entryCard, nowStrip, renderChips, residentProfilePage } from './ui';
+import { fetchNow, fetchTimeline, type PublicEntry } from './api';
+import { renderStream } from './ui';
 
 const POLL_INTERVAL_MS = 30_000;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 30;
 
-interface AppState {
-  residents: PublicResident[];
-  byId: Map<string, PublicResident>;
-  entries: PublicEntry[];
-  seen: Set<string>;
-  cursor: string | null;
+const stream = document.getElementById('stream')!;
+const nowLine = document.getElementById('now-line')!;
+const loadMoreLink = document.getElementById('load-more') as HTMLAnchorElement;
+
+let entries: PublicEntry[] = [];
+let cursor: string | null = null;
+
+function render(): void {
+  stream.replaceChildren(renderStream(entries));
+  loadMoreLink.hidden = cursor === null;
 }
 
-const state: AppState = {
-  residents: [],
-  byId: new Map(),
-  entries: [],
-  seen: new Set(),
-  cursor: null,
-};
+async function refresh(): Promise<void> {
+  const res = await fetchTimeline({ limit: PAGE_SIZE });
+  const seen = new Set(entries.map((e) => e.id));
+  const fresh = res.entries.filter((e) => !seen.has(e.id));
+  entries = entries.length === 0 ? res.entries : [...fresh, ...entries];
+  cursor = res.nextCursor;
+  render();
+}
 
-const view = document.getElementById('view')!;
-const chips = document.getElementById('resident-chips')!;
-const nowContainer = document.getElementById('now')!;
-
-/** 刷新「此刻」状态带（世界活着的实时证据） */
 async function refreshNow(): Promise<void> {
   try {
     const now = await fetchNow();
-    nowContainer.replaceChildren(nowStrip(now));
+    const parts = now.residents.map((r) => `${r.name}在${r.location}${r.activity}`);
+    nowLine.textContent = `此刻 ${now.localTime.slice(11)} · ${now.weather} ｜ ${parts.join('；')}`;
   } catch {
-    // 状态带失败不影响信息流
+    // 此刻行失败不影响正文
   }
 }
 
-/** 当前路由：#/ 全部；#/r/<id> 按居民筛选；#/u/<id> 居民主页 */
-function route(): { kind: 'all' } | { kind: 'filter'; id: string } | { kind: 'resident'; id: string } {
-  const hash = location.hash;
-  const filter = hash.match(/^#\/r\/([\w-]+)/);
-  if (filter) return { kind: 'filter', id: filter[1]! };
-  const resident = hash.match(/^#\/u\/([\w-]+)/);
-  if (resident) return { kind: 'resident', id: resident[1]! };
-  return { kind: 'all' };
-}
-
-function activeFilter(): string | null {
-  const r = route();
-  return r.kind === 'filter' ? r.id : null;
-}
-
-function renderFeed(): void {
-  view.replaceChildren();
-  if (state.entries.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'empty-hint';
-    empty.textContent = '街上还很安静，等新的一天开始吧。';
-    view.append(empty);
-    return;
-  }
-  for (const entry of state.entries) {
-    view.append(entryCard(entry, state.byId));
-  }
-  if (state.cursor) {
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'load-more';
-    more.textContent = '看看更早的街上';
-    more.addEventListener('click', () => void loadMore());
-    view.append(more);
-  }
-}
-
-async function refresh(reset = true): Promise<void> {
-  const filter = activeFilter();
-  const res = await fetchTimeline({ resident: filter ?? undefined, limit: PAGE_SIZE });
-  if (reset) {
-    state.entries = res.entries;
-    state.seen = new Set(res.entries.map((e) => e.id));
-  } else {
-    for (const e of res.entries) {
-      if (!state.seen.has(e.id)) {
-        state.seen.add(e.id);
-        state.entries.unshift(e);
-      }
-    }
-  }
-  state.cursor = res.nextCursor;
-  renderFeed();
-}
-
-async function loadMore(): Promise<void> {
-  if (!state.cursor) return;
-  const filter = activeFilter();
-  const res = await fetchTimeline({ resident: filter ?? undefined, cursor: state.cursor, limit: PAGE_SIZE });
-  for (const e of res.entries) {
-    if (!state.seen.has(e.id)) {
-      state.seen.add(e.id);
-      state.entries.push(e);
-    }
-  }
-  state.cursor = res.nextCursor;
-  renderFeed();
-}
-
-async function renderResidentPage(id: string): Promise<void> {
-  const resident = state.byId.get(id);
-  view.replaceChildren();
-  if (!resident) {
-    view.textContent = '没有找到这位居民。';
-    return;
-  }
-  view.append(residentProfilePage(resident));
-
-  const section = document.createElement('section');
-  section.className = 'resident-entries';
-  const res = await fetchTimeline({ resident: id, limit: PAGE_SIZE });
-  for (const entry of res.entries) {
-    section.append(entryCard(entry, state.byId));
-  }
-  view.append(section);
-}
-
-async function applyRoute(): Promise<void> {
-  const r = route();
-  renderChips(chips, state.residents, activeFilter());
-  if (r.kind === 'resident') {
-    await renderResidentPage(r.id);
-  } else {
-    await refresh();
-  }
-}
+loadMoreLink.addEventListener('click', async () => {
+  if (!cursor) return;
+  const res = await fetchTimeline({ cursor, limit: PAGE_SIZE });
+  const seen = new Set(entries.map((e) => e.id));
+  entries.push(...res.entries.filter((e) => !seen.has(e.id)));
+  cursor = res.nextCursor;
+  render();
+});
 
 async function init(): Promise<void> {
-  const { residents } = await fetchResidents();
-  state.residents = residents;
-  state.byId = new Map(residents.map((r) => [r.id, r]));
-
-  // 居民名字可点：chips 旁边加"主页"入口放在卡片 who 上，这里渲染筛选条
-  await applyRoute();
-  await refreshNow();
-  window.addEventListener('hashchange', () => void applyRoute());
+  await Promise.all([refresh(), refreshNow()]);
   setInterval(() => {
+    void refresh();
     void refreshNow();
-    if (route().kind !== 'resident') void refresh(false);
   }, POLL_INTERVAL_MS);
 }
 
 init().catch((e) => {
-  view.textContent = `加载失败：${(e as Error).message}`;
+  stream.textContent = `这条街暂时迷路了：${(e as Error).message}`;
 });
