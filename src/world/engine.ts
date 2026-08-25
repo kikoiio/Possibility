@@ -84,7 +84,16 @@ function initialWorld(now: number, local: LocalNow): WorldState {
     monologuedToday: {},
     plannedToday: {},
     lastConverseTs: {},
+    lastActivityEntryTs: {},
   };
+}
+
+/** 当前时刻落在哪个作息块里（schedule 不跨零点） */
+function currentScheduleBlock(
+  profile: ResidentProfile,
+  hhmm: string,
+): { location: string; activity: string } | undefined {
+  return profile.schedule.find((b) => b.start <= hhmm && hhmm < b.end);
 }
 
 function buildView(
@@ -144,6 +153,12 @@ export async function tick(
 
   const snap = await loadSnapshot(db);
   const state: WorldState = snap ? (snap.state as WorldState) : initialWorld(now, local);
+  // 旧版本快照的字段兜底（新增字段随版本演进）
+  state.pendingEvents ??= [];
+  state.monologuedToday ??= {};
+  state.plannedToday ??= {};
+  state.lastConverseTs ??= {};
+  state.lastActivityEntryTs ??= {};
 
   // 休眠窗口：世界暂停，仅推进 lastTickTs（AC1）
   if (inSleepWindow(config, local.hhmm)) {
@@ -186,12 +201,22 @@ export async function tick(
     console.warn('谜团生成失败', e);
   }
 
-  // 4) 居民循环：决策 → 裁决 → 记忆 → 动态候选
+  // 4) 居民循环：决策 → 裁决 → 记忆 → 动态候选（限频）
   const actions: Record<string, Action> = {};
   for (const p of profiles) {
     const presence = state.residents[p.id] ?? { location: p.home, activity: '在家', since: now };
     try {
-      const action = await decide(ctx, p, buildView(state, profiles, p, local), presence.activity);
+      const block = currentScheduleBlock(p, local.hhmm);
+      const scheduleHint = block
+        ? `按你的作息，这个时段你通常在${block.location}（${block.activity}）。`
+        : undefined;
+      const action = await decide(
+        ctx,
+        p,
+        buildView(state, profiles, p, local),
+        presence.activity,
+        scheduleHint,
+      );
       actions[p.id] = action;
       state.residents[p.id] = { location: action.location, activity: action.activity, since: now };
 
@@ -204,12 +229,18 @@ export async function tick(
         tags: `${action.location} 日常`,
       });
 
-      candidates.push({
-        type: 'activity',
-        residentIds: [p.id],
-        location: action.location,
-        content: `${p.name}在${action.location}${action.activity}。`,
-      });
+      // 动态条目限频：地点变了随时可发；原地不动则需过最小间隔（防重复刷屏）
+      const moved = action.location !== presence.location;
+      const intervalMs = config.activityEntryIntervalMinutes * 60_000;
+      if (moved || now - (state.lastActivityEntryTs[p.id] ?? 0) >= intervalMs) {
+        candidates.push({
+          type: 'activity',
+          residentIds: [p.id],
+          location: action.location,
+          content: `${p.name}在${action.location}${action.activity}。`,
+          ts: now,
+        });
+      }
 
       if (action.action === 'investigate') {
         const spawned = (await listMysteries(db, 'spawned')).filter((m) => m.arc === 'daily');
@@ -307,6 +338,12 @@ export async function tick(
   });
   if (blocked.length > 0) {
     console.warn('护栏拦截', blocked.map((b) => b.reason).join('; '));
+  }
+  // 动态条目限频时间戳按实际发布更新
+  for (const entry of published) {
+    if (entry.type === 'activity' && entry.residentIds[0]) {
+      state.lastActivityEntryTs[entry.residentIds[0]] = entry.ts;
+    }
   }
 
   state.lastTickTs = now;

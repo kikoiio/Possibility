@@ -89,17 +89,22 @@ describe('planDay', () => {
 });
 
 describe('decide', () => {
-  it('返回合法行动，prompt 含人格锚与今日计划', async () => {
+  it('返回合法行动，prompt 含人格锚、今日计划、作息提示与防重复指令', async () => {
     nextReply = JSON.stringify({
       action: 'stay', location: '满月喫茶', activity: '给七濑示范手冲', remark: '她今天来得很早。',
     });
-    const action = await decide(ctx, hoshino, world, '擦杯子');
+    const action = await decide(
+      ctx, hoshino, world, '擦杯子',
+      '按你的作息，这个时段你通常在满月喫茶（烘豆备料）。',
+    );
     expect(action.action).toBe('stay');
     expect(action.location).toBe('满月喫茶');
 
     expect(lastRequestBody).toContain('你是星野');
     expect(lastRequestBody).toContain('语速慢');
     expect(lastRequestBody).toContain('今日计划'); // planDay 写入的 plan 被检索到
+    expect(lastRequestBody).toContain('按你的作息');
+    expect(lastRequestBody).toContain('不要重复');
   });
 
   it('模型给出非法地点时兜底留在原地', async () => {

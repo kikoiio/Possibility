@@ -22,6 +22,8 @@ export interface WorldState {
   plannedToday: Record<string, string>; // residentId → YYYY-MM-DD
   /** 相遇对话冷却：pairKey(id1|id2) → 上次对话 ts */
   lastConverseTs: Record<string, number>;
+  /** 动态条目限频：residentId → 上次发布动态条目 ts */
+  lastActivityEntryTs: Record<string, number>;
 }
 
 /** cognition 感知世界的视图（assemble 的输入之一） */

@@ -27,12 +27,14 @@ export type Action = z.infer<typeof actionSchema>;
 /**
  * 决定居民下一步行动。
  * 记忆检索：当日 plan 优先 + 三元召回（地点/在场者/事件为线索）。
+ * scheduleHint：作息表当前时段（engine 计算），给行动一个"此时该在哪"的锚。
  */
 export async function decide(
   ctx: LlmContext,
   profile: ResidentProfile,
   world: WorldView,
   currentActivity: string,
+  scheduleHint?: string,
 ): Promise<Action> {
   const db = ctx.env.DB;
 
@@ -52,10 +54,15 @@ export async function decide(
     profile,
     world,
     memories,
-    situation: `你正在${world.location}${currentActivity ? `，${currentActivity}` : ''}。`,
+    situation:
+      `你正在${world.location}${currentActivity ? `，${currentActivity}` : ''}。` +
+      (scheduleHint ? `\n${scheduleHint}` : ''),
     instruction:
-      '决定你下一步的行动。若有今日计划，遵循计划，除非眼前有更值得在意的事。' +
-      '如果想和在场的人说话，选 speak；如果有什么让你起疑或在意的，选 investigate。' +
+      '决定你下一步的行动。规则：' +
+      '一、若有今日计划或作息安排，遵循之，除非眼前有更值得在意的事；' +
+      '二、不要重复你刚刚做过的事（见记忆块顶部）——每个时刻都找一件具体而不同的' +
+      '小事做，要有具体的对象、动作和缘由，拒绝「看店」「发呆」式的状态描述；' +
+      '三、如果想和在场的人说话，选 speak；如果有让你起疑或在意的，选 investigate。' +
       '地点限用世界设定中的地点。',
   });
 

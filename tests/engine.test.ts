@@ -140,6 +140,10 @@ describe('engine.tick', () => {
     const usage = await env.DB.prepare('SELECT COUNT(*) AS c FROM usage_records').first<{ c: number }>();
     expect(usage!.c).toBeGreaterThan(0);
 
+    // 第二个 tick：原地重复被限频（动态 1 小时间隔、对话 2 小时冷却、独白今日已发）
+    const second = await tick(env, { rng: () => 0.5, fetchImpl: smartFetch });
+    expect(second.entriesPublished).toBe(0);
+
     await env.CONFIG_KV.delete('config');
   });
 
