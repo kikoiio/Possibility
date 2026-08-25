@@ -32,7 +32,7 @@
     }
   ],
 
-  // 演示环境：独立 D1 + 加密心跳（5 分钟），不对外的预览域名
+  // 演示环境：独立 D1 + 独立 KV + 加密心跳（5 分钟），不对外的预览域名
   "env": {
     "demo": {
       "name": "virtual-neighbor-demo",
@@ -45,6 +45,12 @@
           "database_name": "virtual-neighbor-demo",
           "database_id": "fe92786e-f672-46b7-a301-b49de1f442c9",
           "migrations_dir": "migrations"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CONFIG_KV",
+          "id": "7dfca069fe864c569f654a15358d9144"
         }
       ]
     }
