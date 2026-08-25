@@ -96,6 +96,38 @@ describe('public api', () => {
     const text = await res.text();
     expect(text).toContain('临海商店街');
   });
+
+  it('GET /api/now 返回居民实时状态且不含隐私字段', async () => {
+    await seed();
+    const { saveSnapshot } = await import('../src/store/db');
+    await saveSnapshot(env.DB, Date.now(), {
+      lastTickTs: Date.now(),
+      weather: '阴',
+      season: '夏',
+      residents: {
+        hoshino: { location: '海边堤坝', activity: '散步想事', since: Date.now() },
+      },
+      pendingEvents: [],
+      monologuedToday: {},
+      plannedToday: {},
+      lastConverseTs: {},
+      lastActivityEntryTs: {},
+    });
+
+    const res = await SELF.fetch('http://test/api/now');
+    expect(res.status).toBe(200);
+    const body = await res.json<{
+      weather: string;
+      residents: { id: string; name: string; location: string; activity: string }[];
+    }>();
+    expect(body.weather).toBe('阴');
+    const hoshino = body.residents.find((r) => r.id === 'hoshino')!;
+    expect(hoshino.name).toBe('星野');
+    expect(hoshino.location).toBe('海边堤坝');
+
+    const text = JSON.stringify(body);
+    expect(text).not.toContain('AX-731');
+  });
 });
 
 describe('admin api', () => {

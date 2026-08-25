@@ -1,5 +1,5 @@
-// web/src/ui.ts — 渲染：条目卡片 / 筛选条 / 居民主页
-import type { PublicEntry, PublicResident } from './api';
+// web/src/ui.ts — 渲染：条目卡片 / 筛选条 / 居民主页 / 此刻状态带
+import type { NowResponse, PublicEntry, PublicResident } from './api';
 
 export const TYPE_LABEL: Record<PublicEntry['type'], string> = {
   activity: '动态',
@@ -109,8 +109,43 @@ export function renderChips(
   }
 }
 
-export function residentProfilePage(resident: PublicResident): HTMLElement {
-  const page = document.createElement('section');
+/** 「此刻」状态带：每位居民现在在哪、在做什么 + 天气时间 */
+export function nowStrip(now: NowResponse): HTMLElement {
+  const strip = document.createElement('section');
+  strip.className = 'now-strip';
+
+  const world = document.createElement('div');
+  world.className = 'now-world';
+  world.textContent = `${now.localTime} · ${now.period} · ${now.weather}`;
+  strip.append(world);
+
+  const cards = document.createElement('div');
+  cards.className = 'now-cards';
+  for (const r of now.residents) {
+    const card = document.createElement('a');
+    card.className = 'now-card';
+    card.href = `#/u/${r.id}`;
+
+    const name = document.createElement('span');
+    name.className = 'now-name';
+    name.textContent = r.name;
+
+    const loc = document.createElement('span');
+    loc.className = 'now-loc';
+    loc.textContent = r.location;
+
+    const act = document.createElement('span');
+    act.className = 'now-act';
+    act.textContent = r.activity;
+
+    card.append(name, loc, act);
+    cards.append(card);
+  }
+  strip.append(cards);
+  return strip;
+}
+
+export function residentProfilePage(resident: PublicResident): HTMLElement {  const page = document.createElement('section');
   page.className = 'resident-page';
 
   const head = document.createElement('div');

@@ -1,8 +1,8 @@
 // web/src/main.ts — 信息流单页：路由 / 轮询 / 筛选 / 加载更多
 // 页面零输入控件（筛选全部走 hash 链接导航）。
 
-import { fetchResidents, fetchTimeline, type PublicEntry, type PublicResident } from './api';
-import { entryCard, renderChips, residentProfilePage } from './ui';
+import { fetchNow, fetchResidents, fetchTimeline, type PublicEntry, type PublicResident } from './api';
+import { entryCard, nowStrip, renderChips, residentProfilePage } from './ui';
 
 const POLL_INTERVAL_MS = 30_000;
 const PAGE_SIZE = 20;
@@ -25,6 +25,17 @@ const state: AppState = {
 
 const view = document.getElementById('view')!;
 const chips = document.getElementById('resident-chips')!;
+const nowContainer = document.getElementById('now')!;
+
+/** 刷新「此刻」状态带（世界活着的实时证据） */
+async function refreshNow(): Promise<void> {
+  try {
+    const now = await fetchNow();
+    nowContainer.replaceChildren(nowStrip(now));
+  } catch {
+    // 状态带失败不影响信息流
+  }
+}
 
 /** 当前路由：#/ 全部；#/r/<id> 按居民筛选；#/u/<id> 居民主页 */
 function route(): { kind: 'all' } | { kind: 'filter'; id: string } | { kind: 'resident'; id: string } {
@@ -130,8 +141,10 @@ async function init(): Promise<void> {
 
   // 居民名字可点：chips 旁边加"主页"入口放在卡片 who 上，这里渲染筛选条
   await applyRoute();
+  await refreshNow();
   window.addEventListener('hashchange', () => void applyRoute());
   setInterval(() => {
+    void refreshNow();
     if (route().kind !== 'resident') void refresh(false);
   }, POLL_INTERVAL_MS);
 }

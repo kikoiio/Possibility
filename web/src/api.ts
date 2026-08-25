@@ -26,7 +26,27 @@ export interface TimelineResponse {
   nextCursor: string | null;
 }
 
+export interface NowResponse {
+  localTime: string;
+  period: string;
+  weather: string;
+  season: string;
+  residents: {
+    id: string;
+    name: string;
+    location: string;
+    activity: string;
+    since: number | null;
+  }[];
+}
+
 const BASE = '/api';
+
+export async function fetchNow(): Promise<NowResponse> {
+  const res = await fetch(`${BASE}/now`);
+  if (!res.ok) throw new Error(`now ${res.status}`);
+  return res.json() as Promise<NowResponse>;
+}
 
 export async function fetchTimeline(opts: {
   cursor?: string | undefined;

@@ -3,9 +3,12 @@
 
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { getConfig } from '../config';
 import type { Env } from '../env';
 import { loadAll, type ResidentProfile } from '../persona/profile';
-import { listEntries, type Entry } from '../store/db';
+import { listEntries, loadSnapshot, type Entry } from '../store/db';
+import { localNow } from '../world/engine';
+import type { WorldState } from '../world/types';
 
 export const publicApi = new Hono<{ Bindings: Env }>();
 
@@ -69,6 +72,35 @@ publicApi.get('/timeline', (c) => handleTimeline(c, c.req.query('resident')));
 publicApi.get('/residents', async (c) => {
   const { profiles } = await loadAll(c.env.DB);
   return c.json({ residents: profiles.map(toPublicResident) });
+});
+
+/**
+ * 「此刻」：居民实时状态（来自世界快照，零 LLM 成本）。
+ * 让世界在信息流条目的间隔里也能被看见。
+ */
+publicApi.get('/now', async (c) => {
+  const config = await getConfig(c.env);
+  const local = localNow(config.timezone, Date.now());
+  const snap = await loadSnapshot(c.env.DB);
+  const state = snap?.state as WorldState | undefined;
+  const { profiles } = await loadAll(c.env.DB);
+
+  return c.json({
+    localTime: local.localTime,
+    period: local.period,
+    weather: state?.weather ?? '晴',
+    season: state?.season ?? '',
+    residents: profiles.map((p) => {
+      const presence = state?.residents[p.id];
+      return {
+        id: p.id,
+        name: p.name,
+        location: presence?.location ?? p.home,
+        activity: presence?.activity ?? '在家',
+        since: presence?.since ?? null,
+      };
+    }),
+  });
 });
 
 publicApi.get('/residents/:id/entries', (c) => handleTimeline(c, c.req.param('id')));
