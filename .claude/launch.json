@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["exec", "wrangler", "dev", "--env", "demo", "--remote", "--port", "8788"],
       "port": 8788
+    },
+    {
+      "name": "blog",
+      "runtimeExecutable": "hugo",
+      "runtimeArgs": ["server", "--source", "D:\\Desktop\\My_Projects\\Blog", "--port", "1313", "--bind", "127.0.0.1", "--disableFastRender"],
+      "port": 1313
     }
   ]
 }
