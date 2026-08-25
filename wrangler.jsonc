@@ -5,10 +5,9 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // 世界心跳：每 30 分钟一个 tick（休眠窗口在 tick 内判断 no-op）
-  "triggers": {
-    "crons": ["*/30 * * * *"]
-  },
+  // 当前状态：静态存档（无 cron，世界冻结，内容可读，零 LLM 费用）。
+  // 恢复运转：把 triggers 加回（"crons": ["*/30 * * * *"]）再 deploy 即可，
+  // 世界会从快照无缝续跑。
 
   // 信息流前端静态资源（vite build 产物）
   "assets": {
@@ -19,8 +18,9 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "virtual-neighbor",
-      "database_id": "80e0156f-5568-4678-a9d0-31523f33af46",
+      // 故事数据所在库（即 demo 库：8 章故事、谜团、记忆都在此）
+      "database_name": "virtual-neighbor-demo",
+      "database_id": "fe92786e-f672-46b7-a301-b49de1f442c9",
       "migrations_dir": "migrations"
     }
   ],
@@ -28,7 +28,7 @@
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
-      "id": "1636e7c93dab4dc8bcda5977ff042713"
+      "id": "7dfca069fe864c569f654a15358d9144"
     }
   ],
 
