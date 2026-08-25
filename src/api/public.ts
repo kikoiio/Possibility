@@ -6,7 +6,7 @@ import type { Context } from 'hono';
 import { getConfig } from '../config';
 import type { Env } from '../env';
 import { loadAll, type ResidentProfile } from '../persona/profile';
-import { listEntries, loadSnapshot, type Entry } from '../store/db';
+import { listChapters, listEntries, loadSnapshot, type Entry } from '../store/db';
 import { localNow } from '../world/engine';
 import type { WorldState } from '../world/types';
 
@@ -104,3 +104,16 @@ publicApi.get('/now', async (c) => {
 });
 
 publicApi.get('/residents/:id/entries', (c) => handleTimeline(c, c.req.param('id')));
+
+/** 章节列表（前情提要数据源，时间正序累积） */
+publicApi.get('/chapters', async (c) => {
+  const chapters = await listChapters(c.env.DB);
+  return c.json({
+    chapters: chapters.map((ch, i) => ({
+      number: i + 1,
+      ts: ch.ts,
+      title: ch.title,
+      content: ch.content,
+    })),
+  });
+});

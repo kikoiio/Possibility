@@ -100,6 +100,89 @@ body {
   line-height: 1.9;
 }
 
+/* 章节块：故事流中的"章" */
+.chapter-block {
+  margin: 36px auto;
+  padding: 20px 28px;
+  max-width: 520px;
+  text-align: center;
+  background: #fbf7ec;
+  border: 1px solid #e8dfc8;
+  border-radius: 4px;
+}
+
+.chapter-ornament {
+  color: var(--mystery);
+  font-size: 1.1rem;
+  margin-bottom: 4px;
+}
+
+.chapter-title {
+  font-size: 1.05rem;
+  color: var(--mystery);
+  letter-spacing: 0.15em;
+  margin: 0 0 10px;
+}
+
+.chapter-content {
+  font-size: 0.9rem;
+  line-height: 2;
+  text-align: justify;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* 前情提要 */
+.recap {
+  margin: 0 auto 40px;
+  max-width: 520px;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.recap summary {
+  text-align: center;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  list-style: none;
+}
+
+.recap summary::before {
+  content: '▸ ';
+}
+
+.recap[open] summary::before {
+  content: '▾ ';
+}
+
+.recap summary:hover {
+  color: var(--ink-soft);
+}
+
+.recap-chapter {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #fbf7ec;
+  border: 1px solid #e8dfc8;
+  border-radius: 4px;
+}
+
+.recap-title {
+  font-size: 0.85rem;
+  color: var(--mystery);
+  margin: 0 0 6px;
+  letter-spacing: 0.1em;
+}
+
+.recap-content {
+  font-size: 0.85rem;
+  line-height: 1.9;
+  margin: 0;
+  text-align: justify;
+}
+
 /* 加载更早 */
 .load-more {
   display: block;

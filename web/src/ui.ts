@@ -1,5 +1,5 @@
-// web/src/ui.ts — 纯文字流渲染：按日分节，段落即故事
-import type { PublicEntry } from './api';
+// web/src/ui.ts — 纯文字流渲染：倒叙（最新在上），章节块内嵌，前情提要累积
+import type { PublicChapter, PublicEntry } from './api';
 
 function dayLabel(ts: number): string {
   const d = new Date(ts);
@@ -9,6 +9,12 @@ function dayLabel(ts: number): string {
 function timeLabel(ts: number): string {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function isToday(ts: number): boolean {
+  const d = new Date(ts);
+  const now = new Date();
+  return d.toDateString() === now.toDateString();
 }
 
 function entryParagraph(entry: PublicEntry): HTMLElement {
@@ -27,7 +33,6 @@ function entryParagraph(entry: PublicEntry): HTMLElement {
     p.append(title);
   }
 
-  // 对话按行展开，其余整段呈现
   const lines = entry.content.split('\n');
   for (const [i, line] of lines.entries()) {
     if (i > 0) p.append(document.createElement('br'));
@@ -36,26 +41,81 @@ function entryParagraph(entry: PublicEntry): HTMLElement {
   return p;
 }
 
-/** 把条目渲染为按日分节的连续文字流（条目须已按时间倒序） */
-export function renderStream(entries: PublicEntry[]): DocumentFragment {
-  const frag = document.createDocumentFragment();
-  let lastDay = '';
+function chapterBlock(chapter: PublicChapter): HTMLElement {
+  const block = document.createElement('section');
+  block.className = 'chapter-block';
 
-  // 按时间正序书写（小说从下往上读），分节标题插在日期变化处
-  const chronological = [...entries].sort((a, b) => a.ts - b.ts);
-  for (const entry of chronological) {
-    const day = dayLabel(entry.ts);
-    if (day !== lastDay) {
-      lastDay = day;
-      const divider = document.createElement('div');
-      divider.className = 'day-divider';
-      divider.textContent = day;
-      frag.append(divider);
+  const ornament = document.createElement('div');
+  ornament.className = 'chapter-ornament';
+  ornament.textContent = '❦';
+
+  const title = document.createElement('h3');
+  title.className = 'chapter-title';
+  title.textContent = `第${'一二三四五六七八九十'[chapter.number - 1] ?? chapter.number}章 · ${chapter.title}`;
+
+  const content = document.createElement('p');
+  content.className = 'chapter-content';
+  content.textContent = chapter.content;
+
+  block.append(ornament, title, content);
+  return block;
+}
+
+/** 前情提要折叠区：全部章节按序累积（故事的概览版本） */
+export function renderRecap(chapters: PublicChapter[]): HTMLElement | null {
+  if (chapters.length === 0) return null;
+
+  const details = document.createElement('details');
+  details.className = 'recap';
+
+  const summary = document.createElement('summary');
+  summary.textContent = `前情提要 · 已连载 ${chapters.length} 章`;
+  details.append(summary);
+
+  for (const ch of chapters) {
+    const item = document.createElement('div');
+    item.className = 'recap-chapter';
+    const title = document.createElement('p');
+    title.className = 'recap-title';
+    title.textContent = `第${'一二三四五六七八九十'[ch.number - 1] ?? ch.number}章 · ${ch.title}`;
+    const content = document.createElement('p');
+    content.className = 'recap-content';
+    content.textContent = ch.content;
+    item.append(title, content);
+    details.append(item);
+  }
+  return details;
+}
+
+/** 倒叙文字流：条目与章节按时间倒序合并；日分节插在日期变化处 */
+export function renderStream(entries: PublicEntry[], chapters: PublicChapter[]): DocumentFragment {
+  const frag = document.createDocumentFragment();
+
+  const merged = [
+    ...entries.map((e) => ({ kind: 'entry' as const, ts: e.ts, entry: e })),
+    ...chapters.map((c) => ({ kind: 'chapter' as const, ts: c.ts, chapter: c })),
+  ].sort((a, b) => b.ts - a.ts);
+
+  let lastDay = '';
+  let firstEntry = true;
+  for (const item of merged) {
+    if (item.kind === 'entry') {
+      const day = dayLabel(item.ts);
+      if (day !== lastDay) {
+        const divider = document.createElement('div');
+        divider.className = 'day-divider';
+        divider.textContent = firstEntry && isToday(item.ts) ? `今天 · ${day}` : day;
+        frag.append(divider);
+        lastDay = day;
+      }
+      firstEntry = false;
+      frag.append(entryParagraph(item.entry));
+    } else {
+      frag.append(chapterBlock(item.chapter));
     }
-    frag.append(entryParagraph(entry));
   }
 
-  if (entries.length === 0) {
+  if (merged.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'story empty';
     empty.textContent = '故事还没有开始。';

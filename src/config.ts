@@ -31,9 +31,9 @@ export const configSchema = z.object({
     })
     .prefault({}),
   /** activity 类条目保留概率（0-1），防刷屏 */
-  activationRate: z.number().min(0).max(1).default(0.6),
-  /** 同一居民动态条目的最小发布间隔（分钟，地点变化不受限） */
-  activityEntryIntervalMinutes: z.number().nonnegative().default(60),
+  activationRate: z.number().min(0).max(1).default(1),
+  /** 章节总结触发条数：每积累这么多条目生成一章 */
+  chapterEveryEntries: z.number().int().positive().default(20),
   /** recall 返回的最大记忆条数 */
   memoryRecallK: z.number().int().positive().default(8),
   /** 注入 prompt 的记忆 token 预算 */

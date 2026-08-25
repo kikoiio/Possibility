@@ -40,7 +40,20 @@ export interface NowResponse {
   }[];
 }
 
+export interface PublicChapter {
+  number: number;
+  ts: number;
+  title: string;
+  content: string;
+}
+
 const BASE = '/api';
+
+export async function fetchChapters(): Promise<{ chapters: PublicChapter[] }> {
+  const res = await fetch(`${BASE}/chapters`);
+  if (!res.ok) throw new Error(`chapters ${res.status}`);
+  return res.json() as Promise<{ chapters: PublicChapter[] }>;
+}
 
 export async function fetchNow(): Promise<NowResponse> {
   const res = await fetch(`${BASE}/now`);

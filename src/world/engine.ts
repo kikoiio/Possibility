@@ -1,6 +1,7 @@
 // src/world/engine.ts — tick 主流程：时钟 → 事件 → 居民 → 相遇 → 定时产出 → 发布 → 快照
 
-import { decide, converse, monologue, type Action } from '../cognition/decide';
+import { decide, converse, monologue, type Action, type Dialogue } from '../cognition/decide';
+import { narrateBeat } from '../cognition/narrate';
 import { planDay } from '../cognition/plan';
 import { getConfig, inSleepWindow, type Config } from '../config';
 import type { Env } from '../env';
@@ -8,7 +9,8 @@ import { publishAll, type EntryCandidate } from '../feed/entries';
 import type { LlmContext } from '../llm/client';
 import { maybeReflect, write } from '../memory/store';
 import { loadAll, type ResidentProfile } from '../persona/profile';
-import { insertTickLog, listMysteries, loadSnapshot, saveSnapshot } from '../store/db';
+import { insertTickLog, listEntries, listMysteries, loadSnapshot, saveSnapshot } from '../store/db';
+import { maybeWriteChapter } from './chapter';
 import { rollEvents } from './events';
 import { advanceDaily, maybeAdvanceSeasonal, maybeSpawnDaily, markInvestigating } from './mystery';
 import type { WorldState, WorldView } from './types';
@@ -84,7 +86,6 @@ function initialWorld(now: number, local: LocalNow): WorldState {
     monologuedToday: {},
     plannedToday: {},
     lastConverseTs: {},
-    lastActivityEntryTs: {},
   };
 }
 
@@ -193,7 +194,6 @@ async function tickBody(
   state.monologuedToday ??= {};
   state.plannedToday ??= {};
   state.lastConverseTs ??= {};
-  state.lastActivityEntryTs ??= {};
 
   // 休眠窗口：世界暂停，仅推进 lastTickTs（AC1）
   if (inSleepWindow(config, local.hhmm)) {
@@ -236,7 +236,7 @@ async function tickBody(
     console.warn('谜团生成失败', e);
   }
 
-  // 4) 居民循环：决策 → 裁决 → 记忆 → 动态候选（限频）
+  // 4) 居民循环：决策 → 裁决 → 记忆（叙事段落由叙事者统一成段，不再逐人发动态）
   const actions: Record<string, Action> = {};
   for (const p of profiles) {
     const presence = state.residents[p.id] ?? { location: p.home, activity: '在家', since: now };
@@ -264,19 +264,6 @@ async function tickBody(
         tags: `${action.location} 日常`,
       });
 
-      // 动态条目限频：地点变了随时可发；原地不动则需过最小间隔（防重复刷屏）
-      const moved = action.location !== presence.location;
-      const intervalMs = config.activityEntryIntervalMinutes * 60_000;
-      if (moved || now - (state.lastActivityEntryTs[p.id] ?? 0) >= intervalMs) {
-        candidates.push({
-          type: 'activity',
-          residentIds: [p.id],
-          location: action.location,
-          content: `${p.name}在${action.location}${action.activity}。`,
-          ts: now,
-        });
-      }
-
       if (action.action === 'investigate') {
         const spawned = (await listMysteries(db, 'spawned')).filter((m) => m.arc === 'daily');
         if (spawned[0]) await markInvestigating(db, spawned[0].id);
@@ -288,7 +275,8 @@ async function tickBody(
     }
   }
 
-  // 5) 相遇对话（同地 ≥2 人，冷却 2 小时）
+  // 5) 相遇对话（同地 ≥2 人，冷却 2 小时）；对话内容并入本 tick 的故事段落
+  let tickDialogue: Dialogue | undefined;
   const byLocation = new Map<string, ResidentProfile[]>();
   for (const p of profiles) {
     const location = state.residents[p.id]?.location ?? p.home;
@@ -299,20 +287,14 @@ async function tickBody(
     const pairKey = group.map((p) => p.id).sort().join('|');
     if (now - (state.lastConverseTs[pairKey] ?? 0) < CONVERSE_COOLDOWN_MS) continue;
     try {
-      const dialogue = await converse(ctx, [group[0]!, group[1]!], buildView(state, profiles, group[0]!, local));
-      candidates.push({
-        type: 'dialogue',
-        residentIds: group.map((p) => p.id),
-        location,
-        content: dialogue.lines.map((l) => `${l.speaker}：${l.line}`).join('\n'),
-      });
+      tickDialogue = await converse(ctx, [group[0]!, group[1]!], buildView(state, profiles, group[0]!, local));
       state.lastConverseTs[pairKey] = now;
       for (const p of group) {
         const other = group.find((o) => o.id !== p.id)!;
         await write(ctx, {
           residentId: p.id,
           kind: 'dialogue',
-          content: `我和${other.name}在${location}聊了天。${other.name}说：「${dialogue.lines.find((l) => l.speaker === other.name)?.line ?? ''}」`,
+          content: `我和${other.name}在${location}聊了天。${other.name}说：「${tickDialogue.lines.find((l) => l.speaker === other.name)?.line ?? ''}」`,
           salience: 3,
           tags: `${other.name} 对话`,
           subject: other.id,
@@ -321,6 +303,36 @@ async function tickBody(
     } catch (e) {
       console.warn('converse 失败', e);
     }
+  }
+
+  // 5.5) 叙事者把这一刻写成一段故事（每个 tick 必发一段）
+  try {
+    const prevEntries = await listEntries(db, { limit: 10 });
+    const prevBeat = prevEntries.find((e) => e.type === 'activity')?.content;
+    const beat = await narrateBeat(ctx, {
+      local,
+      weather: state.weather,
+      events: state.pendingEvents,
+      actors: profiles
+        .filter((p) => actions[p.id])
+        .map((p) => ({
+          name: p.name,
+          location: actions[p.id]!.location,
+          activity: actions[p.id]!.activity,
+          remark: actions[p.id]!.remark,
+        })),
+      dialogue: tickDialogue,
+      prevBeat,
+    });
+    candidates.push({
+      type: 'activity',
+      residentIds: profiles.filter((p) => actions[p.id]).map((p) => p.id),
+      location: '商店街',
+      content: beat,
+      ts: now,
+    });
+  } catch (e) {
+    console.warn('叙事段落生成失败', e);
   }
 
   // 6) 独白（每日到点各一篇）
@@ -366,7 +378,7 @@ async function tickBody(
     }
   }
 
-  // 9) 发布（护栏 + 激活率）→ 快照
+  // 9) 发布（护栏）→ 章节总结 → 快照
   const { published, blocked } = await publishAll(db, candidates, {
     activationRate: config.activationRate,
     rng,
@@ -374,11 +386,11 @@ async function tickBody(
   if (blocked.length > 0) {
     console.warn('护栏拦截', blocked.map((b) => b.reason).join('; '));
   }
-  // 动态条目限频时间戳按实际发布更新
-  for (const entry of published) {
-    if (entry.type === 'activity' && entry.residentIds[0]) {
-      state.lastActivityEntryTs[entry.residentIds[0]] = entry.ts;
-    }
+
+  try {
+    await maybeWriteChapter(ctx);
+  } catch (e) {
+    console.warn('章节生成失败', e);
   }
 
   state.lastTickTs = now;

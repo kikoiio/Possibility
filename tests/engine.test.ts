@@ -31,6 +31,10 @@ const smartFetch: typeof fetch = async (input, init) => {
         { speaker: '七濑', line: '安静得能听见咖啡滴下来的声音！' },
       ],
     });
+  } else if (body.includes('请写这一段')) {
+    content = '午后的满月喫茶格外安静，星野擦着吧台。与此同时，七濑趴在桌边数奶泡，忽然说：「安静得能听见咖啡滴下来的声音！」';
+  } else if (body.includes('浓缩成一章')) {
+    content = JSON.stringify({ title: '安静的午后', content: '这一天店里格外安静，两位店主在无所事事中品出了些滋味。' });
   } else if (body.includes('内心独白')) {
     content = '安静的日子也有安静的好。';
   } else {
@@ -113,16 +117,19 @@ describe('engine.tick', () => {
 
     expect(result.slept).toBe(false);
     expect(result.actions['hoshino']?.activity).toContain('店面');
-    // 2 动态 + 1 对话 + 2 独白（rng=0.5 < 0.6 激活率全保留）
-    expect(result.entriesPublished).toBe(5);
+    // 1 段故事（含对话引用）+ 2 独白
+    expect(result.entriesPublished).toBe(3);
 
     const entries = await env.DB.prepare('SELECT type, COUNT(*) AS c FROM entries GROUP BY type').all<{
       type: string; c: number;
     }>();
     const byType = Object.fromEntries(entries.results.map((r) => [r.type, r.c]));
-    expect(byType['activity']).toBe(2);
-    expect(byType['dialogue']).toBe(1);
+    expect(byType['activity']).toBe(1); // 叙事段落（每个 tick 一段）
     expect(byType['monologue']).toBe(2);
+
+    // 叙事段落是连贯故事而非模板动态
+    const beat = await env.DB.prepare("SELECT content FROM entries WHERE type = 'activity'").first<{ content: string }>();
+    expect(beat!.content).toContain('与此同时');
 
     // 快照：位置与计划标记
     const snap = await loadSnapshot(env.DB);
@@ -130,7 +137,6 @@ describe('engine.tick', () => {
     expect(state.residents['hoshino']!.location).toBe('满月喫茶');
     expect(state.plannedToday['hoshino']).toBeTruthy();
     expect(state.monologuedToday['nanase']).toBeTruthy();
-    expect(Object.keys(state.lastConverseTs)).toHaveLength(1);
 
     // 计划与记忆入库
     const plans = await env.DB.prepare("SELECT COUNT(*) AS c FROM memories WHERE kind = 'plan'").first<{ c: number }>();
@@ -140,9 +146,29 @@ describe('engine.tick', () => {
     const usage = await env.DB.prepare('SELECT COUNT(*) AS c FROM usage_records').first<{ c: number }>();
     expect(usage!.c).toBeGreaterThan(0);
 
-    // 第二个 tick：原地重复被限频（动态 1 小时间隔、对话 2 小时冷却、独白今日已发）
+    // 第二个 tick：每 tick 必有一段新故事（独白今日已发，对话冷却中）
     const second = await tick(env, { rng: () => 0.5, fetchImpl: smartFetch });
-    expect(second.entriesPublished).toBe(0);
+    expect(second.entriesPublished).toBe(1);
+
+    await env.CONFIG_KV.delete('config');
+  });
+
+  it('条目攒够后自动生成章节（前情提要）', async () => {
+    await seedProfiles();
+    const config: Config = {
+      ...DEFAULT_CONFIG,
+      sleepWindow: oppositeSleepWindow(),
+      monologueTimeLocal: currentHhmm(),
+      chapterEveryEntries: 1, // 立即触发
+    };
+    await env.CONFIG_KV.put('config', JSON.stringify(config));
+
+    await tick(env, { rng: () => 0.5, fetchImpl: smartFetch });
+
+    const chapters = await env.DB.prepare('SELECT * FROM chapters').all<{ title: string; content: string }>();
+    expect(chapters.results.length).toBeGreaterThanOrEqual(1);
+    expect(chapters.results[0]!.title).toBe('安静的午后');
+    expect(chapters.results[0]!.content).toContain('两位店主');
 
     await env.CONFIG_KV.delete('config');
   });

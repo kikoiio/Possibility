@@ -1,30 +1,35 @@
-// web/src/main.ts — 纯文字流：只呈现故事本身
-// 无筛选、无角色页、无介绍——标题、此刻一行、连续的文字、加载更早。
-
-import { fetchNow, fetchTimeline, type PublicEntry } from './api';
-import { renderStream } from './ui';
+// web/src/main.ts — 纯文字流：倒叙（最新在上）+ 章节 + 前情提要
+import { fetchChapters, fetchNow, fetchTimeline, type PublicChapter, type PublicEntry } from './api';
+import { renderRecap, renderStream } from './ui';
 
 const POLL_INTERVAL_MS = 30_000;
 const PAGE_SIZE = 30;
 
 const stream = document.getElementById('stream')!;
+const recap = document.getElementById('recap')!;
 const nowLine = document.getElementById('now-line')!;
 const loadMoreLink = document.getElementById('load-more') as HTMLAnchorElement;
 
 let entries: PublicEntry[] = [];
+let chapters: PublicChapter[] = [];
 let cursor: string | null = null;
 
 function render(): void {
-  stream.replaceChildren(renderStream(entries));
+  const recapEl = renderRecap(chapters);
+  recap.replaceChildren(...(recapEl ? [recapEl] : []));
+  stream.replaceChildren(renderStream(entries, chapters));
   loadMoreLink.hidden = cursor === null;
 }
 
 async function refresh(): Promise<void> {
-  const res = await fetchTimeline({ limit: PAGE_SIZE });
+  const [timelineRes, chaptersRes] = await Promise.all([fetchTimeline({ limit: PAGE_SIZE }), fetchChapters()]);
+  chapters = chaptersRes.chapters;
+
   const seen = new Set(entries.map((e) => e.id));
-  const fresh = res.entries.filter((e) => !seen.has(e.id));
-  entries = entries.length === 0 ? res.entries : [...fresh, ...entries];
-  cursor = res.nextCursor;
+  const fresh = timelineRes.entries.filter((e) => !seen.has(e.id));
+  // 倒叙：新条目插到最前
+  entries = entries.length === 0 ? timelineRes.entries : [...fresh, ...entries];
+  cursor = timelineRes.nextCursor;
   render();
 }
 

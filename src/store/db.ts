@@ -52,7 +52,8 @@ export interface Mystery {
 }
 
 export type UsagePurpose =
-  | 'plan' | 'action' | 'dialogue' | 'monologue' | 'reflection' | 'mystery' | 'guard';
+  | 'plan' | 'action' | 'dialogue' | 'monologue' | 'reflection'
+  | 'mystery' | 'guard' | 'narrate' | 'chapter';
 
 export interface UsageRecordInput {
   ts: number;
@@ -437,6 +438,54 @@ export async function insertModerationLog(
     )
     .bind(input.ts, input.targetType, input.targetId, input.action, input.reason)
     .run();
+}
+
+// ---------------------------------------------------------------------------
+// chapters
+// ---------------------------------------------------------------------------
+
+export interface Chapter {
+  id: number;
+  ts: number;
+  title: string;
+  content: string;
+  fromTs: number;
+  toTs: number;
+}
+
+export async function insertChapter(
+  db: D1Database,
+  input: { ts: number; title: string; content: string; fromTs: number; toTs: number },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO chapters (ts, title, content, from_ts, to_ts) VALUES (?, ?, ?, ?, ?)`,
+    )
+    .bind(input.ts, input.title, input.content, input.fromTs, input.toTs)
+    .run();
+}
+
+/** 全部章节（时间正序，前情提要即按此累积） */
+export async function listChapters(db: D1Database): Promise<Chapter[]> {
+  const { results } = await db
+    .prepare('SELECT id, ts, title, content, from_ts AS fromTs, to_ts AS toTs FROM chapters ORDER BY ts')
+    .all<Chapter>();
+  return results;
+}
+
+export async function latestChapter(db: D1Database): Promise<Chapter | null> {
+  return db
+    .prepare('SELECT id, ts, title, content, from_ts AS fromTs, to_ts AS toTs FROM chapters ORDER BY ts DESC LIMIT 1')
+    .first<Chapter>();
+}
+
+/** 某时刻之后发布的条目（章节素材，时间正序） */
+export async function listEntriesAfter(db: D1Database, afterTs: number, limit = 100): Promise<Entry[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM entries WHERE status = 'published' AND ts > ? ORDER BY ts LIMIT ?")
+    .bind(afterTs, limit)
+    .all<EntryRow>();
+  return results.map(rowToEntry);
 }
 
 // ---------------------------------------------------------------------------
