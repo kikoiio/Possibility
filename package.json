@@ -1,0 +1,23 @@
+{
+  "name": "possibility",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web",
+    "api"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api,engine -c blue,magenta,green \"npm run dev:web\" \"npm run dev:api\" \"npm run dev:engine\"",
+    "dev:web": "npm --workspace web run dev",
+    "dev:api": "npm --workspace api run dev",
+    "dev:engine": "tsx scripts/engine-pinger.ts",
+    "db:migrate": "npm --workspace api run db:migrate",
+    "seed": "tsx scripts/seed.ts",
+    "migrate:p2": "tsx scripts/migrate-p2.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.12"
+  }
+}

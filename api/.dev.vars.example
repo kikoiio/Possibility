@@ -1,0 +1,21 @@
+# LLM 服务商配置（OpenAI 兼容协议）
+# 用法：复制本文件为 .dev.vars 并填入真实值（.dev.vars 已在 .gitignore 中，不会入库）
+# 切换服务商只需改这三项，无需改代码（N5）
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-在这里填入你的密钥
+LLM_MODEL=gpt-4o-mini
+
+# 引擎节拍器共享密钥（阶段二新增）：本地随机串，任意填写（如 openssl rand -hex 16）。
+# 本地种子管理员（可选）：密码留空时，每次新建管理员都会生成并打印随机密码。
+# 若管理员已存在，seed 不会修改或显示原密码。
+DEV_ADMIN_USERNAME=admin
+DEV_ADMIN_PASSWORD=
+
+# engine-pinger 进程会读取同一文件中的该值来调用 /api/engine/tick。
+ENGINE_TICK_SECRET=
+
+# 引擎参数（可选，不填用默认值）：
+# WORLD_SPEED=6                世界时钟倍速（默认 6）
+# TICK_CALL_CAP=8              每世界每拍 LLM 调用上限（默认 8）
+# DAILY_CALL_CAP=400           每世界每日 LLM 调用上限（默认 400，触顶自动暂停）
+# MEMORY_SUMMARY_THRESHOLD=40  触发记忆压缩的未压缩条数（默认 40）

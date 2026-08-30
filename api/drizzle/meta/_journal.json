@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787761199759,
+      "tag": "0000_dry_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787824317673,
+      "tag": "0001_wooden_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787824365314,
+      "tag": "0002_fixed_landau",
+      "breakpoints": true
+    }
+  ]
+}
