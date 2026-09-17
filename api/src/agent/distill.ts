@@ -1,4 +1,6 @@
 import { complete, configFromEnv, type ChatMessage } from '../llm/client'
+import { recordUserCall } from '../engine/budget'
+import type { Db } from '../db/client'
 import type { Env } from '../index'
 import type { InitialState, ModelItem, PersonModel } from './types'
 
@@ -117,8 +119,9 @@ function normalizeDistill(raw: unknown): DistillResult {
   }
 }
 
-/** 一次性蒸馏（非自主体回合，纯 JSON 输出）；解析失败重试 1 次 */
-export async function distillPerson(env: Env, description: string): Promise<DistillResult> {
+/** 一次性蒸馏（非自主体回合，纯 JSON 输出）；解析失败重试 1 次。
+ *  调用记入用户桶（此时世界尚未创建，无世界可归账）。 */
+export async function distillPerson(env: Env, db: Db, userId: string, description: string): Promise<DistillResult> {
   const config = configFromEnv(env)
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM },
@@ -129,8 +132,11 @@ export async function distillPerson(env: Env, description: string): Promise<Dist
     try {
       // 推理模型会先消耗 reasoning tokens，预算要给足
       const raw = await complete(config, messages, { maxTokens: 16000 })
+      await recordUserCall(db, userId, 'distill')
       return normalizeDistill(extractJson(raw))
     } catch (e) {
+      // 失败的尝试同样消耗了 token，照记
+      await recordUserCall(db, userId, 'distill').catch(() => {})
       lastError = e
     }
   }

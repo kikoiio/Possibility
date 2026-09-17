@@ -7,6 +7,7 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   running: { text: '运行中', cls: 'bg-emerald-100 text-emerald-700' },
   paused: { text: '已暂停', cls: 'bg-paper-deep text-ink-soft' },
   capped: { text: '已达上限', cls: 'bg-red-100 text-red-700' },
+  archived: { text: '已归档', cls: 'bg-paper-deep text-ink-faint' },
 }
 
 /** 世界列表：本人全部世界 + 创建入口 */

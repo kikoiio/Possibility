@@ -43,4 +43,4 @@ export type AgentEvent =
       state: { simTime: string; location: string; activity: string; mood: string; goal: string }
     }
   | { type: 'memory'; id: string; content: string }
-  | { type: 'done'; llmCalls?: number }
+  | { type: 'done'; llmCalls?: number; error?: string } // error=流中途失败（llmCalls 仍为实际已发生数，调用方须照常记账）

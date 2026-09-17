@@ -1,4 +1,6 @@
 import { complete, configFromEnv } from '../llm/client'
+import { recordUserCall } from '../engine/budget'
+import type { Db } from '../db/client'
 import type { Env } from '../index'
 import { extractJson } from '../agent/engine-prompt'
 import type { LocationDef } from '../agent/engine-context'
@@ -39,8 +41,8 @@ function normalizeDraft(raw: unknown): WorldDraft {
   return { name, description, locations }
 }
 
-/** Quick World 骨架生成（不落库）；解析失败重试一次 */
-export async function draftWorld(env: Env, prompt: string): Promise<WorldDraft> {
+/** Quick World 骨架生成（不落库）；解析失败重试一次；调用记入用户桶 */
+export async function draftWorld(env: Env, db: Db, userId: string, prompt: string): Promise<WorldDraft> {
   const config = configFromEnv(env)
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -53,8 +55,10 @@ export async function draftWorld(env: Env, prompt: string): Promise<WorldDraft> 
         ],
         { maxTokens: 8000 },
       )
+      await recordUserCall(db, userId, 'world_draft')
       return normalizeDraft(extractJson(raw))
     } catch (e) {
+      await recordUserCall(db, userId, 'world_draft').catch(() => {})
       lastError = e
     }
   }

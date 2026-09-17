@@ -7,7 +7,8 @@ import { conversations, messages, timelines } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
 import { runAgentTurn, type HistoryMessage } from '../agent/loop'
-import { recordCall } from '../engine/budget'
+import { budgetFromEnv } from '../engine/budget'
+import { gateWorld, settleWorld } from '../engine/guard'
 import type { AgentMode } from '../agent/types'
 import type { Env } from '../index'
 
@@ -109,14 +110,28 @@ async function runAndStream(
     await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '上下文不存在' }) })
     return ''
   }
+
+  // 护栏：聊天同样受世界状态与日限额约束（此前 paused/capped 世界照样烧调用）
+  const cfg = budgetFromEnv(env)
+  const gate = await gateWorld(db, ctx.world.id, cfg)
+  if (!gate.ok) {
+    await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: gate.error }) })
+    return ''
+  }
+
   let full = ''
   let llmCalls = 0
   try {
     for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [])) {
       if (ev.type === 'text') full += ev.delta
-      if (ev.type === 'done' && typeof ev.llmCalls === 'number') llmCalls = ev.llmCalls
+      if (ev.type === 'done') {
+        llmCalls = ev.llmCalls ?? 0
+        if (ev.error) {
+          await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: ev.error }) })
+        }
+        break
+      }
       await stream.writeSSE({ data: JSON.stringify(ev) })
-      if (ev.type === 'done') break
     }
   } catch (e) {
     await stream.writeSSE({
@@ -124,7 +139,13 @@ async function runAndStream(
     })
   }
   if (llmCalls > 0) {
-    await recordCall(db, ctx.world, { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'chat' }, llmCalls)
+    await settleWorld(
+      db,
+      gate.world,
+      { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'chat' },
+      llmCalls,
+      cfg,
+    )
   }
   return full
 }
@@ -203,14 +224,15 @@ chatRoutes.post('/conversations/:id/catchup', async (c) => {
       await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '上下文不存在' }) })
       return
     }
-    const elapsed = Date.now() - Date.parse(ctx.state.updatedRealAt)
-    if (elapsed < CATCHUP_THRESHOLD_MS) {
+    // 间隔按"虚拟时间"计：sim 时钟 6 倍速领先真实时间，用真实间隔会严重低估空白
+    const simElapsed = Date.parse(ctx.timeline.simNow) - Date.parse(ctx.state.simTime)
+    if (simElapsed < CATCHUP_THRESHOLD_MS) {
       await stream.writeSSE({ data: JSON.stringify({ type: 'skipped' }) })
       await stream.writeSSE({ data: JSON.stringify({ type: 'done' }) })
       return
     }
 
-    const input = `距离我们上次联系，时间过去了 ${humanizeElapsed(elapsed)}。请按你的模式指令，补齐这段时间你的生活。`
+    const input = `距离我们上次联系，时间过去了 ${humanizeElapsed(simElapsed)}。请按你的模式指令，补齐这段时间你的生活。`
     const full = await runAndStream(stream, c.env, db, {
       userId,
       personId: convo.personId,

@@ -125,6 +125,7 @@ export const worldsApi = {
     apiFetch<WorldSnapshot>(`/api/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
   pause: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
   resume: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
+  archive: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
   inject: (worldId: string, text: string, timelineId?: string) =>
     apiFetch<{ id: string; timelineId: string; simTime: string }>(`/api/worlds/${worldId}/inject`, {
       method: 'POST',

@@ -4,6 +4,8 @@ import { createDb } from '../db/client'
 import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
+import { budgetFromEnv } from '../engine/budget'
+import { gateUser } from '../engine/guard'
 import type { InitialState } from '../agent/types'
 import { DEFAULT_WORLD_LOCATIONS } from '../worlds/defaults'
 import type { Env } from '../index'
@@ -11,13 +13,17 @@ import type { Env } from '../index'
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 personRoutes.use('*', authMiddleware)
 
-/** 蒸馏：描述 → 人物模型草稿（不落库） */
+/** 蒸馏：描述 → 人物模型草稿（不落库）；预世界调用，按用户当日限额设防 */
 personRoutes.post('/distill', async (c) => {
   const body = await c.req.json<{ description?: string }>().catch(() => ({}) as { description?: string })
   const description = body.description?.trim()
   if (!description) return c.json({ error: '请提供人物描述' }, 400)
+  const db = createDb(c.env.DB)
+  const cfg = budgetFromEnv(c.env)
+  const gate = await gateUser(db, c.get('user').id, cfg)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
-    const draft = await distillPerson(c.env, description)
+    const draft = await distillPerson(c.env, db, c.get('user').id, description)
     return c.json(draft)
   } catch (e) {
     return c.json({ error: `创建人物失败：${e instanceof Error ? e.message : '未知错误'}` }, 502)

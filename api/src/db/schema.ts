@@ -185,15 +185,14 @@ export const events = sqliteTable('events', {
   dialogueId: text('dialogue_id'),
 })
 
-/** 成本护栏与可观测性：每次 LLM 调用一行 */
+/** 成本护栏与可观测性：每次 LLM 调用一行；世界创建前的调用（蒸馏/骨架）记 user_id、world_id 为空 */
 export const llmCallLog = sqliteTable('llm_call_log', {
   id: text('id').primaryKey(),
-  worldId: text('world_id')
-    .notNull()
-    .references(() => worlds.id),
+  worldId: text('world_id'),
+  userId: text('user_id'),
   timelineId: text('timeline_id'),
   personId: text('person_id'),
-  // schedule / beat / dialogue_turn / injection / summary / chat / distill
+  // schedule / beat / dialogue_turn / injection / summary / chat / distill / world_draft / fork_preview / fork_simulate
   purpose: text('purpose').notNull(),
   // 真实时间（每日上限按真实日期统计）
   createdAt: text('created_at').notNull(),

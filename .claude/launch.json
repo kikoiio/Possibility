@@ -2,10 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:web"],
+      "name": "possibility-dev",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["/home/neo/Projects/Possibility/.claude/boot-dev.sh"],
       "port": 5173
+    },
+    {
+      "name": "api-test-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility/api && npx vitest run > /tmp/vitest-final.txt 2>&1; echo EXIT=$? >> /tmp/vitest-final.txt; sleep 2"],
+      "port": 59999
+    },
+    {
+      "name": "git-commit-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["/home/neo/Projects/Possibility/.claude/git-commit-once.sh"],
+      "port": 59998
     }
   ]
 }

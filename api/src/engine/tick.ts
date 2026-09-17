@@ -10,7 +10,8 @@ import {
   type WorldSnapshot,
 } from '../agent/engine-context'
 import { needsSummary } from '../agent/memory'
-import { budgetFromEnv, capWorld, dailyCapHit, recordCall, type BudgetConfig } from './budget'
+import { budgetFromEnv, capWorld, dailyCapHit, recordCall, recoverCappedWorlds, type BudgetConfig } from './budget'
+import { planTickSteps } from './director'
 import { beatExecutor } from './steps/beat'
 import { dialogueExecutor } from './steps/dialogue'
 import { injectionExecutor } from './steps/injection'
@@ -78,6 +79,9 @@ export async function runTick(env: Env, db: Db): Promise<TickSummary | null> {
 async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
   const cfg: BudgetConfig = budgetFromEnv(env)
   const summary: TickSummary = { at: new Date().toISOString(), worlds: [] }
+
+  // 0. 换天恢复：昨日触顶的 capped 世界自动复位（否则被下方 running 查询永久排除）
+  await recoverCappedWorlds(db, new Date().toISOString().slice(0, 10))
 
   const runningWorlds = await db.select().from(worlds).where(eq(worlds.status, 'running')).all()
 
@@ -212,11 +216,11 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
         }
       }
 
-      // 4. 预算内按优先级执行；花不完的活留到下拍
-      steps.sort((a, b) => a.priority - b.priority)
+      // 4. 导演层仲裁（注入扇入 + 人物轮转），再按序在预算内执行；花不完的活留到下拍
+      const plan = planTickSteps(steps, cfg)
       const tlReport: TickSummary['worlds'][number]['timelines'][number] = { id: tl.id, simNow, steps: [] }
 
-      for (const step of steps) {
+      for (const step of plan.steps) {
         if (currentWorld.status !== 'running') break
         const remaining = cfg.tickCallCap - tickCalls
         if (remaining <= 0) break

@@ -8,6 +8,8 @@ import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
+import { budgetFromEnv } from '../engine/budget'
+import { gateUser } from '../engine/guard'
 import type { Env } from '../index'
 
 type World = typeof worlds.$inferSelect
@@ -24,13 +26,17 @@ async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<
   return w ?? null
 }
 
-/** Quick World 骨架：一句话 → LLM 生成（不落库） */
+/** Quick World 骨架：一句话 → LLM 生成（不落库）；预世界调用，按用户当日限额设防 */
 worldsRoutes.post('/draft', async (c) => {
   const body = await c.req.json<{ prompt?: string }>().catch(() => ({}) as { prompt?: string })
   const prompt = body.prompt?.trim()
   if (!prompt) return c.json({ error: '请提供一句话描述' }, 400)
+  const db = createDb(c.env.DB)
+  const cfg = budgetFromEnv(c.env)
+  const gate = await gateUser(db, c.get('user').id, cfg)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
-    return c.json(await draftWorld(c.env, prompt))
+    return c.json(await draftWorld(c.env, db, c.get('user').id, prompt))
   } catch (e) {
     return c.json({ error: `骨架生成失败：${e instanceof Error ? e.message : '未知错误'}` }, 502)
   }
@@ -194,17 +200,23 @@ worldsRoutes.post('/:id/pause', async (c) => {
   return c.json({ ok: true, status: 'paused' })
 })
 
-/** 继续：从暂停点恢复；同时复位当日用量（含触顶后的手动复位） */
+/** 继续：只改状态，不清零当日用量（清零曾让 pause→resume 无限刷日限额；
+ *  触顶的 capped 世界由 tick 在换天时自动恢复，resume 仅用于手动暂停的世界） */
 worldsRoutes.post('/:id/resume', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const now = new Date().toISOString()
-  await db
-    .update(worlds)
-    .set({ status: 'running', pauseReason: null, callsToday: 0, callsDay: now.slice(0, 10) })
-    .where(eq(worlds.id, world.id))
+  await db.update(worlds).set({ status: 'running', pauseReason: null }).where(eq(worlds.id, world.id))
   return c.json({ ok: true, status: 'running' })
+})
+
+/** 归档（冻结可读）：引擎停止推进、不再产生 LLM 调用；数据完整保留，可随时 resume 解冻 */
+worldsRoutes.post('/:id/archive', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  await db.update(worlds).set({ status: 'archived', pauseReason: null }).where(eq(worlds.id, world.id))
+  return c.json({ ok: true, status: 'archived' })
 })
 
 /** 注入事件：写 kind='injected' 事件，当前线的人物于下一拍感知并反应（F7） */

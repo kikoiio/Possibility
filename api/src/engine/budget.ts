@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, count, eq, gte, ne } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { llmCallLog, worlds } from '../db/schema'
 import type { CallPurpose } from './steps/types'
@@ -11,6 +11,7 @@ export interface BudgetConfig {
   tickCallCap: number // TICK_CALL_CAP 缺省 8（每世界每拍 LLM 调用上限）
   dailyCallCap: number // DAILY_CALL_CAP 缺省 400（每世界每日 LLM 调用上限）
   summaryThreshold: number // MEMORY_SUMMARY_THRESHOLD 缺省 40（触发记忆压缩的未压缩条数）
+  preworldDailyCap: number // PREWORLD_DAILY_CAP 缺省 40（每用户每日"世界创建前"调用上限：蒸馏/骨架草稿等）
 }
 
 export function budgetFromEnv(env: {
@@ -18,6 +19,7 @@ export function budgetFromEnv(env: {
   TICK_CALL_CAP?: string
   DAILY_CALL_CAP?: string
   MEMORY_SUMMARY_THRESHOLD?: string
+  PREWORLD_DAILY_CAP?: string
 }): BudgetConfig {
   const num = (v: string | undefined, dflt: number) => {
     const n = Number(v)
@@ -28,11 +30,32 @@ export function budgetFromEnv(env: {
     tickCallCap: num(env.TICK_CALL_CAP, 8),
     dailyCallCap: num(env.DAILY_CALL_CAP, 400),
     summaryThreshold: num(env.MEMORY_SUMMARY_THRESHOLD, 40),
+    preworldDailyCap: num(env.PREWORLD_DAILY_CAP, 40),
   }
 }
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+/** 换天滚动（纯函数）：callsDay 不是今天则清零（时钟单点化的同类规则，供测试与记账共用） */
+export function rolloverCalls(
+  callsDay: string | null,
+  callsToday: number,
+  day: string = today(),
+): { callsDay: string; callsToday: number } {
+  return callsDay === day ? { callsDay, callsToday } : { callsDay: day, callsToday: 0 }
+}
+
+/** 记账后的新计数（纯函数）：先换天滚动，再累加 n */
+export function bumpCalls(
+  callsDay: string | null,
+  callsToday: number,
+  n: number,
+  day: string = today(),
+): { callsDay: string; callsToday: number } {
+  const rolled = rolloverCalls(callsDay, callsToday, day)
+  return { callsDay: rolled.callsDay, callsToday: rolled.callsToday + n }
 }
 
 /**
@@ -47,13 +70,13 @@ export async function recordCall(
 ): Promise<World> {
   if (n <= 0) return world
   const now = new Date().toISOString()
-  const callsDay = world.callsDay === today() ? world.callsDay : today()
-  const callsToday = (world.callsDay === today() ? world.callsToday : 0) + n
+  const { callsDay, callsToday } = bumpCalls(world.callsDay, world.callsToday, n)
 
   for (let i = 0; i < n; i++) {
     await db.insert(llmCallLog).values({
       id: crypto.randomUUID(),
       worldId: world.id,
+      userId: world.userId,
       timelineId: meta.timelineId,
       personId: meta.personId,
       purpose: meta.purpose,
@@ -62,6 +85,32 @@ export async function recordCall(
   }
   await db.update(worlds).set({ callsToday, callsDay }).where(eq(worlds.id, world.id))
   return { ...world, callsToday, callsDay }
+}
+
+/** 预世界调用记账（蒸馏/骨架草稿：此时还没有世界可归账，记入用户桶） */
+export async function recordUserCall(db: Db, userId: string, purpose: CallPurpose, n: number = 1): Promise<void> {
+  const now = new Date().toISOString()
+  for (let i = 0; i < n; i++) {
+    await db.insert(llmCallLog).values({
+      id: crypto.randomUUID(),
+      worldId: null,
+      userId,
+      timelineId: null,
+      personId: null,
+      purpose,
+      createdAt: now,
+    })
+  }
+}
+
+/** 该用户今日已发生的全部 LLM 调用（含预世界调用，用于 PREWORLD_DAILY_CAP） */
+export async function userCallsToday(db: Db, userId: string, day: string = today()): Promise<number> {
+  const row = await db
+    .select({ n: count() })
+    .from(llmCallLog)
+    .where(and(eq(llmCallLog.userId, userId), gte(llmCallLog.createdAt, `${day}T00:00:00`)))
+    .get()
+  return row?.n ?? 0
 }
 
 /** 本拍预算是否还够（每世界每拍上限） */
@@ -78,4 +127,15 @@ export function dailyCapHit(world: World, cfg: BudgetConfig): boolean {
 /** 触顶动作：世界置 capped、记录原因 */
 export async function capWorld(db: Db, worldId: string): Promise<void> {
   await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(eq(worlds.id, worldId))
+}
+
+/**
+ * capped 世界换天自动恢复（tick 每拍开头调用）。
+ * 换天清零原本只发生在 recordCall 内，而 capped 世界被 tick 排除、永远走不到记账——形成死锁；这里显式恢复。
+ */
+export async function recoverCappedWorlds(db: Db, day: string = today()): Promise<void> {
+  await db
+    .update(worlds)
+    .set({ status: 'running', pauseReason: null, callsToday: 0, callsDay: day })
+    .where(and(eq(worlds.status, 'capped'), ne(worlds.callsDay, day)))
 }

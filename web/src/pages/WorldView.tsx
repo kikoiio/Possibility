@@ -194,6 +194,18 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     }
   }
 
+  const handleArchiveWorld = async () => {
+    if (!snapshot) return
+    setActionError('')
+    try {
+      await worldsApi.archive(worldId)
+      const snap = await worldsApi.snapshot(worldId, timelineId ?? undefined)
+      setClock({ simNow: snap.simNow, callsToday: snap.world.callsToday, worldStatus: snap.world.status, pauseReason: snap.world.pauseReason })
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '归档失败')
+    }
+  }
+
   const handleFork = async () => {
     if (!timelineId) return
     setActionError('')
@@ -237,6 +249,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
 
   const running = clock.worldStatus === 'running'
   const capped = clock.worldStatus === 'capped'
+  const archived = clock.worldStatus === 'archived'
 
   return (
     <div className="flex h-full flex-col">
@@ -251,11 +264,11 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
               )}
               <span
                 className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${
-                  running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : 'bg-paper-deep text-ink-soft'
+                  running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'
                 }`}
               >
                 {running && <span className="inline-block h-1.5 w-1.5 animate-pulse-soft rounded-full bg-emerald-500" />}
-                {running ? '运行中' : capped ? '已达今日上限' : '已暂停'}
+                {running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停'}
               </span>
             </div>
             <p className="mt-0.5 text-xs text-ink-faint">
@@ -279,13 +292,19 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                 >
                   {running ? '暂停' : '继续'}
                 </button>
+                <button
+                  onClick={handleArchiveWorld}
+                  className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-faint hover:bg-paper-deep"
+                >
+                  归档
+                </button>
               </>
             )}
           </div>
         </div>
         {capped && (
           <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">
-            今日调用已达上限，世界已自动暂停。点「继续」可复位并恢复运行。
+            今日调用已达上限，世界已自动暂停，次日自动恢复运行。
           </p>
         )}
         {actionError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">{actionError}</p>}

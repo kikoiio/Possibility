@@ -79,8 +79,8 @@ export interface ToolRunState {
   current: { location: string; activity: string; mood: string; goal: string }
 }
 
-/** 推进虚拟时钟：优先用模型给的时间，否则按模式步进；单调不减、不超过窗口右端 */
-function nextSimTime(run: ToolRunState, provided?: unknown): string {
+/** 推进虚拟时钟：优先用模型给的时间，否则按模式步进；单调不减、不超过窗口右端（导出供单测） */
+export function nextSimTime(run: ToolRunState, provided?: unknown): string {
   let t = typeof provided === 'string' ? Date.parse(provided) : NaN
   if (Number.isNaN(t) || t <= run.clock) {
     const step =

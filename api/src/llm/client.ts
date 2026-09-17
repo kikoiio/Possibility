@@ -100,22 +100,33 @@ export async function complete(
 
 /**
  * 流式调用：产出文本增量；tool_calls 分片累积完整后产出；
- * 流结束产出 done。
+ * 流结束产出 done。timeoutMs 防挂死（缺省 120s，超时中断整个流）。
  */
 export async function* streamChat(
   config: LlmConfig,
   messages: ChatMessage[],
   tools?: ToolDef[],
-  opts: { maxTokens?: number } = {},
+  opts: { maxTokens?: number; timeoutMs?: number } = {},
 ): AsyncIterable<StreamEvent> {
   const apiTools = toApiTools(tools)
-  const res = await postChat(config, {
-    model: config.model,
-    messages,
-    stream: true,
-    ...(apiTools ? { tools: apiTools, tool_choice: 'auto' } : {}),
-    ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 120_000)
+  let res: Response
+  try {
+    res = await postChat(
+      config,
+      {
+        model: config.model,
+        messages,
+        stream: true,
+        ...(apiTools ? { tools: apiTools, tool_choice: 'auto' } : {}),
+        ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
+      },
+      controller.signal,
+    )
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.body) throw new Error('LLM 流式响应缺少 body')
 
   const reader = res.body.getReader()
