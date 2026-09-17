@@ -233,13 +233,15 @@ export function buildScenePrompt(
     '  "utterance": "你说的话（符合你的说话方式，一两句为宜）",',
     '  "thought": "你此刻的内心想法（第一人称，不会说出口）",',
     '  "shouldEnd": true 或 false,',
-    '  "memory": {"content": "与眼前这个人（或这场相遇）值得长期记住的事", "importance": 1-10} 或 null',
+    '  "memory": {"content": "与眼前这个人（或这场相遇）值得长期记住的事", "importance": 1-10} 或 null,',
+    '  "word": "想托付给 TA 的事（邀约、提醒、口信——TA 下次到场时会看到），没有就给 null"',
     '}',
     '要求：',
     `- 可以直接叫 ${visitor.name} 的名字；按你的性格决定热络还是矜持。`,
     '- 不要点破第四面墙：不要暗示 TA 是观察者、玩家、"用户"或来自世界之外的存在。',
     '- shouldEnd 仅当你想结束这场交谈时为 true（其他在场者还想说话时给 false）。',
     '- memory 平时给 null；TA 的言行真正触动了你（或关系到你的秘密与目标）时才给。',
+    '- word 只在真的有话要留给 TA 时给（如"明天开饭前再来一趟""替我问候山下的阿婆"），随口寒暄不要硬留。',
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,

@@ -43,6 +43,13 @@
       "when": 1789662093339,
       "tag": "0005_grey_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789663602615,
+      "tag": "0006_awesome_colonel_america",
+      "breakpoints": true
     }
   ]
 }

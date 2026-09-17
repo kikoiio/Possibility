@@ -30,6 +30,12 @@
       "runtimeExecutable": "/usr/bin/bash",
       "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility/api && npx tsc --noEmit > /tmp/tsc-out.txt 2>&1; echo API_EXIT=$? >> /tmp/tsc-out.txt; cd ../web && npx tsc --noEmit >> /tmp/tsc-out.txt 2>&1; echo WEB_EXIT=$? >> /tmp/tsc-out.txt; sleep 2"],
       "port": 59996
+    },
+    {
+      "name": "git-status-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility && { git status --short; echo ---; git diff --stat | tail -8; } > /tmp/git-status.txt 2>&1; sleep 2"],
+      "port": 59995
     }
   ]
 }

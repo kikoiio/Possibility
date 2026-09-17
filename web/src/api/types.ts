@@ -308,3 +308,21 @@ export type SceneEvent =
   | { type: 'utterance'; personId: string; name: string; text: string }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+/* ===== 世界记得你：留言与与你有关的动静 ===== */
+
+export interface PersonaMessage {
+  id: string
+  fromName: string
+  content: string
+  location: string
+  simTime: string
+}
+
+export interface PersonaMention {
+  id: string
+  simTime: string
+  title: string
+  description: string
+  actorName: string | null
+}

@@ -113,6 +113,8 @@ import type {
   DialogueDetail,
   PersonFocus,
   Persona,
+  PersonaMention,
+  PersonaMessage,
   WorldDraft,
   WorldSnapshot,
   WorldStreamEvent,
@@ -172,9 +174,12 @@ export const memoriesApi = {
 
 /** 你在世界里：登记/改写在场身份 */
 export const personaApi = {
-  get: (worldId: string) => apiFetch<{ persona: Persona | null }>(`/api/worlds/${worldId}/persona`),
+  get: (worldId: string) => apiFetch<{ persona: Persona | null; unread: number }>(`/api/worlds/${worldId}/persona`),
   upsert: (worldId: string, body: { name: string; description: string }) =>
     apiFetch<{ persona: Persona }>(`/api/worlds/${worldId}/persona`, { method: 'POST', body: JSON.stringify(body) }),
+  /** 未读留言（送达即标记已读）+ 最近与你有关的动静 */
+  messages: (worldId: string) =>
+    apiFetch<{ messages: PersonaMessage[]; mentions: PersonaMention[] }>(`/api/worlds/${worldId}/persona/messages`),
 }
 
 /** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */

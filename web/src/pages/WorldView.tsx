@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { publicApi, subscribeWorldStream, worldsApi } from '../api/client'
+import { publicApi, subscribeWorldStream, worldsApi, personaApi } from '../api/client'
 import type {
   DialogueDetail,
   PersonFocus,
@@ -54,6 +54,16 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [actionError, setActionError] = useState('')
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [sceneOpen, setSceneOpen] = useState(false)
+  const [personaUnread, setPersonaUnread] = useState(0)
+
+  // 在场身份未读留言角标（打开面板即清零，由面板内送达逻辑标记已读）
+  useEffect(() => {
+    if (readonly) return
+    personaApi
+      .get(worldId)
+      .then((d) => setPersonaUnread(d.unread))
+      .catch(() => {})
+  }, [worldId, sceneOpen, readonly])
 
   const names = useMemo(() => {
     const m = new Map<string, string>()
@@ -298,10 +308,18 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   {running ? '暂停' : '继续'}
                 </button>
                 <button
-                  onClick={() => setSceneOpen(true)}
-                  className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink hover:bg-paper-deep"
+                  onClick={() => {
+                    setPersonaUnread(0)
+                    setSceneOpen(true)
+                  }}
+                  className="relative rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink hover:bg-paper-deep"
                 >
                   进入世界
+                  {personaUnread > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cinnabar-deep px-1 text-[10px] text-white">
+                      {personaUnread}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={() => setChaptersOpen(true)}

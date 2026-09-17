@@ -247,3 +247,26 @@ export const chapters = sqliteTable('chapters', {
   eventCount: integer('event_count').notNull().default(0),
   createdAt: text('created_at').notNull(),
 })
+
+/** 留给在场身份（用户）的留言：scene 中人物主动托付/邀约/提醒，进入世界时送达 */
+export const personaMessages = sqliteTable('persona_messages', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id')
+    .notNull()
+    .references(() => worlds.id),
+  timelineId: text('timeline_id')
+    .notNull()
+    .references(() => timelines.id),
+  senderPersonId: text('sender_person_id')
+    .notNull()
+    .references(() => persons.id),
+  recipientPersonId: text('recipient_person_id')
+    .notNull()
+    .references(() => persons.id),
+  content: text('content').notNull(),
+  // 留言发生地点（“在温室花房留下话”）
+  location: text('location').notNull().default(''),
+  simTime: text('sim_time').notNull(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+})

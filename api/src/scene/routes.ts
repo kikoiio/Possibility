@@ -3,11 +3,11 @@ import { and, eq } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { SSEStreamingApi } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
-import { events, memories, persons, timelines, worlds, worldPersons } from '../db/schema'
+import { events, memories, personaMessages, persons, timelines, worlds, worldPersons } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildWorldSnapshot, buildEngineContext, isAwake, parseScheduleItems } from '../agent/engine-context'
 import { buildScenePrompt, extractJson, type DialogueTurnView } from '../agent/engine-prompt'
-import { normalizeDialogueJson } from '../engine/steps/dialogue'
+import { parseSceneOutput } from './parse'
 import { clampImportance } from '../agent/memory'
 import { budgetFromEnv, capWorld, dailyCapHit, recordCall, touchWorldActivity } from '../engine/budget'
 import { gateWorld } from '../engine/guard'
@@ -139,7 +139,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       if (!ctx) continue
       const prompt = buildScenePrompt(ctx, { name: persona.name, profile }, pickedLoc, turns)
 
-      let output: ReturnType<typeof normalizeDialogueJson> | null = null
+      let output: ReturnType<typeof parseSceneOutput> | null = null
       let llmCalls = 0
       for (let attempt = 0; attempt < 2 && !output; attempt++) {
         llmCalls++
@@ -148,7 +148,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
             { role: 'system', content: prompt.system },
             { role: 'user', content: prompt.user },
           ])
-          output = normalizeDialogueJson(extractJson(raw))
+          output = parseSceneOutput(extractJson(raw))
         } catch {
           // 重试一次后仍失败：跳过这位回应者
         }
@@ -195,6 +195,21 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           simTime: simNow,
           createdAt: now,
           importance: clampImportance(output.memory.importance),
+        })
+      }
+      // 留言：人物有话托付给来访者——TA 下次进入世界时送达
+      if (output.word) {
+        await db.insert(personaMessages).values({
+          id: crypto.randomUUID(),
+          worldId: world.id,
+          timelineId: tl.id,
+          senderPersonId: responder.id,
+          recipientPersonId: persona.id,
+          content: output.word,
+          location: pickedLoc,
+          simTime: simNow,
+          read: false,
+          createdAt: now,
         })
       }
 

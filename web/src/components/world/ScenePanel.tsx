@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { personaApi, sceneApi } from '../../api/client'
-import type { Persona, SceneEvent } from '../../api/types'
+import type { Persona, PersonaMention, PersonaMessage, SceneEvent } from '../../api/types'
 
 interface Props {
   worldId: string
@@ -30,6 +30,7 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [notes, setNotes] = useState<{ messages: PersonaMessage[]; mentions: PersonaMention[] } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -40,6 +41,11 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
         if (d.persona) {
           setName(d.persona.name)
           setDescription(d.persona.description)
+          // 世界记得你：未读留言 + 与你有关的动静（送达即标记已读）
+          personaApi
+            .messages(worldId)
+            .then(setNotes)
+            .catch(() => {})
         }
       })
       .catch(() => setError('身份加载失败'))
@@ -162,6 +168,28 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
             </div>
 
             <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              {notes && (notes.messages.length > 0 || notes.mentions.length > 0) && (
+                <section className="rounded-xl border border-ink-line/70 bg-sheet px-4 py-3">
+                  <h3 className="mb-2 text-xs font-medium text-ink-soft">自你上次离开后，世界没有忘记你</h3>
+                  {notes.messages.map((m) => (
+                    <div key={m.id} className="mb-2 last:mb-0">
+                      <p className="text-[11px] text-ink-faint">
+                        {m.fromName} 在{m.location ? ` ${m.location} ` : ''}给你留了话 · {m.simTime.slice(5, 16).replace('T', ' ')}
+                      </p>
+                      <p className="font-story mt-0.5 text-sm leading-relaxed text-ink">{m.content}</p>
+                    </div>
+                  ))}
+                  {notes.mentions.slice(0, 6).map((e) => (
+                    <p key={e.id} className="mt-1.5 text-xs leading-relaxed text-ink-faint">
+                      <span className="text-ink-soft">
+                        {e.actorName && !e.title.startsWith(e.actorName) ? `${e.actorName}：` : ''}
+                        {e.title}
+                      </span>
+                      {e.description ? `——${e.description.slice(0, 40)}` : ''}
+                    </p>
+                  ))}
+                </section>
+              )}
               {messages.length === 0 && (
                 <p className="pt-16 text-center text-sm leading-relaxed text-ink-faint">
                   以 {persona.name} 的身份说点什么。
