@@ -68,13 +68,28 @@
    - `api/src/engine/director.ts`（纯函数零 LLM，借鉴 Inworld 思路）：优先级排序 + 注入扇入（同一事件每拍最多 2 人反应，其余顺延不丢失）+ 同优先级人物轮转公平（防预算截断饿死排在后面的人物）。tick 主循环已接入。
 5. **archive/冻结 ✅**
    - 世界级 `POST /worlds/:id/archive`：`archived` 状态冻结可读（tick 天然排除），`resume` 解冻；前端世界列表/世界视图补齐状态标签与「归档」按钮；capped 提示文案改为"次日自动恢复"。
-6. **远期（未做，保持建议）**：按世界分片的调度；记忆可审计 UI（对标 Kindroid）；闲置自动归档（当前为手动）。
+6. **远期（未做，保持建议）**：按世界分片的调度；闲置自动归档（当前为手动）。
+
+## 四之二、产品增量执行记录（2026-09-17，提交 57727dc）
+
+1. **章节生成 ✅**（"世界自己出书"——对标筑梦岛"梦境保存"，但自动成文）
+   - `api/src/chapters/`：1 次 LLM 调用（purpose `chapter`，走预算护栏）把上次章节以来（缺省近 24 虚拟时、3–80 条）的事件流转成小说章 `{title(≤14字), content(800–1400字)}`；世界/时间线/人物名单/全部事件行进 prompt；失败重试一次、每次尝试均记账。
+   - API：`POST /worlds/:id/chapters`（生成）、`GET /worlds/:id/chapters`（倒序 50）、`GET /chapters/:id`；`chapters` 表 + 迁移 0004。
+   - 前端：世界页「章节」面板（章节目录 + 正文渲染 + 「写下一章」）。
+   - 实测：主线 53 事件 → 《纸背上半个雪字》1333 字，callsToday +1，章节列表/全文正常。
+2. **记忆可审计 ✅**（对标 Kindroid"记忆用户可编辑是高黏性刚需"）
+   - `api/src/memories/`：`PATCH /memories/:id`（校正内容 / 调整重要度，clamp 1–5）、`DELETE /memories/:id`；归属校验 memory→person→user。
+   - 前端：人物抽屉记忆页签可内联编辑/删除（保存即刷新聚焦视图）。
+   - 实测：改后立即可见、恢复成功、未授权 401、importance 越界被 clamp。
+3. 测试：新增章节单测 4 个，合计 **32/32**；两端 tsc 干净。
 
 ## 部署注意事项
 
-- **必须**：`api/drizzle/0003_long_firebrand.sql` 需应用到线上 D1：`cd api && npx wrangler d1 migrations apply DB --remote`（本地已应用）。
+- **必须**：以下迁移需应用到线上 D1：`cd api && npx wrangler d1 migrations apply DB --remote`（本地均已应用）：
+  - `api/drizzle/0003_long_firebrand.sql`（llm_call_log 加 user_id、world_id 可空）
+  - `api/drizzle/0004_living_scalphunter.sql`（chapters 表）
 - 新环境变量 `PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40，可不配）。
-- `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate`（旧行不受影响）。
+- `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter`（旧行不受影响）。
 
 ## 原四、升级方向建议（执行前的规划存档）
 
