@@ -106,6 +106,16 @@
    - 实测：告别场景小夜（"晚膳六时半……灶上我留着"）与柊一成（代收安神茶的托付）各留一句 → 未读 2 → 送达 → 已读清零；提及列表正确聚合两条时间线里的事件。
 2. 测试：新增 `parseSceneOutput` 纯函数 + 5 个单测（word 截断/非字符串拒绝），合计 **47/47**。
 
+## 四之五、打磨轮（2026-09-18，提交 3d0593a）
+
+1. **在场交谈并入对话模型 ✅**（scene 从"散装事件"升级为完整对话）
+   - 一场 scene 现在就是一段 `dialogues` + `dialogueTurns`：参与者 = 用户在场身份 + 在场回应者，一次说完即 `ended`（引擎只为 ongoing 对话排步，天然不会拾起它轮转；实测 tick 健康不受影响）。
+   - 事件流复用对话卡片：可逐句展开、按人着色、查看每句内心想法；`description` 存完整对话摘录（上限 800 字截断），章节生成走 `fmtEventLine` 时自动拿到对话全文——访客戏份直接织入小说。无回应者时不落事件（`turns.length > 1` 才写）。
+   - 纯函数 `scene/plan.ts`（`sceneDialogueTitle` / `sceneTranscript`）+ 7 个单测；合计 **54/54**。
+   - 实测：餐厅发问 → 卡片「阿透 与 小夜、雾野 透 在餐厅交谈」→ 展开逐句 + 想法正常；`persona/messages` 提及板块自动捕获该事件。
+2. **ScenePanel 小打磨 ✅**：对话开头显示「在{地点}——{在场者} 在场」系统行；地点下拉显示各地点在场人数（世界快照 locationBoard）。
+3. **人物标识色修复 ✅**：旧 charCode 线性哈希对 UUID 分布极差（8 色盘 6 人撞 3 对）。改 FNV-1a + 末尾混合（分布均匀，6000 随机 UUID 实测各桶 ~500±40），色盘扩至 12 色。按 ID 稳定、不随人物增删漂移。
+
 ## 部署注意事项
 
 - **必须**：以下迁移需应用到线上 D1：`cd api && npx wrangler d1 migrations apply DB --remote`（本地均已应用）：
@@ -115,6 +125,7 @@
   - `api/drizzle/0006_awesome_colonel_america.sql`（persona_messages 留言表）
 - 新环境变量（均可不配）：`PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40）、`IDLE_ARCHIVE_DAYS`（闲置归档天数，缺省 7）、`DIRECTOR_LLM`（缺省 on，`0` 关闭 LLM 导演仲裁）。
 - `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter / director / scene`（旧行不受影响）。
+- 无新增迁移。scene 复用既有 `dialogues` / `dialogue_turns` 表（在场身份也是 persons 行），存量数据兼容。
 
 ## 原四、升级方向建议（执行前的规划存档）
 

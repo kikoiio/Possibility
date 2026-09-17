@@ -5,7 +5,7 @@ cd /home/neo/Projects/Possibility
   git config user.name "neo"
   git config user.email "neo@possibility.local"
   git add -A
-  git commit -m "产品：在场交谈并入对话模型——事件流可展开、章节可得对话全文"
+  git commit -m "文档：简报补充打磨轮执行记录（scene 对话化 + 人物色修复）"
   echo "EXIT=$?"
   git log --oneline -3
   git status --short | head -10
