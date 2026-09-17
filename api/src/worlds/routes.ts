@@ -8,7 +8,7 @@ import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
-import { budgetFromEnv } from '../engine/budget'
+import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { gateUser } from '../engine/guard'
 import type { Env } from '../index'
 
@@ -78,6 +78,7 @@ worldsRoutes.post('/', async (c) => {
     status: 'running',
     callsToday: 0,
     callsDay: now.slice(0, 10),
+    lastUserActivityAt: now,
     createdAt: now,
   })
   await db.insert(timelines).values({
@@ -207,6 +208,7 @@ worldsRoutes.post('/:id/resume', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   await db.update(worlds).set({ status: 'running', pauseReason: null }).where(eq(worlds.id, world.id))
+  await touchWorldActivity(db, world.id)
   return c.json({ ok: true, status: 'running' })
 })
 
@@ -242,6 +244,7 @@ worldsRoutes.post('/:id/inject', async (c) => {
     description: text,
     kind: 'injected',
   })
+  await touchWorldActivity(db, world.id)
   return c.json({ id, timelineId: tl.id, simTime: tl.simNow })
 })
 

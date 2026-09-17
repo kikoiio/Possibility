@@ -22,6 +22,8 @@ export const persons = sqliteTable('persons', {
     .references(() => users.id),
   name: text('name').notNull(),
   modelJson: text('model_json').notNull(),
+  // true = 用户在世界里的"在场身份"（由用户亲自扮演；引擎不为 TA 排日程/节拍/对话）
+  isUser: integer('is_user', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
 })
 
@@ -42,6 +44,8 @@ export const worlds = sqliteTable('worlds', {
   callsToday: integer('calls_today').notNull().default(0),
   // callsToday 对应的真实日期（YYYY-MM-DD），换天自动清零
   callsDay: text('calls_day'),
+  // 最近一次用户交互（聊天/注入/章节等）；闲置自动归档以此为据（null = 不归档）
+  lastUserActivityAt: text('last_user_activity_at'),
   createdAt: text('created_at').notNull().default(''),
 })
 
@@ -192,7 +196,7 @@ export const llmCallLog = sqliteTable('llm_call_log', {
   userId: text('user_id'),
   timelineId: text('timeline_id'),
   personId: text('person_id'),
-  // schedule / beat / dialogue_turn / injection / summary / chat / distill / world_draft / fork_preview / fork_simulate
+  // schedule / beat / dialogue_turn / injection / summary / chat / distill / world_draft / fork_preview / fork_simulate / chapter / director / scene
   purpose: text('purpose').notNull(),
   // 真实时间（每日上限按真实日期统计）
   createdAt: text('created_at').notNull(),

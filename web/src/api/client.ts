@@ -112,6 +112,7 @@ import type {
   DemoInfo,
   DialogueDetail,
   PersonFocus,
+  Persona,
   WorldDraft,
   WorldSnapshot,
   WorldStreamEvent,
@@ -167,6 +168,19 @@ export const memoriesApi = {
   update: (memoryId: string, patch: { content?: string; importance?: number }) =>
     apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   remove: (memoryId: string) => apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'DELETE' }),
+}
+
+/** 你在世界里：登记/改写在场身份 */
+export const personaApi = {
+  get: (worldId: string) => apiFetch<{ persona: Persona | null }>(`/api/worlds/${worldId}/persona`),
+  upsert: (worldId: string, body: { name: string; description: string }) =>
+    apiFetch<{ persona: Persona }>(`/api/worlds/${worldId}/persona`, { method: 'POST', body: JSON.stringify(body) }),
+}
+
+/** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */
+export const sceneApi = {
+  send: (worldId: string, body: { timelineId: string; location?: string; content: string }, onEvent: (event: SSEEvent) => void) =>
+    postSSE(`/api/worlds/${worldId}/scene`, body, onEvent),
 }
 
 /**

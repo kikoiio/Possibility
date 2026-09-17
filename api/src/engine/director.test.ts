@@ -9,6 +9,8 @@ const CFG: BudgetConfig = {
   dailyCallCap: 400,
   summaryThreshold: 40,
   preworldDailyCap: 40,
+  idleArchiveDays: 7,
+  directorLlm: true,
 }
 
 let seq = 0

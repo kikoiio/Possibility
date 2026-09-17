@@ -7,7 +7,7 @@ import { conversations, messages, timelines } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
 import { runAgentTurn, type HistoryMessage } from '../agent/loop'
-import { budgetFromEnv } from '../engine/budget'
+import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { gateWorld, settleWorld } from '../engine/guard'
 import type { AgentMode } from '../agent/types'
 import type { Env } from '../index'
@@ -169,6 +169,9 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
     content,
     createdAt: now,
   })
+  // 用户交互痕迹：闲置自动归档以此为据
+  const tlRow = await db.select({ worldId: timelines.worldId }).from(timelines).where(eq(timelines.id, convo.timelineId)).get()
+  if (tlRow) await touchWorldActivity(db, tlRow.worldId)
 
   const recent = await db
     .select()

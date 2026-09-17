@@ -47,3 +47,5 @@ export type CallPurpose =
   | 'fork_preview'
   | 'fork_simulate'
   | 'chapter'
+  | 'director'
+  | 'scene'

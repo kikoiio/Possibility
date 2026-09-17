@@ -10,6 +10,8 @@ import { engineRoutes } from './engine/routes'
 import { worldsRoutes } from './worlds/routes'
 import { chapterRoutes } from './chapters/routes'
 import { memoryRoutes } from './memories/routes'
+import { personaRoutes } from './persona/routes'
+import { sceneRoutes } from './scene/routes'
 import { publicRoutes } from './public/routes'
 
 export interface Env {
@@ -25,6 +27,9 @@ export interface Env {
   TICK_CALL_CAP?: string
   DAILY_CALL_CAP?: string
   MEMORY_SUMMARY_THRESHOLD?: string
+  PREWORLD_DAILY_CAP?: string
+  IDLE_ARCHIVE_DAYS?: string
+  DIRECTOR_LLM?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -42,6 +47,8 @@ app.route('/api/engine', engineRoutes)
 app.route('/api/worlds', worldsRoutes)
 app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
+app.route('/api', personaRoutes) // /worlds/:id/persona（在场身份登记）
+app.route('/api', sceneRoutes) // /worlds/:id/scene（你在世界里：到场交谈）
 app.route('/api/public', publicRoutes)
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
 app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id

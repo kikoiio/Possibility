@@ -13,6 +13,7 @@ import PersonDrawer from '../components/world/PersonDrawer'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
 import InjectBox from '../components/world/InjectBox'
 import ChapterPanel from '../components/world/ChapterPanel'
+import ScenePanel from '../components/world/ScenePanel'
 
 const WORLD_SPEED = 6
 
@@ -52,6 +53,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; detail: DialogueDetail | null } | null>(null)
   const [actionError, setActionError] = useState('')
   const [chaptersOpen, setChaptersOpen] = useState(false)
+  const [sceneOpen, setSceneOpen] = useState(false)
 
   const names = useMemo(() => {
     const m = new Map<string, string>()
@@ -296,6 +298,12 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   {running ? '暂停' : '继续'}
                 </button>
                 <button
+                  onClick={() => setSceneOpen(true)}
+                  className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink hover:bg-paper-deep"
+                >
+                  进入世界
+                </button>
+                <button
                   onClick={() => setChaptersOpen(true)}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
                 >
@@ -351,6 +359,9 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
         )}
         {chaptersOpen && timelineId && (
           <ChapterPanel worldId={worldId} timelineId={timelineId} onClose={() => setChaptersOpen(false)} />
+        )}
+        {sceneOpen && timelineId && (
+          <ScenePanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onClose={() => setSceneOpen(false)} />
         )}
       </div>
     </div>

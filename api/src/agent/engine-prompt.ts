@@ -211,6 +211,42 @@ export function buildDialoguePrompt(
   }
 }
 
+/** scene：用户以在场身份来到某地点，人物依次回应（输出格式同 dialogue_turn） */
+export function buildScenePrompt(
+  ctx: EngineContext,
+  visitor: { name: string; profile: string },
+  location: string,
+  turns: DialogueTurnView[],
+): PromptPair {
+  const transcript = turns.length
+    ? turns.map((t) => `${t.personName}：${t.utterance}`).join('\n')
+    : '（还没有人开口）'
+  const instruction = [
+    '## 任务：有人真实地来到了你面前',
+    `你正在${location}。此刻，${visitor.name}——${visitor.profile || '一位你不熟悉的访客'}——真实地站在你面前。`,
+    'TA 就是这个世界的人，会留在你的记忆里：要以对待一个真实在场的人的方式对待 TA。',
+    '到目前为止的交谈：',
+    transcript,
+    '',
+    '轮到你对在场的人（包括 TA）开口了。只输出一个 JSON 对象（不要任何其他文字，不要代码块）：',
+    '{',
+    '  "utterance": "你说的话（符合你的说话方式，一两句为宜）",',
+    '  "thought": "你此刻的内心想法（第一人称，不会说出口）",',
+    '  "shouldEnd": true 或 false,',
+    '  "memory": {"content": "与眼前这个人（或这场相遇）值得长期记住的事", "importance": 1-10} 或 null',
+    '}',
+    '要求：',
+    `- 可以直接叫 ${visitor.name} 的名字；按你的性格决定热络还是矜持。`,
+    '- 不要点破第四面墙：不要暗示 TA 是观察者、玩家、"用户"或来自世界之外的存在。',
+    '- shouldEnd 仅当你想结束这场交谈时为 true（其他在场者还想说话时给 false）。',
+    '- memory 平时给 null；TA 的言行真正触动了你（或关系到你的秘密与目标）时才给。',
+  ].join('\n')
+  return {
+    system: `${buildEngineSystem(ctx)}\n\n${instruction}`,
+    user: `现在时间 ${ctx.snapshot.timeline.simNow}。请开口。`,
+  }
+}
+
 /** summary：把一批老记忆蒸馏为一条摘要 */
 export function buildSummaryPrompt(ctx: EngineContext, batch: Memory[]): PromptPair {
   const list = batch

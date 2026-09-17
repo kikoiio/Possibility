@@ -2,7 +2,7 @@ import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { chapters, events, persons, timelines, worlds, worldPersons } from '../db/schema'
 import { complete, configFromEnv, type ChatMessage } from '../llm/client'
-import { budgetFromEnv } from '../engine/budget'
+import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { gateWorld, settleWorld } from '../engine/guard'
 import type { Env } from '../index'
 import type { ForkScenario } from '../agent/types'
@@ -121,6 +121,7 @@ export async function generateChapter(
     err.status = gate.status
     throw err
   }
+  await touchWorldActivity(db, world.id)
 
   // 覆盖区间：上一章 toSim 之后；没有则最近 1 虚拟日
   const prev = await db

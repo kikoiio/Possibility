@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { budgetFromEnv, bumpCalls, dailyCapHit, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
+import { budgetFromEnv, bumpCalls, dailyCapHit, isIdleActivity, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
 import type { worlds } from '../db/schema'
 
 type World = typeof worlds.$inferSelect
@@ -10,6 +10,8 @@ const CFG: BudgetConfig = {
   dailyCallCap: 400,
   summaryThreshold: 40,
   preworldDailyCap: 40,
+  idleArchiveDays: 7,
+  directorLlm: true,
 }
 
 function world(patch: Partial<World>): World {
@@ -24,6 +26,7 @@ function world(patch: Partial<World>): World {
     isDemo: false,
     callsToday: 0,
     callsDay: null,
+    lastUserActivityAt: null,
     createdAt: '',
     ...patch,
   }
@@ -83,5 +86,25 @@ describe('budgetFromEnv（环境变量解析）', () => {
     const cfg = budgetFromEnv({ DAILY_CALL_CAP: '100', PREWORLD_DAILY_CAP: '5' })
     expect(cfg.dailyCallCap).toBe(100)
     expect(cfg.preworldDailyCap).toBe(5)
+  })
+  it('闲置天数与导演开关可配置', () => {
+    const cfg = budgetFromEnv({ IDLE_ARCHIVE_DAYS: '3', DIRECTOR_LLM: '0' })
+    expect(cfg.idleArchiveDays).toBe(3)
+    expect(cfg.directorLlm).toBe(false)
+    expect(budgetFromEnv({}).directorLlm).toBe(true)
+  })
+})
+
+describe('isIdleActivity（闲置判定）', () => {
+  const now = Date.parse('2026-09-17T00:00:00Z')
+  it('超过 N 天未活动 = 闲置', () => {
+    expect(isIdleActivity('2026-09-09T23:59:59Z', now, 7)).toBe(true)
+  })
+  it('N 天内活动过 = 不闲置', () => {
+    expect(isIdleActivity('2026-09-16T12:00:00Z', now, 7)).toBe(false)
+  })
+  it('null 或无法解析 = 不可判定，不归档', () => {
+    expect(isIdleActivity(null, now, 7)).toBe(false)
+    expect(isIdleActivity('不是时间', now, 7)).toBe(false)
   })
 })

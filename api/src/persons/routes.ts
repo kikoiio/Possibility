@@ -98,7 +98,7 @@ personRoutes.get('/', async (c) => {
   const list = await db
     .select()
     .from(persons)
-    .where(eq(persons.userId, c.get('user').id))
+    .where(and(eq(persons.userId, c.get('user').id), eq(persons.isUser, false))) // 用户的"在场身份"不算人物
     .orderBy(desc(persons.createdAt))
     .all()
   return c.json({

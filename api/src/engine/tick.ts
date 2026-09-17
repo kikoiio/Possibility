@@ -10,8 +10,9 @@ import {
   type WorldSnapshot,
 } from '../agent/engine-context'
 import { needsSummary } from '../agent/memory'
-import { budgetFromEnv, capWorld, dailyCapHit, recordCall, recoverCappedWorlds, type BudgetConfig } from './budget'
+import { budgetFromEnv, capWorld, dailyCapHit, recordCall, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
 import { planTickSteps } from './director'
+import { arbitrateInjections } from './director-llm'
 import { beatExecutor } from './steps/beat'
 import { dialogueExecutor } from './steps/dialogue'
 import { injectionExecutor } from './steps/injection'
@@ -82,6 +83,8 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
 
   // 0. 换天恢复：昨日触顶的 capped 世界自动复位（否则被下方 running 查询永久排除）
   await recoverCappedWorlds(db, new Date().toISOString().slice(0, 10))
+  // 0b. 闲置归档：长时间无用户交互的世界冻结（AI Town archive 思路；resume 解冻）
+  await archiveIdleWorlds(db, cfg)
 
   const runningWorlds = await db.select().from(worlds).where(eq(worlds.status, 'running')).all()
 
@@ -157,7 +160,7 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
       }
 
       // 3. 收集决策点（P1 对话轮转 → P2 注入反应 → P3 生活节拍 → P4 日程生成 → P5 记忆压缩）
-      const steps: AgentStep[] = []
+      let steps: AgentStep[] = []
 
       const ongoingDialogues = await db
         .select()
@@ -175,6 +178,7 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
         .all()
       for (const ev of injectedEvents) {
         for (const p of snapshot.persons) {
+          if (p.isUser) continue // 用户在场身份由用户亲自扮演，引擎不替 TA 反应
           const st = snapshot.states.get(p.id)
           if (!st || st.currentDialogueId) continue
           if (st.lastBeatSimTime && ev.simTime <= st.lastBeatSimTime) continue
@@ -184,6 +188,7 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
       }
 
       for (const p of snapshot.persons) {
+        if (p.isUser) continue
         const st = snapshot.states.get(p.id)
         if (!st || st.currentDialogueId) continue
         const items = parseScheduleItems(snapshot.schedules.get(p.id))
@@ -205,14 +210,35 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
       }
 
       for (const p of snapshot.persons) {
+        if (p.isUser) continue
         if (!snapshot.schedules.has(p.id)) {
           steps.push({ kind: 'schedule', worldId: world.id, timelineId: tl.id, personId: p.id, priority: 4 })
         }
       }
 
       for (const p of snapshot.persons) {
+        if (p.isUser) continue
         if (await needsSummary(db, p.id, snapshot.timeline, cfg.summaryThreshold)) {
           steps.push({ kind: 'summary', worldId: world.id, timelineId: tl.id, personId: p.id, priority: 5 })
+        }
+      }
+
+      // 3b. 导演层 v2：注入事件反应者拥挤时，问一次 LLM"谁最有戏"（每拍至多 1 次调用，
+      // 失败回退 v1 机械排序）；调用计入本拍预算与日限额，无旁路。
+      if (cfg.directorLlm && tickCalls < cfg.tickCallCap) {
+        const arb = await arbitrateInjections(env, db, snapshot, steps)
+        if (arb.llmCalls > 0) {
+          steps = arb.steps
+          tickCalls += arb.llmCalls
+          currentWorld = await recordCall(db, currentWorld, { timelineId: tl.id, personId: null, purpose: 'director' }, arb.llmCalls)
+          if (dailyCapHit(currentWorld, cfg)) {
+            await capWorld(db, currentWorld.id)
+            currentWorld = { ...currentWorld, status: 'capped', pauseReason: 'daily_cap' }
+            worldReport.capped = true
+            worldReport.tickCalls = tickCalls
+            worldReport.timelines.push({ id: tl.id, simNow, steps: [{ kind: 'director', personId: null, ok: false, note: 'daily_cap 触顶' }] })
+            break
+          }
         }
       }
 

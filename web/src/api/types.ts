@@ -106,7 +106,7 @@ export interface HomeData {
     id: string
     name: string
     status: 'running' | 'paused' | 'capped'
-    pauseReason: 'manual' | 'daily_cap' | null
+    pauseReason: 'manual' | 'daily_cap' | 'idle' | null
     isDemo: boolean
     simNow: string | null
     personCount: number
@@ -136,8 +136,8 @@ export interface WorldSummary {
   id: string
   name: string
   description: string
-  status: 'running' | 'paused' | 'capped'
-  pauseReason: 'manual' | 'daily_cap' | null
+  status: 'running' | 'paused' | 'capped' | 'archived'
+  pauseReason: 'manual' | 'daily_cap' | 'idle' | null
   isDemo: boolean
   callsToday: number
   personCount: number
@@ -293,3 +293,18 @@ export interface ChapterSummary {
 export interface Chapter extends ChapterSummary {
   content: string
 }
+
+/* ===== 你在世界里：用户的在场身份与到场交谈 ===== */
+
+export interface Persona {
+  id: string
+  name: string
+  description: string
+}
+
+/** scene SSE 事件（POST /worlds/:id/scene） */
+export type SceneEvent =
+  | { type: 'scene_start'; location: string; participants: string[] }
+  | { type: 'utterance'; personId: string; name: string; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' }

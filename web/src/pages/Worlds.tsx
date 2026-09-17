@@ -53,7 +53,9 @@ export default function Worlds() {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-ink">{w.name}</span>
                 {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
-                <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>{st.text}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>
+                  {w.status === 'archived' && w.pauseReason === 'idle' ? '闲置归档' : st.text}
+                </span>
                 <span className="ml-auto text-xs text-ink-faint">{w.personCount} 个人物</span>
               </div>
               <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-soft">{w.description}</p>
