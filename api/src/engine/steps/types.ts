@@ -39,4 +39,11 @@ export interface StepExecutor<I, O> {
 }
 
 /** LLM 记账用途（与 llm_call_log.purpose 对齐） */
-export type CallPurpose = AgentStepKind | 'chat' | 'distill' | 'world_draft' | 'fork_preview' | 'fork_simulate'
+export type CallPurpose =
+  | AgentStepKind
+  | 'chat'
+  | 'distill'
+  | 'world_draft'
+  | 'fork_preview'
+  | 'fork_simulate'
+  | 'chapter'

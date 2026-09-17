@@ -277,3 +277,19 @@ export type WorldStreamEvent =
       currentDialogueId: string | null
     }
   | { type: 'clock'; simNow: string; callsToday: number; worldStatus: WorldSummary['status']; pauseReason: WorldSummary['pauseReason'] }
+
+/* ===== 章节：时间线事件流的小说化回顾 ===== */
+
+export interface ChapterSummary {
+  id: string
+  timelineId: string
+  title: string
+  fromSim: string
+  toSim: string
+  eventCount: number
+  createdAt: string
+}
+
+export interface Chapter extends ChapterSummary {
+  content: string
+}

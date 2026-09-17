@@ -8,6 +8,8 @@ import { timelineRoutes } from './timelines/routes'
 import { homeRoutes } from './home/routes'
 import { engineRoutes } from './engine/routes'
 import { worldsRoutes } from './worlds/routes'
+import { chapterRoutes } from './chapters/routes'
+import { memoryRoutes } from './memories/routes'
 import { publicRoutes } from './public/routes'
 
 export interface Env {
@@ -38,6 +40,8 @@ app.route('/api/persons', personRoutes)
 // 后续新路由必须注册在它们之前，否则会被拦成 401
 app.route('/api/engine', engineRoutes)
 app.route('/api/worlds', worldsRoutes)
+app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
+app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
 app.route('/api/public', publicRoutes)
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
 app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id

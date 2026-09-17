@@ -18,6 +18,18 @@
       "runtimeExecutable": "/usr/bin/bash",
       "runtimeArgs": ["/home/neo/Projects/Possibility/.claude/git-commit-once.sh"],
       "port": 59998
+    },
+    {
+      "name": "drizzle-migrate-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility/api && npx drizzle-kit generate >> /tmp/migrate-out.txt 2>&1 && npx wrangler d1 migrations apply DB --local >> /tmp/migrate-out.txt 2>&1; echo EXIT=$? >> /tmp/migrate-out.txt; sleep 2"],
+      "port": 59997
+    },
+    {
+      "name": "tsc-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility/api && npx tsc --noEmit > /tmp/tsc-out.txt 2>&1; echo API_EXIT=$? >> /tmp/tsc-out.txt; cd ../web && npx tsc --noEmit >> /tmp/tsc-out.txt 2>&1; echo WEB_EXIT=$? >> /tmp/tsc-out.txt; sleep 2"],
+      "port": 59996
     }
   ]
 }

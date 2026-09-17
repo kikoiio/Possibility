@@ -107,6 +107,8 @@ export async function postSSE(
 /* ===== 阶段二：世界服务与公共只读接口 ===== */
 
 import type {
+  Chapter,
+  ChapterSummary,
   DemoInfo,
   DialogueDetail,
   PersonFocus,
@@ -147,6 +149,24 @@ export const publicApi = {
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/public/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
   dialogueDetail: (dialogueId: string) => apiFetch<DialogueDetail>(`/api/public/dialogues/${dialogueId}`),
+}
+
+/** 章节：时间线的小说化回顾 */
+export const chaptersApi = {
+  generate: (worldId: string, timelineId: string) =>
+    apiFetch<Chapter>(`/api/worlds/${worldId}/chapters`, { method: 'POST', body: JSON.stringify({ timelineId }) }),
+  list: (worldId: string, timelineId?: string) =>
+    apiFetch<{ chapters: ChapterSummary[] }>(
+      `/api/worlds/${worldId}/chapters${timelineId ? `?timelineId=${timelineId}` : ''}`,
+    ),
+  get: (chapterId: string) => apiFetch<Chapter>(`/api/chapters/${chapterId}`),
+}
+
+/** 记忆可审计：校正 / 删除（人物会立刻忘掉） */
+export const memoriesApi = {
+  update: (memoryId: string, patch: { content?: string; importance?: number }) =>
+    apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  remove: (memoryId: string) => apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'DELETE' }),
 }
 
 /**

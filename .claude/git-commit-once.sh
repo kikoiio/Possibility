@@ -5,21 +5,19 @@ cd /home/neo/Projects/Possibility
   git config user.name "neo"
   git config user.email "neo@possibility.local"
   git add -A
-  git commit -m "升级：护栏闭环 + 时钟单点化 + fork 修复 + Director 层 + 世界归档
+  git commit -m "产品：章节生成（事件流小说化回顾）+ 记忆可审计（校正/删除）
 
-- 统一 LLM 闸门（engine/guard.ts）：chat/fork 预览/fork 推演/蒸馏/骨架全部
-  记账 + 查顶；llm_call_log 加 user_id、world_id 可空（迁移 0003），
-  预世界调用记用户桶（PREWORLD_DAILY_CAP，缺省 40）
-- capped 世界换天自动恢复；resume 不再清零当日用量（曾可无限刷日限额）
-- streamChat 120s 超时；流中途失败也产出 done（llmCalls/error），记账无旁路
-- 时钟单点化：自主体时钟以 timeline.simNow 为锚，chat/catchup 的 simTime
-  钳制在窗口内；simNow 仅 simulate 写回且不许拨回；catchup 按虚拟时间计间隔
-- person 级 fork 显式写祖先链（修复分叉零记忆）+ 活跃时间线上限校验
-- Director 层 v1（engine/director.ts，纯函数零 LLM）：注入扇入每事件每拍
-  最多 2 人 + 同优先级人物轮转公平
-- 世界级 archive 冻结可读 + 前端状态标签/归档按钮
-- 新增 vitest：28 个单测覆盖预算状态机/时钟钳制/导演层/祖先链
-- 文档：docs/upgrade-brief.md 执行记录 + 部署注意事项（远端须应用迁移 0003）"
+- 章节（chapters/）：1 次 LLM 调用把上次章节以来（缺省近 24 虚拟时、
+  3–80 条）的事件流转成 {title, content} 小说章；窗口/人物/时间线上下文
+  进 prompt；失败重试一次、每次尝试都走预算护栏记账（purpose 'chapter'）
+- 章节 API：POST /worlds/:id/chapters、GET 列表（倒序 50）、GET /chapters/:id；
+  chapters 表 + 迁移 0004（本地已应用）
+- 记忆可审计（memories/）：PATCH /memories/:id 校正内容/调整重要度
+  （clamp），DELETE 删除；归属校验 memory→person→user
+- 前端：世界页「章节」面板（目录 + 正文 + 写下一章）；人物抽屉记忆页签
+  可内联编辑/删除（保存即刷新聚焦视图）；API client 增 chaptersApi/
+  memoriesApi/worldsApi.archive
+- 新增 4 个章节单测，合计 32/32 通过；两端 tsc 干净"
   echo "EXIT=$?"
   git log --oneline -2
   git status --short | head -10

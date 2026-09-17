@@ -12,6 +12,7 @@ import WorldEventFeed from '../components/world/WorldEventFeed'
 import PersonDrawer from '../components/world/PersonDrawer'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
 import InjectBox from '../components/world/InjectBox'
+import ChapterPanel from '../components/world/ChapterPanel'
 
 const WORLD_SPEED = 6
 
@@ -47,8 +48,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [personFocus, setPersonFocus] = useState<PersonFocus | null>(null)
   const [focusLoading, setFocusLoading] = useState(false)
+  const [focusRefresh, setFocusRefresh] = useState(0)
   const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; detail: DialogueDetail | null } | null>(null)
   const [actionError, setActionError] = useState('')
+  const [chaptersOpen, setChaptersOpen] = useState(false)
 
   const names = useMemo(() => {
     const m = new Map<string, string>()
@@ -162,7 +165,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
       .catch(() => setPersonFocus(null))
       .finally(() => setFocusLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPersonId, timelineId, worldId])
+  }, [selectedPersonId, timelineId, worldId, focusRefresh])
 
   // 展开对话
   const toggleDialogue = useCallback(
@@ -293,6 +296,12 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   {running ? '暂停' : '继续'}
                 </button>
                 <button
+                  onClick={() => setChaptersOpen(true)}
+                  className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
+                >
+                  章节
+                </button>
+                <button
                   onClick={handleArchiveWorld}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-faint hover:bg-paper-deep"
                 >
@@ -337,7 +346,11 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             fallbackName={names.get(selectedPersonId) ?? ''}
             personId={selectedPersonId}
             onClose={() => setSelectedPersonId(null)}
+            onMemoriesChanged={() => setFocusRefresh((n) => n + 1)}
           />
+        )}
+        {chaptersOpen && timelineId && (
+          <ChapterPanel worldId={worldId} timelineId={timelineId} onClose={() => setChaptersOpen(false)} />
         )}
       </div>
     </div>

@@ -225,3 +225,21 @@ export const messages = sqliteTable('messages', {
   content: text('content').notNull(),
   createdAt: text('created_at').notNull(),
 })
+
+/** 章节：时间线事件流的小说化回顾（驻场叙事者一次 LLM 调用生成，可反复阅读） */
+export const chapters = sqliteTable('chapters', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id')
+    .notNull()
+    .references(() => worlds.id),
+  timelineId: text('timeline_id')
+    .notNull()
+    .references(() => timelines.id),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  // 本章覆盖的虚拟时间区间 [fromSim, toSim]
+  fromSim: text('from_sim').notNull(),
+  toSim: text('to_sim').notNull(),
+  eventCount: integer('event_count').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
