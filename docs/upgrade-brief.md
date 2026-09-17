@@ -83,13 +83,28 @@
    - 实测：改后立即可见、恢复成功、未授权 401、importance 越界被 clamp。
 3. 测试：新增章节单测 4 个，合计 **32/32**；两端 tsc 干净。
 
+## 四之三、产品增量第二波（2026-09-17/18，提交 35c7f5d）
+
+1. **你在世界里 ✅**（Character.AI Persona 思路——从"观察世界"到"生活在世界里"）
+   - 世界页「进入世界」：登记在场身份（`persons.isUser`，每人每世界一个：名字 + 身份自述），之后以该身份在场说话；同地点清醒且空闲的人物依次以本人身份回应（SSE 逐句，1 人 1 次 LLM 调用，purpose `scene`，走预算护栏与日限额）。
+   - 相遇写进世界史（事件流，章节会把它织进小说）与每个人的记忆流（内心想法 + 关系记忆）——他们会记住你。
+   - 提示词红线：人物不得点破第四面墙（不暗示访客是观察者/玩家/用户）。
+   - 引擎全链路跳过 isUser 人物（不排日程/节拍/对话/蒸馏），人物列表/API 不展示。
+   - 实测：登记「阿透」后深夜到温室花房，小夜当场回应并在记忆中记下"往后早起生火，留意院里的脚步声"；UI 端到端发送/回应正常。
+2. **LLM 导演层 v2 ✅**（Inworld 思路的 LLM 版）
+   - `engine/director-llm.ts`：注入事件的有效反应者多于扇入上限（2）时，问一次导演"此刻谁最有戏"（事件 + 候选人物状态/身份进 prompt，输出有序反应者名单），选中者本拍优先反应；每拍至多 1 次调用、计入拍预算与日限额（purpose `director`）、失败自动回退 v1 机械排序。`DIRECTOR_LLM=0` 关闭。
+3. **闲置自动归档 ✅**（AI Town archive 思路的自动版）
+   - `worlds.lastUserActivityAt` 在聊天/注入/章节/创建/恢复时刷新；tick 每拍扫描，无交互超过 `IDLE_ARCHIVE_DAYS`（缺省 7）的 running 世界自动 `archived`（pauseReason='idle'），零 LLM 费用、数据完整保留、resume 解冻；存量世界该列为 null 不归档（行为不变）。世界列表对 idle 归档单独标注「闲置归档」。
+4. 测试：新增 10 个（闲置判定/导演提示与解析/scene prompt/在场身份模型），合计 **42/42**；两端 tsc 干净；迁移 0005（本地已应用）。
+
 ## 部署注意事项
 
 - **必须**：以下迁移需应用到线上 D1：`cd api && npx wrangler d1 migrations apply DB --remote`（本地均已应用）：
   - `api/drizzle/0003_long_firebrand.sql`（llm_call_log 加 user_id、world_id 可空）
   - `api/drizzle/0004_living_scalphunter.sql`（chapters 表）
-- 新环境变量 `PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40，可不配）。
-- `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter`（旧行不受影响）。
+  - `api/drizzle/0005_grey_tag.sql`（worlds.last_user_activity_at、persons.is_user）
+- 新环境变量（均可不配）：`PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40）、`IDLE_ARCHIVE_DAYS`（闲置归档天数，缺省 7）、`DIRECTOR_LLM`（缺省 on，`0` 关闭 LLM 导演仲裁）。
+- `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter / director / scene`（旧行不受影响）。
 
 ## 原四、升级方向建议（执行前的规划存档）
 
