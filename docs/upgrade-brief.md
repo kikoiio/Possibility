@@ -97,12 +97,22 @@
    - `worlds.lastUserActivityAt` 在聊天/注入/章节/创建/恢复时刷新；tick 每拍扫描，无交互超过 `IDLE_ARCHIVE_DAYS`（缺省 7）的 running 世界自动 `archived`（pauseReason='idle'），零 LLM 费用、数据完整保留、resume 解冻；存量世界该列为 null 不归档（行为不变）。世界列表对 idle 归档单独标注「闲置归档」。
 4. 测试：新增 10 个（闲置判定/导演提示与解析/scene prompt/在场身份模型），合计 **42/42**；两端 tsc 干净；迁移 0005（本地已应用）。
 
+## 四之四、产品增量第三波（2026-09-18，提交 29d2cda）
+
+1. **世界记得你 ✅**（「你在世界里」的闭环：离开之后，世界继续记挂你）
+   - scene 回应新增可选 `word` 字段：人物有邀约/提醒/口信时托付给来访者——**同一次 LLM 调用产出，零额外消耗**；提示词要求非真心不留，避免灌水。
+   - `persona_messages` 表（迁移 0006）：留言按收件人存未读；`GET /worlds/:id/persona/messages` 送达并标记已读，同时返回事件流里**最近提及你名字的事**（含人物节拍里主动提到访客的事件）。
+   - 「进入世界」面板顶部展示「自你上次离开后，世界没有忘记你」；「进入世界」按钮带未读角标。
+   - 实测：告别场景小夜（"晚膳六时半……灶上我留着"）与柊一成（代收安神茶的托付）各留一句 → 未读 2 → 送达 → 已读清零；提及列表正确聚合两条时间线里的事件。
+2. 测试：新增 `parseSceneOutput` 纯函数 + 5 个单测（word 截断/非字符串拒绝），合计 **47/47**。
+
 ## 部署注意事项
 
 - **必须**：以下迁移需应用到线上 D1：`cd api && npx wrangler d1 migrations apply DB --remote`（本地均已应用）：
   - `api/drizzle/0003_long_firebrand.sql`（llm_call_log 加 user_id、world_id 可空）
   - `api/drizzle/0004_living_scalphunter.sql`（chapters 表）
   - `api/drizzle/0005_grey_tag.sql`（worlds.last_user_activity_at、persons.is_user）
+  - `api/drizzle/0006_awesome_colonel_america.sql`（persona_messages 留言表）
 - 新环境变量（均可不配）：`PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40）、`IDLE_ARCHIVE_DAYS`（闲置归档天数，缺省 7）、`DIRECTOR_LLM`（缺省 on，`0` 关闭 LLM 导演仲裁）。
 - `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter / director / scene`（旧行不受影响）。
 
