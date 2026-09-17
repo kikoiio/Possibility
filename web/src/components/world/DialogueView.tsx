@@ -26,7 +26,7 @@ export default function DialogueView({ detail, liveTurns, names }: Props) {
     { personId: string | null; personName: string; utterance: string; thought: string; simTime: string }
   >()
   for (const t of detail?.turns ?? []) {
-    merged.set(t.turnIndex, { personId: null, personName: t.personName, utterance: t.utterance, thought: t.thought, simTime: t.simTime })
+    merged.set(t.turnIndex, { personId: t.personId, personName: t.personName, utterance: t.utterance, thought: t.thought, simTime: t.simTime })
   }
   for (const t of liveTurns) {
     if (!merged.has(t.turnIndex)) {

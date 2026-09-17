@@ -3,11 +3,12 @@ import { and, eq } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { SSEStreamingApi } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
-import { events, memories, personaMessages, persons, timelines, worlds, worldPersons } from '../db/schema'
+import { events, memories, personaMessages, persons, timelines, worlds, worldPersons, dialogues, dialogueTurns } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildWorldSnapshot, buildEngineContext, isAwake, parseScheduleItems } from '../agent/engine-context'
 import { buildScenePrompt, extractJson, type DialogueTurnView } from '../agent/engine-prompt'
 import { parseSceneOutput } from './parse'
+import { sceneDialogueTitle, sceneTranscript } from './plan'
 import { clampImportance } from '../agent/memory'
 import { budgetFromEnv, capWorld, dailyCapHit, recordCall, touchWorldActivity } from '../engine/budget'
 import { gateWorld } from '../engine/guard'
@@ -54,8 +55,10 @@ function personaProfile(persona: Person): string {
 /**
  * 你在世界里（Character.AI Persona 思路的落地）：
  * 用户以登记过的在场身份来到某地点说话 → 该地点清醒且空闲的人物依次以本人身份回应
- * （1 人 1 次 LLM 调用，purpose='scene'），回应写入事件流与记忆流——
- * 这场相遇从此留在世界史里，也留在每个人的记忆里。SSE 逐句推送。
+ * （1 人 1 次 LLM 调用，purpose='scene'）。这场相遇在数据模型上就是一段
+ * 含用户在内的多方对话（dialogues + dialogueTurns，一次说完即 ended），
+ * 因此事件流里可像引擎对话一样逐句展开阅读，章节也会把对话内容织进小说；
+ * 回应同时写入每个人的记忆流（想法 + 关系记忆），有留言则留给来访者下次收取。SSE 逐句推送。
  */
 sceneRoutes.post('/worlds/:id/scene', async (c) => {
   const body = await c.req.json<{ timelineId?: string; location?: string; content?: string }>().catch(() => null)
@@ -114,15 +117,29 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       return
     }
 
-    // 用户的话先进世界史（事件流）；章节回顾会把它织进小说里
-    await db.insert(events).values({
-      id: crypto.randomUUID(),
+    // 这场相遇 = 一段含用户在内的多方对话（一次说完即 ended；引擎不会拾起它轮转，
+    // 因为它只为 ongoing 对话排步）。用户的话是第 0 轮。
+    const participantIds = [persona.id, ...responders.map((r) => r.id)]
+    const dialogueId = crypto.randomUUID()
+    await db.insert(dialogues).values({
+      id: dialogueId,
       timelineId: tl.id,
+      location: pickedLoc,
+      participantIdsJson: JSON.stringify(participantIds),
+      status: 'ended',
+      turnLimit: participantIds.length,
+      simStart: simNow,
+      simEnd: simNow,
+    })
+    await db.insert(dialogueTurns).values({
+      id: crypto.randomUUID(),
+      dialogueId,
+      turnIndex: 0,
+      personId: persona.id,
+      utterance: content,
+      thought: '',
       simTime: simNow,
-      title: `${persona.name}说`,
-      description: content,
-      kind: 'action',
-      actorPersonId: persona.id,
+      createdAt: now,
     })
 
     await stream.writeSSE({
@@ -165,15 +182,16 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       }
       if (!output) continue
 
-      // 回应写入世界史；内心想法与值得记住的事写入记忆流（TA 会记住这次相遇）
-      await db.insert(events).values({
+      // 回应是对话的一轮；内心想法与值得记住的事写入记忆流（TA 会记住这次相遇）
+      await db.insert(dialogueTurns).values({
         id: crypto.randomUUID(),
-        timelineId: tl.id,
+        dialogueId,
+        turnIndex: turns.length,
+        personId: responder.id,
+        utterance: output.utterance,
+        thought: output.thought,
         simTime: simNow,
-        title: `${responder.name}对${persona.name}说`,
-        description: output.utterance,
-        kind: 'action',
-        actorPersonId: responder.id,
+        createdAt: now,
       })
       await db.insert(memories).values({
         id: crypto.randomUUID(),
@@ -216,6 +234,25 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       turns.push({ personName: responder.name, utterance: output.utterance })
       await stream.writeSSE({
         data: JSON.stringify({ type: 'utterance', personId: responder.id, name: responder.name, text: output.utterance }),
+      })
+    }
+
+    // 至少有一位回应者接上了话，才把这场相遇作为对话事件写进世界史：
+    // 事件流可逐句展开，章节回顾拿到完整对话摘录
+    if (turns.length > 1) {
+      await db.insert(events).values({
+        id: crypto.randomUUID(),
+        timelineId: tl.id,
+        simTime: simNow,
+        title: sceneDialogueTitle(
+          persona.name,
+          turns.slice(1).map((t) => t.personName),
+          pickedLoc,
+        ),
+        description: sceneTranscript(turns.map((t) => ({ name: t.personName, utterance: t.utterance }))),
+        kind: 'dialogue',
+        dialogueId,
+        actorPersonId: persona.id,
       })
     }
 

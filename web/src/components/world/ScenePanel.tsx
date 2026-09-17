@@ -6,11 +6,13 @@ interface Props {
   worldId: string
   timelineId: string
   locations: { name: string; description: string }[]
+  /** 各地点当前在场人数（世界快照的 locationBoard，含睡眠者） */
+  locationCounts?: Record<string, number>
   onClose: () => void
 }
 
 interface Msg {
-  role: 'user' | 'person'
+  role: 'user' | 'person' | 'system'
   name: string
   text: string
 }
@@ -19,7 +21,7 @@ interface Msg {
  * 你在世界里：用户以登记过的在场身份来到某地点说话，
  * 在场的人物依次回应。这场相遇会写进世界史（事件流）与每个人的记忆。
  */
-export default function ScenePanel({ worldId, timelineId, locations, onClose }: Props) {
+export default function ScenePanel({ worldId, timelineId, locations, locationCounts, onClose }: Props) {
   const [persona, setPersona] = useState<Persona | null>(null)
   const [personaLoading, setPersonaLoading] = useState(true)
   const [name, setName] = useState('')
@@ -79,7 +81,9 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
     try {
       await sceneApi.send(worldId, { timelineId, location: location || undefined, content }, (raw) => {
         const ev = raw as SceneEvent
-        if (ev.type === 'utterance') {
+        if (ev.type === 'scene_start') {
+          setMessages((prev) => [...prev, { role: 'system', name: '', text: `在${ev.location}——${ev.participants.join('、')} 在场` }])
+        } else if (ev.type === 'utterance') {
           setMessages((prev) => [...prev, { role: 'person', name: ev.name, text: ev.text }])
         } else if (ev.type === 'error') {
           setError(ev.message)
@@ -159,6 +163,7 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
                 {locations.map((l) => (
                   <option key={l.name} value={l.name}>
                     {l.name}
+                    {locationCounts?.[l.name] ? `（${locationCounts[l.name]} 人在）` : ''}
                   </option>
                 ))}
               </select>
@@ -197,20 +202,26 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
                   在场的人会听见，并记住这场相遇。
                 </p>
               )}
-              {messages.map((m, i) => (
-                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                  <div className={`max-w-[80%] ${m.role === 'user' ? 'text-right' : ''}`}>
-                    {m.role === 'person' && <p className="mb-0.5 text-[11px] text-ink-faint">{m.name}</p>}
-                    <p
-                      className={`font-story inline-block whitespace-pre-wrap rounded-xl px-3.5 py-2 text-left text-[15px] leading-relaxed ${
-                        m.role === 'user' ? 'bg-ink text-paper' : 'bg-paper-deep text-ink'
-                      }`}
-                    >
-                      {m.text}
-                    </p>
+              {messages.map((m, i) =>
+                m.role === 'system' ? (
+                  <p key={i} className="text-center text-[11px] tracking-wide text-ink-faint">
+                    {m.text}
+                  </p>
+                ) : (
+                  <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                    <div className={`max-w-[80%] ${m.role === 'user' ? 'text-right' : ''}`}>
+                      {m.role === 'person' && <p className="mb-0.5 text-[11px] text-ink-faint">{m.name}</p>}
+                      <p
+                        className={`font-story inline-block whitespace-pre-wrap rounded-xl px-3.5 py-2 text-left text-[15px] leading-relaxed ${
+                          m.role === 'user' ? 'bg-ink text-paper' : 'bg-paper-deep text-ink'
+                        }`}
+                      >
+                        {m.text}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
               {busy && <p className="text-xs text-ink-faint">在场的人转过头来…</p>}
             </div>
 
