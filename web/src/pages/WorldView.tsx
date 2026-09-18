@@ -379,13 +379,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           <ChapterPanel worldId={worldId} timelineId={timelineId} onClose={() => setChaptersOpen(false)} />
         )}
         {sceneOpen && timelineId && (
-          <ScenePanel
-            worldId={worldId}
-            timelineId={timelineId}
-            locations={snapshot.world.locations}
-            locationCounts={Object.fromEntries(snapshot.locationBoard.map((l) => [l.location, l.persons.length]))}
-            onClose={() => setSceneOpen(false)}
-          />
+          <ScenePanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onClose={() => setSceneOpen(false)} />
         )}
       </div>
     </div>

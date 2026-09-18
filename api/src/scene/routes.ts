@@ -5,10 +5,11 @@ import type { SSEStreamingApi } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
 import { events, memories, personaMessages, persons, timelines, worlds, worldPersons, dialogues, dialogueTurns } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
-import { buildWorldSnapshot, buildEngineContext, isAwake, parseScheduleItems } from '../agent/engine-context'
+import { buildWorldSnapshot, buildEngineContext } from '../agent/engine-context'
 import { buildScenePrompt, extractJson, type DialogueTurnView } from '../agent/engine-prompt'
 import { parseSceneOutput } from './parse'
 import { sceneDialogueTitle, sceneTranscript } from './plan'
+import { eligibleAt, eligibleBoard } from './eligible'
 import { clampImportance } from '../agent/memory'
 import { budgetFromEnv, capWorld, dailyCapHit, recordCall, touchWorldActivity } from '../engine/budget'
 import { gateWorld } from '../engine/guard'
@@ -51,6 +52,20 @@ function personaProfile(persona: Person): string {
     return ''
   }
 }
+
+/** 可交谈地点看板：各地点「清醒且空闲」的回应者人数（地点面板的人数含睡眠/对话中者，易扑空） */
+sceneRoutes.get('/worlds/:id/scene/board', async (c) => {
+  const db = createDb(c.env.DB)
+  const userId = c.get('user').id
+  const world = await loadOwnedWorld(db, c.req.param('id'), userId)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
+  const tl = tls.find((t) => t.parentTimelineId === null) ?? tls[0]
+  if (!tl) return c.json({ error: '时间线不存在' }, 404)
+  const snapshot = await buildWorldSnapshot(db, world.id, tl.id)
+  if (!snapshot) return c.json({ error: '世界快照不存在' }, 404)
+  return c.json({ board: eligibleBoard(snapshot) })
+})
 
 /**
  * 你在世界里（Character.AI Persona 思路的落地）：
@@ -96,13 +111,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
     const now = new Date().toISOString()
 
     // 在场者：同一地点（或指定地点）、清醒、未在对话中；用户身份除外
-    const eligible = snapshot.persons.filter((p) => {
-      if (p.isUser) return false
-      const s = snapshot.states.get(p.id)
-      if (!s || s.currentDialogueId) return false
-      if (body?.location && s.location !== body.location) return false
-      return isAwake(parseScheduleItems(snapshot.schedules.get(p.id)), simNow)
-    })
+    const eligible = eligibleAt(snapshot, body?.location)
     const byLocation = new Map<string, typeof eligible>()
     for (const p of eligible) {
       const loc = snapshot.states.get(p.id)!.location

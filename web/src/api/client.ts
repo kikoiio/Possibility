@@ -184,6 +184,8 @@ export const personaApi = {
 
 /** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */
 export const sceneApi = {
+  /** 各地点「清醒且空闲」的可交谈人数（避免扑空） */
+  board: (worldId: string) => apiFetch<{ board: { location: string; count: number }[] }>(`/api/worlds/${worldId}/scene/board`),
   send: (worldId: string, body: { timelineId: string; location?: string; content: string }, onEvent: (event: SSEEvent) => void) =>
     postSSE(`/api/worlds/${worldId}/scene`, body, onEvent),
 }

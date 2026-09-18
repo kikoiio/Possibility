@@ -4,6 +4,10 @@ import type { worlds } from '../db/schema'
 
 type World = typeof worlds.$inferSelect
 
+// 以真实当天为锚：bumpCalls/dailyCapHit 的"今天"取系统日期，写死日期会让测试跨天后自爆
+const TODAY = new Date().toISOString().slice(0, 10)
+const YESTERDAY = new Date(Date.parse(TODAY) - 86400_000).toISOString().slice(0, 10)
+
 const CFG: BudgetConfig = {
   worldSpeed: 6,
   tickCallCap: 8,
@@ -46,24 +50,24 @@ describe('rolloverCalls（换天滚动）', () => {
 
 describe('bumpCalls（记账核心：滚动 + 累加）', () => {
   it('同一天正常累加（回归：曾漏加 n 导致计数永远停在 0）', () => {
-    expect(bumpCalls('2026-09-17', 0, 2)).toEqual({ callsDay: '2026-09-17', callsToday: 2 })
-    expect(bumpCalls('2026-09-17', 398, 2)).toEqual({ callsDay: '2026-09-17', callsToday: 400 })
+    expect(bumpCalls(TODAY, 0, 2)).toEqual({ callsDay: TODAY, callsToday: 2 })
+    expect(bumpCalls(TODAY, 398, 2)).toEqual({ callsDay: TODAY, callsToday: 400 })
   })
   it('换天先清零再累加', () => {
-    expect(bumpCalls('2026-09-16', 400, 1, '2026-09-17')).toEqual({ callsDay: '2026-09-17', callsToday: 1 })
+    expect(bumpCalls(YESTERDAY, 400, 1, TODAY)).toEqual({ callsDay: TODAY, callsToday: 1 })
   })
 })
 
 describe('dailyCapHit（每日上限）', () => {
   it('达到上限即触顶', () => {
-    expect(dailyCapHit(world({ callsDay: '2026-09-17', callsToday: 400 }), CFG)).toBe(true)
+    expect(dailyCapHit(world({ callsDay: TODAY, callsToday: 400 }), CFG)).toBe(true)
   })
   it('未达上限不触顶', () => {
-    expect(dailyCapHit(world({ callsDay: '2026-09-17', callsToday: 399 }), CFG)).toBe(false)
+    expect(dailyCapHit(world({ callsDay: TODAY, callsToday: 399 }), CFG)).toBe(false)
   })
   it('换天后（callsDay 滞后）视为未触顶——配合 recoverCappedWorlds 自动恢复', () => {
     // 这是 bug#4 的核心场景：昨天触顶的世界今天必须能被 tick 重新拾起
-    expect(dailyCapHit(world({ callsDay: '2026-09-16', callsToday: 400 }), CFG)).toBe(false)
+    expect(dailyCapHit(world({ callsDay: YESTERDAY, callsToday: 400 }), CFG)).toBe(false)
   })
 })
 

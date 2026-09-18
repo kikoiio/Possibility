@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChapterPrompt, normalizeChapter } from './generate'
+import { buildChapterPrompt, normalizeChapter, rosterLine } from './generate'
 
 describe('normalizeChapter（章节 JSON 解析）', () => {
   it('正常解析', () => {
@@ -31,5 +31,33 @@ describe('buildChapterPrompt（章节提示组装）', () => {
     expect(u).toContain('雾野透、白川宗一郎')
     expect(u).toContain('2 条')
     expect(u).toContain('抵达——他在门口站了很久')
+  })
+
+  it('系统提示要求在场身份的事件必须写入', () => {
+    const [system] = buildChapterPrompt({
+      worldName: '雾影庄',
+      worldDescription: '',
+      timelineLabel: '主线',
+      roster: '阿透（在场身份）、小夜',
+      eventLines: ['[09-17 08:49] 阿透：阿透 与 小夜 在餐厅交谈——阿透：「早。」'],
+    })
+    expect(String(system.content)).toContain('在场身份')
+    expect(String(system.content)).toContain('必须写入')
+  })
+})
+
+describe('rosterLine（人物名单，纯函数）', () => {
+  it('在场身份显式标注，其余照常', () => {
+    expect(
+      rosterLine([
+        { name: '小夜', isUser: false },
+        { name: '阿透', isUser: true },
+        { name: '雾野透', isUser: false },
+      ]),
+    ).toBe('小夜、阿透（在场身份）、雾野透')
+  })
+
+  it('无人时给缺省值', () => {
+    expect(rosterLine([])).toBe('（无人）')
   })
 })

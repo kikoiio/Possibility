@@ -36,6 +36,12 @@
       "runtimeExecutable": "/usr/bin/bash",
       "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility && { git status --short; echo ---; git diff --stat | tail -8; } > /tmp/git-status.txt 2>&1; sleep 2"],
       "port": 59995
+    },
+    {
+      "name": "d1-delete-ch2-once",
+      "runtimeExecutable": "/usr/bin/bash",
+      "runtimeArgs": ["-lc", "cd /home/neo/Projects/Possibility/api && npx wrangler d1 execute DB --local --command \"DELETE FROM chapters WHERE id='15f01e4b-9d94-4c49-8999-2b9960e5f04c'\" > /tmp/d1-del.txt 2>&1; echo EXIT=$? >> /tmp/d1-del.txt; sleep 2"],
+      "port": 59994
     }
   ]
 }

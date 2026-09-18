@@ -6,8 +6,6 @@ interface Props {
   worldId: string
   timelineId: string
   locations: { name: string; description: string }[]
-  /** 各地点当前在场人数（世界快照的 locationBoard，含睡眠者） */
-  locationCounts?: Record<string, number>
   onClose: () => void
 }
 
@@ -21,7 +19,7 @@ interface Msg {
  * 你在世界里：用户以登记过的在场身份来到某地点说话，
  * 在场的人物依次回应。这场相遇会写进世界史（事件流）与每个人的记忆。
  */
-export default function ScenePanel({ worldId, timelineId, locations, locationCounts, onClose }: Props) {
+export default function ScenePanel({ worldId, timelineId, locations, onClose }: Props) {
   const [persona, setPersona] = useState<Persona | null>(null)
   const [personaLoading, setPersonaLoading] = useState(true)
   const [name, setName] = useState('')
@@ -33,6 +31,8 @@ export default function ScenePanel({ worldId, timelineId, locations, locationCou
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notes, setNotes] = useState<{ messages: PersonaMessage[]; mentions: PersonaMention[] } | null>(null)
+  /** 各地点可交谈人数（清醒且空闲；null = 尚未载回） */
+  const [board, setBoard] = useState<Record<string, number> | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -47,6 +47,11 @@ export default function ScenePanel({ worldId, timelineId, locations, locationCou
           personaApi
             .messages(worldId)
             .then(setNotes)
+            .catch(() => {})
+          // 可交谈地点看板（人数随世界运转变化，进入面板时拉一次）
+          sceneApi
+            .board(worldId)
+            .then((b) => setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))))
             .catch(() => {})
         }
       })
@@ -93,6 +98,11 @@ export default function ScenePanel({ worldId, timelineId, locations, locationCou
       setError(e instanceof Error ? e.message : '交谈失败')
     } finally {
       setBusy(false)
+      // 人数随世界运转变化，每次交谈后刷新看板
+      sceneApi
+        .board(worldId)
+        .then((b) => setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))))
+        .catch(() => {})
     }
   }, [input, busy, persona, worldId, timelineId, location])
 
@@ -160,12 +170,15 @@ export default function ScenePanel({ worldId, timelineId, locations, locationCou
                 className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs text-ink-soft outline-none"
               >
                 <option value="">人最多的地方</option>
-                {locations.map((l) => (
-                  <option key={l.name} value={l.name}>
-                    {l.name}
-                    {locationCounts?.[l.name] ? `（${locationCounts[l.name]} 人在）` : ''}
-                  </option>
-                ))}
+                {locations.map((l) => {
+                  const count = board?.[l.name]
+                  return (
+                    <option key={l.name} value={l.name} disabled={count === 0}>
+                      {l.name}
+                      {count != null ? (count > 0 ? `（${count} 人可交谈）` : '（都在忙或睡着）') : ''}
+                    </option>
+                  )
+                })}
               </select>
               <span className="ml-auto text-xs text-ink-faint">
                 你是 <span className="font-story text-ink-soft">{persona.name}</span>

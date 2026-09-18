@@ -6,7 +6,7 @@ import type { PersonModel } from './types'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
-type Person = typeof persons.$inferSelect
+export type Person = typeof persons.$inferSelect
 type PersonState = typeof personStates.$inferSelect
 type Schedule = typeof schedules.$inferSelect
 type Event = typeof events.$inferSelect

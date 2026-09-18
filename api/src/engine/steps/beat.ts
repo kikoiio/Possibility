@@ -64,8 +64,10 @@ async function lastDialogueBetween(db: Db, timelineId: string, aId: string, bId:
   return null
 }
 
-/** 校验并规范化 beat JSON（宽松补缺；thought 与 events 必填，缺失视为失败触发重试） */
-export function normalizeBeatJson(raw: unknown, locationNames: string[]): BeatJson {
+/** 校验并规范化 beat JSON（宽松补缺；thought 与 events 必填，缺失视为失败触发重试）。
+ *  offsetMin 钳制在 [0, windowMinutes]：模型不可把事件写到节拍窗口之外（曾因此出现
+ *  "未来事件"——章节 toSim 越过 simNow，且堵住后续章节窗口）。 */
+export function normalizeBeatJson(raw: unknown, locationNames: string[], windowMinutes: number): BeatJson {
   const r = (raw ?? {}) as Record<string, unknown>
   const eventsRaw = Array.isArray(r.events) ? r.events : []
   const evs = eventsRaw
@@ -75,7 +77,7 @@ export function normalizeBeatJson(raw: unknown, locationNames: string[]): BeatJs
       return {
         title: String(o.title ?? '').trim().slice(0, 60),
         description: String(o.description ?? '').trim(),
-        offsetMin: Number.isFinite(offset) ? Math.max(0, Math.round(offset)) : 0,
+        offsetMin: Number.isFinite(offset) ? Math.min(windowMinutes, Math.max(0, Math.round(offset))) : 0,
       }
     })
     .filter((e) => e.title && e.description)
@@ -241,7 +243,7 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
           ],
           { maxTokens: 8000 },
         )
-        return { value: { kind: 'solo', beat: normalizeBeatJson(extractJson(raw), locationNames) }, llmCalls }
+        return { value: { kind: 'solo', beat: normalizeBeatJson(extractJson(raw), locationNames, input.windowMinutes) }, llmCalls }
       } catch {
         // D17：重试一次后放弃
       }
