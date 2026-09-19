@@ -1,4 +1,4 @@
-import { and, count, eq, gte, isNotNull, lt, ne } from 'drizzle-orm'
+import { and, count, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { llmCallLog, worlds } from '../db/schema'
 import type { CallPurpose } from './steps/types'
@@ -27,7 +27,7 @@ export function budgetFromEnv(env: {
 }): BudgetConfig {
   const num = (v: string | undefined, dflt: number) => {
     const n = Number(v)
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : dflt
+  return Number.isFinite(n) && Math.floor(n) > 0 ? Math.floor(n) : dflt
   }
   return {
     worldSpeed: num(env.WORLD_SPEED, 6),
@@ -64,49 +64,55 @@ export function bumpCalls(
   return { callsDay: rolled.callsDay, callsToday: rolled.callsToday + n }
 }
 
-/**
- * 记账：每次 LLM 调用写 llm_call_log 并把 worlds.callsToday +1（换天先清零）。
- * 返回最新的 world 行（调用方据此判断触顶）。
- */
-export async function recordCall(
-  db: Db,
-  world: World,
-  meta: { timelineId: string | null; personId: string | null; purpose: CallPurpose },
-  n: number = 1,
-): Promise<World> {
-  if (n <= 0) return world
-  const now = new Date().toISOString()
-  const { callsDay, callsToday } = bumpCalls(world.callsDay, world.callsToday, n)
-
-  for (let i = 0; i < n; i++) {
-    await db.insert(llmCallLog).values({
-      id: crypto.randomUUID(),
-      worldId: world.id,
-      userId: world.userId,
-      timelineId: meta.timelineId,
-      personId: meta.personId,
-      purpose: meta.purpose,
-      createdAt: now,
-    })
-  }
-  await db.update(worlds).set({ callsToday, callsDay }).where(eq(worlds.id, world.id))
-  return { ...world, callsToday, callsDay }
+export interface CallMeta {
+  timelineId: string | null
+  personId: string | null
+  purpose: CallPurpose
 }
 
-/** 预世界调用记账（蒸馏/骨架草稿：此时还没有世界可归账，记入用户桶） */
-export async function recordUserCall(db: Db, userId: string, purpose: CallPurpose, n: number = 1): Promise<void> {
+/** D1 batch is transactional: the conditional insert and counter increment commit together.
+ * Admission reads the live row in SQL; never write a counter derived from a caller's snapshot.
+ * Failed/uncertain provider attempts remain charged. There is no post-call settlement.
+ */
+export async function reserveWorldCall(db: Db, worldId: string, cfg: BudgetConfig, meta: CallMeta): Promise<boolean> {
+  const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  for (let i = 0; i < n; i++) {
-    await db.insert(llmCallLog).values({
-      id: crypto.randomUUID(),
-      worldId: null,
-      userId,
-      timelineId: null,
-      personId: null,
-      purpose,
-      createdAt: now,
-    })
-  }
+  const day = now.slice(0, 10)
+  const used = sql<number>`case when ${worlds.callsDay} = ${day} then ${worlds.callsToday} else 0 end`
+  const [admitted] = await db.batch([
+    db.insert(llmCallLog).select(sql`select ${id}, ${worlds.id}, ${worlds.userId},
+      ${meta.timelineId}, ${meta.personId}, ${meta.purpose}, ${now}
+      from ${worlds} where ${worlds.id} = ${worldId}
+      and ${worlds.status} = 'running' and ${used} < ${cfg.dailyCallCap}`)
+      .returning({ id: llmCallLog.id }),
+    db.update(worlds).set({
+      callsToday: sql`${used} + 1`,
+      callsDay: day,
+      status: sql`case when ${used} + 1 >= ${cfg.dailyCallCap} then 'capped' else ${worlds.status} end`,
+      pauseReason: sql`case when ${used} + 1 >= ${cfg.dailyCallCap} then 'daily_cap' else ${worlds.pauseReason} end`,
+    }).where(and(eq(worlds.id, worldId), sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`)),
+  ])
+  return admitted.length === 1
+}
+
+/** A single INSERT ... SELECT serializes the user's check and reservation, including parallel retries. */
+export async function reserveUserCall(db: Db, userId: string, cfg: BudgetConfig, purpose: CallPurpose): Promise<boolean> {
+  const now = new Date().toISOString()
+  const day = now.slice(0, 10)
+  const rows = await db.insert(llmCallLog).select(sql`select ${crypto.randomUUID()}, null, ${userId}, null, null, ${purpose}, ${now}
+    where (select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userId}
+      and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'}
+      and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}) < ${cfg.preworldDailyCap}`)
+    .returning({ id: llmCallLog.id })
+  return rows.length === 1
+}
+
+/** Compatibility wrapper for older callers. New model paths reserve before fetch. */
+export async function recordCall(db: Db, world: World, meta: CallMeta, n = 1): Promise<World> {
+  const cfg: BudgetConfig = { worldSpeed: 6, tickCallCap: 8, dailyCallCap: Number.MAX_SAFE_INTEGER,
+    summaryThreshold: 40, preworldDailyCap: 40, idleArchiveDays: 7, directorLlm: true }
+  for (let i = 0; i < n; i++) await reserveWorldCall(db, world.id, cfg, meta)
+  return (await db.select().from(worlds).where(eq(worlds.id, world.id)).get()) ?? world
 }
 
 /** 该用户今日已发生的全部 LLM 调用（含预世界调用，用于 PREWORLD_DAILY_CAP） */
@@ -114,7 +120,7 @@ export async function userCallsToday(db: Db, userId: string, day: string = today
   const row = await db
     .select({ n: count() })
     .from(llmCallLog)
-    .where(and(eq(llmCallLog.userId, userId), gte(llmCallLog.createdAt, `${day}T00:00:00`)))
+    .where(and(eq(llmCallLog.userId, userId), gte(llmCallLog.createdAt, `${day}T00:00:00`), lt(llmCallLog.createdAt, `${day}T24:00:00`)))
     .get()
   return row?.n ?? 0
 }
@@ -131,8 +137,14 @@ export function dailyCapHit(world: World, cfg: BudgetConfig): boolean {
 }
 
 /** 触顶动作：世界置 capped、记录原因 */
-export async function capWorld(db: Db, worldId: string): Promise<void> {
-  await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(eq(worlds.id, worldId))
+export async function capWorld(db: Db, worldId: string, cfg?: BudgetConfig): Promise<void> {
+  if (!cfg) {
+    await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(eq(worlds.id, worldId))
+    return
+  }
+  await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(and(
+    eq(worlds.id, worldId), eq(worlds.status, 'running'), eq(worlds.callsDay, today()), gte(worlds.callsToday, cfg.dailyCallCap),
+  ))
 }
 
 /**
@@ -143,7 +155,7 @@ export async function recoverCappedWorlds(db: Db, day: string = today()): Promis
   await db
     .update(worlds)
     .set({ status: 'running', pauseReason: null, callsToday: 0, callsDay: day })
-    .where(and(eq(worlds.status, 'capped'), ne(worlds.callsDay, day)))
+    .where(and(eq(worlds.status, 'capped'), eq(worlds.pauseReason, 'daily_cap'), or(isNull(worlds.callsDay), lt(worlds.callsDay, day))))
 }
 
 /** 闲置判定（纯函数）：最后活动时间距 now 超过 days 天；null/无法解析视为"不可判定"→ 不归档 */

@@ -1,6 +1,6 @@
 # Possibility（阶段二：活的世界）
 
-个人平行世界平台：创建人物（Version）、与 TA 持续文字交流（打电话）、用一句话 What-if 分叉时间线；多个人物生活在同一个持续运转的小世界里——按日程生活、相遇、交谈，主人可以随时以旁观者身份观察、注入事件、Fork 出新线。
+个人平行世界平台：创建人物（Version）、与 TA 持续文字交流（打电话）、以自己的在场身份走进世界、用一句话 What-if 分叉时间线；多个人物生活在同一个持续运转的小世界里——按日程生活、相遇、交谈，记住你留下的话，也会提出需要你明确答应的约定。
 
 本地开发、本地验收版本——不部署。技术栈与 Cloudflare Workers + D1 / GitHub Pages 的目标环境兼容。
 
@@ -78,10 +78,11 @@ npm --workspace api run build   # 后端类型检查
 ```
 web/            前端 SPA
   src/pages/      DemoLanding / Home / Worlds / WorldCreate / WorldView / People / PersonCreate / PersonDetail / TimelineView
-  src/components/ world/（LocationPanel / WorldEventFeed / DialogueView / PersonDrawer / TimelineSwitcher / InjectBox）+ 阶段一组件
+  src/components/ world/（LocationPanel / WorldEventFeed / DialogueView / PersonDrawer / TimelineSwitcher / InjectBox / LifePanel / ComparePanel）+ 阶段一组件
   src/api/        fetch 封装（token、SSE 读取）+ 类型
 api/            Worker 后端
   src/engine/     世界引擎：tick 编排 / budget 成本护栏 / steps（schedule / beat / dialogue / injection / summary）
+  src/life/       归来回顾、持久约定、时间线证据对照
   src/agent/      自主体核心：context / engine-context / engine-prompt / memory（记忆流）/ prompt / tools / loop / distill
   src/worlds/     世界服务：queries / routes（创建/暂停/注入/Fork/归档）/ stream（SSE）/ draft
   src/public/     演示世界公共只读路由（免登录）
@@ -100,4 +101,3 @@ docs/spec_docs/ 阶段一与阶段二（phase2）的 spec / plan / task / checkl
 - 演示世界只读接口免登录，但仅暴露 `is_demo=1` 的世界；访客无任何写入口。
 - 推演事件流页面标注「这是一种可能的发展，不是预测」。
 - `.dev.vars` 含密钥，已在 .gitignore 中；模板见 `api/.dev.vars.example`。
-

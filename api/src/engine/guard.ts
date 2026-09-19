@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { worlds } from '../db/schema'
-import { capWorld, dailyCapHit, recordCall, userCallsToday, type BudgetConfig } from './budget'
+import { capWorld, dailyCapHit, reserveWorldCall, reserveUserCall, userCallsToday, type BudgetConfig, type CallMeta } from './budget'
 import type { CallPurpose } from './steps/types'
 
 type World = typeof worlds.$inferSelect
@@ -20,8 +20,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 /**
  * 统一 LLM 出口闸门（护栏闭环）：
- * 任何会烧 LLM 调用的地方分两步——调用前先 gateWorld/gateUser，调用后 settleWorld。
- * 杜绝"只记账不查顶 / 只查顶不记账"的旁路。
+ * gateWorld/gateUser 只用于提早返回友好错误；真正的原子闸门在每次 fetch 前的 reservation。
  */
 
 /** 世界级出口：世界必须 running 且未触日顶；触顶当场封板并拒绝 */
@@ -36,7 +35,7 @@ export async function gateWorld(
     return { ok: false, status: 409, error: `世界${STATUS_LABEL[world.status] ?? world.status}，恢复后才能继续` }
   }
   if (dailyCapHit(world, cfg)) {
-    await capWorld(db, world.id)
+    await capWorld(db, world.id, cfg)
     return { ok: false, status: 429, error: '世界已达今日调用上限，次日自动恢复' }
   }
   return { ok: true, world }
@@ -51,15 +50,47 @@ export async function gateUser(db: Db, userId: string, cfg: BudgetConfig): Promi
   return { ok: true }
 }
 
-/** 事后结算：按实际调用数记账，触顶当场封板；返回最新 world 行（调用方后续判断用） */
-export async function settleWorld(
-  db: Db,
-  world: World,
-  meta: { timelineId: string | null; personId: string | null; purpose: CallPurpose },
-  n: number,
-  cfg: BudgetConfig,
-): Promise<World> {
-  const updated = await recordCall(db, world, meta, n)
-  if (dailyCapHit(updated, cfg)) await capWorld(db, updated.id)
-  return updated
+export class BudgetRefusal extends Error {
+  constructor(message: string, readonly status: GateRefusal['status'] = 429) {
+    super(message)
+    this.name = 'BudgetRefusal'
+  }
+}
+
+/** Shared across all timelines, director calls, steps and retries of one world's tick.
+ * Increment before awaiting SQL so concurrent callers cannot overbook this tick.
+ */
+export interface TickBudget { used: number; limit: number }
+export type Reservation = (() => Promise<void>) & { readonly calls: number }
+
+function reservation(admit: () => Promise<void>, tick?: TickBudget): Reservation {
+  let calls = 0
+  return Object.defineProperty(async () => {
+    if (tick && tick.used >= tick.limit) throw new BudgetRefusal('本拍调用预算已用完')
+    if (tick) tick.used++
+    try {
+      await admit()
+      calls++
+    } catch (error) {
+      if (tick) tick.used--
+      throw error
+    }
+  }, 'calls', { get: () => calls }) as Reservation
+}
+
+export function worldReservation(db: Db, worldId: string, cfg: BudgetConfig, meta: CallMeta, tick?: TickBudget): Reservation {
+  return reservation(async () => {
+    if (await reserveWorldCall(db, worldId, cfg, meta)) return
+    const gate = await gateWorld(db, worldId, cfg)
+    if (!gate.ok) throw new BudgetRefusal(gate.error, gate.status)
+    throw new BudgetRefusal('世界调用预算不足，请稍后再试')
+  }, tick)
+}
+
+export function userReservation(db: Db, userId: string, cfg: BudgetConfig, purpose: CallPurpose): Reservation {
+  return reservation(async () => {
+    if (!await reserveUserCall(db, userId, cfg, purpose)) {
+      throw new BudgetRefusal(`创建类调用已达今日上限（${cfg.preworldDailyCap} 次），次日自动恢复`)
+    }
+  })
 }

@@ -28,32 +28,105 @@ export interface LlmConfig {
   baseUrl: string
   apiKey: string
   model: string
+  reserve?: () => Promise<void>
 }
 
 export function configFromEnv(env: {
   LLM_BASE_URL: string
   LLM_API_KEY: string
   LLM_MODEL: string
-}): LlmConfig {
+}, reserve?: () => Promise<void>): LlmConfig {
   return {
     baseUrl: env.LLM_BASE_URL.replace(/\/+$/, ''),
     apiKey: env.LLM_API_KEY,
     model: env.LLM_MODEL,
+    reserve,
   }
 }
 
-async function postChat(config: LlmConfig, payload: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  const res = await fetch(`${config.baseUrl}/chat/completions`, {
+export interface CallOptions {
+  maxTokens?: number
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+/** Covers headers AND body, even when a mocked/noncompliant transport ignores abort. */
+function requestScope(opts: CallOptions, defaultTimeout: number) {
+  const controller = new AbortController()
+  const abort = () => controller.abort(opts.signal?.reason ?? new Error('LLM 请求已取消'))
+  if (opts.signal?.aborted) abort()
+  else opts.signal?.addEventListener('abort', abort, { once: true })
+  const timer = setTimeout(() => controller.abort(new Error('LLM 请求超时')), opts.timeoutMs ?? defaultTimeout)
+  return {
+    signal: controller.signal,
+    async wait<T>(promise: Promise<T>): Promise<T> {
+      const signal = controller.signal
+      signal.throwIfAborted()
+      let onAbort!: () => void
+      const cancelled = new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal.reason)
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+      try {
+        const result = await Promise.race([promise, cancelled])
+        signal.throwIfAborted()
+        return result
+      } finally {
+        signal.removeEventListener('abort', onAbort)
+      }
+    },
+    close() {
+      clearTimeout(timer)
+      opts.signal?.removeEventListener('abort', abort)
+      controller.abort()
+    },
+  }
+}
+type RequestScope = ReturnType<typeof requestScope>
+
+async function readText(res: Response, scope: RequestScope): Promise<string> {
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const cancel = () => { void reader.cancel(scope.signal.reason).catch(() => {}) }
+  scope.signal.addEventListener('abort', cancel, { once: true })
+  const decoder = new TextDecoder()
+  let text = ''
+  try {
+    for (;;) {
+      scope.signal.throwIfAborted()
+      const { done, value } = await scope.wait(reader.read())
+      if (done) return text + decoder.decode()
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    scope.signal.removeEventListener('abort', cancel)
+    cancel()
+    reader.releaseLock()
+  }
+}
+
+async function postChat(config: LlmConfig, payload: Record<string, unknown>, scope: RequestScope): Promise<Response> {
+  const body = JSON.stringify(payload)
+  scope.signal.throwIfAborted()
+  if (!config.reserve) throw new Error('LLM 调用缺少预算 reservation')
+  await config.reserve()
+  scope.signal.throwIfAborted()
+  const pending = fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify(payload),
-    ...(signal ? { signal } : {}),
+    body,
+    signal: scope.signal,
   })
+  // A transport resolving headers after cancellation must not leave an unread body alive.
+  void pending.then((res) => {
+    if (scope.signal.aborted) void res.body?.cancel().catch(() => {})
+  }, () => {})
+  const res = await scope.wait(pending)
   if (!res.ok) {
-    const text = await res.text().catch(() => '')
+    const text = await readText(res, scope)
     throw new Error(`LLM 请求失败（${res.status}）：${text.slice(0, 500)}`)
   }
   return res
@@ -71,10 +144,9 @@ function toApiTools(tools: ToolDef[] | undefined): unknown[] | undefined {
 export async function complete(
   config: LlmConfig,
   messages: ChatMessage[],
-  opts: { maxTokens?: number; timeoutMs?: number } = {},
+  opts: CallOptions = {},
 ): Promise<string> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 180_000)
+  const scope = requestScope(opts, 180_000)
   let data: { choices?: { message?: { content?: string } }[] }
   try {
     const res = await postChat(
@@ -85,11 +157,11 @@ export async function complete(
         stream: false,
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       },
-      controller.signal,
+      scope,
     )
-    data = (await res.json()) as typeof data
+    data = JSON.parse(await readText(res, scope)) as typeof data
   } finally {
-    clearTimeout(timer)
+    scope.close()
   }
   const content = data.choices?.[0]?.message?.content
   if (typeof content !== 'string' || !content.trim()) {
@@ -106,14 +178,14 @@ export async function* streamChat(
   config: LlmConfig,
   messages: ChatMessage[],
   tools?: ToolDef[],
-  opts: { maxTokens?: number; timeoutMs?: number } = {},
+  opts: CallOptions = {},
 ): AsyncIterable<StreamEvent> {
   const apiTools = toApiTools(tools)
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 120_000)
-  let res: Response
+  const scope = requestScope(opts, 120_000)
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  const cancel = () => { void reader?.cancel(scope.signal.reason).catch(() => {}) }
   try {
-    res = await postChat(
+    const res = await postChat(
       config,
       {
         model: config.model,
@@ -122,14 +194,12 @@ export async function* streamChat(
         ...(apiTools ? { tools: apiTools, tool_choice: 'auto' } : {}),
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       },
-      controller.signal,
+      scope,
     )
-  } finally {
-    clearTimeout(timer)
-  }
   if (!res.body) throw new Error('LLM 流式响应缺少 body')
 
-  const reader = res.body.getReader()
+  reader = res.body.getReader()
+  scope.signal.addEventListener('abort', cancel, { once: true })
   const decoder = new TextDecoder()
   let buffer = ''
   // tool_calls 分片累积：index → 完整调用
@@ -151,13 +221,14 @@ export async function* streamChat(
   }
 
   for (;;) {
-    const { done, value } = await reader.read()
+    scope.signal.throwIfAborted()
+    const { done, value } = await scope.wait(reader.read())
     if (done) break
     buffer += decoder.decode(value, { stream: true })
     let idx: number
-    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+    while ((idx = buffer.search(/\r?\n\r?\n/)) >= 0) {
       const raw = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
+      buffer = buffer.slice(idx + (buffer[idx] === '\r' ? 4 : 2))
       for (const line of raw.split('\n')) {
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
@@ -209,4 +280,10 @@ export async function* streamChat(
   }
   for (const ev of drainToolCalls()) yield ev
   yield { type: 'done' }
+  } finally {
+    scope.signal.removeEventListener('abort', cancel)
+    cancel()
+    reader?.releaseLock()
+    scope.close()
+  }
 }

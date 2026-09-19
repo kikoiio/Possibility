@@ -228,10 +228,10 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
 
   async decide(env: Env, input: BeatInput, opts?: DecideOpts): Promise<DecideResult<BeatOutput>> {
     if (input.kind === 'encounter') return { value: { kind: 'encounter' }, llmCalls: 0 }
-    const config = configFromEnv(env)
+    const config = configFromEnv(env, opts?.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     let llmCalls = 0
-    const maxAttempts = Math.max(1, Math.min(2, opts?.maxCalls ?? 2))
+    const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
@@ -243,12 +243,12 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
           ],
           { maxTokens: 8000 },
         )
-        return { value: { kind: 'solo', beat: normalizeBeatJson(extractJson(raw), locationNames, input.windowMinutes) }, llmCalls }
+        return { value: { kind: 'solo', beat: normalizeBeatJson(extractJson(raw), locationNames, input.windowMinutes) }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后放弃
       }
     }
-    return { value: null, llmCalls }
+    return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
   async act(db: Db, _env: Env, input: BeatInput, output: BeatOutput): Promise<string> {

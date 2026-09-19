@@ -70,11 +70,11 @@ export const scheduleExecutor: StepExecutor<ScheduleInput, ScheduleOutput> = {
   },
 
   async decide(env: Env, input: ScheduleInput, opts?: DecideOpts): Promise<DecideResult<ScheduleOutput>> {
-    const config = configFromEnv(env)
+    const config = configFromEnv(env, opts?.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     const fallback = locationNames[0] ?? '大厅'
     let llmCalls = 0
-    const maxAttempts = Math.max(1, Math.min(2, opts?.maxCalls ?? 2))
+    const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
@@ -88,13 +88,13 @@ export const scheduleExecutor: StepExecutor<ScheduleInput, ScheduleOutput> = {
           { maxTokens: 16000 },
         )
         const items = normalizeScheduleItems(extractJson(raw), locationNames, fallback)
-        return { value: { items }, llmCalls }
+        return { value: { items }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch (e) {
         // D17：失败重试一次，再失败则跳过该决策点；日志便于提示词调优
         console.log(`[schedule] ${input.ctx.person.name} 第 ${attempt + 1} 次失败：${e instanceof Error ? e.message : e}`)
       }
     }
-    return { value: null, llmCalls }
+    return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
   async act(db: Db, _env: Env, input: ScheduleInput, output: ScheduleOutput): Promise<string> {

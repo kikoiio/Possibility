@@ -40,12 +40,12 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
   },
 
   async decide(env: Env, input: InjectionInput, opts?: DecideOpts): Promise<DecideResult<InjectionOutput>> {
-    const config = configFromEnv(env)
+    const config = configFromEnv(env, opts?.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     // 反应窗口 = 注入事件时刻 → 当前 simNow；offsetMin 钳制在窗口内（同 beat）
     const windowMinutes = Math.max(0, Math.round((Date.parse(input.snapshot.timeline.simNow) - Date.parse(input.event.simTime)) / 60_000))
     let llmCalls = 0
-    const maxAttempts = Math.max(1, Math.min(2, opts?.maxCalls ?? 2))
+    const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
@@ -57,12 +57,12 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
           ],
           { maxTokens: 8000 },
         )
-        return { value: { beat: normalizeBeatJson(extractJson(raw), locationNames, windowMinutes) }, llmCalls }
+        return { value: { beat: normalizeBeatJson(extractJson(raw), locationNames, windowMinutes) }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后跳过该决策点
       }
     }
-    return { value: null, llmCalls }
+    return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
   async act(db: Db, _env: Env, input: InjectionInput, output: InjectionOutput): Promise<string> {

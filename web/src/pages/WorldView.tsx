@@ -14,6 +14,8 @@ import TimelineSwitcher from '../components/world/TimelineSwitcher'
 import InjectBox from '../components/world/InjectBox'
 import ChapterPanel from '../components/world/ChapterPanel'
 import ScenePanel from '../components/world/ScenePanel'
+import LifePanel from '../components/world/LifePanel'
+import ComparePanel from '../components/world/ComparePanel'
 
 const WORLD_SPEED = 6
 
@@ -55,15 +57,17 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [sceneOpen, setSceneOpen] = useState(false)
   const [personaUnread, setPersonaUnread] = useState(0)
+  const [lifeOpen, setLifeOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
 
   // 在场身份未读留言角标（打开面板即清零，由面板内送达逻辑标记已读）
   useEffect(() => {
     if (readonly) return
     personaApi
-      .get(worldId)
+      .get(worldId, timelineId ?? undefined)
       .then((d) => setPersonaUnread(d.unread))
       .catch(() => {})
-  }, [worldId, sceneOpen, readonly])
+  }, [worldId, timelineId, sceneOpen, readonly])
 
   const names = useMemo(() => {
     const m = new Map<string, string>()
@@ -309,7 +313,6 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                 </button>
                 <button
                   onClick={() => {
-                    setPersonaUnread(0)
                     setSceneOpen(true)
                   }}
                   className="relative rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink hover:bg-paper-deep"
@@ -321,6 +324,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                     </span>
                   )}
                 </button>
+                <button onClick={() => setLifeOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">
+                  你不在时
+                </button>
+                {snapshot.timelines.length > 1 && <button onClick={() => setCompareOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">两种人生</button>}
                 <button
                   onClick={() => setChaptersOpen(true)}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
@@ -379,8 +386,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           <ChapterPanel worldId={worldId} timelineId={timelineId} onClose={() => setChaptersOpen(false)} />
         )}
         {sceneOpen && timelineId && (
-          <ScenePanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onClose={() => setSceneOpen(false)} />
+          <ScenePanel key={`${worldId}:${timelineId}`} worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onClose={() => setSceneOpen(false)} />
         )}
+        {lifeOpen && timelineId && <LifePanel worldId={worldId} timelineId={timelineId} onClose={() => setLifeOpen(false)} />}
+        {compareOpen && timelineId && snapshot.timelines.length > 1 && <ComparePanel worldId={worldId} currentTimelineId={timelineId} timelines={snapshot.timelines} onClose={() => setCompareOpen(false)} />}
       </div>
     </div>
   )

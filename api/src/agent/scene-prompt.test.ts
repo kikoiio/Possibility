@@ -55,6 +55,7 @@ function fakeCtx(): EngineContext {
         status: 'active',
         ancestorIdsJson: '[]',
         lastRealTickAt: null,
+        forkSnapshotJson: null,
       },
       persons: [],
       models: new Map(),

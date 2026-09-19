@@ -119,6 +119,7 @@ import type {
   WorldSnapshot,
   WorldStreamEvent,
   WorldSummary,
+  ReturnBrief,
 } from './types'
 
 export const worldsApi = {
@@ -174,20 +175,28 @@ export const memoriesApi = {
 
 /** 你在世界里：登记/改写在场身份 */
 export const personaApi = {
-  get: (worldId: string) => apiFetch<{ persona: Persona | null; unread: number }>(`/api/worlds/${worldId}/persona`),
+  get: (worldId: string, timelineId?: string) => apiFetch<{ persona: Persona | null; unread: number }>(`/api/worlds/${worldId}/persona${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`),
   upsert: (worldId: string, body: { name: string; description: string }) =>
     apiFetch<{ persona: Persona }>(`/api/worlds/${worldId}/persona`, { method: 'POST', body: JSON.stringify(body) }),
-  /** 未读留言（送达即标记已读）+ 最近与你有关的动静 */
-  messages: (worldId: string) =>
-    apiFetch<{ messages: PersonaMessage[]; mentions: PersonaMention[] }>(`/api/worlds/${worldId}/persona/messages`),
+  messages: (worldId: string, timelineId: string) =>
+    apiFetch<{ messages: PersonaMessage[]; mentions: PersonaMention[] }>(`/api/worlds/${worldId}/persona/messages?timelineId=${encodeURIComponent(timelineId)}`),
+  read: (worldId: string, timelineId: string, ids: string[]) => apiFetch<{ok: true}>(`/api/worlds/${worldId}/persona/messages/read`, { method: 'POST', body: JSON.stringify({timelineId, ids}) }),
 }
 
 /** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */
 export const sceneApi = {
   /** 各地点「清醒且空闲」的可交谈人数（避免扑空） */
-  board: (worldId: string) => apiFetch<{ board: { location: string; count: number }[] }>(`/api/worlds/${worldId}/scene/board`),
-  send: (worldId: string, body: { timelineId: string; location?: string; content: string }, onEvent: (event: SSEEvent) => void) =>
+  board: (worldId: string, timelineId: string) => apiFetch<{ board: { location: string; count: number }[] }>(`/api/worlds/${worldId}/scene/board?timelineId=${encodeURIComponent(timelineId)}`),
+  history: (worldId: string, timelineId: string, location?: string) => apiFetch<{dialogueId: string | null; location: string | null; turns: {id: string; personId: string; name: string; utterance: string}[]}>(`/api/worlds/${worldId}/scene/history?timelineId=${encodeURIComponent(timelineId)}${location ? `&location=${encodeURIComponent(location)}` : ''}`),
+  send: (worldId: string, body: { timelineId: string; location?: string; content: string; dialogueId?: string; requestId?: string }, onEvent: (event: SSEEvent) => void) =>
     postSSE(`/api/worlds/${worldId}/scene`, body, onEvent),
+}
+
+export const lifeApi = {
+  returnBrief: (worldId: string, timelineId: string) => apiFetch<ReturnBrief>(`/api/worlds/${worldId}/return?timelineId=${encodeURIComponent(timelineId)}`),
+  markSeen: (worldId: string, timelineId: string, cursor: number) => apiFetch<{ok: true}>(`/api/worlds/${worldId}/return/seen`, {method:'POST', body: JSON.stringify({timelineId, cursor})}),
+  act: (worldId: string, commitmentId: string, action: string, explanation?: string) => apiFetch<{ok:true;status:string}>(`/api/worlds/${worldId}/commitments/${commitmentId}`, {method:'POST', body: JSON.stringify({action, explanation})}),
+  compare: (worldId: string, left: string, right: string) => apiFetch<unknown>(`/api/worlds/${worldId}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
 }
 
 /**

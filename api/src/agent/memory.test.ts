@@ -15,6 +15,7 @@ function timeline(ancestorIdsJson: string): Timeline {
     status: 'active',
     ancestorIdsJson,
     lastRealTickAt: null,
+    forkSnapshotJson: null,
   }
 }
 

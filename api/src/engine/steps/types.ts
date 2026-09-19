@@ -1,6 +1,7 @@
 import type { Db } from '../../db/client'
 import type { Env } from '../../index'
 import type { WorldSnapshot } from '../../agent/engine-context'
+import type { Reservation } from '../guard'
 
 /** 决策点种类（D16：统一接口，留 LangGraph 迁移空间） */
 export type AgentStepKind = 'schedule' | 'beat' | 'dialogue_turn' | 'injection' | 'summary'
@@ -18,12 +19,13 @@ export interface AgentStep {
 /** decide 的结果：value 为 null 表示失败跳过（D17：重试一次后仍失败） */
 export interface DecideResult<T> {
   value: T | null
-  llmCalls: number // 本 decide 实际发生的 LLM 调用数（含重试），tick 按此记账
+  llmCalls: number // 展示用：已预留的调用数（含重试）；不得再次记账
 }
 
 /** decide 的调用约束：maxCalls 限制本 decide 最多发起的 LLM 调用数（每拍预算的硬顶） */
 export interface DecideOpts {
   maxCalls?: number
+  reserve?: Reservation
 }
 
 /**

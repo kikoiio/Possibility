@@ -5,11 +5,12 @@ import { createDb } from '../db/client'
 import { events, persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
-import { parseAncestorIds } from '../agent/memory'
+import { readForkSnapshot } from '../agent/visibility'
+import { forkTimeline } from '../life/fork'
 import { runAgentTurn } from '../agent/loop'
 import { complete, configFromEnv } from '../llm/client'
 import { budgetFromEnv } from '../engine/budget'
-import { gateWorld, settleWorld } from '../engine/guard'
+import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
 import type { ForkScenario } from '../agent/types'
 import type { Env } from '../index'
 
@@ -81,8 +82,9 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
     `用户的 what-if：「${whatIf}」`,
   ].join('\n')
 
-  const config = configFromEnv(c.env)
-  let world = gate.world
+  const config = configFromEnv(c.env, worldReservation(db, ctx.world.id, cfg, {
+    timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview',
+  }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -94,23 +96,9 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
         ],
         { maxTokens: 8000 },
       )
-      // 每次尝试都记账（失败的调用同样烧了 token）
-      world = await settleWorld(
-        db,
-        world,
-        { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview' },
-        1,
-        cfg,
-      )
       return c.json(normalizeScenario(extractJson(raw), whatIf, ctx.timeline.simNow))
     } catch (e) {
-      world = await settleWorld(
-        db,
-        world,
-        { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview' },
-        1,
-        cfg,
-      ).catch(() => world)
+      if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
       lastError = e
     }
   }
@@ -156,33 +144,10 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
     return c.json({ error: '活跃时间线已达上限（3 条），请先归档一条' }, 409)
   }
 
-  const now = new Date().toISOString()
-  const forkId = crypto.randomUUID()
-  // 祖先链必须显式写入：记忆可见性（memory.ts）按祖先链继承，缺省 '[]' 会让分叉人物丢光记忆
-  const ancestors = [...parseAncestorIds(base.timeline), base.timeline.id]
-  await db.batch([
-    db.insert(timelines).values({
-      id: forkId,
-      worldId: base.world.id,
-      parentTimelineId: base.mainTimelineId,
-      forkScenarioJson: JSON.stringify(scenario),
-      simNow: scenario.startTime,
-      createdAt: now,
-      status: 'active',
-      ancestorIdsJson: JSON.stringify(ancestors),
-    }),
-    // 拷贝主线当前状态作为分叉初始状态，虚拟时间对齐到分叉起始
-    db.insert(personStates).values({
-      personId: base.person.id,
-      timelineId: forkId,
-      simTime: scenario.startTime,
-      location: base.state.location,
-      activity: base.state.activity,
-      mood: base.state.mood,
-      goal: base.state.goal,
-      updatedRealAt: now,
-    }),
-  ])
+  if (Date.parse(scenario.startTime) !== Date.parse(base.timeline.simNow)) {
+    return c.json({ error: '历史状态快照不可用，请以当前时间线时间创建分叉', sourceSimTime: base.timeline.simNow }, 409)
+  }
+  const { id: forkId } = await forkTimeline(db, base.world.id, base.timeline.id, scenario)
 
   const input = [
     '分叉设定：',
@@ -196,6 +161,9 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
   ].join('\n')
 
   return streamSSE(c, async (stream) => {
+    const controller = new AbortController()
+    stream.onAbort(() => controller.abort())
+    if (stream.aborted) controller.abort()
     await stream.writeSSE({ data: JSON.stringify({ type: 'timeline', timelineId: forkId }) })
     // 从 DB 重建分叉上下文：状态/记忆按分叉规则查询，虚拟时钟从 startTime 起算
     const forkCtx = await buildAgentContext(db, {
@@ -209,19 +177,9 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
       return
     }
     try {
-      for await (const ev of runAgentTurn(c.env, db, forkCtx, input)) {
+      for await (const ev of runAgentTurn(c.env, db, forkCtx, input, [], { signal: controller.signal })) {
         await stream.writeSSE({ data: JSON.stringify(ev) })
         if (ev.type === 'done') {
-          // 推演调用走护栏记账（最多 25 次迭代的自主体回合此前完全无账）
-          if (ev.llmCalls) {
-            await settleWorld(
-              db,
-              gate.world,
-              { timelineId: forkId, personId: base.person.id, purpose: 'fork_simulate' },
-              ev.llmCalls,
-              cfg,
-            ).catch(() => gate.world)
-          }
           break
         }
       }
@@ -314,6 +272,14 @@ timelineRoutes.get('/timelines/:id', async (c) => {
       forkScenario: timeline.forkScenarioJson ? (JSON.parse(timeline.forkScenarioJson) as unknown) : null,
       simNow: timeline.simNow,
       createdAt: timeline.createdAt,
+      forkSnapshot: (() => {
+        const snapshot = readForkSnapshot(timeline)
+        return snapshot ? {
+          version: snapshot.version, sourceTimelineId: snapshot.sourceTimelineId,
+          sourceSimTime: snapshot.sourceSimTime, capturedAt: snapshot.capturedAt,
+          ancestorCutoffs: snapshot.ancestorCutoffs, historyComplete: snapshot.historyComplete,
+        } : null
+      })(),
     },
     world: { id: world.id, name: world.name, description: world.description },
     person: person ? { id: person.id, name: person.name } : null,

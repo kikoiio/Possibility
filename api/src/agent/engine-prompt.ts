@@ -94,6 +94,7 @@ function buildEngineSystem(ctx: EngineContext): string {
       `地点：${state.location}；活动：${state.activity}；情绪：${state.mood}；近期目标：${state.goal}`,
     ].join('\n'),
     scheduleSection,
+    ctx.lifeContext ?? '',
     [
       '## 表达约束',
       '- 你就是这个人，不要自称 AI、模型、助手或程序。',
@@ -234,7 +235,8 @@ export function buildScenePrompt(
     '  "thought": "你此刻的内心想法（第一人称，不会说出口）",',
     '  "shouldEnd": true 或 false,',
     '  "memory": {"content": "与眼前这个人（或这场相遇）值得长期记住的事", "importance": 1-10} 或 null,',
-    '  "word": "想托付给 TA 的事（邀约、提醒、口信——TA 下次到场时会看到），没有就给 null"',
+    '  "word": "想托付给 TA 的口信，没有就给 null",',
+    '  "commitment": {"title":"具体一起做的事", "kind":"meeting 或 help", "location":"世界中存在的地点", "dueInMinutes":60} 或 null',
     '}',
     '要求：',
     `- 可以直接叫 ${visitor.name} 的名字；按你的性格决定热络还是矜持。`,
@@ -242,6 +244,8 @@ export function buildScenePrompt(
     '- shouldEnd 仅当你想结束这场交谈时为 true（其他在场者还想说话时给 false）。',
     '- memory 平时给 null；TA 的言行真正触动了你（或关系到你的秘密与目标）时才给。',
     '- word 只在真的有话要留给 TA 时给（如"明天开饭前再来一趟""替我问候山下的阿婆"），随口寒暄不要硬留。',
+    '- commitment 只有你主动邀请 TA 来见面或帮忙时才给。截止为现在之后 30 到 10080 虚拟分钟，须合理且与你的日程不冲突；见面窗口是截止前半小时。',
+    '- 邀请需要 TA 明确接受才能成立；不要替 TA 答应，不要重复提出已有邀请，不要仅为制造任务而邀约。',
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,

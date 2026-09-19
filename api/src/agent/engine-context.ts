@@ -3,6 +3,7 @@ import type { Db } from '../db/client'
 import { events, persons, personStates, schedules, timelines, worldPersons, worlds } from '../db/schema'
 import { retrieveForPrompt, type Memory } from './memory'
 import type { PersonModel } from './types'
+import { lifeContext } from '../life/service'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
@@ -39,6 +40,7 @@ export interface WorldSnapshot {
 
 /** 单个决策点的完整上下文（perceive 的产出） */
 export interface EngineContext {
+  lifeContext?: string
   snapshot: WorldSnapshot
   person: Person
   model: PersonModel
@@ -215,5 +217,5 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
     return isAwake(parseScheduleItems(snapshot.schedules.get(p.id)), snapshot.timeline.simNow)
   })
 
-  return { snapshot, person, model, state, others, memories, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule }
+  return { snapshot, person, model, state, others, memories, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule, lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
 }

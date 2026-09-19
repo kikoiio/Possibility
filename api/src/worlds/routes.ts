@@ -2,14 +2,15 @@ import { Hono } from 'hono'
 import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
-import { dialogues, events, persons, personStates, schedules, timelines, worldPersons, worlds } from '../db/schema'
+import { dialogues, events, persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
+import { forkTimeline } from '../life/fork'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { gateUser } from '../engine/guard'
+import { BudgetRefusal, gateUser } from '../engine/guard'
 import type { Env } from '../index'
 
 type World = typeof worlds.$inferSelect
@@ -38,6 +39,7 @@ worldsRoutes.post('/draft', async (c) => {
   try {
     return c.json(await draftWorld(c.env, db, c.get('user').id, prompt))
   } catch (e) {
+    if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
     return c.json({ error: `骨架生成失败：${e instanceof Error ? e.message : '未知错误'}` }, 502)
   }
 })
@@ -271,58 +273,9 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
     return c.json({ error: '活跃时间线已达上限（3 条），请先归档一条' }, 409)
   }
 
-  let ancestors: string[] = []
-  try {
-    ancestors = (JSON.parse(source.ancestorIdsJson || '[]') as string[]).map(String)
-  } catch {
-    ancestors = []
-  }
-  const now = new Date().toISOString()
-  const forkId = crypto.randomUUID()
-  await db.insert(timelines).values({
-    id: forkId,
-    worldId: world.id,
-    parentTimelineId: source.id,
-    forkScenarioJson: null,
-    simNow: source.simNow,
-    createdAt: now,
-    status: 'active',
-    ancestorIdsJson: JSON.stringify([...ancestors, source.id]),
-  })
-
-  // 复制全部人物状态（对话占用不带过去）与当日日程
-  const states = await db.select().from(personStates).where(eq(personStates.timelineId, source.id)).all()
-  for (const s of states) {
-    await db.insert(personStates).values({
-      personId: s.personId,
-      timelineId: forkId,
-      simTime: s.simTime,
-      location: s.location,
-      activity: s.activity,
-      mood: s.mood,
-      goal: s.goal,
-      updatedRealAt: now,
-      currentDialogueId: null,
-      lastBeatSimTime: s.lastBeatSimTime,
-    })
-  }
-  const worldDate = source.simNow.slice(0, 10)
-  const scheduleRows = await db
-    .select()
-    .from(schedules)
-    .where(and(eq(schedules.timelineId, source.id), eq(schedules.worldDate, worldDate)))
-    .all()
-  for (const s of scheduleRows) {
-    await db
-      .insert(schedules)
-      .values({
-        personId: s.personId,
-        timelineId: forkId,
-        worldDate: s.worldDate,
-        itemsJson: s.itemsJson,
-        generatedAt: s.generatedAt,
-      })
-      .onConflictDoNothing()
-  }
-  return c.json({ id: forkId, simNow: source.simNow })
+  const fork = await forkTimeline(db, world.id, source.id)
+  return c.json({ id: fork.id, simNow: fork.simNow, snapshot: {
+    version: fork.snapshot.version, sourceTimelineId: source.id,
+    sourceSimTime: fork.snapshot.sourceSimTime, capturedAt: fork.snapshot.capturedAt,
+  } })
 })

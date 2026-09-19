@@ -1,9 +1,9 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { SSEStreamingApi } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
-import { events, memories, personaMessages, persons, timelines, worlds, worldPersons, dialogues, dialogueTurns } from '../db/schema'
+import { events, memories, personaMessages, persons, timelines, worlds, worldPersons, dialogues, dialogueTurns, sceneRequests } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildWorldSnapshot, buildEngineContext } from '../agent/engine-context'
 import { buildScenePrompt, extractJson, type DialogueTurnView } from '../agent/engine-prompt'
@@ -11,9 +11,10 @@ import { parseSceneOutput } from './parse'
 import { sceneDialogueTitle, sceneTranscript } from './plan'
 import { eligibleAt, eligibleBoard } from './eligible'
 import { clampImportance } from '../agent/memory'
-import { budgetFromEnv, capWorld, dailyCapHit, recordCall, touchWorldActivity } from '../engine/budget'
-import { gateWorld } from '../engine/guard'
+import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
+import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
 import { complete, configFromEnv } from '../llm/client'
+import { proposeCommitment } from '../life/service'
 import type { Env } from '../index'
 
 type World = typeof worlds.$inferSelect
@@ -60,11 +61,33 @@ sceneRoutes.get('/worlds/:id/scene/board', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
-  const tl = tls.find((t) => t.parentTimelineId === null) ?? tls[0]
+  const tl = c.req.query('timelineId') ? tls.find(t => t.id === c.req.query('timelineId')) : tls.find((t) => t.parentTimelineId === null) ?? tls[0]
   if (!tl) return c.json({ error: '时间线不存在' }, 404)
   const snapshot = await buildWorldSnapshot(db, world.id, tl.id)
   if (!snapshot) return c.json({ error: '世界快照不存在' }, 404)
   return c.json({ board: eligibleBoard(snapshot) })
+})
+
+/** 最近一场连续交谈；读取不产生模型调用或写入。 */
+sceneRoutes.get('/worlds/:id/scene/history', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const persona = await loadPersona(db, world.id, c.get('user').id)
+  if (!persona) return c.json({ error: '先登记身份' }, 400)
+  const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
+  const tl = c.req.query('timelineId') ? tls.find(t => t.id === c.req.query('timelineId')) : tls.find(t => !t.parentTimelineId)
+  if (!tl) return c.json({ error: '时间线不存在' }, 404)
+  const location = c.req.query('location')
+  const dialogue = await db.select().from(dialogues).where(and(
+    eq(dialogues.timelineId, tl.id), eq(dialogues.visitorId, persona.id), eq(dialogues.kind, 'scene'),
+    ...(location ? [eq(dialogues.location, location)] : []),
+  )).orderBy(desc(dialogues.simStart)).limit(1).get()
+  if (!dialogue) return c.json({ dialogueId: null, location: location ?? null, turns: [] })
+  const turns = await db.select({ id: dialogueTurns.id, personId: dialogueTurns.personId, name: persons.name, utterance: dialogueTurns.utterance })
+    .from(dialogueTurns).innerJoin(persons, eq(persons.id, dialogueTurns.personId))
+    .where(eq(dialogueTurns.dialogueId, dialogue.id)).orderBy(asc(dialogueTurns.turnIndex)).all()
+  return c.json({ dialogueId: dialogue.id, location: dialogue.location, turns })
 })
 
 /**
@@ -76,7 +99,7 @@ sceneRoutes.get('/worlds/:id/scene/board', async (c) => {
  * 回应同时写入每个人的记忆流（想法 + 关系记忆），有留言则留给来访者下次收取。SSE 逐句推送。
  */
 sceneRoutes.post('/worlds/:id/scene', async (c) => {
-  const body = await c.req.json<{ timelineId?: string; location?: string; content?: string }>().catch(() => null)
+  const body = await c.req.json<{ timelineId?: string; location?: string; content?: string; requestId?: string }>().catch(() => null)
   const content = body?.content?.trim()
   if (!content) return c.json({ error: '内容不能为空' }, 400)
 
@@ -86,8 +109,8 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
   if (!world) return c.json({ error: '世界不存在' }, 404)
 
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
-  const tl = (body?.timelineId && tls.find((t) => t.id === body.timelineId)) || tls.find((t) => t.parentTimelineId === null)
-  if (!tl) return c.json({ error: '时间线不存在' }, 404)
+  const tl = body?.timelineId ? tls.find((t) => t.id === body.timelineId) : tls.find((t) => t.parentTimelineId === null)
+  if (!tl || tl.status !== 'active') return c.json({ error: '时间线不存在或已归档' }, 404)
 
   const persona = await loadPersona(db, world.id, userId)
   if (!persona) return c.json({ error: '先在世界中登记你的在场身份（进入世界时会引导你）' }, 400)
@@ -126,24 +149,46 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       return
     }
 
-    // 这场相遇 = 一段含用户在内的多方对话（一次说完即 ended；引擎不会拾起它轮转，
-    // 因为它只为 ongoing 对话排步）。用户的话是第 0 轮。
-    const participantIds = [persona.id, ...responders.map((r) => r.id)]
-    const dialogueId = crypto.randomUUID()
-    await db.insert(dialogues).values({
-      id: dialogueId,
-      timelineId: tl.id,
-      location: pickedLoc,
-      participantIdsJson: JSON.stringify(participantIds),
-      status: 'ended',
-      turnLimit: participantIds.length,
-      simStart: simNow,
-      simEnd: simNow,
-    })
+    // 同一条时间线、同一在场身份、同一地点接续同一场交谈；刷新/重试不会断上下文。
+    // kind=scene 不进入 NPC 引擎的 ongoing 对话轮转。
+    let dialogue = await db.select().from(dialogues).where(and(
+      eq(dialogues.timelineId, tl.id), eq(dialogues.location, pickedLoc),
+      eq(dialogues.visitorId, persona.id), eq(dialogues.kind, 'scene'),
+    )).orderBy(desc(dialogues.simStart)).limit(1).get()
+    if (!dialogue) {
+      const participantIds = [persona.id, ...responders.map((r) => r.id)]
+      const dialogueId = crypto.randomUUID()
+      await db.insert(dialogues).values({
+        id: dialogueId, timelineId: tl.id, location: pickedLoc,
+        participantIdsJson: JSON.stringify(participantIds), status: 'scene', kind: 'scene', visitorId: persona.id,
+        turnLimit: 100, simStart: simNow, simEnd: simNow,
+      })
+      dialogue = await db.select().from(dialogues).where(eq(dialogues.id, dialogueId)).get()
+    }
+    if (!dialogue) {
+      await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '交谈记录创建失败，请重试。' }) })
+      return
+    }
+    const dialogueId = dialogue.id
+    if (body?.requestId) {
+      const existingRequest = await db.select().from(sceneRequests).where(eq(sceneRequests.id, body.requestId)).get()
+      if (existingRequest?.status === 'completed') {
+        await stream.writeSSE({ data: JSON.stringify({ type: 'scene_start', dialogueId, location: pickedLoc, participants: responders.map(p => p.name) }) })
+        await stream.writeSSE({ data: JSON.stringify({ type: 'done' }) })
+        return
+      }
+      if (existingRequest) {
+        await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '上一条消息正在回应，请稍后重试。' }) })
+        return
+      }
+      await db.insert(sceneRequests).values({ id: body.requestId, dialogueId, status: 'pending', createdAt: Date.now() })
+    }
+    const priorTurns = await db.select().from(dialogueTurns).where(eq(dialogueTurns.dialogueId, dialogueId)).orderBy(asc(dialogueTurns.turnIndex)).all()
+    const nextIndex = priorTurns.length ? Math.max(...priorTurns.map(t => t.turnIndex)) + 1 : 0
     await db.insert(dialogueTurns).values({
       id: crypto.randomUUID(),
       dialogueId,
-      turnIndex: 0,
+      turnIndex: nextIndex,
       personId: persona.id,
       utterance: content,
       thought: '',
@@ -152,13 +197,14 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
     })
 
     await stream.writeSSE({
-      data: JSON.stringify({ type: 'scene_start', location: pickedLoc, participants: responders.map((p) => p.name) }),
+      data: JSON.stringify({ type: 'scene_start', dialogueId, location: pickedLoc, participants: responders.map((p) => p.name) }),
     })
 
     const profile = personaProfile(persona)
-    const turns: DialogueTurnView[] = [{ personName: persona.name, utterance: content }]
-    const config = configFromEnv(c.env)
-
+    const turns: DialogueTurnView[] = [
+      ...priorTurns.map(t => ({ personName: snapshot.persons.find(p => p.id === t.personId)?.name ?? '某人', utterance: t.utterance })),
+      { personName: persona.name, utterance: content },
+    ]
     for (const responder of responders) {
       if (currentWorld.status !== 'running') break
       const ctx = await buildEngineContext(db, responder.id, snapshot)
@@ -166,27 +212,21 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       const prompt = buildScenePrompt(ctx, { name: persona.name, profile }, pickedLoc, turns)
 
       let output: ReturnType<typeof parseSceneOutput> | null = null
-      let llmCalls = 0
+      const reserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: responder.id, purpose: 'scene' })
+      const responderConfig = configFromEnv(c.env, reserve)
       for (let attempt = 0; attempt < 2 && !output; attempt++) {
-        llmCalls++
         try {
-          const raw = await complete(config, [
+          const raw = await complete(responderConfig, [
             { role: 'system', content: prompt.system },
             { role: 'user', content: prompt.user },
           ])
           output = parseSceneOutput(extractJson(raw))
-        } catch {
+        } catch (e) {
+          if (e instanceof BudgetRefusal) {
+            await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: e.message }) })
+            break
+          }
           // 重试一次后仍失败：跳过这位回应者
-        }
-      }
-
-      if (llmCalls > 0) {
-        currentWorld = await recordCall(db, currentWorld, { timelineId: tl.id, personId: responder.id, purpose: 'scene' }, llmCalls)
-        if (dailyCapHit(currentWorld, cfg)) {
-          await capWorld(db, currentWorld.id)
-          currentWorld = { ...currentWorld, status: 'capped', pauseReason: 'daily_cap' }
-          await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '世界今日调用已达上限，余下的回应留到明天。' }) })
-          break
         }
       }
       if (!output) continue
@@ -239,6 +279,10 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           createdAt: now,
         })
       }
+      if (output.commitment) {
+        await proposeCommitment(db, { id: `commitment:${dialogueId}:${responder.id}:${simNow}`, worldId: world.id, timelineId: tl.id,
+          personId: responder.id, visitorId: persona.id, sourceDialogueId: dialogueId, simNow, raw: output.commitment, locations: snapshot.locations })
+      }
 
       turns.push({ personName: responder.name, utterance: output.utterance })
       await stream.writeSSE({
@@ -249,6 +293,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
     // 至少有一位回应者接上了话，才把这场相遇作为对话事件写进世界史：
     // 事件流可逐句展开，章节回顾拿到完整对话摘录
     if (turns.length > 1) {
+      const allTurns = await db.select().from(dialogueTurns).where(eq(dialogueTurns.dialogueId, dialogueId)).orderBy(asc(dialogueTurns.turnIndex)).all()
       await db.insert(events).values({
         id: crypto.randomUUID(),
         timelineId: tl.id,
@@ -258,11 +303,15 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           turns.slice(1).map((t) => t.personName),
           pickedLoc,
         ),
-        description: sceneTranscript(turns.map((t) => ({ name: t.personName, utterance: t.utterance }))),
+        description: sceneTranscript(allTurns.map((t) => ({ name: snapshot.persons.find(p => p.id === t.personId)?.name ?? persona.name, utterance: t.utterance }))),
         kind: 'dialogue',
         dialogueId,
         actorPersonId: persona.id,
       })
+    }
+
+    if (body?.requestId) {
+      await db.update(sceneRequests).set({ status: 'completed' }).where(and(eq(sceneRequests.id, body.requestId), eq(sceneRequests.status, 'pending')))
     }
 
     await stream.writeSSE({ data: JSON.stringify({ type: 'done' }) })

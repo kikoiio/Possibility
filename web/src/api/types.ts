@@ -304,7 +304,7 @@ export interface Persona {
 
 /** scene SSE 事件（POST /worlds/:id/scene） */
 export type SceneEvent =
-  | { type: 'scene_start'; location: string; participants: string[] }
+  | { type: 'scene_start'; dialogueId: string; location: string; participants: string[] }
   | { type: 'utterance'; personId: string; name: string; text: string }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -313,6 +313,8 @@ export type SceneEvent =
 
 export interface PersonaMessage {
   id: string
+  read: boolean
+  timelineId: string
   fromName: string
   content: string
   location: string
@@ -325,4 +327,17 @@ export interface PersonaMention {
   title: string
   description: string
   actorName: string | null
+}
+
+export interface ReturnEvent {
+  id: string; cursor: number; title: string; description: string; simTime: string
+  dialogueId: string | null; actorPersonId: string | null; actorName: string | null
+}
+export interface CommitmentView {
+  id: string; worldId: string; timelineId: string; personId: string; visitorId: string
+  title: string; kind: string; location: string; dueSim: string; status: string; personName: string
+}
+export interface ReturnBrief {
+  timelineId: string; simNow: string; firstVisit: boolean; cursor: number
+  events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
 }

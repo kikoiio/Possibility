@@ -10,7 +10,8 @@ import {
   type WorldSnapshot,
 } from '../agent/engine-context'
 import { needsSummary } from '../agent/memory'
-import { budgetFromEnv, capWorld, dailyCapHit, recordCall, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
+import { budgetFromEnv, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
+import { worldReservation, type TickBudget } from './guard'
 import { planTickSteps } from './director'
 import { arbitrateInjections } from './director-llm'
 import { beatExecutor } from './steps/beat'
@@ -18,6 +19,7 @@ import { dialogueExecutor } from './steps/dialogue'
 import { injectionExecutor } from './steps/injection'
 import { scheduleExecutor } from './steps/schedule'
 import { summaryExecutor } from './steps/summary'
+import { advanceCommitments } from '../life/service'
 import type { AgentStep, StepExecutor } from './steps/types'
 
 type World = typeof worlds.$inferSelect
@@ -91,6 +93,7 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
   for (const world of runningWorlds) {
     let currentWorld: World = world
     let tickCalls = 0
+    const tickBudget: TickBudget = { used: 0, limit: cfg.tickCallCap }
     const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0, timelines: [] }
 
     const activeTimelines = await db
@@ -124,6 +127,9 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
         worldReport.timelines.push({ id: tl.id, simNow, steps: [] })
         continue
       }
+
+      // 约定到期是机械事实，不烧 LLM：接受的邀约变成失约，未接受的邀请自然过期。
+      await advanceCommitments(db, tl.id, simNow)
 
       // 2a. 清理悬空对话占用（进程重启打断 act 可能留下指向不存在/已结束对话的占用标记）
       for (const p of snapshot.persons) {
@@ -226,19 +232,11 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
       // 3b. 导演层 v2：注入事件反应者拥挤时，问一次 LLM"谁最有戏"（每拍至多 1 次调用，
       // 失败回退 v1 机械排序）；调用计入本拍预算与日限额，无旁路。
       if (cfg.directorLlm && tickCalls < cfg.tickCallCap) {
-        const arb = await arbitrateInjections(env, db, snapshot, steps)
+        const directorReserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: null, purpose: 'director' }, tickBudget)
+        const arb = await arbitrateInjections(env, db, snapshot, steps, { maxCalls: 1, reserve: directorReserve })
         if (arb.llmCalls > 0) {
           steps = arb.steps
-          tickCalls += arb.llmCalls
-          currentWorld = await recordCall(db, currentWorld, { timelineId: tl.id, personId: null, purpose: 'director' }, arb.llmCalls)
-          if (dailyCapHit(currentWorld, cfg)) {
-            await capWorld(db, currentWorld.id)
-            currentWorld = { ...currentWorld, status: 'capped', pauseReason: 'daily_cap' }
-            worldReport.capped = true
-            worldReport.tickCalls = tickCalls
-            worldReport.timelines.push({ id: tl.id, simNow, steps: [{ kind: 'director', personId: null, ok: false, note: 'daily_cap 触顶' }] })
-            break
-          }
+          tickCalls = tickBudget.used
         }
       }
 
@@ -256,20 +254,12 @@ async function runTickInner(env: Env, db: Db): Promise<TickSummary> {
           if (!input) continue
           console.log(`[tick] ${world.name}/${tl.id.slice(0, 6)} ${step.kind} ${step.personId?.slice(0, 6) ?? '-'} decide…`)
           const t0 = Date.now()
-          const { value, llmCalls } = await executor.decide(env, input, { maxCalls: remaining })
+          const callPersonId = step.personId ?? (input?.ctx?.person?.id as string | undefined) ?? null
+          const reserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: callPersonId, purpose: step.kind }, tickBudget)
+          const { value, llmCalls } = await executor.decide(env, input, { maxCalls: remaining, reserve })
           console.log(`[tick] ${step.kind} decide 完成 llmCalls=${llmCalls} 耗时=${Math.round((Date.now() - t0) / 1000)}s value=${value ? 'ok' : 'null'}`)
           if (llmCalls > 0) {
-            tickCalls += llmCalls
-            // 记账归属到实际执行的人物（dialogue_turn 的 step.personId 为空，取 perceive 出的发言者）
-            const callPersonId = step.personId ?? (input?.ctx?.person?.id as string | undefined) ?? null
-            currentWorld = await recordCall(db, currentWorld, { timelineId: tl.id, personId: callPersonId, purpose: step.kind }, llmCalls)
-            if (dailyCapHit(currentWorld, cfg)) {
-              await capWorld(db, currentWorld.id)
-              currentWorld = { ...currentWorld, status: 'capped', pauseReason: 'daily_cap' }
-              worldReport.capped = true
-              tlReport.steps.push({ kind: step.kind, personId: step.personId, ok: false, note: 'daily_cap 触顶' })
-              break
-            }
+            tickCalls = tickBudget.used
           }
           if (value === null) {
             tlReport.steps.push({ kind: step.kind, personId: step.personId, ok: false, note: 'decide 失败跳过' })

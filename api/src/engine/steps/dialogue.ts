@@ -90,9 +90,9 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
   },
 
   async decide(env: Env, input: DialogueInput, opts?: DecideOpts): Promise<DecideResult<DialogueOutput>> {
-    const config = configFromEnv(env)
+    const config = configFromEnv(env, opts?.reserve)
     let llmCalls = 0
-    const maxAttempts = Math.max(1, Math.min(2, opts?.maxCalls ?? 2))
+    const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
@@ -104,7 +104,7 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
           ],
           { maxTokens: 4000 },
         )
-        return { value: { ...normalizeDialogueJson(extractJson(raw)), failed: false }, llmCalls }
+        return { value: { ...normalizeDialogueJson(extractJson(raw)), failed: false }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // 重试一次
       }
@@ -112,7 +112,7 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
     // D17/任务书：失败不阻塞对话，本轮以占位句跳过
     return {
       value: { utterance: '……（沉默）', thought: '（一时不知该说什么）', shouldEnd: false, memory: null, failed: true },
-      llmCalls,
+      llmCalls: opts?.reserve?.calls ?? llmCalls,
     }
   },
 

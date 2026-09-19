@@ -6,6 +6,7 @@ interface Props {
   worldId: string
   timelineId: string
   locations: { name: string; description: string }[]
+  initialLocation?: string
   onClose: () => void
 }
 
@@ -19,13 +20,16 @@ interface Msg {
  * 你在世界里：用户以登记过的在场身份来到某地点说话，
  * 在场的人物依次回应。这场相遇会写进世界史（事件流）与每个人的记忆。
  */
-export default function ScenePanel({ worldId, timelineId, locations, onClose }: Props) {
+export default function ScenePanel({ worldId, timelineId, locations, initialLocation = '', onClose }: Props) {
   const [persona, setPersona] = useState<Persona | null>(null)
   const [personaLoading, setPersonaLoading] = useState(true)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
-  const [location, setLocation] = useState('')
+  const [location, setLocation] = useState(initialLocation)
+  const [dialogueId, setDialogueId] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const pendingRef = useRef<{id: string; content: string; location: string} | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -36,28 +40,46 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    let active = true
     personaApi
-      .get(worldId)
+      .get(worldId, timelineId)
       .then((d) => {
+        if (!active) return
         setPersona(d.persona)
         if (d.persona) {
           setName(d.persona.name)
           setDescription(d.persona.description)
           // 世界记得你：未读留言 + 与你有关的动静（送达即标记已读）
           personaApi
-            .messages(worldId)
-            .then(setNotes)
-            .catch(() => {})
+            .messages(worldId, timelineId)
+            .then(n => { if (active) setNotes(n) })
+            .catch(() => { if (active) setError('口信暂时加载失败，请重新打开。') })
           // 可交谈地点看板（人数随世界运转变化，进入面板时拉一次）
           sceneApi
-            .board(worldId)
-            .then((b) => setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))))
+            .board(worldId, timelineId)
+            .then((b) => { if (active) setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))) })
             .catch(() => {})
         }
       })
-      .catch(() => setError('身份加载失败'))
-      .finally(() => setPersonaLoading(false))
-  }, [worldId])
+      .catch(() => { if (active) setError('身份加载失败') })
+      .finally(() => { if (active) setPersonaLoading(false) })
+    return () => { active = false }
+  }, [worldId, timelineId])
+
+  useEffect(() => {
+    if (!persona) { setHistoryLoading(false); return }
+    let active = true
+    setHistoryLoading(true)
+    setDialogueId(null)
+    setMessages([])
+    sceneApi.history(worldId, timelineId, location || undefined).then(h => {
+      if (!active) return
+      setDialogueId(h.dialogueId)
+      setMessages(h.turns.map(t => ({role: t.personId === persona.id ? 'user' : 'person', name: t.name, text: t.utterance})))
+    }).catch(() => { if (active) setError('历史交谈加载失败，请重新打开后再发送，避免丢失上下文。') })
+      .finally(() => { if (active) setHistoryLoading(false) })
+    return () => { active = false }
+  }, [worldId, timelineId, location, persona?.id])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
@@ -78,33 +100,48 @@ export default function ScenePanel({ worldId, timelineId, locations, onClose }: 
 
   const handleSend = useCallback(async () => {
     const content = input.trim()
-    if (!content || busy || !persona) return
+    if (!content || busy || historyLoading || !persona) return
     setInput('')
     setError('')
     setBusy(true)
-    setMessages((prev) => [...prev, { role: 'user', name: persona.name, text: content }])
+    const retry = pendingRef.current?.content === content && pendingRef.current.location === location
+    const request = retry ? pendingRef.current! : {id: crypto.randomUUID(), content, location}
+    pendingRef.current = request
+    if (!retry) setMessages((prev) => [...prev, { role: 'user', name: persona.name, text: content }])
+    let failed = false
     try {
-      await sceneApi.send(worldId, { timelineId, location: location || undefined, content }, (raw) => {
+      await sceneApi.send(worldId, { timelineId, location: location || undefined, content, dialogueId: dialogueId ?? undefined, requestId: request.id }, (raw) => {
         const ev = raw as SceneEvent
         if (ev.type === 'scene_start') {
+          setDialogueId(ev.dialogueId)
           setMessages((prev) => [...prev, { role: 'system', name: '', text: `在${ev.location}——${ev.participants.join('、')} 在场` }])
         } else if (ev.type === 'utterance') {
           setMessages((prev) => [...prev, { role: 'person', name: ev.name, text: ev.text }])
         } else if (ev.type === 'error') {
+          failed = true
           setError(ev.message)
         }
       })
+      if (failed) setInput(content)
+      else pendingRef.current = null
     } catch (e) {
+      setInput(content)
       setError(e instanceof Error ? e.message : '交谈失败')
     } finally {
       setBusy(false)
       // 人数随世界运转变化，每次交谈后刷新看板
       sceneApi
-        .board(worldId)
+        .board(worldId, timelineId)
         .then((b) => setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))))
         .catch(() => {})
+      // 服务器是历史的唯一来源：重试重放不会在界面留下重复气泡。
+      sceneApi.history(worldId, timelineId, location || undefined).then(h => {
+        setDialogueId(h.dialogueId)
+        setMessages(h.turns.map(t => ({role: t.personId === persona.id ? 'user' : 'person', name: t.name, text: t.utterance})))
+      }).catch(() => {})
+      personaApi.messages(worldId, timelineId).then(setNotes).catch(() => {})
     }
-  }, [input, busy, persona, worldId, timelineId, location])
+  }, [input, busy, historyLoading, persona, worldId, timelineId, location, dialogueId])
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4" onClick={onClose}>

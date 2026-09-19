@@ -32,4 +32,8 @@ describe('parseSceneOutput（scene 回应解析）', () => {
     const out = parseSceneOutput({ ...VALID, memory: { content: '阿透先生数的是灯', importance: 99 } })
     expect(out.memory?.content).toBe('阿透先生数的是灯')
   })
+  it('只接受结构完整的约定输出', () => {
+    expect(parseSceneOutput({ ...VALID, commitment: { title: '晚饭', kind: 'meeting', location: '厨房', dueInMinutes: 90 } }).commitment?.title).toBe('晚饭')
+    expect(parseSceneOutput({ ...VALID, commitment: { title: '太快', kind: 'meeting', location: '厨房', dueInMinutes: 2 } }).commitment).toBeNull()
+  })
 })

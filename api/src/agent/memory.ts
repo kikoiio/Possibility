@@ -1,6 +1,7 @@
-import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { memories, timelines } from '../db/schema'
+import { readForkSnapshot, selectVisibleMemories } from './visibility'
 
 type Timeline = typeof timelines.$inferSelect
 export type Memory = typeof memories.$inferSelect
@@ -37,39 +38,15 @@ async function mainTimelineOf(db: Db, worldId: string): Promise<Timeline | null>
  * 主线自身查询时 NULL 全部可见；分叉仅当主线在其祖先链中时可见 NULL 桶（同样限分叉点之前）。
  */
 export async function visibleMemories(db: Db, personId: string, timeline: Timeline): Promise<Memory[]> {
-  const main = await mainTimelineOf(db, timeline.worldId)
-  const ancestors = parseAncestorIds(timeline)
-  const isMainLine = main !== null && main.id === timeline.id
-
-  if (isMainLine) {
-    return db
-      .select()
-      .from(memories)
-      .where(
-        and(
-          eq(memories.personId, personId),
-          or(isNull(memories.timelineId), eq(memories.timelineId, timeline.id)),
-        ),
-      )
-      .orderBy(asc(memories.createdAt))
-      .all()
-  }
-
-  // 分叉：本线全部 + 祖先链（含 NULL 主线桶）限分叉点之前
-  const ancestorConds = []
-  if (ancestors.length) ancestorConds.push(inArray(memories.timelineId, ancestors))
-  if (main && ancestors.includes(main.id)) ancestorConds.push(isNull(memories.timelineId))
-
-  const branches = [eq(memories.timelineId, timeline.id)]
-  if (ancestorConds.length) {
-    branches.push(and(or(...ancestorConds), lte(memories.createdAt, timeline.createdAt))!)
-  }
-  return db
-    .select()
-    .from(memories)
-    .where(and(eq(memories.personId, personId), or(...branches)))
-    .orderBy(asc(memories.createdAt))
-    .all()
+  const snapshot = readForkSnapshot(timeline)
+  const worldTimelines = snapshot ? [timeline]
+    : await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all()
+  const rows = await db.select().from(memories).where(and(
+    eq(memories.personId, personId),
+    snapshot ? eq(memories.timelineId, timeline.id)
+      : or(isNull(memories.timelineId), inArray(memories.timelineId, worldTimelines.map((t) => t.id))),
+  )).all()
+  return selectVisibleMemories(rows, personId, timeline, worldTimelines)
 }
 
 /**

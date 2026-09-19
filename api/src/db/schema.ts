@@ -80,6 +80,7 @@ export const timelines = sqliteTable('timelines', {
   ancestorIdsJson: text('ancestor_ids_json').notNull().default('[]'),
   // 上次引擎推进此线的真实时间（时钟推进依据）
   lastRealTickAt: text('last_real_tick_at'),
+  forkSnapshotJson: text('fork_snapshot_json'),
 })
 
 export const personStates = sqliteTable(
@@ -137,6 +138,16 @@ export const dialogues = sqliteTable('dialogues', {
   turnLimit: integer('turn_limit').notNull().default(8),
   simStart: text('sim_start').notNull(),
   simEnd: text('sim_end'),
+  kind: text('kind').notNull().default('npc'),
+  visitorId: text('visitor_id').references(() => persons.id),
+  sceneBusyUntil: integer('scene_busy_until'),
+}, t => [uniqueIndex('scene_session_scope').on(t.timelineId, t.visitorId, t.location)])
+
+export const sceneRequests = sqliteTable('scene_requests', {
+  id: text('id').primaryKey(),
+  dialogueId: text('dialogue_id').notNull().references(() => dialogues.id),
+  status: text('status').notNull(),
+  createdAt: integer('created_at').notNull(),
 })
 
 export const dialogueTurns = sqliteTable('dialogue_turns', {
@@ -270,3 +281,29 @@ export const personaMessages = sqliteTable('persona_messages', {
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
 })
+
+/** 可执行的约定。proposed 仅是邀请，用户接受后才构成承诺。 */
+export const commitments = sqliteTable('commitments', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  personId: text('person_id').notNull().references(() => persons.id),
+  visitorId: text('visitor_id').notNull().references(() => persons.id),
+  sourceDialogueId: text('source_dialogue_id'),
+  title: text('title').notNull(),
+  kind: text('kind').notNull().default('meeting'),
+  location: text('location').notNull(),
+  dueSim: text('due_sim').notNull(),
+  status: text('status').notNull().default('proposed'),
+  createdSim: text('created_sim').notNull(),
+  updatedSim: text('updated_sim').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+/** 已看过的事件水位按用户与时间线隔离，GET 不改变水位。 */
+export const worldVisits = sqliteTable('world_visits', {
+  userId: text('user_id').notNull().references(() => users.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  eventCursor: integer('event_cursor').notNull().default(0),
+  seenAt: text('seen_at').notNull(),
+}, t => [primaryKey({ columns: [t.userId, t.timelineId] })])

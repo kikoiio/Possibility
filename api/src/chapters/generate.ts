@@ -3,7 +3,7 @@ import type { Db } from '../db/client'
 import { chapters, events, persons, timelines, worlds, worldPersons } from '../db/schema'
 import { complete, configFromEnv, type ChatMessage } from '../llm/client'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { gateWorld, settleWorld } from '../engine/guard'
+import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
 import type { Env } from '../index'
 import type { ForkScenario } from '../agent/types'
 
@@ -113,7 +113,7 @@ export function rosterLine(persons: { name: string; isUser: boolean }[]): string
 
 /**
  * 生成章节：取「上一章之后（或最近 1 虚拟日）」的事件 → 一次 LLM 调用写成小说化回顾。
- * 走统一护栏（gate/settle，purpose=chapter）；解析失败重试 1 次，失败尝试也记账。
+ * 每次 fetch 前原子预留预算（purpose=chapter）；解析失败重试 1 次。
  */
 export async function generateChapter(
   env: Env,
@@ -173,13 +173,13 @@ export async function generateChapter(
     eventLines: rows.map((e) => fmtEventLine(e, nameOf)),
   })
 
-  const config = configFromEnv(env)
-  let settled = gate.world
+  const config = configFromEnv(env, worldReservation(db, world.id, cfg, {
+    timelineId: timeline.id, personId: null, purpose: 'chapter',
+  }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const raw = await complete(config, messages, { maxTokens: 8000 })
-      settled = await settleWorld(db, settled, { timelineId: timeline.id, personId: null, purpose: 'chapter' }, 1, cfg)
       const { title, content } = normalizeChapter(extractJson(raw))
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
@@ -196,10 +196,7 @@ export async function generateChapter(
       await db.insert(chapters).values({ ...dto, worldId: world.id })
       return dto
     } catch (e) {
-      // 失败的尝试也记账（烧了 token）
-      settled = await settleWorld(db, settled, { timelineId: timeline.id, personId: null, purpose: 'chapter' }, 1, cfg).catch(
-        () => settled,
-      )
+      if (e instanceof BudgetRefusal) throw e
       lastError = e
     }
   }

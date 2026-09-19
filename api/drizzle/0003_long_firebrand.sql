@@ -9,7 +9,7 @@ CREATE TABLE `__new_llm_call_log` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
-INSERT INTO `__new_llm_call_log`("id", "world_id", "user_id", "timeline_id", "person_id", "purpose", "created_at") SELECT "id", "world_id", "user_id", "timeline_id", "person_id", "purpose", "created_at" FROM `llm_call_log`;--> statement-breakpoint
+INSERT INTO `__new_llm_call_log`("id", "world_id", "user_id", "timeline_id", "person_id", "purpose", "created_at") SELECT "id", "world_id", NULL, "timeline_id", "person_id", "purpose", "created_at" FROM `llm_call_log`;--> statement-breakpoint
 DROP TABLE `llm_call_log`;--> statement-breakpoint
 ALTER TABLE `__new_llm_call_log` RENAME TO `llm_call_log`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;

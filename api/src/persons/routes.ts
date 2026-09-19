@@ -5,7 +5,7 @@ import { persons, personStates, timelines, worldPersons, worlds } from '../db/sc
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
 import { budgetFromEnv } from '../engine/budget'
-import { gateUser } from '../engine/guard'
+import { BudgetRefusal, gateUser } from '../engine/guard'
 import type { InitialState } from '../agent/types'
 import { DEFAULT_WORLD_LOCATIONS } from '../worlds/defaults'
 import type { Env } from '../index'
@@ -26,6 +26,7 @@ personRoutes.post('/distill', async (c) => {
     const draft = await distillPerson(c.env, db, c.get('user').id, description)
     return c.json(draft)
   } catch (e) {
+    if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
     return c.json({ error: `创建人物失败：${e instanceof Error ? e.message : '未知错误'}` }, 502)
   }
 })

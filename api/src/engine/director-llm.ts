@@ -6,7 +6,7 @@ import type { Env } from '../index'
 import type { WorldSnapshot } from '../agent/engine-context'
 import { extractJson } from '../agent/engine-prompt'
 import { MAX_REACTORS_PER_EVENT } from './director'
-import type { AgentStep } from './steps/types'
+import type { AgentStep, DecideOpts } from './steps/types'
 
 type Event = typeof events.$inferSelect
 
@@ -69,11 +69,12 @@ export async function callDirector(
   env: Env,
   event: { title: string; description: string },
   candidates: DirectorCandidateView[],
+  opts: DecideOpts = {},
 ): Promise<{ order: string[] | null; llmCalls: number }> {
-  const config = configFromEnv(env)
+  const config = configFromEnv(env, opts.reserve)
   const { system, user } = buildDirectorPrompt(event, candidates)
   let llmCalls = 0
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < Math.max(0, Math.min(2, opts.maxCalls ?? MAX_DIRECTOR_CALLS_PER_TICK)); attempt++) {
     llmCalls++
     try {
       const raw = await complete(config, [
@@ -81,12 +82,12 @@ export async function callDirector(
         { role: 'user', content: user },
       ])
       const order = parseDirectorOrder(extractJson(raw), candidates.map((c) => c.personId))
-      if (order.length) return { order, llmCalls }
+      if (order.length) return { order, llmCalls: opts.reserve?.calls ?? llmCalls }
     } catch {
       // 重试一次
     }
   }
-  return { order: null, llmCalls }
+  return { order: null, llmCalls: opts.reserve?.calls ?? llmCalls }
 }
 
 /**
@@ -102,6 +103,7 @@ export async function arbitrateInjections(
   db: Db,
   snapshot: WorldSnapshot,
   steps: AgentStep[],
+  opts: DecideOpts = {},
 ): Promise<{ steps: AgentStep[]; llmCalls: number }> {
   const injectionSteps = steps.filter((s) => s.kind === 'injection' && s.eventId)
   if (!injectionSteps.length) return { steps, llmCalls: 0 }
@@ -141,7 +143,7 @@ export async function arbitrateInjections(
   }
   if (views.length <= MAX_REACTORS_PER_EVENT) return { steps, llmCalls: 0 }
 
-  const { order, llmCalls } = await callDirector(env, event, views)
+  const { order, llmCalls } = await callDirector(env, event, views, opts)
   if (!order?.length) return { steps, llmCalls }
 
   const rank = new Map(order.map((id, i) => [id, i]))

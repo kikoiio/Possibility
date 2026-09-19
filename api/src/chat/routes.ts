@@ -8,7 +8,7 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
 import { runAgentTurn, type HistoryMessage } from '../agent/loop'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { gateWorld, settleWorld } from '../engine/guard'
+import { gateWorld } from '../engine/guard'
 import type { AgentMode } from '../agent/types'
 import type { Env } from '../index'
 
@@ -120,12 +120,13 @@ async function runAndStream(
   }
 
   let full = ''
-  let llmCalls = 0
+  const controller = new AbortController()
+  stream.onAbort(() => controller.abort())
+  if (stream.aborted) controller.abort()
   try {
-    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [])) {
+    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], { signal: controller.signal })) {
       if (ev.type === 'text') full += ev.delta
       if (ev.type === 'done') {
-        llmCalls = ev.llmCalls ?? 0
         if (ev.error) {
           await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: ev.error }) })
         }
@@ -137,15 +138,6 @@ async function runAndStream(
     await stream.writeSSE({
       data: JSON.stringify({ type: 'error', message: e instanceof Error ? e.message : '模型调用失败' }),
     })
-  }
-  if (llmCalls > 0) {
-    await settleWorld(
-      db,
-      gate.world,
-      { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'chat' },
-      llmCalls,
-      cfg,
-    )
   }
   return full
 }

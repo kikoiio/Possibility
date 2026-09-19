@@ -7,7 +7,8 @@ import { generateChapter } from './generate'
 import type { Env } from '../index'
 
 export const chapterRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-chapterRoutes.use('*', authMiddleware)
+chapterRoutes.use('/worlds/:id/chapters', authMiddleware)
+chapterRoutes.use('/chapters/:id', authMiddleware)
 
 async function loadOwnedWorld(db: ReturnType<typeof createDb>, worldId: string, userId: string) {
   const w = await db

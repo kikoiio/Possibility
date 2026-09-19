@@ -137,9 +137,20 @@
   - `api/drizzle/0004_living_scalphunter.sql`（chapters 表）
   - `api/drizzle/0005_grey_tag.sql`（worlds.last_user_activity_at、persons.is_user）
   - `api/drizzle/0006_awesome_colonel_america.sql`（persona_messages 留言表）
+  - `api/drizzle/0007_secret_abomination.sql`（持续生活：约定、归来水位、连续 scene 会话、分叉快照）
 - 新环境变量（均可不配）：`PREWORLD_DAILY_CAP`（预世界调用用户日限额，缺省 40）、`IDLE_ARCHIVE_DAYS`（闲置归档天数，缺省 7）、`DIRECTOR_LLM`（缺省 on，`0` 关闭 LLM 导演仲裁）。
 - `llm_call_log.purpose` 新增枚举值：`world_draft / fork_preview / fork_simulate / chapter / director / scene`（旧行不受影响）。
-- 无新增迁移。scene 复用既有 `dialogues` / `dialogue_turns` 表（在场身份也是 persons 行），存量数据兼容。
+
+## 四之七、持续生活版本（2026-09-20）
+
+1. **可靠性收口**：公开 demo 路由先于认证子应用挂载；世界/用户 LLM 调用在每次模型请求前使用 D1 条件写入预占额度，重试也计费；流式超时覆盖响应体读取并取消 reader。新增公开路由、流式挂起回归测试。
+2. **连续交谈**：同一「时间线 × 在场身份 × 地点」复用 scene 对话，服务端保存逐句历史，刷新后恢复；`requestId` 防止网络重试重复写入；时间线切换不会把上一条线的内容带过来。
+3. **归来回顾**：`/worlds/:id/return` 以事件 rowid 水位和明确的「看完了」操作工作，GET 不标记已读；留言改为时间线隔离、可回看、显式确认已读，避免打开面板就丢失。
+4. **未赴之约**：scene 输出可选 `commitment`（见面/帮忙、地点、截止时间），用户明确接受后才生效；引擎用零 LLM 机械推进处理赴约、拒绝、履约、失约和解释，并写入事件与关系记忆；同一状态转移幂等。
+5. **分叉证据对照**：分叉保存不可变源快照；对照接口展示两条线当前状态和共有/独有事件，并明确“观察到的差异不等于因果证明”；旧分叉标记历史不完整，不补造历史。
+6. **测试结果**：API **79/79**，API/Web 类型检查通过，前端生产构建通过；本地迁移 `0007` 已应用。真实模型调用未用于测试。
+
+scene 仍使用现有 `dialogues` / `dialogue_turns` 表并增加会话标记；存量数据兼容。远程 D1 部署前需应用 `0007`，本轮不部署、不推送。
 
 ## 原四、升级方向建议（执行前的规划存档）
 

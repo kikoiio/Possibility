@@ -2,6 +2,8 @@ import { and, eq, lt } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { timelines } from '../db/schema'
 import { configFromEnv, streamChat, type ChatMessage } from '../llm/client'
+import { budgetFromEnv } from '../engine/budget'
+import { worldReservation } from '../engine/guard'
 import type { Env } from '../index'
 import type { AgentContextData } from './context'
 import { buildSystemPrompt } from './prompt'
@@ -33,9 +35,12 @@ export async function* runAgentTurn(
   ctx: AgentContextData,
   input: string,
   history: HistoryMessage[] = [],
-  opts: { maxIterations?: number; maxActs?: number } = {},
+  opts: { maxIterations?: number; maxActs?: number; signal?: AbortSignal } = {},
 ): AsyncIterable<AgentEvent> {
-  const config = configFromEnv(env)
+  const reserve = worldReservation(db, ctx.world.id, budgetFromEnv(env), {
+    timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: ctx.mode === 'simulate' ? 'fork_simulate' : 'chat',
+  })
+  const config = configFromEnv(env, reserve)
   const tools = toolsFor(ctx.mode)
   const maxActs = opts.maxActs ?? (ctx.mode === 'chat' ? 5 : 15)
   const maxIterations = opts.maxIterations ?? (ctx.mode === 'chat' ? 6 : 25)
@@ -68,15 +73,13 @@ export async function* runAgentTurn(
   ]
 
   let touched = false
-  let llmCalls = 0
   let streamError: string | null = null
   for (let iter = 0; iter < maxIterations; iter++) {
     let text = ''
     const calls: { id: string; name: string; args: Record<string, unknown> }[] = []
 
-    llmCalls++
     try {
-      for await (const ev of streamChat(config, messages, tools, { timeoutMs: STREAM_TIMEOUT_MS })) {
+      for await (const ev of streamChat(config, messages, tools, { timeoutMs: STREAM_TIMEOUT_MS, signal: opts.signal })) {
         if (ev.type === 'text') {
           text += ev.delta
           yield { type: 'text', delta: ev.delta }
@@ -85,8 +88,7 @@ export async function* runAgentTurn(
         }
       }
     } catch (e) {
-      // 流中途失败（超时/断流）：中断回合但照常产出 done——llmCalls 是已真实发生的
-      // 调用数，调用方必须照此记账，否则预算护栏出现旁路。
+      // 流失败中断回合；预算已在每次 fetch 前预留，done 计数仅供展示。
       streamError = e instanceof Error ? e.message : '模型调用失败'
       break
     }
@@ -122,5 +124,5 @@ export async function* runAgentTurn(
       .set({ simNow: next })
       .where(and(eq(timelines.id, ctx.timeline.id), lt(timelines.simNow, next)))
   }
-  yield { type: 'done', llmCalls, ...(streamError ? { error: streamError } : {}) }
+  yield { type: 'done', llmCalls: reserve.calls, ...(streamError ? { error: streamError } : {}) }
 }

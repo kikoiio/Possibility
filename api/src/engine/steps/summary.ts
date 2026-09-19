@@ -40,9 +40,9 @@ export const summaryExecutor: StepExecutor<SummaryInput, SummaryOutput> = {
   },
 
   async decide(env: Env, input: SummaryInput, opts?: DecideOpts): Promise<DecideResult<SummaryOutput>> {
-    const config = configFromEnv(env)
+    const config = configFromEnv(env, opts?.reserve)
     let llmCalls = 0
-    const maxAttempts = Math.max(1, Math.min(2, opts?.maxCalls ?? 2))
+    const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
@@ -54,12 +54,12 @@ export const summaryExecutor: StepExecutor<SummaryInput, SummaryOutput> = {
           ],
           { maxTokens: 12000 },
         )
-        return { value: normalizeSummaryJson(extractJson(raw)), llmCalls }
+        return { value: normalizeSummaryJson(extractJson(raw)), llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后跳过
       }
     }
-    return { value: null, llmCalls }
+    return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
   async act(db: Db, _env: Env, input: SummaryInput, output: SummaryOutput): Promise<string> {
