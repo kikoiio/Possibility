@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { PersonFocus } from '../../api/types'
 import { memoriesApi } from '../../api/client'
 import { AvatarChip } from '../../lib/personColor'
+import { timelineHref } from '../../lib/timelineUrl'
 
 interface PersonLiveState {
   simTime: string
@@ -18,6 +20,7 @@ interface Props {
   liveState: PersonLiveState | null
   fallbackName: string
   personId?: string
+  canChat: boolean
   canEditMemories: boolean
   timelineId: string
   expectedVersion: number
@@ -30,7 +33,7 @@ interface Props {
 type Tab = 'thoughts' | 'schedule' | 'memories'
 
 /** 人物抽屉：当前状态 + 想法流 / 今日日程 / 记忆（可审计：校正与删除，F12） */
-export default function PersonDrawer({ focus, loading, liveState, fallbackName, personId, canEditMemories, timelineId, expectedVersion, defaultTab = 'thoughts', onClose, onMemoriesChanged }: Props) {
+export default function PersonDrawer({ focus, loading, liveState, fallbackName, personId, canChat, canEditMemories, timelineId, expectedVersion, defaultTab = 'thoughts', onClose, onMemoriesChanged }: Props) {
   const [tab, setTab] = useState<Tab>(defaultTab)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -99,9 +102,18 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
           {id && <AvatarChip personId={id} name={name} className="h-8 w-8 text-sm" />}
           <h3 className="font-story truncate text-base font-semibold text-ink">{name}</h3>
         </div>
-        <button onClick={onClose} className="shrink-0 text-xs text-ink-faint transition-colors hover:text-ink-soft">
-          关闭
-        </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {canChat && id && <Link
+            to={timelineHref(`/people/${encodeURIComponent(id)}`, timelineId)}
+            className="text-xs text-ink-soft transition-colors hover:text-ink"
+            aria-label={`与${name}普通聊天`}
+          >
+            普通聊天
+          </Link>}
+          <button onClick={onClose} className="text-xs text-ink-faint transition-colors hover:text-ink-soft">
+            关闭
+          </button>
+        </div>
       </div>
 
       {/* 状态卡 */}

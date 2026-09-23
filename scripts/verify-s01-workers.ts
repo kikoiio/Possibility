@@ -98,7 +98,7 @@ async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstR
     request.setEncoding('utf8')
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
-      let payload: { messages?: { content?: string }[] } = {}
+      let payload: { messages?: { content?: string }[]; stream?: boolean } = {}
       try { payload = JSON.parse(body) as typeof payload } catch { /* return a deterministic malformed-request response below */ }
       const prompt = payload.messages?.map(message => message.content ?? '').join('\n') ?? ''
       const isSchedule = prompt.includes('安排今日日程')
@@ -112,6 +112,25 @@ async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstR
         { start: '20:00', end: '00:00', location: 'Cafe', activity: 'Sleeping', kind: 'sleep' },
       ] }) : JSON.stringify({ events: [], thought: 'A quiet local verification tick.', memory: null,
         nextLocation: null, nextActivity: null, mood: null, goal: null })
+      if (payload.stream) {
+        const reply = '你好！我今天打算先在图书馆研究一会儿，之后去咖啡馆休息。'
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' })
+        if (prompt.includes('S01 P4 CHAT DROP')) {
+          response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '这段不完整的回复不能保存' } }] })}\n\n`)
+          setTimeout(() => response.destroy(), 250)
+          return
+        }
+        if (prompt.includes('S01 P4 CHAT DELAY')) {
+          setTimeout(() => {
+            response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`)
+            response.end('data: [DONE]\n\n')
+          }, 5_000)
+          return
+        }
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`)
+        response.end('data: [DONE]\n\n')
+        return
+      }
       if (isSchedule && !delayedFirst) {
         delayedFirst = true
         signalFirst()
@@ -154,7 +173,7 @@ function seedSql(): string {
   return [
     `INSERT INTO users (id, username, password_hash, created_at) VALUES ('s01-owner', 's01-owner', 'f5f8e59a69cd168d28eb5b8494d47186:db6aae3b459afd21002d1c380b8b64508571b41563bef8db76275d8531bf8556', ${sql(createdAt)});`,
     `INSERT INTO sessions (token, user_id, expires_at) VALUES (${sql(ownerSessionToken)}, 's01-owner', '2099-01-01T00:00:00.000Z');`,
-    `INSERT INTO worlds (id, user_id, name, description, locations_json, status, calls_today, calls_day, created_at) VALUES ('s01-world', 's01-owner', 's01 local worker world', 'isolated', ${sql(JSON.stringify(model.locations))}, 'running', 0, ${sql(createdAt.slice(0, 10))}, ${sql(createdAt)});`,
+    `INSERT INTO worlds (id, user_id, name, description, locations_json, status, calls_today, calls_day, is_demo, created_at) VALUES ('s01-world', 's01-owner', 's01 local worker world', 'isolated', ${sql(JSON.stringify(model.locations))}, 'running', 0, ${sql(createdAt.slice(0, 10))}, 1, ${sql(createdAt)});`,
     `INSERT INTO persons (id, user_id, name, model_json, is_user, created_at) VALUES ('s01-resident', 's01-owner', 'Local Resident', ${sql(JSON.stringify(residentModel))}, 0, ${sql(createdAt)});`,
     `INSERT INTO world_persons (world_id, person_id, joined_at) VALUES ('s01-world', 's01-resident', ${sql(createdAt)});`,
     `INSERT INTO timelines (id, world_id, parent_timeline_id, fork_scenario_json, sim_now, created_at, status, ancestor_ids_json, last_real_tick_at) VALUES ('s01-main', 's01-world', NULL, NULL, ${sql(startTime)}, ${sql(createdAt)}, 'active', '[]', ${sql(realStartTime)});`,

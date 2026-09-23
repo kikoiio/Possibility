@@ -1,277 +1,151 @@
-# s01｜P3 Fork 与 Compare 验收闭环 Plan
+# s01｜P4 世界优先 UI 旅程验收 Plan
 
-> 依据：[spec.md](./spec.md)。本阶段聚焦 P3 当前四项缺口：多 Worker 并发证据、多级 Fork 隔离矩阵、消息送达完整旅程和 Compare UI 人工走查。先复核已有实现；只有验收证据暴露实际缺陷时才改运行时代码。
+> 依据：[spec.md](./spec.md)。计划优先复用世界页、后台引擎与普通聊天现有路径；只有实际旅程或回归验证暴露缺口时，才修改运行时代码。
 
 ## 架构概览
 
-- **Fork 写入与竞争验证**：继续由现有 Fork 服务捕获源 revision、状态、事实与继承投影，并用 D1 原子批次创建子线。扩展现有隔离验收驱动器，启动两个独立 Worker，共享同一临时本地 D1，对成功、幂等重试、源版本竞争、容量冲突和事务失败进行竞争验证；若出现缺陷，只在现有服务/数据库约束边界修复。
-- **Fork 可见性与只读审计**：继续复用不可变 checkpoint、祖先 cutoff、记忆/事件选择器及世界状态审计。扩展固定旅程夹具，组合验证 Root→Child→Grandchild 中记忆、承诺、知识的允许继承、冻结边界与隔离，不另建平行历史模型。
-- **消息获知旅程**：复用在场传话的版本化提交和居民决策上下文中的知识装配。旅程从子线提交开始，检查正确接收者的上下文包含带来源/certainty 的知识，并检查其他居民和根线/旁支不可见；不以居民必须回复或采取固定行动为条件。
-- **Compare 证据与界面验收**：后端继续使用单次数据库快照和 Fork provenance 构造对照证据；前端继续使用 Compare 面板显示共同历史、分叉条件、差异证据和限制说明。通过登录态本地浏览器走查结构化 Fork 与历史不完整旧 Fork，并记录用户可见结果；若发现缺陷，仅做满足 spec 的最小调整。
+- **世界运行与观察**：复用 `WorldView` 的快照、世界流、模拟时钟及暂停/继续控制；世界推进仍由后台 engine pinger 调用 `runTick` 完成。浏览器验收通过本地 pinger 启动/恢复世界并观察时间线和状态变化，不从用户浏览器直接调用内部 tick 接口。
+- **普通居民聊天**：复用居民详情页按指定 timeline 创建/恢复对话的路径、`ChatStream` 的 SSE 展示和失败后读取服务端历史的恢复逻辑。若世界页没有清楚的普通聊天入口，只补一个从当前居民及时间线进入该路径的导航；聊天仍按其既有上下文与权限闸门执行。
+- **时间线隔离**：复用 `WorldView` 的当前 timeline 标识、切换时重置页面增量状态、订阅清理和请求结果归属检查。人工走查与回归覆盖快速切换、旧流/旧请求迟到及断流后切线。
+- **旅程证据**：用现有 API/世界旅程测试验证运行和对话的持久化边界；使用合成账号、本地隔离数据库及固定模型替身完成登录态浏览器主旅程；匿名页沿用 `readonly` 世界视图做只读边界验证。
 
 ## 核心数据结构与接口
 
-本阶段复用现有数据契约，不新增业务表或并行历史结构。
+本阶段沿用现有产品数据契约，不新增持久化业务模型。
 
-### ForkSnapshot
+### 世界与时间线快照
 
-由 `api/src/agent/visibility.ts` 定义，作为 Fork 时冻结的继承证据：
-
-```ts
-interface ForkSnapshot {
-  version: 1
-  sourceTimelineId: string
-  sourceSimTime: string
-  capturedAt: string
-  ancestorCutoffs: AncestorCutoff[]
-  states: PersonStateRow[]
-  schedules: ScheduleRow[]
-  memories: MemoryRow[]
-  events: EventRow[]
-  dialogues?: DialogueRow[]
-  dialogueTurns?: DialogueTurnRow[]
-  commitments: CommitmentRow[]
-  personaMessages?: PersonaMessageRow[]
-  completeDomains?: ProjectionDomain[]
-  historyComplete: boolean
-  sourceStateVersion?: number
-  worldModelVersion?: number
-  worldFacts?: WorldFactRow[]
-}
-```
-
-`PersonStateRow`、`ScheduleRow`、`MemoryRow`、`EventRow`、`DialogueRow`、`DialogueTurnRow`、`CommitmentRow`、`PersonaMessageRow` 和 `WorldFactRow` 分别对应数据库 schema 中同名投影表的选取行类型。
-
-可选域用于兼容旧快照。缺少字段不能被视作空集合或完整历史。
-
-### AncestorCutoff
+`web/src/api/types.ts` 中的 `WorldSnapshot` 在一次读取中提供世界状态、时间线列表、当前时间线 ID、模拟时间、`stateVersion`、地点居民分布、可见事实和事件。页面处理任何异步结果时都以当前 `worldId + timelineId` 为归属，并以 `stateVersion` 避免旧快照覆盖新状态。
 
 ```ts
-interface AncestorCutoff {
-  timelineId: string
-  realTime: string
-  simTime: string | null
-}
-```
-
-用于限定后代时间线从每个祖先可继承的历史边界。
-
-### KnownFact
-
-居民决策上下文中可见的结构化事实：
-
-```ts
-interface KnownFact {
-  kind: 'environment' | 'knowledge'
-  text: string
-  sourceFactId: string
-  certainty: 'fact' | 'rumor'
-}
-```
-
-消息旅程检查接收者、来源事实 ID 和 certainty；不得将消息提交成功等同于居民已经阅读或采取行动。
-
-### Compare 结果
-
-```ts
-interface ForkEvidence {
-  forkTimelineId: string
-  sourceTimelineId: string | null
-  sourceSimTime: string | null
-  provenance: 'snapshot' | 'legacy'
-  sourceStateVersion: number | null
-  worldModelVersion: number | null
-  scenario: ForkScenario | null
-}
-
-interface TimelineEvidence {
-  id: string
+interface WorldSnapshot {
+  world: WorldSummary
+  timelines: TimelineInfo[]
+  currentTimelineId: string
   simNow: string
-  status: string
-  parentTimelineId: string | null
-  historyComplete: boolean
-}
-
-interface StateFactAndEventDifferences {
-  states: {
-    personId: string
-    changes: { field: string; left: string | null; right: string | null; leftEvidence: unknown; rightEvidence: unknown }[]
-  }[]
-  facts: { key: string; left: { value: unknown; factId: string; version: number; simTime: string } | null;
-    right: { value: unknown; factId: string; version: number; simTime: string } | null }[]
-  worldModelVersions: { left: number | null; right: number | null }
-  events: { shared: EventEvidence[]; leftOnly: EventEvidence[]; rightOnly: EventEvidence[] }
-}
-
-interface EventEvidence {
-  id: string
-  simTime: string
-  title: string
-  description: string
-}
-
-interface ComparisonResult {
-  worldId: string
-  interpretation: 'observed_differences_not_causal_claims'
-  timeAlignment: 'same_sim_time' | 'different_sim_times'
-  left: TimelineEvidence
-  right: TimelineEvidence
-  sharedForkOrigin: {
-    timelineId: string
-    leftFork: ForkEvidence | null
-    rightFork: ForkEvidence | null
-  } | null
-  differences: StateFactAndEventDifferences
-  limitations: string[]
+  stateVersion: number
+  worldModelVersion: number | null
+  evidenceStatus: 'structured' | 'legacy'
+  currentFacts: WorldFact[]
+  locationBoard: LocationBoardEntry[]
+  events: WorldEventItem[]
 }
 ```
 
-`TimelineEvidence` 保留两线 ID、模拟时刻、状态、父线及历史完整度；差异条目带对应时间线、模拟时间或事实 ID/version。此类型描述现有 API 结果的稳定语义，字段只在验收证明需要时调整。
+现有 `WorldStreamEvent` 表示同步水位、事件、对话回合、居民状态和时钟变更。订阅在世界或时间线切换时清理；事件到达后只更新所属时间线的页面状态。
 
-### 核心接口
+### 运行契约
 
-```ts
-forkTimeline(
-  db: Db,
-  worldId: string,
-  sourceId: string,
-  scenario: ForkScenario | null,
-  requestId?: string,
-): Promise<{ id: string; simNow: string; snapshot: ForkSnapshot }>
+`api/src/engine/tick.ts` 中的 `TickSummary` 汇总一次后台节拍对世界、时间线和执行步骤的结果；`runTick(env, db)` 推进所有运行中世界的活动时间线。用户界面的“继续”通过现有世界恢复路径改变运行状态，实际推进由本地/部署环境中的 engine pinger 触发，浏览器不直接调用内部 tick 入口。
 
-compareTimelines(
-  db: Db,
-  worldId: string,
-  leftId: string,
-  rightId: string,
-): Promise<ComparisonResult | null>
+### 普通对话契约
 
-buildEngineContext(
-  db: Db,
-  personId: string,
-  snapshot: WorldSnapshot,
-): Promise<EngineContext | null>
-```
+现有普通聊天以 `Conversation` 绑定人物和时间线，以 `Message` 表示已持久化的用户消息、人物完整回复或系统提示。居民详情页通过 `POST /api/persons/:id/conversations` 按时间线创建或取得对话；发送消息由 SSE 传回增量，只有完整成功的居民回复才进入持久历史。聊天上下文由 `buildAgentContext(...)` 按 user、person、timeline 和 chat 模式构造。
 
-`compareTimelines` 的结果包含两侧时间线证据、共同 Fork 来源、状态/事实/事件差异、时间对齐状态和限制说明。本阶段只有在验收发现缺字段或误导表述时才扩展结果。
+### 页面与客户端边界
 
-Fork 相同请求 ID/相同载荷应重放同一子线；不同载荷或过期源状态以冲突结束。并发验收也核对活动时间线容量边界。
+本阶段复用 `worldsApi.snapshot/pause/resume`、`subscribeWorldStream(...)`、`postSSE(...)` 及聊天/人物 API。若新增世界页到普通聊天的入口，路由必须携带当前时间线；不另建聊天协议、运行 API 或旁路时间线状态。
 
 ## 模块设计
 
-### Fork 提交边界
+### 世界观察与操作
 
-**职责：** 捕获源 revision 与不可变状态快照；原子创建时间线及其初始投影；处理幂等重放与源状态/容量冲突。
+**职责：** 在当前世界/时间线下装载快照和增量事件，显示模拟时钟、状态与事件证据，提供暂停/继续、切线、Fork/Compare 等入口。
 
-**对外接口：** Fork 路由调用 `forkTimeline(...)`；成功返回既有子线与 checkpoint，冲突返回明确 409。
+**对外接口：** `WorldView`；`WorldSnapshot` 和 `WorldStreamEvent`；现有 `worldsApi` 与 timeline API。必要时增加从居民抽屉进入普通聊天的导航，并将 `timelineId` 带入居民详情路由。
 
-**依赖：** 时间线/版本表、`ForkSnapshot` 和现有数据库约束。若并发试验证明存在竞态，只在现有 D1 约束或提交事务边界修复。
+**依赖：** 世界快照/订阅 API、时间线选择器、地点面板、事件流、人物抽屉及已有 Fork/Compare 面板。
 
-### 继承可见性与审计
+### 世界推进运行时
 
-**职责：** 依据不可变 checkpoint 和祖先 cutoff 选择记忆/事件/知识；对结构化线检查投影与来源一致性，对旧线保留不完整状态。
+**职责：** 按当前运行规则推进世界时钟、日程、居民行为与事件，并回报节拍结果。
 
-**对外接口：** 继续使用现有可见性选择器和只读世界审计；测试层提供 Root→Child→Grandchild 组合矩阵。
+**对外接口：** 后台 `runTick` 和 engine tick 路由；浏览器只使用世界暂停/继续及快照/订阅接口。
 
-**依赖：** Fork checkpoint、事实账本、记忆与承诺投影。
+**依赖：** 本地隔离 D1、engine pinger、固定模型替身、现有版本化世界提交及预算限制。
 
-### 消息上下文旅程
+### 普通居民对话
 
-**职责：** 从在场消息提交追踪至接收者的后续决策上下文，确认来源和 certainty；对其他人物/时间线执行不可见性断言。
+**职责：** 按当前人物和时间线加载或创建普通聊天，显示已保存历史与流式回复，失败后核对服务端记录。
 
-**对外接口：** 复用在场提交路由和 `buildEngineContext(...)` 的知识装配边界；模型替身只用于确定性触发，不断言居民行为结果。
+**对外接口：** 居民详情页、`ChatStream`、`/api/persons/:id/conversations`、`/api/conversations/:id/messages` 及 history 查询。
 
-**依赖：** 在场命令/事实、Fork 可见性、居民上下文构造。
+**依赖：** `buildAgentContext`、聊天预算/世界状态闸门、SSE 解析与当前时间线路由参数。
 
-### Compare 证据与 UI
+### 访问模式与旅程验收
 
-**职责：** 服务端汇总可授权的两线状态、共同 Fork 来源、差异证据和限制；客户端让用户检查这些证据、旧历史边界及返回目标线。
+**职责：** 确认匿名演示页只读；在合成账号下串起世界入口、运行、普通对话、切线、Fork/Compare 和返回；收集可复核证据。
 
-**对外接口：** 继续使用 Compare API 与 Compare 面板；仅在走查发现呈现缺口时改返回字段或页面提示。
+**对外接口：** `DemoLanding` 的只读 `WorldView`；API 定向回归与本地登录态浏览器步骤。
 
-**依赖：** 世界归属校验、Compare 单批读取、时间线选择状态。
+**依赖：** 临时本地数据库、两个以上时间线、引擎 pinger/模型替身及浏览器验收记录。
 
-### P3 验收驱动与记录
+### 需求归属
 
-**职责：** 用临时 D1 启动多个 Worker 重复执行竞争场景；整理组合旅程、消息旅程及登录态 Compare 走查证据。
-
-**对外接口：** 开发/验收工具，不成为产品运行模块；结果写入审计报告和 checklist。
-
-**依赖：** 本地 Wrangler/Worker、固定模型替身、合成账号与临时目录。
+| Spec 需求 | 负责模块与接口 |
+|---|---|
+| F1 世界入口与当前时间线 | 世界观察与操作；`WorldSnapshot`、世界页 URL 及快照加载。 |
+| F2 运行推进与可观察变化 | 世界推进运行时 + 世界观察与操作；`runTick`、engine pinger、`WorldStreamEvent`。 |
+| F3 普通居民对话 | 普通居民对话；`PersonDetail`、`ChatStream`、聊天路由与 `buildAgentContext`。 |
+| F4 对话与世界结果边界 | 普通居民对话 + 世界观察与操作；仅以可追溯世界状态/事件证据呈现变化。 |
+| F5 Fork/Compare 路径衔接 | 世界观察与操作；`TimelineSwitcher`、`ComparePanel` 和带 timeline 的往返路由。 |
+| F6 切换时间线隔离 | 世界观察与操作；清理订阅、重置增量状态、检查请求结果的时间线和版本。 |
+| F7 访问模式边界 | 访问模式与旅程验收；公开 `DemoLanding` + `readonly` `WorldView`，服务端继续执行现有权限检查。 |
 
 ## 模块交互
 
 ```text
-Fork UI
-  → 已登录的世界 Fork 路由（归属、活动状态、条件、请求 ID）
-  → forkTimeline 读取源线与祖先证据
-  → 原子写入子线、revision 0、状态/日程/承诺副本与不可变 checkpoint
-  → 返回子线 ID 与来源版本
+登录用户打开世界
+  → WorldView 从 URL/快照解析 worldId 与 timelineId
+  → 拉取 WorldSnapshot，并订阅该时间线的 WorldStreamEvent
+  → 用户继续运行世界
+  → 世界 resume 路由恢复运行状态
+  → 本地 engine pinger 调用内部 tick 路由
+  → runTick 推进活动时间线并提交版本化状态
+  → 世界流发送 clock/state/event/sync
+  → WorldView 只接纳当前时间线且版本未倒退的数据
 ```
 
 ```text
-Root → Child → Grandchild 隔离旅程
-  → 每个分叉点固定当前可继承证据
-  → 在父线/子线分别追加记忆、承诺、知识
-  → 可见性选择器按 checkpoint/cutoff 计算各线可见集合
-  → 只读审计对照快照、事实账本与当前投影
-  → 断言允许继承的内容可见，越界内容不可见
+用户从世界页打开居民普通聊天
+  → 居民抽屉导航至 /people/:personId?timeline=:timelineId
+  → PersonDetail 按该时间线创建或恢复 Conversation
+  → ChatStream 读取历史并发送消息
+  → chat API 基于固定 world/person/timeline 构造上下文并流式返回
+  → 仅完整回复进入已保存历史；失败后重新读取服务端消息
+  → 返回 /worlds/:worldId?timeline=:timelineId
+  → WorldView 重新载入该线快照与订阅
 ```
 
 ```text
-Child 中提交消息
-  → 在场提交器写入版本化来源事实
-  → buildEngineContext(接收者, Child)
-  → 仅接收者上下文包含该来源与 certainty
-  → 检查其他居民、Root 与旁支上下文均不可见
+用户切换时间线 / Fork / Compare
+  → 更新所选 timelineId（并同步到世界 URL）
+  → 关闭旧订阅、清空旧线增量状态
+  → 载入新线快照并建立新订阅
+  → Compare 关闭或聊天返回时仍恢复指定时间线
 ```
 
-```text
-Compare 面板
-  → 已登录 Compare 路由（验证世界归属及两条时间线）
-  → compareTimelines 在单次 D1 batch 读取状态/版本/事实/事件
-  → 合并每条线自己的不可变 Fork checkpoint
-  → 返回共同祖先、分叉来源、差异证据、时间对齐与限制
-  → UI 人工检查结构化 Fork、legacy Fork 和返回选线行为
-```
-
-并发 Worker 旅程在每轮请求前用屏障对齐启动，轮后检查所有写入和数据库不变量；故障与拒绝路径通过事务前后快照确认无副作用。自动旅程的结构化证据与人工 UI 观察分别记录，不互相替代。
+匿名入口继续由 `DemoLanding` 加载公开快照并以只读 `WorldView` 展示，不开放写入控件或调用用户写入接口。
 
 ## 文件组织
 
 | 操作 | 文件 | 职责 |
 |---|---|---|
-| 修改 | `scripts/verify-s01-workers.ts` | 在现有隔离 Worker/D1 驱动器中补 Fork 并发、重放、源版本冲突与容量冲突场景；沿用临时目录和清理机制。 |
-| 修改 | `api/src/life/compare.test.ts` | 补 Root→Child→Grandchild 的记忆、承诺、知识继承/隔离矩阵，以及拒绝/失败无副作用断言。 |
-| 修改 | `api/src/test/world-journey.test.ts` | 补子线消息提交→接收者上下文→根线/其他接收者不可见的完整固定模型旅程。 |
-| 条件修改 | `api/src/life/fork.ts`、`api/src/worlds/routes.ts`、相关数据库迁移 | 仅当并发证据复现实际竞争缺陷时，修复快照/事务/约束边界。 |
-| 条件修改 | `api/src/agent/visibility.ts`、`api/src/world-state/invariants.ts` | 仅当隔离矩阵或只读审计发现可见性/完整性缺陷时修复。 |
-| 条件修改 | `api/src/life/compare.ts`、`web/src/components/world/ComparePanel.tsx` | 仅当登录态走查发现证据缺失、误导文案或返回选线串线时调整。 |
-| 修改 | `docs/current-state-audit.md` | 记录 P3 起点、逐项现有覆盖、隔离环境和本轮证据。 |
-| 修改 | `docs/world-quality-report.md` | 更新 P3 阶段状态、通过证据及未关闭边界。 |
-| 修改 | `spec_docs/s01/checklist.md` | 将 AC1–AC6 逐项转成执行清单并填写实际结果。 |
-
-本计划不预设新增业务表、依赖、迁移或浏览器自动化框架；条件修改项只有在验收发现缺陷时才进入实现。
+| 修改（若缺入口/切线状态问题） | `web/src/pages/WorldView.tsx` | 同步 URL 的 `timelineId`，衔接世界运行状态与当前居民详情入口。 |
+| 修改（若缺少导航） | `web/src/components/world/PersonDrawer.tsx` | 提供进入当前居民普通聊天的入口，并携带所选时间线。 |
+| 修改（若返回或异步归属有缺陷） | `web/src/pages/PersonDetail.tsx`、`web/src/components/ChatStream.tsx` | 保证普通聊天使用路由时间线，失败/返回状态与服务端历史一致。 |
+| 新建或修改测试 | `web/src/pages/WorldView.test.tsx`、`web/src/components/ChatStream.test.tsx` | 覆盖 URL 恢复、切线迟到结果及对话中断/历史恢复。若现有测试设施不能稳定挂载这些页面，再按实际结构调整位置。 |
+| 修改或新增测试 | `api/src/chat/routes.test.ts`、`api/src/engine/tick.test.ts`、`api/src/test/product-journey.test.ts` | 验证聊天上下文/完成回复持久化、真实 tick 推进以及跨 API 主旅程中的世界证据。现有 `chat/routes.test.ts` 不存在时新建。 |
+| 修改 | `spec_docs/s01/checklist.md` | 在 checklist 阶段把批准后的 AC1–AC8 转为逐项可执行检查并记录结果。 |
+| 修改 | `docs/current-state-audit.md`、`docs/world-quality-report.md` | 记录 P4 起点、实际验收环境/结果及未通过或未知范围。 |
 
 ## 技术决策
 
 | 决策点 | 选择 | 理由 |
 |---|---|---|
-| 多实例环境 | 扩展已有本地 Worker 驱动器，让两个独立进程共享一次性 D1 文件；不连接远端 D1。 | 与已确认的环境一致，能实际覆盖跨 Worker 竞争，同时保持数据库和凭据隔离。 |
-| 并发测试形式 | 固定种子数据、固定请求载荷，对两个 Worker 发起同步竞争；用响应与最终 D1 账本/时间线状态判定，不以耗时或吞吐量作为标准。 | 本阶段验证原子性、幂等和边界，不是性能基准测试。 |
-| Fork 历史模型 | 继续以不可变 `ForkSnapshot` 和祖先 cutoff 为继承依据；只在证据显示缺域或错误继承时修复。 | 避免新增第二套历史来源，也防止覆盖现有 legacy 兼容规则。 |
-| 多级隔离验证 | 采用固定夹具分别在 Fork 前/后写入记忆、承诺和知识，并逐线核对可见性与审计结果。 | 对应 P3 当前未闭合的组合矩阵，结果不依赖模型随机行为。 |
-| 消息送达语义 | 将提交、接收者知识可用、居民实际回应作为不同观察状态；验收前两者及隔离，后者不设固定预期。 | 与 spec 的消息边界一致，避免把事实写入夸大成居民行为承诺。 |
-| Compare 走查 | 使用本地合成账号及隔离数据，人工检查结构化与 legacy Fork 的证据/限制提示；界面缺陷才改 UI。 | 现有 API/UI 已有证据字段，需证明实际用户可读且不会误导。 |
-| 数据库结构 | 当前不新增业务字段或表；若验收发现现有不可变快照无法表达必要来源，再单独评估最小结构调整。 | 已有 checkpoint、revision 和 facts 覆盖本轮需求，先检验其行为。 |
-
-## Spec 覆盖
-
-| Spec 项 | Plan 归属 |
-|---|---|
-| F1、AC1：并发 Fork 一致性 | Fork 写入与竞争验证模块；隔离 Worker 驱动器与现有 Fork 提交边界。 |
-| F2、AC2：多级记忆/承诺/知识隔离 | Fork 可见性与只读审计模块；Root→Child→Grandchild 固定旅程。 |
-| F3、AC3：消息进入正确接收者上下文 | 消息上下文旅程；版本化消息提交与 `buildEngineContext`。 |
-| F4–F5、AC4：Compare 证据及因果边界 | Compare 证据与 UI 模块；API 单批读取及登录态浏览器走查。 |
-| F6、AC5：访问和失败无副作用 | Fork/Compare 路由与提交边界；并发/权限/故障前后快照断言。 |
-| AC6：P3 出口报告 | P3 验收驱动与记录；审计报告和 checklist。 |
+| 世界推进触发 | 复用世界暂停/继续和后台 engine pinger；不让浏览器直调内部 tick 接口。 | 与现有运行和租约模型一致，真实验证产品的后台推进路径。 |
+| 当前时间线保存 | 将 `timelineId` 放入世界页 URL；进入居民聊天时传递到现有 `timeline` 参数，返回时恢复相同 timeline。 | 让刷新、返回、深链和聊天往返都指向明确上下文。 |
+| 普通对话入口 | 从世界当前居民打开标准居民详情聊天；保持它与在场交流模式分开。 | 普通聊天和在场交流的身份、地点、资格、保存及知识规则不同。 |
+| 流式回复恢复 | 保持服务端“仅完整居民回复入历史”的规则；前端断流后重新读取会话历史。 | 防止把半截输出显示为已完成回复，并尊重现有持久化事实。 |
+| 验收运行环境 | 合成账号 + 一次性本地 D1 + 本地 engine pinger + 固定模型替身。 | 可重复验证真实运行/聊天集成，同时避免依赖真实模型、远端数据库或生产数据。 |
+| 修复范围 | 先复测现有功能；仅对 AC 失败暴露的缺口做最小修改。 | 保持 P4 限定为旅程验收，不扩成 UI 重做。 |

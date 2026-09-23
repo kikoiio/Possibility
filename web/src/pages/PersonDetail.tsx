@@ -5,6 +5,7 @@ import type { DistillDraft, PersonDetail as Detail, PersonState, TimelineDetail 
 import StateBar from '../components/StateBar'
 import ChatStream from '../components/ChatStream'
 import PersonCard from '../components/PersonCard'
+import { timelineHref } from '../lib/timelineUrl'
 
 type Tab = 'chat' | 'card' | 'timelines'
 
@@ -91,13 +92,17 @@ export default function PersonDetail() {
   const currentTimeline = timelineId
     ? detail.timelines.find((t) => t.id === timelineId)
     : mainTimeline
+  const returnTimelineId = currentTimeline?.id ?? timelineId
+  const returnHref = detail.world && returnTimelineId
+    ? timelineHref(`/worlds/${encodeURIComponent(detail.world.id)}`, returnTimelineId)
+    : '/people'
 
   return (
     <div className="flex h-full flex-col">
       {/* 头部 */}
       <div className="border-b border-ink-line bg-sheet px-4 py-3">
         <div className="flex items-center gap-3">
-          <Link to="/people" className="text-ink-faint hover:text-ink" aria-label="返回">
+          <Link to={returnHref} className="text-ink-faint hover:text-ink" aria-label={detail.world ? '返回世界' : '返回人物列表'}>
             ←
           </Link>
           <div className="min-w-0 flex-1">

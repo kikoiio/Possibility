@@ -98,3 +98,59 @@ legacy/unknown 的覆盖范围：无结构化根线基线的旧时间线和缺�
 - `npm --workspace web run build`：TypeScript 检查与 Vite production build 通过。
 
 本轮新增组合测试夹具、D1 短暂锁竞争分类、认证只读查询的有界重试和在场面板 recipient 列表刷新修复；没有新增业务表或迁移。保留边界：legacy Fork 没有不可变 checkpoint 时仅标记历史不完整；比较仅显示观察到的状态/事实/事件差异，不推断因果；`rumor` 代表进入接收者知识记录，不代表居民已阅读、相信或采取行动。手工 Compare 中用于不同模拟时刻和 legacy unknown 态的行只存在于最终清理的临时 D1。
+
+## S01 P4 开发与验收
+
+### 开发起点
+
+| 项目 | 记录 |
+|---|---|
+| HEAD | `63c3a2edd2d5af5cd3e6df9622753e958953ba94` |
+| 分支 | `main` |
+| 本阶段开始时已存在的工作区改动 | `api/src/scene/intent.test.ts`、`api/src/scene/routes.ts`、本报告、`docs/world-quality-report.md`；均在本轮开始前已修改。四份 `spec_docs/s01/` 文档由本任务依次重写并经用户批准。 |
+| 归属约定 | P4 实现从上述 HEAD 起核算；既有 API/报告差异继续保留，不清理、不覆盖。 |
+| 本阶段基线记录 | 通过 `git rev-parse HEAD`、`git branch --show-current`、`git status --short` 记录。验收数据限定一次性本地 D1、合成账号和本机模型替身。 |
+
+### P4 实施与验收证据
+
+#### 实现内容
+
+- `WorldView` 从 `?timeline=` 恢复并同步所选线，切换时保留其他查询参数；快照和流继续由当前 effect 生命周期、timeline id 与 `stateVersion` 守卫。
+- 世界居民抽屉增加“普通聊天”入口，保留世界当前 timeline；人物聊天页“返回世界”链接带回对应 world 与 timeline。
+- 普通聊天 API 回归覆盖时间线归属、拒绝无效时间线不创建会话、完整回复持久化及世界事实不因普通聊天而变化；产品旅程串联 tick、普通聊天与 Fork/Compare。
+- 本地 Worker 验收替身现为流式请求提供固定 SSE 回复；一次性本地世界标记为 demo，仅为人工核对匿名只读落地页，不改变真实世界配置。
+
+#### 自动化、构建及 Worker 证据
+
+| 命令 | 结果 |
+|---|---|
+| `npm --workspace web run test -- src/pages/WorldView.test.tsx src/components/world/PersonDrawer.test.tsx` | 2 个文件、9 项通过。覆盖 query 参数保留/清除、聊天与世界链接生成、旧 timeline/清理订阅/错配快照守卫，以及世界只读模式隐藏聊天入口。 |
+| `npm --workspace api run test -- src/chat/routes.test.ts src/engine/tick.test.ts src/test/product-journey.test.ts src/test/world-journey.test.ts src/test/legacy-compat.test.ts` | 5 个文件、24 项通过。 |
+| `npm --workspace api run test` | 32 个文件、224 项通过。包括公开路由匿名读取/写入拒绝、聊天断流与重试、tick 和产品旅程回归。 |
+| `npm --workspace web run test` | 2 个文件、9 项通过。当前 Web workspace 没有 DOM 测试环境；异步归属守卫由独立单元测试验证，页面级延迟快照由本地浏览器代理验证。 |
+| `npm --workspace api run build` | TypeScript 检查通过。 |
+| `npm --workspace web run build` | TypeScript 检查与 Vite production build 通过。 |
+| `npm run verify:s01:workers` | 最新运行退出码 0。两 Worker 读取同一一次性本地 D1；tick lease 竞争返回 409/200，恰 1 条 clock fact、revision 2、模拟时间推进、0 个遗留 lease。两个不同 Fork 并发均成功，重放返回 200、同 ID 不同载荷返回 409；源 Fork/行动竞争仅有一个提交，容量冲突返回 409，注入失败后子 timeline/revision/state/command/fact 均为 0。 |
+| `git diff --check` | 通过。 |
+
+Worker 脚本中的 `SQLITE_BUSY` 日志来自刻意制造的并发竞争，注入触发器的失败来自刻意制造的 Fork 写入回滚；最终断言与账本审计通过。完整 Worker 验收仅用于后台引擎/Fork 原子性，不代替浏览器竞态验收。
+
+#### 登录态与匿名浏览器观察
+
+- 所有浏览器步骤都在 Codex 内置浏览器、本地 Vite `127.0.0.1:5173`、API `127.0.0.1:8787` 和 `verify-s01:workers -- --manual-ui` 启动的一次性 D1/固定模型替身中进行；登录账号为合成账号 `s01-owner`，世界 `s01-world`。
+- 登录后从世界链接打开 `/worlds/s01-world?timeline=s01-main`；页面显示世界名、主线、运行状态、世界时钟、状态版本和地点居民。点击暂停、继续后状态标签分别显示“已暂停”和“运行中”。浏览器刷新后主线参数仍在 URL。
+- 本地 pinger 以显式 `ENGINE_API_URL=http://127.0.0.1:8787` 和一次性 tick secret 连接该 Worker。日志显示每 15 秒节拍推进约 90 分钟模拟时间；期间页面世界时间/版本更新，固定 schedule 模型输出最终写出 7 项日程。早期 decide 调用按脚本固定替身输出被安全跳过，未作为成功世界事件证据。
+- 从 `/people/s01-resident?timeline=s01-main` 打开普通聊天。页面显示合成居民与世界信息，发送“ S01 P4 普通聊天验收：你好，能介绍一下今天的计划吗？”后展示固定替身完整回复。页面返回链接为 `/worlds/s01-world?timeline=s01-main`；点击并刷新后仍回主线。此聊天回合后的干净 fixture 世界快照仍是状态 v0、事件 0，未把回复说成世界已变化。抽屉中新增入口由 Web 回归断言渲染；本轮由于世界居民卡的可访问性快照未暴露其 button，人工浏览器采用对应人物 URL 验证聊天页和返回路径。
+- 登录态浏览器从 `s01-main` 创建 Fork，返回的 timeline 为 `1c28ae48-b178-4369-920d-bb2c8a41cccf`；输入条件“咖啡馆开放时间”及验收假设。Compare 显示共同祖先、分叉时间、条件、共同事件和“记录差异不代表因果证明”。从菜单选择主线后 URL 恢复 `timeline=s01-main`，之后打开普通聊天。
+- 本地 fixture 的 `is_demo=1` 只为验匿名 UI。退出登录后 `/` 显示公开世界时钟、状态、地点和居民；匿名页面只有“登录，创建你的世界”入口，没有暂停/继续、交互模式、普通聊天或写入按钮。公开 API 匿名写入拒绝由 `src/public/routes.test.ts` 覆盖。
+- 可控本地 SSE 替身注入“部分回复→断流”：页面显示 `Network connection lost.`，刷新后用户消息仍在历史，但半截居民回复不在完成历史。另向一个临时分支会话发出 5 秒延迟的回复，在回复到达前通过页面返回分支世界并切回主线；主线 URL、v0 状态和 0 条事件保持不变，稍后重新打开原分支聊天只在那里看到完整的延迟回复。对应 fixture 模式仅由验收脚本的 `S01 P4 CHAT DROP` / `S01 P4 CHAT DELAY` 输入触发。
+- AC6 延迟世界快照：Vite 代理前置本地响应代理，仅把 `GET /api/worlds/s01-world?timelineId=s01-main` 的第二个响应缓冲 12 秒。首个快照已显示主线后，第二个快照尚未返回时创建 Fork `ba6216a9-7570-4372-849d-efc617126ea0` 并进入该线；代理日志确认 `DELAYED`，12 秒后 `RELEASED`。释放后浏览器仍显示该分支 URL 和“平行宇宙”，状态 v0、事件 0。Web 守卫单测另确认选线已变化、effect 已清理或响应 timeline 不匹配时拒绝异步更新；传输层旧世界 SSE 帧未单独延迟注入。
+- 页面截图/可访问性树显示页面内容和所需交互控件，无 Vite 错误遮罩；此环境的 CUA 接口未提供 console log 读取，故浏览器控制台错误项没有独立日志证据。
+
+#### 隔离与验证范围
+
+- 临时 D1 路径分别由脚本动态创建于 `/tmp/possibility-s01-*`；API、Web、模型替身、pinger 都只用本机地址。多个 manual-ui 验收实例均在结束时打印 `Cleaned isolated directory ...` 并删除临时库。
+- 本轮没有部署、访问远端或生产 D1，也没有使用真实模型；凭据没有写入仓库。
+- **AC6 通过：** 刷新、分支/主线切换、URL 同步、延迟聊天隔离、旧主线快照晚于 Fork 到达仍不覆盖当前分支，以及 `WorldView` 的旧结果守卫均有证据。传输层旧世界 SSE 帧未单独注入；其清理订阅与 timeline 错配拒绝由单测覆盖。Web workspace 未安装 DOM/browser test runtime，因此快照竞态以本地浏览器代理实测，回调归属以单测验证。
+
+因此 AC1–AC7 的本轮证据通过；API/Web 全量测试、构建、Worker 集成验收及环境清理完成，S01 P4 AC8 出口记录通过。

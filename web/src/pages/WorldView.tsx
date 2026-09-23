@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { publicApi, subscribeWorldStream, worldsApi, personaApi } from '../api/client'
 import type {
   DialogueDetail,
@@ -18,6 +19,8 @@ import LifePanel from '../components/world/LifePanel'
 import ComparePanel from '../components/world/ComparePanel'
 import WorldStatePanel from '../components/world/WorldStatePanel'
 import ConstructPanel from '../components/world/ConstructPanel'
+import { withTimelineParam } from '../lib/timelineUrl'
+import { isTimelineUpdateCurrent } from '../lib/timelineGuard'
 
 const WORLD_SPEED = 6
 
@@ -56,13 +59,14 @@ function fmtSimTime(iso: string): string {
 export default function WorldView({ worldId, readonly = false }: WorldViewProps) {
   const api = readonly ? publicApi : worldsApi
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
-  const [timelineId, setTimelineId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const timelineId = searchParams.get('timeline')
   const activeTimelineRef = useRef<string | null>(timelineId)
   activeTimelineRef.current = timelineId
   const selectTimeline = useCallback((next: string | null) => {
     activeTimelineRef.current = next
-    setTimelineId(next)
-  }, [])
+    setSearchParams(current => withTimelineParam(current, next), { replace: true })
+  }, [setSearchParams])
   const [error, setError] = useState('')
   const [events, setEvents] = useState<WorldEventItem[]>([])
   const [liveStates, setLiveStates] = useState<Record<string, PersonLiveState>>({})
@@ -86,9 +90,8 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const forkRequestIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    selectTimeline(null)
     setSelectedPersonId(null)
-  }, [worldId, selectTimeline])
+  }, [worldId])
 
   useEffect(() => {
     if (mode !== 'presence') setSceneOpen(false)
@@ -135,7 +138,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     api
       .snapshot(worldId, timelineId ?? undefined)
       .then((snap) => {
-        if (!active) return
+        if (!isTimelineUpdateCurrent(active, timelineId, activeTimelineRef.current, snap.currentTimelineId)) return
         setSnapshot(cur => cur?.currentTimelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : snap)
         setEvents(prev => {
           const byId = new Map([...snap.events, ...prev].map(e => [e.id, e]))
@@ -147,7 +150,11 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
         if (!timelineId) selectTimeline(snap.currentTimelineId)
         clockBaseRef.current = { simNow: Date.parse(snap.simNow), realAt: Date.now() }
       })
-      .catch((e) => { if (active) setError(e instanceof Error ? e.message : '加载失败') })
+      .catch((e) => {
+        if (isTimelineUpdateCurrent(active, timelineId, activeTimelineRef.current)) {
+          setError(e instanceof Error ? e.message : '加载失败')
+        }
+      })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, worldId, timelineId, selectTimeline])
@@ -160,10 +167,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
       worldId,
       timelineId,
       (ev: WorldStreamEvent) => {
-        if (!active) return
+        if (!isTimelineUpdateCurrent(active, timelineId, activeTimelineRef.current)) return
         if (ev.type === 'sync') {
           void api.snapshot(worldId, timelineId).then(snap => {
-            if (!active || snap.currentTimelineId !== timelineId) return
+            if (!isTimelineUpdateCurrent(active, timelineId, activeTimelineRef.current, snap.currentTimelineId)) return
             setSnapshot(cur => cur?.currentTimelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : snap)
             setEvents(prev => {
               const byId = new Map([...snap.events, ...prev].map(e => [e.id, e]))
@@ -229,7 +236,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     if (!timelineId || !snapshot || !clock || clock.stateVersion <= snapshot.stateVersion) return
     let active = true
     api.snapshot(worldId, timelineId).then(next => {
-      if (active && next.currentTimelineId === timelineId) {
+      if (isTimelineUpdateCurrent(active, timelineId, activeTimelineRef.current, next.currentTimelineId)) {
         setSnapshot(cur => cur?.currentTimelineId === timelineId && cur.stateVersion > next.stateVersion ? cur : next)
       }
     }).catch(() => {})
@@ -462,6 +469,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             liveState={liveStates[selectedPersonId] ?? null}
             fallbackName={names.get(selectedPersonId) ?? ''}
             personId={selectedPersonId}
+            canChat={!readonly}
             canEditMemories={!readonly && mode === 'construct'}
             timelineId={timelineId ?? snapshot.currentTimelineId}
             expectedVersion={Math.max(snapshot.stateVersion, clock?.stateVersion ?? 0)}

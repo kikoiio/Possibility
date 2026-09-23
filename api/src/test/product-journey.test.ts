@@ -1,10 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, sceneRequests, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { dialogueTurns, dialogues, events, memories, messages, personaMessages, persons, personStates, sceneRequests, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
+import { runTick } from '../engine/tick'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { vi.useRealTimers(); fixture?.close(); fixture = null; vi.unstubAllGlobals() })
@@ -265,4 +266,56 @@ it('rolls back person and world creation if the immutable baseline cannot be wri
   expect(count('timelines')).toBe(3)
   expect(count('world_model_versions')).toBe(1)
   expect(count('world_persons')).toBe(1)
+})
+
+it('advances the selected world, completes ordinary chat, and forks from the resulting history', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
+
+  const tick = await runTick({ ...f.env, WORLD_SPEED: '6', DIRECTOR_LLM: '0' }, f.db)
+  const simNow = tick?.worlds.find(world => world.id === 'home-world')?.timelines[0]?.simNow
+  expect(simNow).toBeTruthy()
+  expect(Date.parse(simNow!)).toBeGreaterThan(Date.parse(WORLD_TIME))
+  expect((await f.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())?.simNow).toBe(simNow)
+
+  const model = { identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] }
+  await f.db.insert(persons).values({ id: 'run-chat-resident', userId: 'owner', name: 'Resident',
+    modelJson: JSON.stringify(model), createdAt: simNow! })
+  await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'run-chat-resident', joinedAt: simNow! })
+  await f.db.insert(personStates).values({ personId: 'run-chat-resident', timelineId: 'home-main', simTime: simNow!,
+    location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: simNow! })
+  const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+  const created = await app.request('/api/persons/run-chat-resident/conversations', { method: 'POST', headers,
+    body: JSON.stringify({ timelineId: 'home-main' }) }, f.env)
+  expect(created.status).toBe(200)
+  const conversation = await created.json() as { id: string; timelineId: string }
+  expect(conversation.timelineId).toBe('home-main')
+
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    'data: {"choices":[{"delta":{"content":"I am glad you came by."}}]}\n\ndata: [DONE]\n\n',
+    { headers: { 'Content-Type': 'text/event-stream' } },
+  )))
+  const factsBeforeChat = await f.db.select().from(worldFacts).all()
+  const sent = await app.request(`/api/conversations/${conversation.id}/messages`, { method: 'POST', headers,
+    body: JSON.stringify({ content: 'How are you today?' }) }, f.env)
+  expect(sent.status).toBe(200)
+  expect(await sent.text()).toContain('I am glad you came by.')
+  expect((await f.db.select().from(messages).where(eq(messages.conversationId, conversation.id)).all())
+    .map(message => message.role)).toEqual(['user', 'person'])
+  expect(await f.db.select().from(worldFacts).all()).toEqual(factsBeforeChat)
+
+  vi.useRealTimers()
+  const forked = await app.request('/api/worlds/home-world/timelines/home-main/fork', { method: 'POST', headers,
+    body: JSON.stringify({ requestId: 'run-chat-fork', scenario: { whatIf: 'What if a letter arrived?', changedVariable: 'letter arrival' } }) }, f.env)
+  expect(forked.status).toBe(200)
+  const fork = await forked.json() as { id: string }
+  const compare = await app.request(`/api/worlds/home-world/compare?left=home-main&right=${fork.id}`, { headers }, f.env)
+  expect(compare.status).toBe(200)
+  const evidence = await compare.json() as { left: { id: string }; right: { id: string } }
+  expect(evidence.left.id).toBe('home-main')
+  expect(evidence.right.id).toBe(fork.id)
 })
