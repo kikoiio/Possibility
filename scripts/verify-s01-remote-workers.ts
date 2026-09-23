@@ -32,7 +32,7 @@ function startWorker(index: number): ChildProcess {
     'dev', '--remote', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(port + 10_000),
     '--name', `possibility-s01-remote-check-${index + 1}`, '--log-level', 'error', '--config', config!,
     '--var', `ENGINE_TICK_SECRET:${secret}`, '--var', 'LLM_API_KEY:s01-unused', '--var', 'LLM_MODEL:s01-fixture',
-    '--var', 'DIRECTOR_LLM:0',
+    '--var', 'DIRECTOR_LLM:0', '--var', 'WORLD_SPEED:360',
   ], { cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] })
   child.stdout.on('data', chunk => process.stdout.write(String(chunk)))
   child.stderr.on('data', chunk => process.stderr.write(String(chunk)))
@@ -125,6 +125,23 @@ async function main() {
   await run(['d1', 'execute', 'DB', '--remote', '--config', config, '--command',
     "DELETE FROM engine_tick_leases WHERE id='autonomous-world-tick' AND owner_token='s01-remote-held-lease'"])
 
+  const staleLeaseNow = Date.now()
+  await run(['d1', 'execute', 'DB', '--remote', '--config', config, '--command',
+    `INSERT INTO engine_tick_leases (id, owner_token, lease_until, updated_at) VALUES ('autonomous-world-tick', 's01-crashed-worker', ${staleLeaseNow - 1}, ${staleLeaseNow - 180_001})`])
+  const takeoverBefore = rows(await run(['d1', 'execute', 'DB', '--remote', '--config', config, '--json', '--command',
+    "SELECT (SELECT version FROM universe_revisions WHERE timeline_id='s01-main') AS revision, (SELECT COUNT(*) FROM world_facts WHERE timeline_id='s01-main' AND fact_type='clock') AS clocks"]))[0]
+  const takeoverTicks = await Promise.all(workerPorts.map(port => fetch(`http://127.0.0.1:${port}/api/engine/tick`, {
+    method: 'POST', headers: { 'x-engine-secret': secret },
+  })))
+  const takeoverStatuses = takeoverTicks.map(response => response.status)
+  const takeoverAfter = rows(await run(['d1', 'execute', 'DB', '--remote', '--config', config, '--json', '--command',
+    "SELECT (SELECT version FROM universe_revisions WHERE timeline_id='s01-main') AS revision, (SELECT COUNT(*) FROM world_facts WHERE timeline_id='s01-main' AND fact_type='clock') AS clocks, (SELECT COUNT(*) FROM engine_tick_leases WHERE id='autonomous-world-tick') AS leases"]))[0]
+  if (takeoverStatuses.filter(status => status === 200).length !== 1 || takeoverStatuses.filter(status => status === 409).length !== 1
+    || Number(takeoverAfter?.revision) <= Number(takeoverBefore?.revision)
+    || Number(takeoverAfter?.clocks) <= Number(takeoverBefore?.clocks) || Number(takeoverAfter?.leases) !== 0) {
+    throw new Error(`Expired lease takeover did not produce one successful tick, one losing Worker, and one released lease: ${JSON.stringify({ takeoverStatuses, takeoverBefore, takeoverAfter })}`)
+  }
+
   const fork = (port: number, requestId: string, whatIf: string) => fetch(
     `http://127.0.0.1:${port}/api/worlds/s01-world/timelines/s01-main/fork`, {
       method: 'POST', headers: { Authorization: `Bearer ${auth}`, 'content-type': 'application/json' },
@@ -159,12 +176,17 @@ async function main() {
   }
   console.log(JSON.stringify({ remoteD1: true, workers: 2, authenticatedBoth: true, concurrentForkStatuses: statuses,
     remoteTickWhileHeldStatuses: tickStatuses, remoteTickHadNoWorldEffects: true,
+    expiredLeaseTakeoverStatuses: takeoverStatuses, takeoverAdvancedWorld: true, takeoverReleasedLease: true,
     baselineForkStatus: baselineFork.status, winner: winnerId, replayStatus: replay.status,
     payloadConflictStatus: conflict.status, capacityStatus: capacity.status,
     concurrentLeaseWinners: leaseWinners, leaseOwnerMatched: true, audit }, null, 2))
 }
 
 try { await main() }
+catch (error) {
+  console.error(`Remote acceptance verification failed: ${String(error)}`)
+  process.exitCode = 1
+}
 finally {
   for (const child of children.reverse()) await stop(child)
   if (safeTarget && config && expectedDatabaseId) {

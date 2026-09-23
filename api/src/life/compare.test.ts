@@ -154,7 +154,9 @@ describe('owner-only, read-only comparison API', () => {
 })
 
 describe('fork snapshots', () => {
-  it('keeps memory, commitment, and knowledge on one Root→Child→Grandchild checkpoint matrix', async () => {
+  it('keeps dialogue, event, memory, commitment, and knowledge on one Root→Child→Grandchild checkpoint matrix', async () => {
+    await fixture.db.update(worlds).set({ locationsJson: JSON.stringify([{ name: 'Cafe', description: '' }]) })
+      .where(eq(worlds.id, 'world'))
     await fixture.db.insert(commitments).values({ id: 'root-commitment-before-child', worldId: 'world', timelineId: 'main',
       personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'root-dialogue', title: 'Meet before the fork',
       kind: 'meeting', location: 'Cafe', dueSim: new Date(Date.parse(SIM) + 60 * 60_000).toISOString(), status: 'proposed', createdSim: SIM, updatedSim: SIM, createdAt: REAL })
@@ -164,6 +166,16 @@ describe('fork snapshots', () => {
     const rootKnowledge = await commitWorldCommand(fixture.db, { id: 'matrix-root-knowledge', worldId: 'world', timelineId: 'main',
       userId: 'owner', expectedVersion: 1,
       action: { type: 'inform', recipientId: 'npc', topic: 'matrix-root', content: 'Known before Child exists.' } })
+    await fixture.db.update(personStates).set({ currentDialogueId: null }).where(eq(personStates.timelineId, 'main'))
+    expect((await fixture.db.select().from(worlds).where(eq(worlds.id, 'world')).get())?.locationsJson)
+      .toBe(JSON.stringify([{ name: 'Cafe', description: '' }]))
+    await commitWorldCommand(fixture.db, { id: 'matrix-root-dialogue-start', worldId: 'world', timelineId: 'main',
+      userId: 'owner', actorKind: 'system', expectedVersion: 2,
+      action: { type: 'dialogue_start', dialogueId: 'matrix-root-dialogue', participantIds: ['npc', 'visitor'], location: 'Cafe', turnLimit: 10 } })
+    await commitWorldCommand(fixture.db, { id: 'matrix-root-dialogue-turn-0', worldId: 'world', timelineId: 'main',
+      userId: 'owner', actorKind: 'system', expectedVersion: 3,
+      action: { type: 'dialogue_turn', dialogueId: 'matrix-root-dialogue', speakerId: 'npc', turnIndex: 0,
+        utterance: 'Root conversation before Child.', thought: 'We are speaking on the root.', memory: null, shouldEnd: false } })
     const child = await forkTimeline(fixture.db, 'world', 'main')
 
     await fixture.db.insert(memories).values({ id: 'root-memory-after-child', personId: 'npc', timelineId: 'main', type: 'thought',
@@ -172,11 +184,15 @@ describe('fork snapshots', () => {
       personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'root-late-dialogue', title: 'Root only later commitment',
       kind: 'meeting', location: 'Library', dueSim: new Date(Date.parse(SIM) + 60 * 60_000).toISOString(), status: 'proposed', createdSim: SIM, updatedSim: SIM, createdAt: REAL })
     await commitWorldCommand(fixture.db, { id: 'matrix-root-late-commitment', worldId: 'world', timelineId: 'main',
-      userId: 'owner', expectedVersion: 2,
+      userId: 'owner', expectedVersion: 4,
       action: { type: 'commitment', commitmentId: 'root-commitment-after-child', next: 'accepted' } })
     const rootLateKnowledge = await commitWorldCommand(fixture.db, { id: 'matrix-root-late-knowledge', worldId: 'world', timelineId: 'main',
-      userId: 'owner', expectedVersion: 3,
+      userId: 'owner', expectedVersion: 5,
       action: { type: 'inform', recipientId: 'visitor', topic: 'root-late', content: 'Added after Child was created.' } })
+    await commitWorldCommand(fixture.db, { id: 'matrix-root-dialogue-turn-1', worldId: 'world', timelineId: 'main',
+      userId: 'owner', actorKind: 'system', expectedVersion: 6,
+      action: { type: 'dialogue_turn', dialogueId: 'matrix-root-dialogue', speakerId: 'visitor', turnIndex: 1,
+        utterance: 'Root conversation after Child.', thought: 'This later root turn stays on the root.', memory: null, shouldEnd: false } })
 
     await fixture.db.insert(memories).values({ id: 'child-memory-before-grandchild', personId: 'npc', timelineId: child.id, type: 'thought',
       content: 'Added on Child before Grandchild was created.', createdAt: '2026-09-19T11:00:00.000Z', simTime: SIM })
@@ -189,7 +205,20 @@ describe('fork snapshots', () => {
     await commitWorldCommand(fixture.db, { id: 'matrix-child-commitment', worldId: 'world', timelineId: child.id,
       userId: 'owner', expectedVersion: 1,
       action: { type: 'commitment', commitmentId: 'child-commitment-before-grandchild', next: 'accepted' } })
+    await fixture.db.update(personStates).set({ currentDialogueId: null }).where(eq(personStates.timelineId, child.id))
+    await commitWorldCommand(fixture.db, { id: 'matrix-child-dialogue-start', worldId: 'world', timelineId: child.id,
+      userId: 'owner', actorKind: 'system', expectedVersion: 2,
+      action: { type: 'dialogue_start', dialogueId: 'matrix-child-dialogue', participantIds: ['npc', 'visitor'], location: 'Cafe', turnLimit: 10 } })
+    await commitWorldCommand(fixture.db, { id: 'matrix-child-dialogue-turn-0', worldId: 'world', timelineId: child.id,
+      userId: 'owner', actorKind: 'system', expectedVersion: 3,
+      action: { type: 'dialogue_turn', dialogueId: 'matrix-child-dialogue', speakerId: 'npc', turnIndex: 0,
+        utterance: 'Child conversation before Grandchild.', thought: 'This is a child-only conversation.', memory: null, shouldEnd: false } })
     const grandchild = await forkTimeline(fixture.db, 'world', child.id)
+
+    await commitWorldCommand(fixture.db, { id: 'matrix-child-dialogue-turn-1', worldId: 'world', timelineId: child.id,
+      userId: 'owner', actorKind: 'system', expectedVersion: 4,
+      action: { type: 'dialogue_turn', dialogueId: 'matrix-child-dialogue', speakerId: 'visitor', turnIndex: 1,
+        utterance: 'Child conversation after Grandchild.', thought: 'This later child turn stays on the child.', memory: null, shouldEnd: false } })
 
     await fixture.db.insert(memories).values([
       { id: 'child-memory-after-grandchild', personId: 'npc', timelineId: child.id, type: 'thought',
@@ -219,6 +248,16 @@ describe('fork snapshots', () => {
     expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('root-memory-after-child')
     expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('child-memory-after-grandchild')
     expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('grandchild-memory')
+    expect((childSnapshot.dialogueTurns ?? []).map(turn => turn.utterance)).toContain('Root conversation before Child.')
+    expect((childSnapshot.dialogueTurns ?? []).map(turn => turn.utterance)).not.toContain('Root conversation after Child.')
+    expect((grandchildSnapshot.dialogueTurns ?? []).map(turn => turn.utterance)).toEqual(expect.arrayContaining([
+      'Root conversation before Child.', 'Child conversation before Grandchild.',
+    ]))
+    expect((grandchildSnapshot.dialogueTurns ?? []).map(turn => turn.utterance)).not.toContain('Root conversation after Child.')
+    expect((grandchildSnapshot.dialogueTurns ?? []).map(turn => turn.utterance)).not.toContain('Child conversation after Grandchild.')
+    expect(childSnapshot.events.map(event => event.id)).not.toContain('command:matrix-root-dialogue-turn-1')
+    expect(grandchildSnapshot.events.map(event => event.id)).not.toContain('command:matrix-root-dialogue-turn-1')
+    expect(grandchildSnapshot.events.map(event => event.id)).not.toContain('command:matrix-child-dialogue-turn-1')
 
     expect(rootCommitments.map(row => row.title)).toEqual(expect.arrayContaining(['Meet before the fork', 'Root only later commitment']))
     expect(childCommitments.map(row => row.title)).toEqual(expect.arrayContaining(['Meet before the fork', 'Child commitment']))
