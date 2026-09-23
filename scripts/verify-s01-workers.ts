@@ -154,7 +154,7 @@ function send(response: import('node:http').ServerResponse, content: string) {
   response.end(JSON.stringify({ choices: [{ message: { content } }] }))
 }
 
-function seedSql(): string {
+export function seedSql(): string {
   const residentModel = { identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] }
   const baseline = {
     source: 'root', version: 0, capturedAt: startTime, simTime: startTime,
@@ -421,7 +421,9 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error))
-  process.exitCode = 1
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error))
+    process.exitCode = 1
+  })
+}

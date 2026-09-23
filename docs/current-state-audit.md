@@ -206,3 +206,13 @@ Worker 脚本中的 `SQLITE_BUSY` 日志来自刻意制造的并发竞争，注�
 - **AC6 通过：** 刷新、分支/主线切换、URL 同步、延迟聊天隔离、旧主线快照晚于 Fork 到达仍不覆盖当前分支，以及 `WorldView` 的旧结果守卫均有证据。传输层旧世界 SSE 帧未单独注入；其清理订阅与 timeline 错配拒绝由单测覆盖。Web workspace 未安装 DOM/browser test runtime，因此快照竞态以本地浏览器代理实测，回调归属以单测验证。
 
 因此 AC1–AC7 的本轮证据通过；API/Web 全量测试、构建、Worker 集成验收及环境清理完成，S01 P4 AC8 出口记录通过。
+
+## S01 Cloudflare D1 远端验收补充
+
+- 用户提供现有 Cloudflare staging 测试库并确认 Wrangler 已登录。`wrangler whoami` 显示当前 account 与用户提供的 ID 一致，且登录 token 含 D1 写权限；`wrangler d1 list` 确认目标名为 `possibility-test`，首次核对时 0 张表、空库。账户 ID、数据库 ID 和 token 均不写入仓库。
+- 仓库 `api/wrangler.toml` 保留占位 D1 ID。验收通过临时 `api/wrangler.staging-test.toml` 指向 staging，后续已删除该文件。Wrangler 4.126 原生命令 `d1 migrations apply --remote` 在 0000–0007 成功后，将含多个 `CREATE TRIGGER` 和 `--> statement-breakpoint` 的 0008 migration 作为整段 SQL 发往远端，Cloudflare 返回 `incomplete input` 并回滚 0008；远端账本核实 0000–0007 完整、无 0008 对象残留。
+- 新增 `scripts/apply-s01-remote-migrations.ts` / `npm run apply:s01:remote-test-migrations`，要求显式提供 `S01_REMOTE_D1_CONFIG` 与匹配的 `S01_REMOTE_D1_ID`，并要求配置中的数据库名含 test/staging/acceptance；按 migration breakpoint 单条执行，每个文件成功后才写账本。本次确认 migration ledger 19/19、pending 0；该工具再次运行结果仍为 19/19、pending 0。
+- 后续重跑时，可从 `api/wrangler.toml` 复制出 `api/wrangler.staging-test.toml`，将 D1 database name/ID 和 account ID 指向专用验收环境；该路径已加入 `.gitignore`。`S01_REMOTE_D1_CONFIG` 指向该文件，`S01_REMOTE_D1_ID` 必须与其中 ID 完全一致。
+- 新增 `scripts/verify-s01-remote-workers.ts` / `npm run verify:s01:remote-workers`。两个独立 `wrangler dev --remote` Worker 都通过健康检查并读取合成 owner 会话。预留一个活动 Fork 名额后，最后名额的并发 Fork 返回 200/409；跨 Worker 同 payload 重放 200、改 payload 冲突 409、超容量 409。远端查询得到 2 个活动子线、2 个对应 person_state、2 条 universe_revision。并发两条独立 D1 请求执行 tick lease 条件 UPSERT，仅有一个 owner；另由外部 D1 owner 持锁时，两个真实 Worker `/api/engine/tick` 均返回 409，主线 revision 与 clock fact 数不变。直接越级 revision 被 `universe_revision_step_guard` 拒绝。脚本在退出时删除合成 Fork 和 lease 行并结束远端 dev Worker；`deployments list` 确认临时 Worker 不存在。
+- staging 验收库保留完整 19 条 schema migration 和一个根线合成验收世界/人物/固定模型版本；固定模型版本受不可变触发器保护，脚本清理 Fork 子线和 lease 后不能删除此根 fixture。无需生产数据或模型凭据。
+- 远端证据补足了 Cloudflare D1 上单次双 Worker Fork 名额竞争、跨 Worker 重放/拒绝、迁移触发器、lease UPSERT 原子竞争及 `/api/engine/tick` 在外部 owner 持锁时的拒绝/no-side-effect。它仍不覆盖远端 tick owner 成功与竞争 loser 并行、真实 worker 崩溃、租约过期接管、取消恢复与多级 Fork 的统一矩阵；S01 全局 AC15 继续未满足。

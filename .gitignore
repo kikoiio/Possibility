@@ -2,6 +2,7 @@ node_modules
 dist
 .dev.vars
 .wrangler
+api/wrangler.staging-test.toml
 *.local
 .DS_Store
 .playwright-mcp

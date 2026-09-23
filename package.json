@@ -15,7 +15,9 @@
     "seed": "tsx scripts/seed.ts",
     "migrate:p2": "tsx scripts/migrate-p2.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "verify:s01:workers": "node --experimental-strip-types scripts/verify-s01-workers.ts"
+    "verify:s01:workers": "node --experimental-strip-types scripts/verify-s01-workers.ts",
+    "verify:s01:remote-workers": "node --experimental-strip-types scripts/verify-s01-remote-workers.ts",
+    "apply:s01:remote-test-migrations": "node --experimental-strip-types scripts/apply-s01-remote-migrations.ts"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
