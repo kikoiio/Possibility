@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
 import { dialogues, persons, personStates, timelines, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
-import { forkTimeline } from '../life/fork'
+import { forkConflict, forkTimeline } from '../life/fork'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
@@ -233,7 +233,8 @@ worldsRoutes.post('/:id/actions', async (c) => {
     await touchWorldActivity(db, c.req.param('id'))
     return c.json(result)
   } catch (error) {
-    if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
+    const conflict = error instanceof WorldStateError ? error : forkConflict(error, '世界状态正在更新；请刷新后重试。')
+    if (conflict) return c.json({ error: conflict.message }, conflict.status)
     throw error
   }
 })
@@ -353,6 +354,7 @@ worldsRoutes.post('/:id/inject', async (c) => {
 
 /** 世界级 Fork（F9）：复制世界设定与全部人物状态/当日日程到新线；记忆经可见性规则自然继承 */
 worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
+  try {
   const body = await c.req.json<{ requestId?: string; scenario?: unknown }>().catch(() => null)
   const requestId = body?.requestId
   if (requestId != null && (typeof requestId !== 'string' || !requestId.trim() || requestId.length > 100)) return c.json({ error: '分叉请求 ID 无效' }, 400)
@@ -406,14 +408,14 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   }
 
   let fork: Awaited<ReturnType<typeof forkTimeline>>
-  try {
-    fork = await forkTimeline(db, world.id, source.id, scenario, requestId)
-  } catch (error) {
-    if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
-    throw error
-  }
+  fork = await forkTimeline(db, world.id, source.id, scenario, requestId)
   return c.json({ id: fork.id, simNow: fork.simNow, snapshot: {
     version: fork.snapshot.version, sourceTimelineId: source.id,
     sourceSimTime: fork.snapshot.sourceSimTime, capturedAt: fork.snapshot.capturedAt,
   } })
+  } catch (error) {
+    const conflict = error instanceof WorldStateError ? error : forkConflict(error)
+    if (conflict) return c.json({ error: conflict.message }, conflict.status)
+    throw error
+  }
 })

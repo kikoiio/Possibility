@@ -9,6 +9,7 @@ import { forkTimeline } from './fork'
 import { commitWorldCommand } from '../world-state/commit'
 import { readWorldState } from '../world-state/query'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
+import { auditUniverse } from '../world-state/invariants'
 import { worldsRoutes } from '../worlds/routes'
 import { dialogueDetail, personFocus, worldSnapshot } from '../worlds/queries'
 import { timelineRoutes } from '../timelines/routes'
@@ -153,6 +154,89 @@ describe('owner-only, read-only comparison API', () => {
 })
 
 describe('fork snapshots', () => {
+  it('keeps memory, commitment, and knowledge on one Root→Child→Grandchild checkpoint matrix', async () => {
+    await fixture.db.insert(commitments).values({ id: 'root-commitment-before-child', worldId: 'world', timelineId: 'main',
+      personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'root-dialogue', title: 'Meet before the fork',
+      kind: 'meeting', location: 'Cafe', dueSim: new Date(Date.parse(SIM) + 60 * 60_000).toISOString(), status: 'proposed', createdSim: SIM, updatedSim: SIM, createdAt: REAL })
+    await commitWorldCommand(fixture.db, { id: 'matrix-root-commitment', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 0,
+      action: { type: 'commitment', commitmentId: 'root-commitment-before-child', next: 'accepted' } })
+    const rootKnowledge = await commitWorldCommand(fixture.db, { id: 'matrix-root-knowledge', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 1,
+      action: { type: 'inform', recipientId: 'npc', topic: 'matrix-root', content: 'Known before Child exists.' } })
+    const child = await forkTimeline(fixture.db, 'world', 'main')
+
+    await fixture.db.insert(memories).values({ id: 'root-memory-after-child', personId: 'npc', timelineId: 'main', type: 'thought',
+      content: 'Added after Child was created.', createdAt: '2026-09-19T10:00:00.000Z', simTime: SIM })
+    await fixture.db.insert(commitments).values({ id: 'root-commitment-after-child', worldId: 'world', timelineId: 'main',
+      personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'root-late-dialogue', title: 'Root only later commitment',
+      kind: 'meeting', location: 'Library', dueSim: new Date(Date.parse(SIM) + 60 * 60_000).toISOString(), status: 'proposed', createdSim: SIM, updatedSim: SIM, createdAt: REAL })
+    await commitWorldCommand(fixture.db, { id: 'matrix-root-late-commitment', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 2,
+      action: { type: 'commitment', commitmentId: 'root-commitment-after-child', next: 'accepted' } })
+    const rootLateKnowledge = await commitWorldCommand(fixture.db, { id: 'matrix-root-late-knowledge', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 3,
+      action: { type: 'inform', recipientId: 'visitor', topic: 'root-late', content: 'Added after Child was created.' } })
+
+    await fixture.db.insert(memories).values({ id: 'child-memory-before-grandchild', personId: 'npc', timelineId: child.id, type: 'thought',
+      content: 'Added on Child before Grandchild was created.', createdAt: '2026-09-19T11:00:00.000Z', simTime: SIM })
+    await fixture.db.insert(commitments).values({ id: 'child-commitment-before-grandchild', worldId: 'world', timelineId: child.id,
+      personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'child-dialogue', title: 'Child commitment', kind: 'meeting',
+      location: 'Cafe', dueSim: new Date(Date.parse(SIM) + 60 * 60_000).toISOString(), status: 'proposed', createdSim: SIM, updatedSim: SIM, createdAt: REAL })
+    const childKnowledge = await commitWorldCommand(fixture.db, { id: 'matrix-child-knowledge', worldId: 'world', timelineId: child.id,
+      userId: 'owner', expectedVersion: 0,
+      action: { type: 'inform', recipientId: 'visitor', topic: 'matrix-child', content: 'Known on Child before Grandchild exists.' } })
+    await commitWorldCommand(fixture.db, { id: 'matrix-child-commitment', worldId: 'world', timelineId: child.id,
+      userId: 'owner', expectedVersion: 1,
+      action: { type: 'commitment', commitmentId: 'child-commitment-before-grandchild', next: 'accepted' } })
+    const grandchild = await forkTimeline(fixture.db, 'world', child.id)
+
+    await fixture.db.insert(memories).values([
+      { id: 'child-memory-after-grandchild', personId: 'npc', timelineId: child.id, type: 'thought',
+        content: 'Child only after Grandchild was created.', createdAt: '2026-09-19T12:00:00.000Z', simTime: SIM },
+      { id: 'grandchild-memory', personId: 'npc', timelineId: grandchild.id, type: 'thought',
+        content: 'Grandchild only.', createdAt: '2026-09-19T12:00:00.000Z', simTime: SIM },
+    ])
+
+    const childRow = (await fixture.db.select().from(timelines).where(eq(timelines.id, child.id)).get())!
+    const grandchildRow = (await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!
+    const childSnapshot = readForkSnapshot(childRow)!
+    const grandchildSnapshot = readForkSnapshot(grandchildRow)!
+    const commitmentIds = (timelineId: string) => fixture.db.select().from(commitments).where(eq(commitments.timelineId, timelineId)).all()
+    const [rootCommitments, childCommitments, grandchildCommitments] = await Promise.all([
+      commitmentIds('main'), commitmentIds(child.id), commitmentIds(grandchild.id),
+    ])
+    const [rootState, childState, grandchildState] = await Promise.all([
+      readWorldState(fixture.db, 'world', 'main'), readWorldState(fixture.db, 'world', child.id), readWorldState(fixture.db, 'world', grandchild.id),
+    ])
+    const factIds = (state: typeof rootState) => [...new Set(state.facts.map(fact => fact.id))]
+
+    expect(childSnapshot.memories.map(memory => memory.id)).toContain('remembered')
+    expect(childSnapshot.memories.map(memory => memory.id)).not.toContain('root-memory-after-child')
+    expect(grandchildSnapshot.memories.map(memory => memory.id)).toEqual(expect.arrayContaining([
+      'remembered', 'child-memory-before-grandchild', 'commitment:root-commitment-before-child:accepted:memory',
+    ]))
+    expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('root-memory-after-child')
+    expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('child-memory-after-grandchild')
+    expect(grandchildSnapshot.memories.map(memory => memory.id)).not.toContain('grandchild-memory')
+
+    expect(rootCommitments.map(row => row.title)).toEqual(expect.arrayContaining(['Meet before the fork', 'Root only later commitment']))
+    expect(childCommitments.map(row => row.title)).toEqual(expect.arrayContaining(['Meet before the fork', 'Child commitment']))
+    expect(childCommitments.map(row => row.title)).not.toContain('Root only later commitment')
+    expect(grandchildCommitments.map(row => row.title)).toEqual(expect.arrayContaining(['Meet before the fork', 'Child commitment']))
+    expect(grandchildCommitments.map(row => row.title)).not.toContain('Root only later commitment')
+
+    expect(factIds(rootState)).toEqual(expect.arrayContaining([rootKnowledge.factId, rootLateKnowledge.factId]))
+    expect(factIds(childState)).toEqual(expect.arrayContaining([rootKnowledge.factId, childKnowledge.factId]))
+    expect(factIds(childState)).not.toContain(rootLateKnowledge.factId)
+    expect(factIds(grandchildState)).toEqual(expect.arrayContaining([rootKnowledge.factId, childKnowledge.factId]))
+    expect(factIds(grandchildState)).not.toContain(rootLateKnowledge.factId)
+    expect(rootState.facts.map(fact => fact.id)).not.toContain(childKnowledge.factId)
+    expect(await auditUniverse(fixture.db, 'world', 'main')).toEqual([])
+    expect(await auditUniverse(fixture.db, 'world', child.id)).toEqual([])
+    expect(await auditUniverse(fixture.db, 'world', grandchild.id)).toEqual([])
+  })
+
   it('replays a world fork request ID without creating a second universe', async () => {
     const request = () => worldsRoutes.request('/world/timelines/main/fork', { method: 'POST',
       headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
@@ -182,6 +266,29 @@ describe('fork snapshots', () => {
     expect((await fixture.db.select().from(timelines).where(eq(timelines.worldId, 'world')).all())
       .filter(timeline => timeline.status === 'active')).toHaveLength(3)
     expect((await fixture.db.select().from(timelines).where(eq(timelines.id, 'archived-fork')).get())?.status).toBe('archived')
+  })
+
+  it('rejects Fork from an archived source without creating child records', async () => {
+    const archivedSource = await forkTimeline(fixture.db, 'world', 'main')
+    await fixture.db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, archivedSource.id))
+    const before = fixture.sqlite.prepare(`SELECT
+      (SELECT COUNT(*) FROM timelines WHERE world_id = 'world') AS timelines,
+      (SELECT COUNT(*) FROM universe_revisions) AS revisions,
+      (SELECT COUNT(*) FROM world_commands) AS commands,
+      (SELECT COUNT(*) FROM world_facts) AS facts`).get()
+    const response = await worldsRoutes.request(`/world/timelines/${archivedSource.id}/fork`, { method: 'POST',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: 'fork-archived-source', scenario: forkScenario }),
+    }, fixture.env)
+    const after = fixture.sqlite.prepare(`SELECT
+      (SELECT COUNT(*) FROM timelines WHERE world_id = 'world') AS timelines,
+      (SELECT COUNT(*) FROM universe_revisions) AS revisions,
+      (SELECT COUNT(*) FROM world_commands) AS commands,
+      (SELECT COUNT(*) FROM world_facts) AS facts`).get()
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: '只能分叉活跃时间线' })
+    expect(after).toEqual(before)
   })
 
   it('returns a retryable conflict when the database closes a concurrent active-fork race', async () => {

@@ -113,7 +113,20 @@
 - **P0：具体兼容与权限检查已通过，阶段闸门仍未通过。** 旧数据迁移/读取、固定夹具重复生成、私人接口跨账号拒绝和公开演示只读均有测试；全局 AC15 要求的取消/恢复/并发/多级 Fork 全矩阵尚未完成。
 - **P1：关键底座已建立，出口未通过。** 世界变化主路径、虚拟时钟推进、节拍水位线、过期对话占用恢复、日程生成/切换和记忆压缩/维护已迁入版本化提交边界；日程边界跨拍重复记账已修正并由 `runTick` 回归覆盖。审计能核对居民状态、事件、承诺、对话/发言、口信、记忆及日程的主要投影，并发现结构化基线后的部分孤儿投影。仍缺全量投影重建/一致性门槛、完整居民多拍连续推进及 AC14/AC15 全矩阵。
 - **P2：有受限的在场切片，出口未通过。** 进入、移动、当面转告、交谈事实提交、请求状态恢复、知识过滤和有限自然语言行动提议已落地；提议仅支持移动/传话且需要明确确认。睡眠/忙碌传话拒绝已由 API 旅程验证无副作用。交谈后果的连续世界推进验证以及取消/断流人工验收仍缺。
-- **P3：Fork 与对照显著增强，出口未通过。** 源状态、事实和修订版本同批读取；数据库现同时守卫源快照有效性和每世界最多 3 条 active 时间线，路由冲突返回 409；多级祖先边界和模型冻结有自动测试。仍缺真实 D1 多实例压力、所有记忆/承诺/知识组合矩阵、“消息是否送达”完整旅程及对照 UI 人工走查。
+- **P3：S01 P3 出口通过。** 隔离本地 D1 上两个 Worker 的真实 Fork/源写入竞争、幂等、容量拒绝和故障回滚通过；Root→Child→Grandchild 记忆/承诺/知识组合矩阵及三线审计通过；消息来源进入接收者上下文并对旁支/其他居民保持隔离；登录态 Compare 浏览器走查覆盖条件证据、不同模拟时刻、legacy 不完整提示及返回选线。详细的状态码、账本结果、浏览器实际文案、命令和边界见本报告后附的“S01 P3 本轮验收”。P4 仍按独立阶段未验收处理。
 - **P4：世界优先 UI 已实现原型，出口未验收。** 固定 API 主旅程（含返回后继续交谈）通过；登录态浏览器完成无模型的创建→构造→条件分叉→对照→返回切片，匿名首页只读浏览器可见性检查通过；真实运行推进与普通对话的登录态端到端主旅程仍缺。
 
 上述缺口不是文案层面的免责声明，而是当前实现的范围边界。特别是，在 P1/P2 缺口关闭前，不能把“版本化命令”描述成全世界唯一权威历史，也不能把普通交谈描述成必然改变模拟结果。
+
+## S01 P3 本轮验收
+
+P3 关闭四项原报告缺口。规格和逐条结果见 [`spec_docs/s01/spec.md`](../spec_docs/s01/spec.md)、[`spec_docs/s01/checklist.md`](../spec_docs/s01/checklist.md)；环境、命令、HTTP 状态及数据库快照见 [`docs/current-state-audit.md`](./current-state-audit.md) 的“P3 实施与验收证据”。
+
+- **AC1 多 Worker Fork：通过。** readiness 确认 Worker 共享隔离 D1；完整脚本退出码 0。一次最终轮记录不同 Fork 并发 200/409、同载荷重放 200、同 ID 不同载荷 409；源 Fork/写入竞争 200/409，成功分支的 checkpoint、revision 和 person state 完整，拒绝行动无 command/fact；活动线容量返回 409；故障注入返回预期 500 且 timeline/revision/state/command/fact 均为 0。tick lease 竞争 409/200，恰有一个 clock fact、无遗留 lease。Worker 日志中的 SQLITE_BUSY 与注入触发器失败是明确覆盖的竞争及回滚场景。
+- **AC2 多级隔离：通过。** 新增组合矩阵逐条比较 Root、Child、Grandchild 的记忆、接受承诺和知识 checkpoint；祖先后写不下渗，子线 Fork 前内容仅进入后代 checkpoint，后写不反向污染。三线 `auditUniverse` 为空。
+- **AC3 消息旅程：通过。** 固定旅程记录 timeline、fact ID、version 和 `rumor` certainty；正确接收者的后续决策上下文含来源证据，另一居民、Root 和旁支不可见。登录态在场 UI 显示“对方已听到这条消息（v2）；它仍是传闻，不会自动变成世界事实。”
+- **AC4 Compare UI：通过。** 合成账号浏览器检查结构化分叉条件、checkpoint 来源和因果限制；临时不同模拟时刻显示时间未对齐；无完整 checkpoint 的 legacy Fork 标为历史证据不完整；关闭 Compare 后保留被选中的 Child。
+- **AC5 权限和失败副作用：通过。** 27 项 Compare/Fork 回归与 6 项 world journey 回归通过；覆盖跨账号/错配时间线、只读 Compare、归档 Fork 源拒绝无写入、容量边界、Fork 错误回滚和多 Worker 竞争账本一致性。
+- **AC6 报告与构建：通过。** 定向 API 测试合计 33/33；API TypeScript build、Web TypeScript + Vite production build 均成功。测试和浏览器仅用合成账号、固定模型替身和一次性本地 D1，验收结束后停止服务并清理临时库。
+
+**P3 最终命令：** `npm run verify:s01:workers -- --readiness-only`；`npm run verify:s01:workers`；`npm --workspace api run test -- src/life/compare.test.ts src/test/world-journey.test.ts`；`npm --workspace api run build`；`npm --workspace web run build`。以上全部通过。没有访问远端/生产 D1、部署或真实模型。仍保留 legacy Fork 历史 unknown 边界；Compare 只呈现记录差异，不证明因果；消息进入接收者知识不保证其已阅读、相信或采取行动。S01 P3 AC1–AC6 均有可复核证据，阶段出口通过。

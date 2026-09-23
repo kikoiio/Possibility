@@ -1,274 +1,277 @@
-# s01｜P1 世界状态一致性与连续推进 Plan
+# s01｜P3 Fork 与 Compare 验收闭环 Plan
+
+> 依据：[spec.md](./spec.md)。本阶段聚焦 P3 当前四项缺口：多 Worker 并发证据、多级 Fork 隔离矩阵、消息送达完整旅程和 Compare UI 人工走查。先复核已有实现；只有验收证据暴露实际缺陷时才改运行时代码。
 
 ## 架构概览
 
-本阶段沿用现有版本化命令与事实作为写入账本，不改变运行时提交机制。新增只读的投影重建路径：从不可变根线基线或 Fork checkpoint 出发，按版本重放已支持动作，构造预期投影，再与当前投影比较。审计入口汇总现有不变量检查与重建差异；检查器不修复、不写回世界状态。
+- **Fork 写入与竞争验证**：继续由现有 Fork 服务捕获源 revision、状态、事实与继承投影，并用 D1 原子批次创建子线。扩展现有隔离验收驱动器，启动两个独立 Worker，共享同一临时本地 D1，对成功、幂等重试、源版本竞争、容量冲突和事务失败进行竞争验证；若出现缺陷，只在现有服务/数据库约束边界修复。
+- **Fork 可见性与只读审计**：继续复用不可变 checkpoint、祖先 cutoff、记忆/事件选择器及世界状态审计。扩展固定旅程夹具，组合验证 Root→Child→Grandchild 中记忆、承诺、知识的允许继承、冻结边界与隔离，不另建平行历史模型。
+- **消息获知旅程**：复用在场传话的版本化提交和居民决策上下文中的知识装配。旅程从子线提交开始，检查正确接收者的上下文包含带来源/certainty 的知识，并检查其他居民和根线/旁支不可见；不以居民必须回复或采取固定行动为条件。
+- **Compare 证据与界面验收**：后端继续使用单次数据库快照和 Fork provenance 构造对照证据；前端继续使用 Compare 面板显示共同历史、分叉条件、差异证据和限制说明。通过登录态本地浏览器走查结构化 Fork 与历史不完整旧 Fork，并记录用户可见结果；若发现缺陷，仅做满足 spec 的最小调整。
 
-```text
-不可变主线基线 / Fork checkpoint
-                 +
-        按版本排序的命令与事实
-                 │
-                 ▼
-        只读重建预期投影
-                 │
-                 ├── 与当前 D1 投影比较
-                 └── 输出差异及命令/版本来源
-                                           │
-                                           ▼
-                                auditUniverse 汇总
-```
+## 核心数据结构与接口
 
-基线和当前投影、命令/事实通过一次一致性读取收集，避免在审计过程中读到不同版本。确定性连续旅程以测试控制的时钟逐拍调用现有引擎；多 Worker 旅程在同一新建隔离本地 D1 上同时发送 tick 请求。
+本阶段复用现有数据契约，不新增业务表或并行历史结构。
 
-## 核心数据结构
+### ForkSnapshot
 
-### ProjectionDomain
+由 `api/src/agent/visibility.ts` 定义，作为 Fork 时冻结的继承证据：
 
 ```ts
-type ProjectionDomain =
-  | 'clock' | 'states' | 'schedules' | 'events'
-  | 'commitments' | 'memories' | 'dialogues'
-  | 'dialogueTurns' | 'personaMessages' | 'knowledge'
-```
-
-`knowledge` 表示按当前时间线 checkpoint/祖先截止点可见的事实视图；事实账本本身仍是重放输入，不是可写回的投影。
-
-### ProjectionRows
-
-保存可比较的世界投影行集合：居民状态、日程、事件、承诺、记忆、对话、逐句发言和访客留言。`simTime` 表示时钟投影；`knowledge` 从有来源且在该线可见的知识事实派生。行使用数据库 schema 对应的类型，语义比较时按稳定 ID 排序。
-
-```ts
-type ProjectionRows = {
-  simTime: string
+interface ForkSnapshot {
+  version: 1
+  sourceTimelineId: string
+  sourceSimTime: string
+  capturedAt: string
+  ancestorCutoffs: AncestorCutoff[]
   states: PersonStateRow[]
   schedules: ScheduleRow[]
-  events: EventRow[]
-  commitments: CommitmentRow[]
   memories: MemoryRow[]
-  dialogues: DialogueRow[]
-  dialogueTurns: DialogueTurnRow[]
-  personaMessages: PersonaMessageRow[]
-  knowledge: WorldFact[]
+  events: EventRow[]
+  dialogues?: DialogueRow[]
+  dialogueTurns?: DialogueTurnRow[]
+  commitments: CommitmentRow[]
+  personaMessages?: PersonaMessageRow[]
+  completeDomains?: ProjectionDomain[]
+  historyComplete: boolean
+  sourceStateVersion?: number
+  worldModelVersion?: number
+  worldFacts?: WorldFactRow[]
 }
 ```
 
-`PersonStateRow` 等行类型分别对应 `api/src/db/schema.ts` 中的持久化表记录；`knowledge` 是可见事实视图，不额外创建持久化表。
+`PersonStateRow`、`ScheduleRow`、`MemoryRow`、`EventRow`、`DialogueRow`、`DialogueTurnRow`、`CommitmentRow`、`PersonaMessageRow` 和 `WorldFactRow` 分别对应数据库 schema 中同名投影表的选取行类型。
 
-### ProjectionBaseline
+可选域用于兼容旧快照。缺少字段不能被视作空集合或完整历史。
 
-```ts
-interface ProjectionBaseline {
-  source: 'root' | 'fork'
-  version: number
-  capturedAt: string
-  simTime: string
-  completeDomains: ProjectionDomain[]
-  rows: Partial<Omit<ProjectionRows, 'simTime' | 'knowledge'>>
-}
-```
-
-根线基线保存在不可变固定模型版本的扩展字段中；Fork 基线保存在时间线 checkpoint 中。完整域可以明确为空集合。缺少域不等于空集合，而表示该域不能被证明完整。
-
-### TimelineEvidence
+### AncestorCutoff
 
 ```ts
-interface TimelineEvidence {
+interface AncestorCutoff {
   timelineId: string
-  revisionVersion: number
-  revisionSimTime: string
-  baseline: ProjectionBaseline | null
-  commands: WorldCommand[]
-  facts: WorldFact[]
-  current: ProjectionRows
+  realTime: string
+  simTime: string | null
 }
 ```
 
-命令和事实按结果版本关联；Fork 的继承事实由其不可变 checkpoint 提供，并与子线本地事实按版本边界组合。
+用于限定后代时间线从每个祖先可继承的历史边界。
 
-### ProjectionDifference 与 ReconstructionResult
+### KnownFact
+
+居民决策上下文中可见的结构化事实：
 
 ```ts
-interface ProjectionDifference {
-  domain: ProjectionDomain | 'history'
-  recordId?: string
-  kind: 'missing' | 'mismatch' | 'unproven' | 'unsupported'
-  commandId?: string
-  version?: number
-  detail: string
-}
-
-interface ReconstructionResult {
-  status: 'complete' | 'incomplete' | 'legacy' | 'unsupported'
-  throughVersion: number
-  expected: ProjectionRows
-  differences: ProjectionDifference[]
+interface KnownFact {
+  kind: 'environment' | 'knowledge'
+  text: string
+  sourceFactId: string
+  certainty: 'fact' | 'rumor'
 }
 ```
 
-### 接口
+消息旅程检查接收者、来源事实 ID 和 certainty；不得将消息提交成功等同于居民已经阅读或采取行动。
+
+### Compare 结果
 
 ```ts
-collectTimelineEvidence(db, worldId, timelineId): Promise<TimelineEvidence>
-rebuildProjection(evidence): ReconstructionResult
-compareProjection(expected, current): ProjectionDifference[]
-auditUniverse(db, worldId, timelineId): Promise<InvariantViolation[]>
+interface ForkEvidence {
+  forkTimelineId: string
+  sourceTimelineId: string | null
+  sourceSimTime: string | null
+  provenance: 'snapshot' | 'legacy'
+  sourceStateVersion: number | null
+  worldModelVersion: number | null
+  scenario: ForkScenario | null
+}
+
+interface TimelineEvidence {
+  id: string
+  simNow: string
+  status: string
+  parentTimelineId: string | null
+  historyComplete: boolean
+}
+
+interface StateFactAndEventDifferences {
+  states: {
+    personId: string
+    changes: { field: string; left: string | null; right: string | null; leftEvidence: unknown; rightEvidence: unknown }[]
+  }[]
+  facts: { key: string; left: { value: unknown; factId: string; version: number; simTime: string } | null;
+    right: { value: unknown; factId: string; version: number; simTime: string } | null }[]
+  worldModelVersions: { left: number | null; right: number | null }
+  events: { shared: EventEvidence[]; leftOnly: EventEvidence[]; rightOnly: EventEvidence[] }
+}
+
+interface EventEvidence {
+  id: string
+  simTime: string
+  title: string
+  description: string
+}
+
+interface ComparisonResult {
+  worldId: string
+  interpretation: 'observed_differences_not_causal_claims'
+  timeAlignment: 'same_sim_time' | 'different_sim_times'
+  left: TimelineEvidence
+  right: TimelineEvidence
+  sharedForkOrigin: {
+    timelineId: string
+    leftFork: ForkEvidence | null
+    rightFork: ForkEvidence | null
+  } | null
+  differences: StateFactAndEventDifferences
+  limitations: string[]
+}
 ```
 
-- `collectTimelineEvidence` 只读取数据库，不调用会初始化或修改 revision 的写入口。
-- `rebuildProjection` 是确定性 reducer，按版本验证命令/事实并计算预期投影；未知动作或不完整基线会返回对应状态，不静默跳过。
-- `compareProjection` 比较域内语义字段、缺失行和多余行；忽略与世界状态无关的运行时维护字段。
-- `auditUniverse` 保留现有命令、事实和版本校验，并将重建差异转换为现有审计问题格式。
+`TimelineEvidence` 保留两线 ID、模拟时刻、状态、父线及历史完整度；差异条目带对应时间线、模拟时间或事实 ID/version。此类型描述现有 API 结果的稳定语义，字段只在验收证明需要时调整。
+
+### 核心接口
+
+```ts
+forkTimeline(
+  db: Db,
+  worldId: string,
+  sourceId: string,
+  scenario: ForkScenario | null,
+  requestId?: string,
+): Promise<{ id: string; simNow: string; snapshot: ForkSnapshot }>
+
+compareTimelines(
+  db: Db,
+  worldId: string,
+  leftId: string,
+  rightId: string,
+): Promise<ComparisonResult | null>
+
+buildEngineContext(
+  db: Db,
+  personId: string,
+  snapshot: WorldSnapshot,
+): Promise<EngineContext | null>
+```
+
+`compareTimelines` 的结果包含两侧时间线证据、共同 Fork 来源、状态/事实/事件差异、时间对齐状态和限制说明。本阶段只有在验收发现缺字段或误导表述时才扩展结果。
+
+Fork 相同请求 ID/相同载荷应重放同一子线；不同载荷或过期源状态以冲突结束。并发验收也核对活动时间线容量边界。
 
 ## 模块设计
 
-### 根线基线与 Fork checkpoint
+### Fork 提交边界
 
-**职责：** 为新建的结构化根线固定版本 0 的完整投影域集合；为 Fork 固定源线检查点的继承投影、可见事实和完整性信息。旧记录若缺少域快照，明确标为不完整，不将当前可变行追认为历史基线。
+**职责：** 捕获源 revision 与不可变状态快照；原子创建时间线及其初始投影；处理幂等重放与源状态/容量冲突。
 
-**主要位置：** `api/src/world-state/model.ts`、`api/src/agent/visibility.ts`、`api/src/life/fork.ts`、`api/src/worlds/routes.ts`、`api/src/persons/routes.ts`。
+**对外接口：** Fork 路由调用 `forkTimeline(...)`；成功返回既有子线与 checkpoint，冲突返回明确 409。
 
-**依赖：** 已有不可变 `world_model_versions` 与 `fork_snapshot_json` 存储及其数据库保护。
+**依赖：** 时间线/版本表、`ForkSnapshot` 和现有数据库约束。若并发试验证明存在竞态，只在现有 D1 约束或提交事务边界修复。
 
-### 只读投影重建器
+### 继承可见性与审计
 
-**职责：** 从基线、版本化命令与事实建立预期状态；根据动作重建时钟、居民状态、日程、事件、承诺、记忆、对话、逐句发言、访客留言和知识可见集合；为未知动作、缺失证据和差异定位来源命令/版本。
+**职责：** 依据不可变 checkpoint 和祖先 cutoff 选择记忆/事件/知识；对结构化线检查投影与来源一致性，对旧线保留不完整状态。
 
-**对外接口：** `collectTimelineEvidence`、`rebuildProjection`、`compareProjection`。
+**对外接口：** 继续使用现有可见性选择器和只读世界审计；测试层提供 Root→Child→Grandchild 组合矩阵。
 
-**主要位置：** 新建 `api/src/world-state/rebuild.ts` 与 `api/src/world-state/rebuild.test.ts`。
+**依赖：** Fork checkpoint、事实账本、记忆与承诺投影。
 
-**依赖：** 根线/分叉基线、`world_commands`、`world_facts` 及各当前投影表。
+### 消息上下文旅程
 
-### 一致性审计入口
+**职责：** 从在场消息提交追踪至接收者的后续决策上下文，确认来源和 certainty；对其他人物/时间线执行不可见性断言。
 
-**职责：** 将既有版本连续性、命令—事实语义检查与完整重建比较结合。权限、归属与公开只读边界由相关 API 路由回归验证。旧线和缺失投影域仍可报告已知不变量问题，但不能宣称完整重建通过。
+**对外接口：** 复用在场提交路由和 `buildEngineContext(...)` 的知识装配边界；模型替身只用于确定性触发，不断言居民行为结果。
 
-**主要位置：** `api/src/world-state/invariants.ts`、`api/src/world-state/invariants.test.ts`。
+**依赖：** 在场命令/事实、Fork 可见性、居民上下文构造。
 
-**依赖：** 只读证据收集器与纯重建器。
+### Compare 证据与 UI
 
-### 确定性连续推进旅程
+**职责：** 服务端汇总可授权的两线状态、共同 Fork 来源、差异证据和限制；客户端让用户检查这些证据、旧历史边界及返回目标线。
 
-**职责：** 用固定居民、完整日程和固定模型响应推进至少一整天模拟时间；逐拍核对时钟、日程切换、居民状态、事实和事件，最终运行完整审计。测试倍率只存在于验收环境。
+**对外接口：** 继续使用 Compare API 与 Compare 面板；仅在走查发现呈现缺口时改返回字段或页面提示。
 
-**主要位置：** `api/src/test/world-fixture.ts`、`api/src/test/world-journey.test.ts`、`api/src/engine/tick.test.ts`。
+**依赖：** 世界归属校验、Compare 单批读取、时间线选择状态。
 
-**依赖：** 现有 tick、虚拟时钟推进和版本化提交边界。
+### P3 验收驱动与记录
 
-### 隔离本地 D1 多 Worker 旅程
+**职责：** 用临时 D1 启动多个 Worker 重复执行竞争场景；整理组合旅程、消息旅程及登录态 Compare 走查证据。
 
-**职责：** 新建可丢弃的本地持久化目录，应用迁移并播种固定夹具；启动两个独立 Worker 实例，共享该目录并同时推进同一时间线；核对租约、fencing、修订与投影结果；结束后清理 Worker 和目录。
+**对外接口：** 开发/验收工具，不成为产品运行模块；结果写入审计报告和 checklist。
 
-**主要位置：** 新建 `scripts/verify-s01-workers.ts`，并在根目录 `package.json` 添加专用验收命令。
-
-**依赖：** 本地 Wrangler D1、`engineTickLeases`、版本化提交路径。Wrangler 本地 D1 支持通过 `--persist-to` 指定持久化位置，详见 [Cloudflare D1 本地开发文档](https://developers.cloudflare.com/d1/best-practices/local-development/)。所有迁移和 Worker 命令必须使用同一个临时目录与本地模式。
-
-### 失败、权限和 Fork 矩阵
-
-**职责：** 在现有提交、引擎、场景、权限和 Fork 回归中补齐成功/拒绝/取消/恢复/重复/竞争案例。每个拒绝案例检查版本、事实、投影和时间线集合无变化；多级 Fork 检查 checkpoint 之后的祖先内容不会泄漏。
-
-**主要位置：** `api/src/world-state/commit.test.ts`、`api/src/engine/tick-lease.test.ts`、`api/src/engine/tick.test.ts`、`api/src/life/compare.test.ts` 及相关路由测试。
-
-**依赖：** 固定小世界夹具与隔离 D1。
-
-### 阶段证据
-
-**职责：** 记录 P1 各验收项的实际命令、环境、结果、关键观察及 legacy 降级范围；所有 AC 通过后才标记阶段出口通过。
-
-**主要位置：** `docs/current-state-audit.md`。
-
-**依赖：** 自动化测试和隔离 Worker 旅程的实际运行结果。
+**依赖：** 本地 Wrangler/Worker、固定模型替身、合成账号与临时目录。
 
 ## 模块交互
 
 ```text
-新建根线 ──→ 固定版本 0 基线
-Fork 创建 ──→ 父线 checkpoint ──→ 子线固定 checkpoint
-
-验收调用
-   │
-   ├── 一致性读取：基线/checkpoint + 当前投影 + 命令/事实 + 时间线版本
-   │
-   ▼
-证据收集器 ──→ 纯重建器 ──→ 投影比较器
-                                 │
-                                 ├── 无差异：结构化时间线重建一致
-                                 └── 差异/缺证：返回域、行、来源命令/版本
-                                           │
-                                           ▼
-                                auditUniverse 汇总报告
+Fork UI
+  → 已登录的世界 Fork 路由（归属、活动状态、条件、请求 ID）
+  → forkTimeline 读取源线与祖先证据
+  → 原子写入子线、revision 0、状态/日程/承诺副本与不可变 checkpoint
+  → 返回子线 ID 与来源版本
 ```
 
-读路径只从一个 D1 batch 收集同一时点的数据。重建器对命令与事实按版本排序，先验证二者关联及支持范围，再计算预期投影；比较器按稳定 ID 和域语义字段比较。审计始终只读。
+```text
+Root → Child → Grandchild 隔离旅程
+  → 每个分叉点固定当前可继承证据
+  → 在父线/子线分别追加记忆、承诺、知识
+  → 可见性选择器按 checkpoint/cutoff 计算各线可见集合
+  → 只读审计对照快照、事实账本与当前投影
+  → 断言允许继承的内容可见，越界内容不可见
+```
 
-连续旅程由测试时钟逐拍推进，至少覆盖完整的一天模拟时间，并在每拍后核对版本和状态；最终运行重建审计。多 Worker 旅程由隔离脚本准备唯一 D1 目录，两个 Worker 实例同时发送请求，随后检查只有一个有效结果、旧租约 token 不能提交，且所有投影与账本一致。失败/恢复/Fork 场景通过故障注入和固定请求 ID 验证，无副作用以修订、事实、投影及时间线行前后比较为证。
+```text
+Child 中提交消息
+  → 在场提交器写入版本化来源事实
+  → buildEngineContext(接收者, Child)
+  → 仅接收者上下文包含该来源与 certainty
+  → 检查其他居民、Root 与旁支上下文均不可见
+```
+
+```text
+Compare 面板
+  → 已登录 Compare 路由（验证世界归属及两条时间线）
+  → compareTimelines 在单次 D1 batch 读取状态/版本/事实/事件
+  → 合并每条线自己的不可变 Fork checkpoint
+  → 返回共同祖先、分叉来源、差异证据、时间对齐与限制
+  → UI 人工检查结构化 Fork、legacy Fork 和返回选线行为
+```
+
+并发 Worker 旅程在每轮请求前用屏障对齐启动，轮后检查所有写入和数据库不变量；故障与拒绝路径通过事务前后快照确认无副作用。自动旅程的结构化证据与人工 UI 观察分别记录，不互相替代。
 
 ## 文件组织
 
-```text
-spec_docs/s01/
-├── spec.md                         — 已批准的 P1 行为规格
-├── plan.md                         — 本技术设计
-├── task.md                          — 待审批后拆分的执行步骤
-└── checklist.md                    — 待审批后定义的行为验收项
+| 操作 | 文件 | 职责 |
+|---|---|---|
+| 修改 | `scripts/verify-s01-workers.ts` | 在现有隔离 Worker/D1 驱动器中补 Fork 并发、重放、源版本冲突与容量冲突场景；沿用临时目录和清理机制。 |
+| 修改 | `api/src/life/compare.test.ts` | 补 Root→Child→Grandchild 的记忆、承诺、知识继承/隔离矩阵，以及拒绝/失败无副作用断言。 |
+| 修改 | `api/src/test/world-journey.test.ts` | 补子线消息提交→接收者上下文→根线/其他接收者不可见的完整固定模型旅程。 |
+| 条件修改 | `api/src/life/fork.ts`、`api/src/worlds/routes.ts`、相关数据库迁移 | 仅当并发证据复现实际竞争缺陷时，修复快照/事务/约束边界。 |
+| 条件修改 | `api/src/agent/visibility.ts`、`api/src/world-state/invariants.ts` | 仅当隔离矩阵或只读审计发现可见性/完整性缺陷时修复。 |
+| 条件修改 | `api/src/life/compare.ts`、`web/src/components/world/ComparePanel.tsx` | 仅当登录态走查发现证据缺失、误导文案或返回选线串线时调整。 |
+| 修改 | `docs/current-state-audit.md` | 记录 P3 起点、逐项现有覆盖、隔离环境和本轮证据。 |
+| 修改 | `docs/world-quality-report.md` | 更新 P3 阶段状态、通过证据及未关闭边界。 |
+| 修改 | `spec_docs/s01/checklist.md` | 将 AC1–AC6 逐项转成执行清单并填写实际结果。 |
 
-api/src/world-state/
-├── model.ts                        — 根线结构化基线与完整性信息
-├── rebuild.ts                      — 证据收集、纯重建、投影比较
-├── rebuild.test.ts                 — 重建、差异定位及 legacy 降级
-├── invariants.ts                   — 汇总现有不变量和重建差异
-└── invariants.test.ts              — 命令、事实、版本和投影审计回归
-
-api/src/agent/
-└── visibility.ts                   — Fork checkpoint 类型、读取与继承边界
-
-api/src/life/
-└── fork.ts                         — 捕获完整的子线 checkpoint
-
-api/src/
-├── worlds/routes.ts                — 新建世界时固定根线基线
-├── persons/routes.ts               — 人物快捷建世界时固定根线基线
-├── test/world-fixture.ts           — 固定居民、日程、状态和模拟时间
-├── test/world-journey.test.ts      — 重建、多拍和多级 Fork 旅程
-└── engine/tick.test.ts             — 加速时钟下的完整日推进
-
-scripts/
-└── verify-s01-workers.ts           — 隔离 D1 多 Worker 并发验收
-
-package.json                        — 添加本地多 Worker 验收命令
-docs/current-state-audit.md         — 追加 P1 验收证据与阶段判断
-```
-
-无需增加 SQL schema 迁移；基线与 checkpoint 在已有不可变 JSON 字段中扩展。新增的多 Worker 命令只能在临时本地持久化目录执行。
+本计划不预设新增业务表、依赖、迁移或浏览器自动化框架；条件修改项只有在验收发现缺陷时才进入实现。
 
 ## 技术决策
 
 | 决策点 | 选择 | 理由 |
 |---|---|---|
-| 投影重建 | 只读、确定性的 reducer 生成预期投影，再与当前记录比较 | 不改写数据，可定位缺失、篡改和无来源记录 |
-| 命令/事实语义 | 从现有审计路径提取可复用的纯映射逻辑 | 防止重建器与审计器维护两套不一致规则 |
-| 基线完整性 | 根线基线与 Fork checkpoint 明确列出完整投影域 | 旧线缺失的历史证据不会被误判为空或完整 |
-| 基线持久化 | 扩展不可变固定模型 JSON 与 Fork checkpoint JSON | 复用既有持久化和不可变保护，避免 D1 schema 迁移 |
-| 领域比较 | 按语义字段、稳定 ID 和稳定顺序比较 | 避免行顺序或无关运行时字段造成误报 |
-| 完整日旅程 | 测试时钟与确定性模型替身驱动现有 tick | 加速验收但不改变线上倍率，不依赖真实模型 |
-| 多 Worker 环境 | 临时本地 D1 目录、两个独立 Worker、显式本地模式，禁用 Wrangler metrics | 测量跨实例竞争，同时避免接触默认/远端数据库 |
+| 多实例环境 | 扩展已有本地 Worker 驱动器，让两个独立进程共享一次性 D1 文件；不连接远端 D1。 | 与已确认的环境一致，能实际覆盖跨 Worker 竞争，同时保持数据库和凭据隔离。 |
+| 并发测试形式 | 固定种子数据、固定请求载荷，对两个 Worker 发起同步竞争；用响应与最终 D1 账本/时间线状态判定，不以耗时或吞吐量作为标准。 | 本阶段验证原子性、幂等和边界，不是性能基准测试。 |
+| Fork 历史模型 | 继续以不可变 `ForkSnapshot` 和祖先 cutoff 为继承依据；只在证据显示缺域或错误继承时修复。 | 避免新增第二套历史来源，也防止覆盖现有 legacy 兼容规则。 |
+| 多级隔离验证 | 采用固定夹具分别在 Fork 前/后写入记忆、承诺和知识，并逐线核对可见性与审计结果。 | 对应 P3 当前未闭合的组合矩阵，结果不依赖模型随机行为。 |
+| 消息送达语义 | 将提交、接收者知识可用、居民实际回应作为不同观察状态；验收前两者及隔离，后者不设固定预期。 | 与 spec 的消息边界一致，避免把事实写入夸大成居民行为承诺。 |
+| Compare 走查 | 使用本地合成账号及隔离数据，人工检查结构化与 legacy Fork 的证据/限制提示；界面缺陷才改 UI。 | 现有 API/UI 已有证据字段，需证明实际用户可读且不会误导。 |
+| 数据库结构 | 当前不新增业务字段或表；若验收发现现有不可变快照无法表达必要来源，再单独评估最小结构调整。 | 已有 checkpoint、revision 和 facts 覆盖本轮需求，先检验其行为。 |
 
-## 需求追踪
+## Spec 覆盖
 
-| Spec 项 | 设计归属 | 主要验证位置 |
-|---|---|---|
-| F1 / AC2–AC3 | 根线/分支基线、只读重建器、域比较与差异诊断 | `world-state/rebuild.test.ts`、`world-state/invariants.test.ts` |
-| F2、F7 / AC4、AC10–AC11 | Fork checkpoint、祖先截止点及多级投影重建 | `life/compare.test.ts`、`test/world-journey.test.ts` |
-| F3 / AC1、AC5、AC11 | 固定居民、多日程边界及加速 tick 旅程 | `engine/tick.test.ts`、`test/world-journey.test.ts` |
-| F4 / AC6 | 请求重放、内容冲突、CAS 与原子回滚 | `world-state/commit.test.ts`、相关路由测试 |
-| F5 / AC7 | 场景取消/恢复、待处理请求过期与迟到提交拒绝 | `scene/recovery.test.ts`、场景路由测试 |
-| F6 / AC8–AC9 | 隔离 D1 多 Worker 竞争及拒绝边界矩阵 | `scripts/verify-s01-workers.ts`、`engine/tick-lease.test.ts`、路由测试 |
-| N4–N5 / AC12 | legacy 降级及验收证据报告 | `world-state/rebuild.test.ts`、`docs/current-state-audit.md` |
-
-## 自检
-
-- Spec 覆盖：F1–F7 均在基线/重建器、引擎旅程、提交/并发矩阵或 Fork 模块中有明确归属。
-- 接口完整性：证据收集、纯重建、投影比较和统一审计入口的输入/输出已定义。
-- 依赖清晰度：基线与 checkpoint → 证据收集 → 重建 → 比较 → 审计；写入路径不依赖重建器，无循环依赖。
-- 矛盾检查：legacy 证据保持未知；隔离重建不写回；加速时钟只影响测试；多 Worker 使用显式临时本地 D1。
+| Spec 项 | Plan 归属 |
+|---|---|
+| F1、AC1：并发 Fork 一致性 | Fork 写入与竞争验证模块；隔离 Worker 驱动器与现有 Fork 提交边界。 |
+| F2、AC2：多级记忆/承诺/知识隔离 | Fork 可见性与只读审计模块；Root→Child→Grandchild 固定旅程。 |
+| F3、AC3：消息进入正确接收者上下文 | 消息上下文旅程；版本化消息提交与 `buildEngineContext`。 |
+| F4–F5、AC4：Compare 证据及因果边界 | Compare 证据与 UI 模块；API 单批读取及登录态浏览器走查。 |
+| F6、AC5：访问和失败无副作用 | Fork/Compare 路由与提交边界；并发/权限/故障前后快照断言。 |
+| AC6：P3 出口报告 | P3 验收驱动与记录；审计报告和 checklist。 |

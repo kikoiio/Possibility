@@ -132,6 +132,66 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
 
 /** A deterministic slice: enter -> fork -> change a condition -> inform one resident -> compare. */
 describe('small world journey without an LLM', () => {
+  it('delivers a child-line message into only the intended recipient knowledge', async () => {
+    fixture = await createWorldFixture()
+    const f = fixture
+    const modelJson = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
+    await f.db.insert(persons).values([
+      { id: 'ada', userId: 'owner', name: 'Ada', modelJson, createdAt: WORLD_TIME },
+      { id: 'bo', userId: 'owner', name: 'Bo', modelJson, createdAt: WORLD_TIME },
+      { id: 'visitor', userId: 'owner', name: 'Visitor', modelJson, isUser: true, createdAt: WORLD_TIME },
+    ])
+    await f.db.insert(worldPersons).values(['ada', 'bo', 'visitor'].map(personId => ({ worldId: 'home-world', personId, joinedAt: WORLD_TIME })))
+    await f.db.insert(personStates).values(['ada', 'bo'].map(personId => ({ personId, timelineId: 'home-main', simTime: WORLD_TIME,
+      location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', lastBeatSimTime: WORLD_TIME, updatedRealAt: WORLD_TIME })))
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers, body: JSON.stringify(body) }, f.env)
+    const fork = async (requestId: string) => {
+      const response = await post('/api/worlds/home-world/timelines/home-main/fork', {
+        requestId, scenario: { whatIf: `Message branch ${requestId}`, changedVariable: 'message delivery' },
+      })
+      expect(response.status).toBe(200)
+      return (await response.json() as { id: string }).id
+    }
+    const childId = await fork('message-child')
+    const siblingId = await fork('message-sibling')
+    const visitorEnters = await post('/api/worlds/home-world/scene/position', {
+      timelineId: childId, commandId: 'message-child-visitor-enters', expectedVersion: 0, location: 'Cafe',
+    })
+    expect(visitorEnters.status).toBe(200)
+    const delivery = await post('/api/worlds/home-world/scene/inform', { timelineId: childId, recipientId: 'ada', topic: 'road warning',
+      content: 'The north road is flooded.', commandId: 'message-child-delivery', expectedVersion: 1 })
+    expect(delivery.status, await delivery.clone().text()).toBe(200)
+    const receipt = await delivery.json() as { factId: string; version: number; certainty: string }
+    expect(receipt).toMatchObject({ version: 2, certainty: 'rumor', factId: expect.any(String) })
+    expect(await f.db.select().from(worldFacts).where(eq(worldFacts.id, receipt.factId)).get()).toMatchObject({
+      timelineId: childId, version: 2, factType: 'knowledge', subjectId: 'ada:road warning',
+    })
+
+    const knownFacts = async (personId: string, timelineId: string) => {
+      const snapshot = (await buildWorldSnapshot(f.db, 'home-world', timelineId))!
+      return (await buildEngineContext(f.db, personId, snapshot))?.knownFacts ?? []
+    }
+    const [adaChild, boChild, adaRoot, adaSibling] = await Promise.all([
+      knownFacts('ada', childId), knownFacts('bo', childId), knownFacts('ada', 'home-main'), knownFacts('ada', siblingId),
+    ])
+    expect(adaChild).toEqual([expect.objectContaining({
+      kind: 'knowledge', certainty: 'rumor', text: expect.stringContaining('The north road is flooded.'), sourceFactId: receipt.factId,
+    })])
+    expect(boChild).toEqual([])
+    expect(adaRoot).toEqual([])
+    expect(adaSibling).toEqual([])
+    expect(await auditUniverse(f.db, 'home-world', 'home-main')).toEqual([])
+    expect(await auditUniverse(f.db, 'home-world', childId)).toEqual([])
+    expect(await auditUniverse(f.db, 'home-world', siblingId)).toEqual([])
+    const comparison = await (await app.request(`/api/worlds/home-world/compare?left=home-main&right=${childId}`, { headers }, f.env)).json() as {
+      differences: { facts: { key: string; right: { factId: string; version: number } | null }[] }
+    }
+    expect(comparison.differences.facts).toContainEqual(expect.objectContaining({
+      key: 'knowledge:ada:road warning', right: expect.objectContaining({ factId: receipt.factId, version: 2 }),
+    }))
+  })
+
   it('keeps branch knowledge private and rejects unsafe actions without partial writes', async () => {
     fixture = await createWorldFixture()
     const f = fixture

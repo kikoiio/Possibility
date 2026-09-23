@@ -9,7 +9,7 @@ import { WorldStateError } from '../world-state/types'
 function databaseErrorMessages(error: unknown): string[] {
   const messages: string[] = []
   let current: unknown = error
-  for (let depth = 0; depth < 5 && current; depth++) {
+  for (let depth = 0; depth < 20 && current; depth++) {
     if (current instanceof Error) {
       messages.push(current.message)
       current = (current as Error & { cause?: unknown }).cause
@@ -21,8 +21,12 @@ function databaseErrorMessages(error: unknown): string[] {
   return messages
 }
 
-function forkConflict(error: unknown): WorldStateError | null {
+export function forkConflict(error: unknown, busyMessage = '分叉过程中数据库正忙；请刷新源时间线后重试。'): WorldStateError | null {
   const message = databaseErrorMessages(error).join('\n')
+  if (message.includes('SQLITE_BUSY') || message.includes('SQLITE_LOCKED')
+    || message.includes('D1_ERROR: Failed to parse body as JSON, got: Error: internal error;')) {
+    return new WorldStateError(busyMessage, 409)
+  }
   if (message.includes('active_timeline_limit')) {
     return new WorldStateError('活跃时间线已达上限（3 条），请先归档一条', 409)
   }

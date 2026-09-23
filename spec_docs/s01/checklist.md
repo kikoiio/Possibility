@@ -1,35 +1,63 @@
-# s01 P1 验收清单
+# s01｜P3 Fork 与 Compare 验收清单
 
-本清单用于验收 `spec_docs/s01/spec.md` 定义的 P1 范围。所有验证均在隔离的本地 D1 和多个 Worker 上执行；每一项都需要记录可复核的命令、结果或证据。P0 遗留数据若无法确定，必须明确标记为 legacy/unknown，不得推测补齐。
+> 依据：[spec.md](./spec.md)、[plan.md](./plan.md) 与 [task.md](./task.md)。本清单在开发前审批；执行时填写实际状态和证据。所有自动验证只使用一次性隔离本地 D1、固定时钟/模型替身及合成账号，不连接项目默认库、远端 D1 或部署服务。
 
-## 投影重建与完整性
+> P3 执行结果：AC1–AC5 通过，AC6 报告完整。双 Worker readiness 与并发 Fork 脚本通过；API 定向回归 33/33；API 与 Web build 通过；Compare 登录态本地浏览器走查通过。详细的 HTTP 结果、D1 账本、用户可见文案和遗留边界见 [`docs/current-state-audit.md`](../../docs/current-state-audit.md) 的“P3 实施与验收证据”。
 
-- [x] 从固定夹具独立创建两次相同的结构化世界，两次得到一致的起点、居民、时间线和日程描述；过程不调用真实模型或外部服务。（证据：`npm --workspace api run test -- src/test/product-journey.test.ts`；固定时钟下两次 API 创建对比基线，2/2 通过。）
-- [x] 对 Root 基线和 Fork 检查点重放后，核对时钟、状态、日程、事件、承诺、记忆、对话、逐句发言、访客留言及知识可见集合等投影域均与预期一致。（证据：`npm --workspace api run test`；`world-state/invariants.test.ts`、`world-state/rebuild.test.ts`、`life/compare.test.ts` 和完整旅程回归均通过。）
-- [x] 在一次性测试副本中分别注入缺失记录、被修改记录和孤立记录，重建报告准确指出 timeline、领域、记录 ID 及命令/版本来源，原始数据保持不变。（证据：`world-state/rebuild.test.ts` 和 `world-state/invariants.test.ts` 故障注入通过；全表快照断言只读性，诊断保留域、命令及版本。）
-- [x] 验证 Root、Child、Grandchild 的历史截止点及隔离规则；无法可靠重建的旧历史明确显示为 legacy/unknown。（证据：`npm --workspace api run test -- src/test/world-journey.test.ts -t "structured full-day journey"`；三层审计通过，分叉后变更不泄漏；旧基线重建状态为 incomplete。）
+## AC1｜多 Worker Fork 并发
 
-## 连续运行与故障恢复
+- [x] 两个独立 Worker 进程已启动并连接同一个一次性本地 D1；临时持久化目录位于系统临时目录。（验证：运行 `npm run verify:s01:workers -- --readiness-only`，记录两个 Worker 与数据库目录。N1、N3）
+- [x] 两个 Worker 对同一活动源线并发创建不同子线时，每个成功子线的 checkpoint、revision 0、状态副本和源版本均一致且完整。（验证：运行 `npm run verify:s01:workers`，检查请求结果和 D1 子线/checkpoint/revision 查询。F1）
+- [x] 两个 Worker 以同一 request ID 和相同载荷重试时返回同一子线，不创建第二条时间线；同 ID 不同载荷返回冲突且没有新增写入。（验证：并发脚本检查 HTTP 响应、timeline 行数与源 revision。F1）
+- [x] Fork 与源线版本化写入竞争时，子线只对应有效完整源快照，或请求明确冲突；活动时间线达到上限后的请求被拒绝。（验证：脚本记录竞争请求状态，并比较源/子线版本及 active timeline 数量。F1、F6）
+- [x] Fork 初始投影写入失败会整体回滚，不留下 timeline、revision、命令、事实或部分投影。（验证：在隔离 D1 注入失败，比较事务前后关键表快照。F1、F6）
+- [x] 并发场景可重复运行；每轮结束 revision 连续、来源边界正确且没有遗留 lease/临时进程。（验证：重复执行脚本并查询最终 D1 状态，确认退出清理。N1、N3）
 
-- [x] 使用加速测试时钟连续推进至少一个完整模拟日，跨越多个日程边界；每个 tick 的版本、事实和状态连续，日程触发次数符合预期，最终审计通过。（证据：`engine/tick.test.ts` 与 `world-journey.test.ts` 各用 16 个 tick 推进 24 小时；逐拍 revision 与审计通过。）
-- [x] 相同请求 ID 和相同载荷的重试只产生一次事实与一次版本推进；相同请求 ID 携带不同载荷或版本时被拒绝；注入中途写入失败不会留下部分事实或时钟变化。（证据：`world-state/commit.test.ts` 与 `product-journey.test.ts` 幂等、冲突、故障回滚用例通过。）
-- [x] 对取消、断连、超时和过期请求查询最终状态；不得留下部分投影，使用原请求 ID 重试不得重复调用模型或重复产生副作用，过期 Worker 的迟到提交被拒绝。（证据：`scene/intent.test.ts` 取消/断流和同 ID 重试、`scene/recovery.test.ts` 过期请求、`llm/client.test.ts` 正文超时及 `tick-lease.test.ts` fencing 均通过。）
-- [x] 两个独立 Worker 同时操作同一个隔离 D1 时至多有一个有效 tick 副作用；最终时钟、版本、事实和投影一致，过期版本的提交不会生效。（证据：`npm run verify:s01:workers`：Worker 状态 200/409，共享 D1 一条 clock fact、revision=2、租约归零。）
+## AC2｜多级记忆、承诺与知识隔离
 
-## 权限、Fork 与隔离
+- [x] Fork 前存在的合格记忆和开放承诺会进入 Child 的不可变 checkpoint/投影。（验证：Root→Child 固定旅程逐条比较来源 ID/内容及子线投影。F2）
+- [x] Child 创建后才写入 Root 的记忆、承诺与知识不会渗入既有 Child；Child 在创建 Grandchild 前新增的合格记录只按 Grandchild 的 checkpoint 边界继承。（验证：Root→Child→Grandchild 矩阵逐条核对各线可见集合。F2）
+- [x] Child、Grandchild 或旁支创建后的本线写入不反向改变祖先、既有后代或旁支中的记忆、承诺与知识。（验证：写入前后比较所有相关 timeline 快照和可见记录。F2）
+- [x] 知识保留接收者、来源事实和 certainty；不相关居民及不具备该 checkpoint 的时间线不可见，legacy 缺证据时显示未知/不完整。（验证：调用各接收者上下文/可见性读取并检查来源字段，不为旧线补造历史。F2、N5、N6）
+- [x] 多级旅程通过只读世界审计，没有未解释的 checkpoint/投影差异。（验证：对 Root、Child、Grandchild 分别运行 `auditUniverse` 并记录结果。F2、N5）
 
-- [x] 对未授权用户、World/timeline 不匹配、暂停或归档状态、调用上限以及公开只读路径的写入请求均予以拒绝，且数据库没有副作用。（证据：全量 API 测试中的 `legacy-compat.test.ts`、`public/routes.test.ts`、`world-state/commit.test.ts` 和 `life/compare.test.ts` 拒绝矩阵通过。）
-- [x] Fork 在多层历史中覆盖成功、同请求重放、载荷冲突、条件不满足和并发竞争；不得创建重复子节点，Root、Child、Grandchild 的状态、承诺、记忆、知识、对话和事件保持隔离。（证据：`life/compare.test.ts` Fork 场景矩阵、嵌套 checkpoint 测试及 `world-journey.test.ts` 三层端到端审计通过。）
-- [x] 从真实 API 写入路径验证基线/检查点、命令或事实、版本和投影在成功时完整一致，在事务失败时整体回滚。（证据：`product-journey.test.ts` API 创建/写入旅程及不可变基线插入故障回滚用例通过。）
+## AC3｜消息送达与接收者获知
 
-## 集成与端到端
+- [x] 子线消息提交产生属于该时间线的版本化来源事实；提交结果能定位来源事实 ID、版本和 certainty。（验证：运行 `npm --workspace api run test -- src/test/world-journey.test.ts`，核对 command/fact 与时间线。F3）
+- [x] 接收者后续决策上下文包含该消息和正确来源/certainty；其他居民、Root 与旁支上下文不包含该消息。（验证：固定模型旅程分别构造对应上下文并比较 `knownFacts`。F3）
+- [x] 用户可见结果文案区分消息已提交/已进入接收者知识与居民实际阅读、相信或采取行动；不承诺居民必然回应。（验证：本地登录态浏览器提交消息并记录显示文案。F3、N4）
+- [x] 消息旅程的只读审计通过，未在源线或其他时间线产生泄漏投影。（验证：`auditUniverse` 及 Root/Child/旁支状态前后快照。F3、N5）
 
-- [x] 执行 API TypeScript 构建且无错误。（证据：`npm --workspace api run build`，退出码 0。）
-- [x] 执行 API 全量测试且全部通过。（证据：`npm --workspace api run test`，31 个测试文件、214 个测试通过，退出码 0。）
-- [x] 执行隔离多 Worker 验收流程，确认临时 D1 路径实际位于临时目录、所有 Worker 使用同一隔离数据目录、清理目标仅限该目录，并且禁用 Wrangler 指标发送；不得触及默认或远程 D1。（证据：`npm run verify:s01:workers`，两 Worker 共用唯一 `/tmp` D1，`WRANGLER_SEND_METRICS=false`，只用 `--local`，运行后目录/进程清理，退出码 0。）
-- [x] 完成至少一条端到端旅程：创建 World 及多层 Fork，推进完整模拟日，审计 Root 与所有后代，再修改 Child 并复审；Root 历史不变，Child 仅包含其自身历史和事件。（证据：`world-journey.test.ts` 固定 API 旅程推进 24 小时，Root/Child/Grandchild 审计通过，子线写入后 Root 快照相同。）
+## AC4｜Compare 登录态界面走查
 
-## P1 出口
+- [x] 结构化 Fork 对照清楚展示分叉条件、共同过去、双方状态/事实/事件差异及证据来源、版本和时间。（验证：本地合成账号打开 Compare，逐项记录页面实际显示。F4）
+- [x] 两线模拟时刻不一致时，界面明确提示时刻差异，不把不同时间点的状态当成同刻结果。（验证：选择不同模拟时刻的两线并记录提示。F4、F5）
+- [x] 缺少完整 checkpoint 的 legacy Fork 明确显示历史不完整；没有从可变祖先数据补造共同过去。（验证：加载 legacy fixture，在 Compare 与共同事件区核对提示/记录。F4）
+- [x] Compare 文案只描述观察到的差异，不声称确定因果、预测或实验结论。（验证：走查标题、提示、差异说明及限制文案。F5）
+- [x] 关闭对照并返回选定时间线后，页面、时钟和增量内容属于当前所选线，没有残留另一线的旧状态。（验证：浏览器在两条线之间往返并检查活动 timeline 与页面内容。F5）
 
-- [x] 汇总 AC1–AC12 的逐项证据、失败与遗留项；每项有明确通过/失败/legacy/unknown 结论，任何未通过的验收条件都不能报告为完成。（证据：`docs/current-state-audit.md` 的 AC1–AC12 表与 legacy/unknown 范围说明。）
-- [x] 确认验收仅运行于本地隔离环境，没有部署、远程/生产迁移或真实模型质量测试。（证据：多 Worker 脚本固定 `--local` 和本轮 `/tmp` 路径；连续旅程使用固定本地模型替身；无部署或远端命令。）
+## AC5｜权限、冲突和失败无副作用
+
+- [x] 跨用户及错配世界/时间线的 Fork 和 Compare 请求被拒绝，不泄露他人时间线数据。（验证：运行 `npm --workspace api run test -- src/life/compare.test.ts`，检查拒绝状态和响应内容。F6、N6）
+- [x] 归档/不可用源线、过期源版本、活动线容量冲突和同 ID 不同载荷冲突被明确拒绝。（验证：API 路由测试与多 Worker 脚本记录响应状态。F1、F6）
+- [x] 所有拒绝、冲突及注入事务故障前后，源/目标 revision、命令、事实、投影和 active timeline 集合均无额外变化。（验证：比较数据库关键表快照；Compare 读取前后数据不变。F6、N5）
+- [x] Compare 只返回当前账号拥有的世界和请求中的两条有效时间线证据。（验证：跨用户/跨世界读取回归，确认没有未授权字段。F6、N6）
+
+## 自动化回归与构建
+
+- [x] 多 Worker 并发 Fork 场景通过，且报告包含本地 D1、Worker 数、每类请求结果和最终账本状态。（验证：`npm run verify:s01:workers`）
+- [x] Fork/Compare 多级隔离、权限和失败回滚回归通过。（验证：`npm --workspace api run test -- src/life/compare.test.ts`）
+- [x] 消息来源到接收者后续上下文旅程通过。（验证：`npm --workspace api run test -- src/test/world-journey.test.ts`）
+- [x] API 与 Web 构建通过。（验证：`npm --workspace api run build` 与 `npm --workspace web run build`）
+- [x] 自动化仅访问一次性本地 D1，固定模型替身未连接真实模型；验收后进程与临时数据库均清理。（验证：验收脚本环境输出、进程列表与临时目录检查）
+
+## 端到端场景
+
+- [x] Root 在分叉前形成记忆、承诺和知识 → 创建 Child → Child 创建后 Root 再写入 → Child 写入并创建 Grandchild → 各线按 checkpoint 展示应继承/隔离的内容，三线审计通过。（验证：固定 API 小世界旅程和逐线只读审计；关联 AC2）
+- [x] Child 中向居民传话 → 查看成功提交和来源证据 → 构造接收者后续上下文确认可见 → 检查 Root、其他居民和旁支不可见 → Compare 展示两线观察差异且不声称居民已采取行动。（验证：固定模型 API 旅程加登录态本地浏览器记录；关联 AC3–AC4）
+- [x] 两个 Worker 同源线竞争 Fork/源版本更新 → 接受一个或多个完整有效结果、明确拒绝冲突结果 → 数据库没有半成品且审计通过。（验证：隔离多 Worker 脚本和最终 D1 查询；关联 AC1、AC5）
+
+## P3 出口（AC6）
+
+- [x] AC1–AC5 每项都有命令、隔离环境、实际结果与可复核证据；UI 人工走查与自动结果分开记录。（验证：本 checklist、`docs/current-state-audit.md` 和 `docs/world-quality-report.md` 交叉核对）
+- [x] legacy/unknown 范围和未通过项均明确保留；只有 AC1–AC5 全部通过且证据完整时，报告才标记 S01 P3 出口通过。（验证：审阅阶段报告和当前 checklist 状态）

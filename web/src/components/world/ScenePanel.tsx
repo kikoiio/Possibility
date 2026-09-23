@@ -120,22 +120,33 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
             setIntentText(pendingIntent.text)
             setIntentNotice('已恢复尚未确认的行动提议；确认前会再次检查世界版本。')
           }
-          // 世界记得你：未读留言 + 与你有关的动静（送达即标记已读）
-          personaApi
-            .messages(worldId, timelineId)
-            .then(n => { if (active) setNotes(n) })
-            .catch(() => { if (active) setError('口信暂时加载失败，请重新打开。') })
-          // 可交谈地点看板（人数随世界运转变化，进入面板时拉一次）
-          sceneApi
-            .board(worldId, timelineId)
-            .then((b) => { if (active) { setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count]))); setPeopleByLocation(Object.fromEntries(b.board.map(x => [x.location, x.people]))) } })
-            .catch(() => {})
         }
       })
       .catch(() => { if (active) setError('身份加载失败') })
       .finally(() => { if (active) setPersonaLoading(false) })
     return () => { active = false }
   }, [worldId, timelineId])
+
+  useEffect(() => {
+    if (!persona) return
+    let active = true
+    // A visitor can be registered after this panel first mounts; load recipient options
+    // only once that identity exists, and repeat when the active timeline changes.
+    personaApi
+      .messages(worldId, timelineId)
+      .then(n => { if (active) setNotes(n) })
+      .catch(() => { if (active) setError('口信暂时加载失败，请重新打开。') })
+    sceneApi
+      .board(worldId, timelineId)
+      .then((b) => {
+        if (active) {
+          setBoard(Object.fromEntries(b.board.map((x) => [x.location, x.count])))
+          setPeopleByLocation(Object.fromEntries(b.board.map(x => [x.location, x.people])))
+        }
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [worldId, timelineId, persona?.id])
 
   useEffect(() => {
     if (!persona) { setHistoryLoading(false); return }
