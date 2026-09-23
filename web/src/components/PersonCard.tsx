@@ -68,12 +68,14 @@ export default function PersonCard({ draft, onChange }: PersonCardProps) {
               <input
                 className="mb-2 w-full rounded-lg border border-ink-faint px-3 py-2 outline-none focus:border-ink-soft"
                 value={draft.worldName}
+                placeholder={`${draft.name || '人物'}的世界`}
                 onChange={(e) => patch({ worldName: e.target.value })}
               />
               <textarea
                 className="w-full rounded-lg border border-ink-faint px-3 py-2 text-sm outline-none focus:border-ink-soft"
                 rows={2}
                 value={draft.worldDescription}
+                placeholder="留空则使用通用世界背景"
                 onChange={(e) => patch({ worldDescription: e.target.value })}
               />
             </div>

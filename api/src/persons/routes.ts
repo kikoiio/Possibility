@@ -1,13 +1,14 @@
 import { Hono } from 'hono'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
-import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
+import { persons, personStates, timelines, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateUser } from '../engine/guard'
 import type { InitialState } from '../agent/types'
 import { DEFAULT_WORLD_LOCATIONS } from '../worlds/defaults'
+import { createRootProjectionBaseline } from '../world-state/model'
 import type { Env } from '../index'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -53,6 +54,16 @@ personRoutes.post('/', async (c) => {
   const personId = crypto.randomUUID()
   const worldId = crypto.randomUUID()
   const timelineId = crypto.randomUUID()
+  const initialState = {
+    simTime: now,
+    location: state.location?.trim() || '未知地点',
+    activity: state.activity?.trim() || '未知活动',
+    mood: state.mood?.trim() || '平静',
+    goal: state.goal?.trim() || '暂无',
+    lastBeatSimTime: null,
+    currentDialogueId: null,
+  }
+  const baselineState = { personId, ...initialState, timelineId, updatedRealAt: now }
 
   await db.batch([
     db.insert(persons).values({
@@ -83,13 +94,23 @@ personRoutes.post('/', async (c) => {
     db.insert(personStates).values({
       personId,
       timelineId,
-      simTime: now,
-      location: state.location?.trim() || '未知地点',
-      activity: state.activity?.trim() || '未知活动',
-      mood: state.mood?.trim() || '平静',
-      goal: state.goal?.trim() || '暂无',
+      simTime: initialState.simTime,
+      location: initialState.location,
+      activity: initialState.activity,
+      mood: initialState.mood,
+      goal: initialState.goal,
       updatedRealAt: now,
     }),
+    db.insert(worldModelVersions).values({ worldId, version: 1, modelJson: JSON.stringify({
+      name: body.worldName?.trim() || `${name}的世界`,
+      description: body.worldDescription?.trim() || '一个普通的世界。',
+      locations: DEFAULT_WORLD_LOCATIONS,
+      residents: [{ id: personId, name, model }],
+      initialStates: { capturedAt: now, states: [{ personId, ...initialState }] },
+      initialEvents: { timelineId, eventIds: [] },
+      projectionBaseline: createRootProjectionBaseline(now, now, [baselineState]),
+    }), createdAt: now }),
+    db.insert(universeRevisions).values({ timelineId, version: 0, simTime: now, worldModelVersion: 1, updatedAt: now }),
   ])
   return c.json({ id: personId })
 })

@@ -14,6 +14,8 @@ export interface AgentStep {
   priority: number // 小的先执行（P1 对话=1，P2 注入=2，P3 节拍=3，P4 日程=4，P5 摘要=5）
   dialogueId?: string // dialogue_turn 专用
   eventId?: string // injection 专用
+  /** Present only when scheduled by a fenced autonomous engine invocation. */
+  engineTickLeaseToken?: string
 }
 
 /** decide 的结果：value 为 null 表示失败跳过（D17：重试一次后仍失败） */

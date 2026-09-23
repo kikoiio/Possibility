@@ -14,7 +14,8 @@
     "db:migrate": "npm --workspace api run db:migrate",
     "seed": "tsx scripts/seed.ts",
     "migrate:p2": "tsx scripts/migrate-p2.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "verify:s01:workers": "node --experimental-strip-types scripts/verify-s01-workers.ts"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

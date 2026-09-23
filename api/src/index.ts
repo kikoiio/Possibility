@@ -32,6 +32,8 @@ export interface Env {
   PREWORLD_DAILY_CAP?: string
   IDLE_ARCHIVE_DAYS?: string
   DIRECTOR_LLM?: string
+  /** Internal per-invocation fence; set only by runTick, never supplied by deployment config. */
+  ENGINE_TICK_LEASE_TOKEN?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()

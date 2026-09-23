@@ -1,6 +1,4 @@
-import { and, eq, lt } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { timelines } from '../db/schema'
 import { configFromEnv, streamChat, type ChatMessage } from '../llm/client'
 import { budgetFromEnv } from '../engine/budget'
 import { worldReservation } from '../engine/guard'
@@ -26,8 +24,7 @@ const STREAM_TIMEOUT_MS = 120_000
  * 时钟纪律（单点化）：run.clock 一律以时间线 simNow 为锚，模型给出的 simTime
  * 只被钳制在 [clock, windowEnd] 内；chat/catchup 的窗口右端 = simNow（不再用
  * 真实时间——它恒落后于 6 倍速的 sim 时钟，曾导致 catchup 把世界时间往回拨）。
- * timelines.simNow 只有本函数的 simulate（分叉推演）模式写回，且用条件更新
- * （不小于当前值），其余模式的时钟推进全部归引擎 tick 单点管辖。
+ * simulate 的时间推进由每次 act 与事实、投影同批提交；其他模式时钟由引擎 tick 管辖。
  */
 export async function* runAgentTurn(
   env: Env,
@@ -35,7 +32,7 @@ export async function* runAgentTurn(
   ctx: AgentContextData,
   input: string,
   history: HistoryMessage[] = [],
-  opts: { maxIterations?: number; maxActs?: number; signal?: AbortSignal } = {},
+  opts: { maxIterations?: number; maxActs?: number; signal?: AbortSignal; runId?: string } = {},
 ): AsyncIterable<AgentEvent> {
   const reserve = worldReservation(db, ctx.world.id, budgetFromEnv(env), {
     timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: ctx.mode === 'simulate' ? 'fork_simulate' : 'chat',
@@ -49,12 +46,14 @@ export async function* runAgentTurn(
   const stateMs = Date.parse(ctx.state.simTime) || simNowMs
   const run: ToolRunState = {
     db,
+    worldId: ctx.world.id,
     personId: ctx.person.id,
     timelineId: ctx.timeline.id,
+    runId: opts.runId ?? crypto.randomUUID(),
     isMain: ctx.isMain,
     mode: ctx.mode,
     // catchup 从人物状态时间起填空白区间；chat/simulate 从各自锚点起
-    clock: ctx.mode === 'catchup' ? Math.min(stateMs, simNowMs) : ctx.mode === 'simulate' ? stateMs : simNowMs,
+    clock: ctx.mode === 'catchup' ? Math.min(stateMs, simNowMs) : ctx.mode === 'simulate' ? Math.max(stateMs, simNowMs) : simNowMs,
     windowEnd: ctx.mode === 'simulate' ? null : simNowMs,
     acts: 0,
     maxActs,
@@ -72,7 +71,6 @@ export async function* runAgentTurn(
     { role: 'user', content: input },
   ]
 
-  let touched = false
   let streamError: string | null = null
   for (let iter = 0; iter < maxIterations; iter++) {
     let text = ''
@@ -110,19 +108,11 @@ export async function* runAgentTurn(
 
     for (const call of calls) {
       const { result, events } = await executeTool(run, call.name, call.args)
-      if (events.length) touched = true
       for (const e of events) yield e
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
     }
   }
 
-  // 时钟写回：仅 simulate（分叉推演）推进时间线，且不许拨回（条件更新兜底并发）
-  if (touched && ctx.mode === 'simulate' && run.clock > simNowMs) {
-    const next = new Date(run.clock).toISOString()
-    await db
-      .update(timelines)
-      .set({ simNow: next })
-      .where(and(eq(timelines.id, ctx.timeline.id), lt(timelines.simNow, next)))
-  }
+  // 模拟时间与每条 act 的居民事实同批提交；不在回合结束时单独推进时间线。
   yield { type: 'done', llmCalls: reserve.calls, ...(streamError ? { error: streamError } : {}) }
 }

@@ -61,6 +61,9 @@ chatRoutes.post('/persons/:id/conversations', async (c) => {
     .where(and(eq(conversations.personId, ctx.person.id), eq(conversations.timelineId, ctx.timeline.id)))
     .get()
   if (!convo) {
+    if (ctx.timeline.status !== 'active') return c.json({ error: '时间线已归档，不能继续交谈' }, 409)
+    const gate = await gateWorld(db, ctx.world.id, budgetFromEnv(c.env))
+    if (!gate.ok) return c.json({ error: gate.error }, gate.status)
     const id = crypto.randomUUID()
     await db.insert(conversations).values({
       id,
@@ -97,9 +100,10 @@ async function runAndStream(
     timelineId: string
     mode: AgentMode
     input: string
+    runId: string
     history?: HistoryMessage[]
   },
-): Promise<string> {
+): Promise<{ text: string; complete: boolean }> {
   const ctx = await buildAgentContext(db, {
     userId: opts.userId,
     personId: opts.personId,
@@ -108,7 +112,11 @@ async function runAndStream(
   })
   if (!ctx) {
     await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '上下文不存在' }) })
-    return ''
+    return { text: '', complete: false }
+  }
+  if (ctx.timeline.status !== 'active') {
+    await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '时间线已归档，不能继续交谈' }) })
+    return { text: '', complete: false }
   }
 
   // 护栏：聊天同样受世界状态与日限额约束（此前 paused/capped 世界照样烧调用）
@@ -116,19 +124,22 @@ async function runAndStream(
   const gate = await gateWorld(db, ctx.world.id, cfg)
   if (!gate.ok) {
     await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: gate.error }) })
-    return ''
+    return { text: '', complete: false }
   }
 
   let full = ''
+  let complete = false
   const controller = new AbortController()
   stream.onAbort(() => controller.abort())
   if (stream.aborted) controller.abort()
   try {
-    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], { signal: controller.signal })) {
+    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], { signal: controller.signal, runId: opts.runId })) {
       if (ev.type === 'text') full += ev.delta
       if (ev.type === 'done') {
         if (ev.error) {
           await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: ev.error }) })
+        } else {
+          complete = true
         }
         break
       }
@@ -139,7 +150,7 @@ async function runAndStream(
       data: JSON.stringify({ type: 'error', message: e instanceof Error ? e.message : '模型调用失败' }),
     })
   }
-  return full
+  return { text: full, complete }
 }
 
 /** 发消息：存 user 消息 → 自主体回合 → SSE 流 → 存 person 消息 */
@@ -153,9 +164,17 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
   const convo = await loadOwnedConversation(db, c.req.param('id'), userId)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
 
+  // 旧聊天仍可读取，但被拒绝的发送不能先落下一条用户消息。
+  const ctx = await buildAgentContext(db, { userId, personId: convo.personId, timelineId: convo.timelineId, mode: 'chat' })
+  if (!ctx) return c.json({ error: '上下文不存在' }, 404)
+  if (ctx.timeline.status !== 'active') return c.json({ error: '时间线已归档，不能继续交谈' }, 409)
+  const gate = await gateWorld(db, ctx.world.id, budgetFromEnv(c.env))
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
+
   const now = new Date().toISOString()
+  const userMessageId = crypto.randomUUID()
   await db.insert(messages).values({
-    id: crypto.randomUUID(),
+    id: userMessageId,
     conversationId: convo.id,
     role: 'user',
     content,
@@ -181,20 +200,21 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
     }))
 
   return streamSSE(c, async (stream) => {
-    const full = await runAndStream(stream, c.env, db, {
+    const result = await runAndStream(stream, c.env, db, {
       userId,
       personId: convo.personId,
       timelineId: convo.timelineId,
       mode: 'chat',
       input: content,
+      runId: userMessageId,
       history,
     })
-    if (full.trim()) {
+    if (result.complete && result.text.trim()) {
       await db.insert(messages).values({
         id: crypto.randomUUID(),
         conversationId: convo.id,
         role: 'person',
-        content: full,
+        content: result.text,
         createdAt: new Date().toISOString(),
       })
     }
@@ -228,19 +248,20 @@ chatRoutes.post('/conversations/:id/catchup', async (c) => {
     }
 
     const input = `距离我们上次联系，时间过去了 ${humanizeElapsed(simElapsed)}。请按你的模式指令，补齐这段时间你的生活。`
-    const full = await runAndStream(stream, c.env, db, {
+    const result = await runAndStream(stream, c.env, db, {
       userId,
       personId: convo.personId,
       timelineId: convo.timelineId,
       mode: 'catchup',
       input,
+      runId: `catchup:${ctx.state.personId}:${ctx.state.simTime}:${ctx.timeline.simNow}`,
     })
-    if (full.trim()) {
+    if (result.complete && result.text.trim()) {
       await db.insert(messages).values({
         id: crypto.randomUUID(),
         conversationId: convo.id,
         role: 'system_note',
-        content: full,
+        content: result.text,
         createdAt: new Date().toISOString(),
       })
     }

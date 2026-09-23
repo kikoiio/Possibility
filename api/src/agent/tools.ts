@@ -1,9 +1,9 @@
-import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { events, memories, personStates } from '../db/schema'
 import type { ToolDef } from '../llm/client'
 import { clampImportance } from './memory'
 import type { AgentEvent, AgentMode } from './types'
+import { recordResidentState } from '../world-state/system'
+import { WorldStateError } from '../world-state/types'
 
 const ACT_TOOL: ToolDef = {
   name: 'act',
@@ -68,8 +68,10 @@ export function toolsFor(mode: AgentMode): ToolDef[] {
 /** 一次自主体运行期内的可变状态（虚拟时钟、行动额度、当前状态缓存） */
 export interface ToolRunState {
   db: Db
+  worldId: string
   personId: string
   timelineId: string
+  runId: string
   isMain: boolean
   mode: AgentMode
   clock: number // 虚拟时钟（ms 时间戳），随 act 推进
@@ -92,6 +94,7 @@ export function nextSimTime(run: ToolRunState, provided?: unknown): string {
     t = run.clock + step
   }
   if (run.windowEnd && t > run.windowEnd) t = run.windowEnd
+  if (run.mode === 'simulate' && t > run.clock + 24 * 60 * 60_000) t = run.clock + 24 * 60 * 60_000
   run.clock = t
   return new Date(t).toISOString()
 }
@@ -113,9 +116,23 @@ export async function executeTool(
     run.acts++
     const title = String(args.title ?? '').trim().slice(0, 60) || '一个行动'
     const description = String(args.description ?? '').trim()
+    const previousClock = run.clock
     const simTime = nextSimTime(run, args.simTime)
-    const id = crypto.randomUUID()
-    await run.db.insert(events).values({ id, timelineId: run.timelineId, simTime, title, description })
+    let result
+    try {
+      result = await recordResidentState(run.db, {
+        worldId: run.worldId, timelineId: run.timelineId,
+        sourceKey: `${run.runId}:act:${run.acts}:${simTime}`,
+        action: { type: 'resident_state', personId: run.personId, cause: 'agent_act',
+          windowStart: new Date(previousClock).toISOString(), ...(run.mode === 'simulate' ? { advanceTo: simTime } : {}),
+          patch: {}, events: [{ simTime, title, description: description.slice(0, 2000) }], memories: [] },
+      })
+    } catch (error) {
+      run.clock = previousClock
+      if (error instanceof WorldStateError) return { result: { error: error.message }, events: out }
+      throw error
+    }
+    const id = `command:${result.commandId}`
     out.push({ type: 'event', id, simTime, title, description })
     return { result: { ok: true, simTime }, events: out }
   }
@@ -126,12 +143,18 @@ export async function executeTool(
       const v = args[k]
       if (typeof v === 'string' && v.trim()) patch[k] = v.trim()
     }
-    Object.assign(run.current, patch)
     const simTime = new Date(run.clock).toISOString()
-    await run.db
-      .update(personStates)
-      .set({ ...patch, simTime, updatedRealAt: new Date().toISOString() })
-      .where(and(eq(personStates.personId, run.personId), eq(personStates.timelineId, run.timelineId)))
+    try {
+      await recordResidentState(run.db, {
+        worldId: run.worldId, timelineId: run.timelineId, sourceKey: `${run.runId}:state:${run.acts}:${simTime}`,
+        action: { type: 'resident_state', personId: run.personId, cause: 'agent_state', windowStart: simTime,
+          patch, events: [], memories: [] },
+      })
+    } catch (error) {
+      if (error instanceof WorldStateError) return { result: { error: error.message }, events: out }
+      throw error
+    }
+    Object.assign(run.current, patch)
     out.push({ type: 'state', state: { simTime, ...run.current } })
     return { result: { ok: true }, events: out }
   }
@@ -142,17 +165,20 @@ export async function executeTool(
     const type = ['timeline', 'relationship', 'world'].includes(String(args.type))
       ? String(args.type)
       : 'timeline'
-    const id = crypto.randomUUID()
-    await run.db.insert(memories).values({
-      id,
-      personId: run.personId,
-      timelineId: run.isMain ? null : run.timelineId, // 永远写当前所在时间线的桶
-      type,
-      content,
-      simTime: new Date(run.clock).toISOString(),
-      createdAt: new Date().toISOString(),
-      importance: clampImportance(args.importance),
-    })
+    const simTime = new Date(run.clock).toISOString()
+    let result
+    try {
+      result = await recordResidentState(run.db, {
+        worldId: run.worldId, timelineId: run.timelineId, sourceKey: `${run.runId}:memory:${run.acts}:${content}`,
+        action: { type: 'resident_state', personId: run.personId, cause: 'agent_memory', windowStart: simTime,
+          patch: {}, events: [], memories: [{ type: type as 'timeline' | 'relationship' | 'world',
+            content: content.slice(0, 2000), importance: clampImportance(args.importance) }] },
+      })
+    } catch (error) {
+      if (error instanceof WorldStateError) return { result: { error: error.message }, events: out }
+      throw error
+    }
+    const id = `${result.commandId}:memory:0`
     out.push({ type: 'memory', id, content })
     return { result: { ok: true }, events: out }
   }

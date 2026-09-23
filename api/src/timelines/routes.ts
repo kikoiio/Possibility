@@ -11,6 +11,7 @@ import { runAgentTurn } from '../agent/loop'
 import { complete, configFromEnv } from '../llm/client'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
+import { WorldStateError } from '../world-state/types'
 import type { ForkScenario } from '../agent/types'
 import type { Env } from '../index'
 
@@ -147,7 +148,14 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
   if (Date.parse(scenario.startTime) !== Date.parse(base.timeline.simNow)) {
     return c.json({ error: '历史状态快照不可用，请以当前时间线时间创建分叉', sourceSimTime: base.timeline.simNow }, 409)
   }
-  const { id: forkId } = await forkTimeline(db, base.world.id, base.timeline.id, scenario)
+  let fork: Awaited<ReturnType<typeof forkTimeline>>
+  try {
+    fork = await forkTimeline(db, base.world.id, base.timeline.id, scenario)
+  } catch (error) {
+    if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
+  const forkId = fork.id
 
   const input = [
     '分叉设定：',
@@ -177,7 +185,7 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
       return
     }
     try {
-      for await (const ev of runAgentTurn(c.env, db, forkCtx, input, [], { signal: controller.signal })) {
+      for await (const ev of runAgentTurn(c.env, db, forkCtx, input, [], { signal: controller.signal, runId: `fork:${forkId}` })) {
         await stream.writeSSE({ data: JSON.stringify(ev) })
         if (ev.type === 'done') {
           break

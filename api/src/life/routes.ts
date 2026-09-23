@@ -6,6 +6,7 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { Env } from '../index'
 import { canFulfill, nextCommitmentStatus, transitionCommitment, type LifeAction } from './service'
 import { touchWorldActivity } from '../engine/budget'
+import { WorldStateError } from '../world-state/types'
 
 export const lifeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 lifeRoutes.use('*', authMiddleware)
@@ -14,7 +15,7 @@ async function scope(db: ReturnType<typeof createDb>, worldId: string, timelineI
   const world = await db.select().from(worlds).where(and(eq(worlds.id, worldId), eq(worlds.userId, userId))).get()
   if (!world) return null
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, worldId)).all()
-  const tl = timelineId ? tls.find(t => t.id === timelineId) : tls.find(t => !t.parentTimelineId)
+  const tl = timelineId !== undefined ? tls.find(t => t.id === timelineId) : tls.find(t => !t.parentTimelineId)
   return tl ? { world, tl } : null
 }
 
@@ -71,7 +72,11 @@ lifeRoutes.post('/worlds/:id/commitments/:commitmentId', async c => {
   }
   const explanation = typeof body.explanation === 'string' ? body.explanation.trim().slice(0, 500) : ''
   if (body.action === 'explain' && !explanation) return c.json({ error: '请写下你想对对方说的话。' }, 400)
-  await transitionCommitment(db, item, next, s.tl.simNow, explanation)
+  try { await transitionCommitment(db, item, next, s.tl.simNow, explanation) }
+  catch (error) {
+    if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
   const updated = await db.select().from(commitments).where(eq(commitments.id, item.id)).get()
   await touchWorldActivity(db, s.world.id)
   if (updated?.status !== next) return c.json({ error: '约定刚刚改变，请刷新。' }, 409)

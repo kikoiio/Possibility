@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm'
 import type { Context } from 'hono'
 import type { SSEStreamingApi } from 'hono/streaming'
 import type { Db } from '../db/client'
-import { dialogues, dialogueTurns, events, personStates, timelines, worlds } from '../db/schema'
+import { dialogues, dialogueTurns, events, personStates, timelines, universeRevisions, worlds } from '../db/schema'
 
 /**
  * 世界视图 SSE 增量推送（D11）：连接内每 2s 轮询增量，15s 无数据发心跳。
@@ -20,6 +20,7 @@ interface StreamCursors {
   lastSimNow: string
   lastCallsToday: number
   lastStatus: string
+  lastStateVersion: number
 }
 
 async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timelineId: string, cur: StreamCursors): Promise<number> {
@@ -112,8 +113,10 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
   // 时钟/用量/世界状态
   const tl = await db.select().from(timelines).where(eq(timelines.id, timelineId)).get()
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
+  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
   if (tl && world) {
-    if (tl.simNow !== cur.lastSimNow || world.callsToday !== cur.lastCallsToday || world.status !== cur.lastStatus) {
+    const stateVersion = revision?.version ?? 0
+    if (tl.simNow !== cur.lastSimNow || world.callsToday !== cur.lastCallsToday || world.status !== cur.lastStatus || stateVersion !== cur.lastStateVersion) {
       await stream.writeSSE({
         event: 'clock',
         data: JSON.stringify({
@@ -122,11 +125,13 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
           callsToday: world.callsToday,
           worldStatus: world.status,
           pauseReason: world.pauseReason,
+          stateVersion,
         }),
       })
       cur.lastSimNow = tl.simNow
       cur.lastCallsToday = world.callsToday
       cur.lastStatus = world.status
+      cur.lastStateVersion = stateVersion
       sent++
     }
   }
@@ -152,6 +157,7 @@ export async function streamWorld(
   const lastTurn = await db.select({ rowid: turnRowid }).from(dialogueTurns).orderBy(desc(turnRowid)).limit(1).get()
   const tl = await db.select().from(timelines).where(eq(timelines.id, timelineId)).get()
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
+  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
   const cur: StreamCursors = {
     lastEventRowid: lastEvent?.rowid ?? 0,
     lastTurnRowid: lastTurn?.rowid ?? 0,
@@ -159,7 +165,12 @@ export async function streamWorld(
     lastSimNow: tl?.simNow ?? '',
     lastCallsToday: world?.callsToday ?? 0,
     lastStatus: world?.status ?? '',
+    lastStateVersion: revision?.version ?? 0,
   }
+
+  // The client fetches a fresh snapshot after this boundary. Changes before the cursor
+  // are in that snapshot; changes after the cursor are streamed and deduplicated by ID.
+  await stream.writeSSE({ event: 'sync', data: JSON.stringify({ type: 'sync', stateVersion: cur.lastStateVersion }) })
 
   let idleMs = 0
   while (!stream.aborted && !c.req.raw.signal.aborted) {

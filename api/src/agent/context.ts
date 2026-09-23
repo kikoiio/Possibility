@@ -3,6 +3,7 @@ import type { Db } from '../db/client'
 import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, type Memory } from './memory'
 import type { AgentMode, PersonModel } from './types'
+import { readPinnedWorldModel } from '../world-state/model'
 
 type Person = typeof persons.$inferSelect
 type World = typeof worlds.$inferSelect
@@ -41,17 +42,33 @@ export async function buildAgentContext(
     .get()
   if (!person) return null
 
-  // 默认世界 = 经 world_persons 找到的最早加入的世界（阶段二 F1：人物可属多世界）
-  const wp = await db
-    .select({ world: worlds })
-    .from(worldPersons)
-    .innerJoin(worlds, eq(worldPersons.worldId, worlds.id))
-    .where(eq(worldPersons.personId, person.id))
-    .orderBy(asc(worldPersons.joinedAt))
-    .limit(1)
-    .get()
-  if (!wp) return null
-  const world = wp.world
+  // 显式时间线决定所属世界；仅省略时间线时才沿用最早加入世界的旧默认值。
+  // 共享人物不能因为加入顺序而被强制带回另一个世界。
+  let world: World
+  let selectedTimeline: Timeline | null = null
+  if (opts.timelineId !== null) {
+    const scoped = await db
+      .select({ world: worlds, timeline: timelines })
+      .from(timelines)
+      .innerJoin(worlds, eq(timelines.worldId, worlds.id))
+      .innerJoin(worldPersons, eq(worldPersons.worldId, worlds.id))
+      .where(and(eq(timelines.id, opts.timelineId), eq(worlds.userId, opts.userId), eq(worldPersons.personId, person.id)))
+      .get()
+    if (!scoped) return null
+    world = scoped.world
+    selectedTimeline = scoped.timeline
+  } else {
+    const wp = await db
+      .select({ world: worlds })
+      .from(worldPersons)
+      .innerJoin(worlds, eq(worldPersons.worldId, worlds.id))
+      .where(and(eq(worldPersons.personId, person.id), eq(worlds.userId, opts.userId)))
+      .orderBy(asc(worldPersons.joinedAt))
+      .limit(1)
+      .get()
+    if (!wp) return null
+    world = wp.world
+  }
 
   const mainTimeline = await db
     .select()
@@ -60,16 +77,7 @@ export async function buildAgentContext(
     .get()
   if (!mainTimeline) return null
 
-  let timeline = mainTimeline
-  if (opts.timelineId && opts.timelineId !== mainTimeline.id) {
-    const fork = await db
-      .select()
-      .from(timelines)
-      .where(and(eq(timelines.id, opts.timelineId), eq(timelines.worldId, world.id)))
-      .get()
-    if (!fork) return null
-    timeline = fork
-  }
+  const timeline = selectedTimeline ?? mainTimeline
 
   const state = await db
     .select()
@@ -80,11 +88,13 @@ export async function buildAgentContext(
 
   // 记忆可见性统一走 memory.ts（D7：祖先链规则，替代阶段一的 null∪本分叉）
   const mems = await visibleMemories(db, person.id, timeline)
+  const pinned = await readPinnedWorldModel(db, world.id, timeline.id)
+  const recorded = pinned?.residents.find(resident => resident.id === person.id)
 
   return {
-    person,
-    model: JSON.parse(person.modelJson) as PersonModel,
-    world,
+    person: recorded ? { ...person, name: recorded.name } : person,
+    model: (recorded?.model ?? JSON.parse(person.modelJson)) as PersonModel,
+    world: pinned ? { ...world, name: pinned.name, description: pinned.description } : world,
     timeline,
     mainTimelineId: mainTimeline.id,
     isMain: timeline.id === mainTimeline.id,

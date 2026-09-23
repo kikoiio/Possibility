@@ -49,6 +49,14 @@ export const worlds = sqliteTable('worlds', {
   createdAt: text('created_at').notNull().default(''),
 })
 
+/** Cross-Worker single-flight guard for the autonomous engine tick. */
+export const engineTickLeases = sqliteTable('engine_tick_leases', {
+  id: text('id').primaryKey(),
+  ownerToken: text('owner_token').notNull(),
+  leaseUntil: integer('lease_until').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
 /** 人物 ↔ 世界 多对多；状态/记忆挂在（person × timeline）上天然按世界隔离 */
 export const worldPersons = sqliteTable(
   'world_persons',
@@ -146,8 +154,10 @@ export const dialogues = sqliteTable('dialogues', {
 export const sceneRequests = sqliteTable('scene_requests', {
   id: text('id').primaryKey(),
   dialogueId: text('dialogue_id').notNull().references(() => dialogues.id),
+  contentHash: text('content_hash').notNull().default(''),
   status: text('status').notNull(),
   createdAt: integer('created_at').notNull(),
+  heartbeatAt: integer('heartbeat_at').notNull().default(0),
 })
 
 export const dialogueTurns = sqliteTable('dialogue_turns', {
@@ -307,3 +317,50 @@ export const worldVisits = sqliteTable('world_visits', {
   eventCursor: integer('event_cursor').notNull().default(0),
   seenAt: text('seen_at').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.timelineId] })])
+
+/** A frozen world definition. Existing worlds receive their first version on first state access. */
+export const worldModelVersions = sqliteTable('world_model_versions', {
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  version: integer('version').notNull(),
+  modelJson: text('model_json').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [primaryKey({ columns: [t.worldId, t.version] })])
+
+/** Each timeline is currently the concrete Universe identity. */
+export const universeRevisions = sqliteTable('universe_revisions', {
+  timelineId: text('timeline_id').primaryKey().references(() => timelines.id),
+  version: integer('version').notNull().default(0),
+  simTime: text('sim_time').notNull(),
+  worldModelVersion: integer('world_model_version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+/** Accepted command and its idempotency result; rejected commands do not enter world history. */
+export const worldCommands = sqliteTable('world_commands', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  actorKind: text('actor_kind').notNull(),
+  actorId: text('actor_id'),
+  type: text('type').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  expectedVersion: integer('expected_version').notNull(),
+  resultVersion: integer('result_version').notNull(),
+  // Non-null only for commands issued by the autonomous tick; DB trigger fences stale Workers.
+  tickLeaseToken: text('tick_lease_token'),
+  createdAt: text('created_at').notNull(),
+})
+
+/** One immutable primary fact per accepted command. Corrections append a new fact. */
+export const worldFacts = sqliteTable('world_facts', {
+  id: text('id').primaryKey(),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  version: integer('version').notNull(),
+  simTime: text('sim_time').notNull(),
+  factType: text('fact_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  valueJson: text('value_json').notNull(),
+  sourceCommandId: text('source_command_id').notNull().references(() => worldCommands.id),
+  visibility: text('visibility').notNull().default('world'),
+  supersedesId: text('supersedes_id'),
+}, t => [uniqueIndex('world_facts_timeline_version').on(t.timelineId, t.version)])

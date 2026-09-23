@@ -1,74 +1,54 @@
-# 当前状态盘点（s01 / P0）
+# s01 P1 开发起点与验收证据
 
-## s01 执行起点（2026-09-23）
+## 开发起点
 
-- 分支：`main`；HEAD：`03427d9cca6108075171649955cb302e0e43a393`。
-- 工作区起点：64 个已跟踪路径有修改/删除，40 个未跟踪路径；这些是本次 P0 执行前已存在的工作区状态，不归为本轮实现产出。未跟踪项包括 `spec_docs/`、世界状态/行动模块、测试、迁移及质量报告等。
-- 当前会话在 P0 执行前只改写了 `spec_docs/s01/{spec,plan,task,checklist}.md`；这些文件所在目录在起点已整体处于未跟踪状态，无法用 Git 基线逐文件比较。
-- 本节记录时尚未运行本轮 P0 测试、类型检查、Web 构建或 Wrangler 迁移验证；下文历史结果不代表本轮验收通过。
+| 项目 | 记录 |
+|---|---|
+| HEAD | `5c81c76c6b47a7b631cfc3ae2ba6643bad713510` |
+| 分支 | `main` |
+| P1 开始时工作区状态 | `git status --short` 共 106 项：已跟踪修改、删除和未跟踪文件均存在；范围包括 API、web、迁移、文档及测试。 |
+| 归属约定 | 上述代码、迁移、测试和报告均视为 P1 本轮开始前已经存在的工作区内容。本审计记录其存在及缺口，不将它们记为本轮新实现。 |
+| 本轮验证状态 | 截至起点盘点，未运行构建、测试或 Worker 验收；源码存在不等于验收通过。 |
 
-2026-09-22 的历史基线为 API 79/79，并通过 API 类型检查与 Web 构建；旧记录中的 API 195/195 是更早一次实施回归。P0 本轮实测结果见下文，不以这两组历史数字替代当前证据。更广的实现范围和后续阶段缺口仍见 [实施质量报告](./world-quality-report.md)。
+起点通过 `git rev-parse HEAD`、`git branch --show-current` 和 `git status --short` 记录。修改前工作区已非干净状态；之后只对明确列入本阶段的文件进行增量修改，不清理或重置既有改动。
 
-## 本轮基线结果
+## P1 现有实现和证据缺口
 
-| 检查 | 本轮结果 | 证据 |
+| 需求 / 验收项 | 起点已有内容 | 仍需补齐或复核 |
 |---|---|---|
-| API 测试 | 通过，30 个测试文件 / 205 个测试 | `npm --workspace api run test`，Vitest 退出码 0 |
-| API 类型检查 | 通过 | `npm --workspace api run build`，TypeScript 退出码 0 |
-| Web 构建 | 通过 | `npm --workspace web run build`，TypeScript 与 Vite 退出码 0 |
+| F1、AC1–AC3：结构化基线、投影重建与只读审计 | `api/src/world-state/model.ts` 已有固定模型解析；`api/src/world-state/invariants.ts` 已包含时钟、状态、事件、承诺、记忆、对话、留言和日程的内嵌重建/差异校验；`api/src/world-state/invariants.test.ts` 有基线与多域异常用例；`api/src/test/product-journey.test.ts` 有基线写入失败回滚用例。 | 尚无独立 `rebuild.ts` 证据收集、纯 reducer 和统一差异结果；逐域完整性、缺失/篡改/无来源诊断及审计前后数据库快照需补齐。AC1 两次真实创建的结构化基线与固定日程描述也需核验。 |
+| F2、F7、AC4、AC10–AC11：Fork checkpoint 与继承隔离 | `api/src/agent/visibility.ts` 有 Fork 快照及祖先 cutoff；`api/src/life/fork.ts` 已捕获继承状态；`api/src/life/compare.test.ts` 已有多级知识、承诺、记忆、事件、日程和并发 Fork 覆盖；`api/src/world-state/invariants.test.ts` 有 checkpoint 审计用例。 | checkpoint 完整域、访客留言以及孙线基于子线不可变 checkpoint 的重建一致性尚无统一重建器验证；需检查缺字段旧 checkpoint 的显式不完整结果。 |
+| F3、AC5、AC11：至少一整天连续旅程 | `api/src/engine/tick.test.ts` 已覆盖 fake timers、加速时钟、日程边界和重复触发；`api/src/test/world-journey.test.ts` 有固定夹具及无需 LLM 的旅程。 | 当前已读到的 tick 旅程为有限拍数，尚未证明覆盖至少 24 小时模拟时间、逐拍重建审计及完整端到端 Fork 旅程。 |
+| F4、AC6：幂等、冲突与原子回滚 | `api/src/world-state/commit.test.ts` 已包含相同 ID 重放、载荷/版本冲突、事务故障和多域原子写入用例。 | 需在本轮规定的测试集和完整重建器接入后复核所有受管理投影与时钟均无部分提交。 |
+| F5、AC7：取消、恢复与迟到提交 | `api/src/scene/recovery.test.ts` 已覆盖崩溃预留恢复及过期 worker 提交限制；`api/src/engine/tick-lease.test.ts` 有 lease 过期和 fencing 用例。 | 需补齐或核实取消、断流、超时各自的请求最终状态查询，以及相同请求 ID 恢复时不重复调用和副作用的证据。 |
+| F6、AC8：共享本地 D1 的多 Worker 并发 | `api/src/engine/tick-lease.ts` 和 `api/src/engine/tick-lease.test.ts` 已有租约实现与数据库级测试；tick 测试有同进程重叠请求覆盖。 | 未发现 `scripts/verify-s01-workers.ts` 或 `verify:s01:workers` 命令；尚无两个独立 Worker 共享同一隔离持久化 D1 的实测证据。 |
+| F6、F7、AC9：权限、状态与公开只读边界 | `api/src/world-state/commit.test.ts`、`api/src/test/legacy-compat.test.ts`、`api/src/public/routes.test.ts` 和 `api/src/life/compare.test.ts` 已有归属、暂停/归档、公开写入及 Fork 限制用例。 | 需用完整回归复核所有拒绝均不更改版本、事实、投影、时钟或子线集合。 |
+| N1–N6、AC12：隔离环境和阶段证据 | 已有 `docs/world-quality-report.md` 描述质量阶段目标；项目有现存测试和本地数据库配置。 | 尚无本阶段命令、环境、结果与证据的验收记录；隔离目录的安全创建、清理及禁用 metrics 需要专用 Worker 验收脚本。所有 legacy/unknown 范围必须显式记录，AC 未全部通过前不得关闭 P1。 |
 
-质量报告中记录的 API 195 项是更早一轮结果；本轮实际 API 测试数为 205。以上结果不包括 Web 单元测试，也不代表 s01 所有兼容和隔离迁移验收已通过。
+## P1 实施与验收证据
 
-## P0 数据与入口清单
+以下均为本轮实际执行结果。起点工作区已有的实现不记为本轮新增成果；它们只有在本轮回归命令覆盖并通过后，才作为当前行为的验收证据。
 
-| 数据/行为 | 主要入口 | 归属或边界 | 已有验证位置 |
-|---|---|---|---|
-| 世界、居民和当前状态 | `GET /api/worlds/:id`、`GET /api/worlds/:id/state`、`GET /api/worlds/:id/persons/:pid` | 私人世界先按 `worlds.user_id` 校验；显式时间线须属于该世界 | `api/src/test/legacy-compat.test.ts` |
-| 对话及逐句历史 | `GET /api/worlds/dialogues/:id`、`GET /api/worlds/:id/scene/history`、`GET /api/conversations/:id/messages` | 由 dialogue/conversation → timeline/world → owner 检查 | `api/src/test/legacy-compat.test.ts` |
-| 记忆与事件 | 世界快照、人物焦点、`GET /api/worlds/:id/return` | timeline/人物可见范围；自由文本不构成结构化事实证明 | `api/src/test/legacy-compat.test.ts` |
-| 承诺 | `GET /api/worlds/:id/return`、`POST /api/worlds/:id/commitments/:commitmentId` | commitment 同时受 world、timeline 和 owner 约束 | `api/src/test/legacy-compat.test.ts`、`api/src/life/service.test.ts` |
-| Fork 与对照 | `GET /api/timelines/:id`、`GET /api/worlds/:id/compare` | timeline 必须属于已授权世界；旧快照可标记历史不完整 | `api/src/test/legacy-compat.test.ts`、`api/src/life/compare.test.ts` |
-| 时间线 ID 解析 | 世界快照/状态、注入、场景、章节及公共读取入口 | 合同允许省略时才可默认主线；显式无效或错配 ID 必须拒绝 | `api/src/test/legacy-compat.test.ts` |
-| 公开演示 | `GET /api/public/*` 读取路由 | 未认证只读；`publicRoutes.all('*')` 拒绝未定义路径和写入口 | `api/src/public/routes.test.ts` |
-
-## P0 验收结果（2026-09-23）
-
-| AC | 状态 | 本轮证据 |
+| AC | 结果 | 本轮证据 |
 |---|---|---|
-| AC1 | 通过 | API 30 个测试文件 / 205 个测试通过；API `tsc --noEmit` 通过；Web `tsc --noEmit && vite build` 通过。固定世界旅程测试 4/4 通过，比较两次独立夹具的世界、居民关联、时间线和地点数据。 |
-| AC2 | 通过 | `npm --workspace api run test -- src/test/legacy-compat.test.ts`：9/9。读取覆盖旧居民状态、事件、场景逐句记录、聊天消息、人物详情中的旧记忆和承诺；无快照 Fork 返回历史不完整；结构化状态读取保持 `evidenceStatus: legacy` 且 `facts: []`。 |
-| AC3 | 通过 | 同一回归验证省略 ID 默认到主线、显式旧 Fork ID 精确定位、无效/异世界 ID 拒绝；拒绝请求后事件数不变，且不触发模型调用。 |
-| AC4 | 通过 | `legacy-compat.test.ts` 验证跨用户世界/状态/交谈/写入被拒且无新增事实，另一用户不能读取/改动对话、记忆、章节和时间线；`npm --workspace api run test -- src/public/routes.test.ts`：1/1，匿名演示读取可用、写入口拒绝。 |
-| AC5 | 通过 | `npm --workspace api run test -- src/test/legacy-migration.test.ts`：4/4，SQLite 行快照保持不变。Wrangler 4.126.0 在两次全新创建的 `/tmp` 隔离目录中各完成 19 条本地 D1 迁移；同一隔离库重复运行显示 `No migrations to apply`。重复运行前后 27 张表/系统表的 schema 与行数快照 SHA-256 均为 `62d3bd409112cd7fb8ae49bbc7057e0c716f1467f6b6bb63dd04dab0b003935a`；临时目录已删除，未指定默认本地库或远端库。 |
-| AC6 | 通过 | 本报告区分历史基线、本轮命令结果、既有工作区变更和本轮新增断言；结果均有具体命令或观察证据。 |
+| AC1 | 通过 | `npm --workspace api run test -- src/test/product-journey.test.ts`：固定测试时钟下两次经 API 创建相同结构化世界，比较基线、居民、位置和完整域描述；2/2 通过。全量测试再次覆盖。 |
+| AC2 | 通过 | `npm --workspace api run test`：31 个测试文件、214 个测试通过。`world-state/invariants.test.ts`、`world-state/rebuild.test.ts`、`product-journey.test.ts` 覆盖状态、日程、事件、承诺、记忆、对话/轮次、留言、知识证据和比较结果。 |
+| AC3 | 通过 | `rebuild.test.ts` 验证基线投影篡改可定位到域、基线命令和版本，且收集/审计前后源表快照不变；既有不变量故障注入覆盖其他投影类别。全量 API 测试通过。 |
+| AC4 | 通过 | `npm --workspace api run test -- src/test/world-journey.test.ts -t "structured full-day journey"`：Root→Child→Grandchild 重建审计通过；分叉后的 Root 事实不进入 Child，Child 分叉后的变化不进入 Grandchild。`life/compare.test.ts` 的多层 checkpoint 回归也通过。 |
+| AC5 | 通过 | `engine/tick.test.ts` 和 `world-journey.test.ts` 使用测试时钟每 15 秒推进 90 分钟，共 16 个 tick；模拟时间至少前进 24 小时，每拍检查 revision 和完整审计，并覆盖多个日程边界。无需等待墙上时间一天。 |
+| AC6 | 通过 | 全量 API 测试覆盖 `world-state/commit.test.ts`：重复请求、载荷冲突、版本冲突和事务故障回滚；214 个测试全部通过。 |
+| AC7 | 通过 | 全量 API 测试覆盖 `scene/intent.test.ts` 的取消/断流、请求状态查询和相同 ID 重试，以及 `scene/recovery.test.ts`、`engine/tick-lease.test.ts` 的过期恢复和迟到提交拒绝。 |
+| AC8 | 通过 | `npm run verify:s01:workers`：Wrangler 4.126.0，本地隔离 D1，两个独立 Worker 共用 `/tmp/possibility-s01-Z0F8tJ/d1`；租约 Worker 200、竞争 Worker 409；共享库恰有 1 条 clock fact、revision=2、active lease=0。执行后目录与进程均清理。 |
+| AC9 | 通过 | 全量 API 测试覆盖 `legacy-compat.test.ts`、`public/routes.test.ts`、`world-state/commit.test.ts` 与 `life/compare.test.ts` 的跨用户、错配范围、暂停/归档、额度及公开写入拒绝，检查无部分写入。 |
+| AC10 | 通过 | 全量 API 测试覆盖多级 Fork 成功、重复、冲突、拒绝、竞争及隔离；本轮新增三层访客留言 checkpoint 测试和完整日 Root/Child/Grandchild 重建旅程。 |
+| AC11 | 通过 | `world-journey.test.ts` 通过真实 API 创建结构化世界、16 个加速 tick、Root 审计、Fork、Root 后续变化、Child 独立变化、Grandchild Fork 和三线复审。子线变化后 Root 投影/事实保持不变。 |
+| AC12 | 通过 | 本报告列出 AC1–AC12 的环境、命令和结果；本轮没有远程数据库、生产迁移、部署或真实模型验收。缺少结构化基线的 legacy 线由 `rebuildProjection` 返回 `incomplete`，未知动作返回 `unsupported`。 |
 
-**迁移运行说明：** 沙箱内首次 Wrangler 尝试在监听本地端口前失败，没有应用迁移。获准后使用 `--local --persist-to <新建 /tmp 目录>` 完成本地验证；第一次成功运行时 Wrangler 默认 metrics 未关闭，日志显示尝试派发 CLI 使用遥测，实际送达状态无法确认。为获得可复核快照而进行的第二轮完整验证已设置 `WRANGLER_SEND_METRICS=false`。两轮的 D1 目标都在临时 `/tmp` 目录。
+### 最终命令结果
 
-**本轮改动边界：** P0 执行只在两个起点时已存在但未跟踪的测试文件 `api/src/test/legacy-compat.test.ts`、`api/src/test/world-journey.test.ts` 中增加了兼容读取和稳定居民关联断言，并更新本未跟踪的本盘点文档；没有改动运行时代码或数据库迁移。执行前后 Git 概览仍为 64 个已跟踪变更、40 个未跟踪路径，未提交既有工作区内容。
+- `npm --workspace api run test`：31 个测试文件、214 个测试通过，退出码 0。
+- `npm --workspace api run build`：TypeScript 检查通过，退出码 0。
+- `npm run verify:s01:workers`：退出码 0；本地迁移、种子、双 Worker 竞争及清理全部完成。`WRANGLER_SEND_METRICS=false`，所有 Wrangler D1/Worker 命令显式使用 `--local` 与本轮临时 `--persist-to`。
+- `git diff --check`：通过。
 
-**s01 出口：通过。** AC1–AC5 全部通过，AC6 报告完整。P1–P4 的未验收项不影响本 P0 出口。
-
-## 可继续利用的资产
-
-- `api/src/db/schema.ts` 已有世界、时间线、人物状态、日程、事件、对话、记忆、约定与分叉快照。
-- `api/src/engine/tick.ts` 已按世界与活跃时间线推进；成本护栏见 `api/src/engine/guard.ts`。
-- `api/src/world-state/system.ts` 将引擎虚拟时钟推进与命令版本、事实及 `simNow` 投影原子提交；首次 tick 只建立真实时间锚点，不补造停机期间的世界事件。
-- `api/src/scene/routes.ts` 已有在场交谈、请求去重与服务器会话历史；`api/src/life/service.ts` 已有明确接受的约定。
-- `api/src/life/fork.ts`、`api/src/agent/visibility.ts` 已支持当前时刻分叉与旧快照降级；`api/src/life/compare.ts` 展示记录差异，未宣称因果。
-- `web/src/pages/WorldView.tsx` 已能观察地点、事件、人物并进入世界。
-
-## 当前不能宣称的能力
-
-- `events.title/description` 是叙述记录，不是可校验的统一世界事实。结构化状态集中在 `person_states` 等少数表中。
-- `worlds.locations_json`、`persons.model_json` 是共享定义，现有 Fork 没有固定完整的世界规则/居民模型版本。
-- `api/src/life/fork.ts` 对带场景的历史时间拒绝创建；当前没有任意历史时刻的完整世界 Checkpoint。
-- `api/src/scene/routes.ts` 支持交谈，但在场者的连续位置、通用行动和局部知识约束尚不是统一状态判定。
-- `api/src/engine/tick.ts` 的进程内 `tickInFlight` 不能独自保证跨实例的并发互斥。
-
-## P0 已识别并前置修复的范围错误
-
-在本轮开始前，`worldSnapshot`、世界事件注入和章节生成对显式传入的无效时间线 ID 存在回落主线的路径。该行为会使读/写落到错误宇宙。P0 的 `legacy-compat.test.ts` 固定此回归：只有省略 ID 才可使用默认主线；显式无效/异世界 ID 必须拒绝。
-
-## 数据兼容原则
-
-旧事件、旧记忆、旧 Fork 保持可读；缺少结构化证据的地方展示不完整或未知。不得依据既有自由文本批量回填“确定事实”。新增状态从可验证的起点开始；完成隔离本地 D1 迁移与回归后才允许切换权威写路径。
+legacy/unknown 的覆盖范围：无结构化根线基线的旧时间线和缺少完整域记录的旧 Fork checkpoint 保持不完整，不根据可变行或叙述文本补造历史；未支持的 command action 明确报告 unsupported。P1 出口所需 AC1–AC12 均有通过证据。

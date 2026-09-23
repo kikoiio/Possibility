@@ -1,9 +1,11 @@
 import { and, eq, gt } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { events, persons, personStates, schedules, timelines, worldPersons, worlds } from '../db/schema'
+import { events, persons, personStates, schedules, timelines, universeRevisions, worldPersons, worlds } from '../db/schema'
 import { retrieveForPrompt, type Memory } from './memory'
 import type { PersonModel } from './types'
 import { lifeContext } from '../life/service'
+import { readPinnedWorldModel } from '../world-state/model'
+import { readWorldState } from '../world-state/query'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
@@ -31,6 +33,7 @@ export interface WorldSnapshot {
   world: World
   locations: LocationDef[]
   timeline: Timeline
+  stateVersion?: number
   persons: Person[]
   models: Map<string, PersonModel>
   states: Map<string, PersonState> // personId → 该时间线的状态
@@ -41,6 +44,7 @@ export interface WorldSnapshot {
 /** 单个决策点的完整上下文（perceive 的产出） */
 export interface EngineContext {
   lifeContext?: string
+  knownFacts?: { kind: 'environment' | 'knowledge'; text: string; sourceFactId: string; certainty: 'fact' | 'rumor' }[]
   snapshot: WorldSnapshot
   person: Person
   model: PersonModel
@@ -134,18 +138,24 @@ export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: st
     .where(and(eq(timelines.id, timelineId), eq(timelines.worldId, worldId)))
     .get()
   if (!timeline) return null
+  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
+  const pinned = await readPinnedWorldModel(db, worldId, timelineId)
 
   const wpRows = await db.select().from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
   const personList: Person[] = []
   for (const wp of wpRows) {
     const p = await db.select().from(persons).where(eq(persons.id, wp.personId)).get()
-    if (p) personList.push(p)
+    if (p) {
+      const recorded = pinned?.residents.find(r => r.id === p.id)
+      personList.push(recorded ? { ...p, name: recorded.name } : p)
+    }
   }
 
   const models = new Map<string, PersonModel>()
   for (const p of personList) {
     try {
-      models.set(p.id, JSON.parse(p.modelJson) as PersonModel)
+      const recorded = pinned?.residents.find(r => r.id === p.id)
+      models.set(p.id, (recorded?.model ?? JSON.parse(p.modelJson)) as PersonModel)
     } catch {
       // 模型损坏的人物保留在 persons 清单中，但无模型——step 执行会失败并跳过
     }
@@ -164,7 +174,9 @@ export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: st
   const scheduleMap = new Map<string, Schedule>()
   for (const s of scheduleRows) scheduleMap.set(s.personId, s)
 
-  return { world, locations: parseLocations(world), timeline, persons: personList, models, states, schedules: scheduleMap, worldDate }
+  return { world: pinned ? { ...world, name: pinned.name, description: pinned.description } : world,
+    locations: pinned?.locations ?? parseLocations(world), timeline, stateVersion: revision?.version ?? 0,
+    persons: personList, models, states, schedules: scheduleMap, worldDate }
 }
 
 /** 为某个决策点装配人物级上下文（M3） */
@@ -209,6 +221,18 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
         .all()
 
   const mySchedule = parseScheduleItems(snapshot.schedules.get(personId))
+  const structured = await readWorldState(db, snapshot.world.id, snapshot.timeline.id)
+  const knownFacts: NonNullable<EngineContext['knownFacts']> = []
+  for (const fact of structured.current) {
+    const value = fact.value as Record<string, unknown>
+    if (fact.factType === 'environment') {
+      knownFacts.push({ kind: 'environment', text: `${String(value.location ?? '全世界')}的${String(value.condition)}：${String(value.value)}`,
+        sourceFactId: fact.id, certainty: 'fact' })
+    } else if (fact.factType === 'knowledge' && value.recipientId === personId) {
+      knownFacts.push({ kind: 'knowledge', text: `${String(value.topic)}：${String(value.content)}`,
+        sourceFactId: fact.id, certainty: value.certainty === 'fact' ? 'fact' : 'rumor' })
+    }
+  }
   const sameLocationAwake = snapshot.persons.filter((p) => {
     if (p.id === personId) return false
     const s = snapshot.states.get(p.id)
@@ -217,5 +241,5 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
     return isAwake(parseScheduleItems(snapshot.schedules.get(p.id)), snapshot.timeline.simNow)
   })
 
-  return { snapshot, person, model, state, others, memories, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule, lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
+  return { snapshot, person, model, state, others, memories, knownFacts, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule, lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
 }

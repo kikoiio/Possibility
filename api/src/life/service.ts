@@ -1,6 +1,9 @@
 import { and, eq, inArray, lte } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { commitments, events, memories, personStates, persons } from '../db/schema'
+import { commitments, personStates, timelines, worldCommands, worlds } from '../db/schema'
+import { commitWorldCommand } from '../world-state/commit'
+import { ensureUniverseRevision } from '../world-state/model'
+import { WorldStateError } from '../world-state/types'
 
 export interface Invitation { title: string; kind: 'meeting' | 'help'; location: string; dueInMinutes: number }
 export function parseInvitation(raw: unknown): Invitation | null {
@@ -21,12 +24,37 @@ export async function proposeCommitment(db: Db, p: {
   // 同一人物最多三件悬而未决的事；不把每次寒暄变成任务。
   const open = await db.select().from(commitments).where(and(eq(commitments.timelineId, p.timelineId), eq(commitments.personId, p.personId), inArray(commitments.status, ['proposed', 'accepted']))).all()
   if (open.length >= 3 || open.some(c => c.visitorId === p.visitorId && c.title === invitation.title)) return
-  await db.insert(commitments).values({
-    id: p.id, worldId: p.worldId, timelineId: p.timelineId, personId: p.personId, visitorId: p.visitorId,
-    sourceDialogueId: p.sourceDialogueId, title: invitation.title, kind: invitation.kind, location: invitation.location,
-    dueSim: new Date(Date.parse(p.simNow) + invitation.dueInMinutes * 60000).toISOString(),
-    status: 'proposed', createdSim: p.simNow, updatedSim: p.simNow, createdAt: new Date().toISOString(),
-  }).onConflictDoNothing()
+  if (await db.select().from(commitments).where(eq(commitments.id, p.id)).get()) return
+  const world = await db.select().from(worlds).where(eq(worlds.id, p.worldId)).get()
+  const timeline = await db.select().from(timelines).where(and(eq(timelines.id, p.timelineId), eq(timelines.worldId, p.worldId))).get()
+  if (!world || !timeline) return
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`commitment-proposal:${p.id}`))
+  const commandId = `system:${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existingCommand = await db.select().from(worldCommands).where(eq(worldCommands.id, commandId)).get()
+    const revision = await ensureUniverseRevision(db, p.worldId, p.timelineId)
+    const dueSim = new Date(Date.parse(timeline.simNow) + invitation.dueInMinutes * 60000).toISOString()
+    try {
+      await commitWorldCommand(db, { id: commandId, worldId: p.worldId, timelineId: p.timelineId, userId: world.userId,
+        actorKind: 'system', expectedVersion: existingCommand?.expectedVersion ?? revision.version,
+        action: { type: 'commitment_proposal', commitmentId: p.id, personId: p.personId, visitorId: p.visitorId,
+          sourceDialogueId: p.sourceDialogueId, title: invitation.title, kind: invitation.kind, location: invitation.location, dueSim } })
+      return
+    } catch (error) {
+      if (error instanceof WorldStateError && (error.status === 400 || error.status === 409)) {
+        if (await db.select().from(commitments).where(eq(commitments.id, p.id)).get()) return
+        if (attempt < 2 && !existingCommand) {
+          const latestTimeline = await db.select().from(timelines).where(eq(timelines.id, p.timelineId)).get()
+          if (latestTimeline) {
+            Object.assign(timeline, latestTimeline)
+            continue
+          }
+        }
+        return
+      }
+      throw error
+    }
+  }
 }
 
 export const statusLabels: Record<string, string> = { proposed: '尚未答应', accepted: '已经约好', fulfilled: '如约完成', missed: '未能赴约', declined: '婉拒', expired: '邀请已过期', explained: '已解释失约' }
@@ -47,28 +75,32 @@ export function nextCommitmentStatus(status: string, action: LifeAction): string
   return null
 }
 
-/** batch 中先条件写证据，最后改变状态；重复/并发执行不重复制造后果。 */
-export async function transitionCommitment(db: Db, c: Commitment, next: string, simNow: string, explanation = '') {
-  const actor = await db.select().from(persons).where(eq(persons.id, c.personId)).get()
-  const visitor = await db.select().from(persons).where(eq(persons.id, c.visitorId)).get()
-  const personName = actor?.name ?? '对方'
-  const visitorName = visitor?.name ?? '来访者'
-  const text = `${visitorName}与${personName}的「${c.title}」：${statusLabels[next] ?? next}。${explanation ? `说明：${explanation}` : ''}`
-  const eventId = `commitment:${c.id}:${next}`
-  const now = new Date().toISOString()
-  const mood = next === 'fulfilled' ? '因对方守约而感到被重视' : next === 'missed' ? '约定落空，有些失落' : null
-  await db.batch([
-    db.insert(events).values({ id: eventId, timelineId: c.timelineId, simTime: simNow, title: `${c.title} · ${statusLabels[next] ?? next}`, description: text, kind: 'action', actorPersonId: c.visitorId, dialogueId: c.sourceDialogueId }).onConflictDoNothing(),
-    db.insert(memories).values({ id: `${eventId}:memory`, personId: c.personId, timelineId: c.timelineId, type: 'relationship', content: text, simTime: simNow, createdAt: now, importance: 8, summarized: false }).onConflictDoNothing(),
-    db.update(personStates).set({ ...(mood ? { mood } : {}), updatedRealAt: now }).where(and(eq(personStates.personId, c.personId), eq(personStates.timelineId, c.timelineId))),
-    db.update(commitments).set({ status: next, updatedSim: simNow }).where(and(eq(commitments.id, c.id), eq(commitments.status, c.status))),
-  ])
+/** One commitment transition goes through the same versioned fact boundary as other world changes. */
+export async function transitionCommitment(db: Db, c: Commitment, next: string, simNow: string, explanation = '', engineTickLeaseToken?: string) {
+  const allowed = ['accepted', 'declined', 'fulfilled', 'missed', 'expired', 'explained'] as const
+  if (!allowed.includes(next as typeof allowed[number])) throw new WorldStateError('无效约定状态', 400)
+  const world = await db.select().from(worlds).where(eq(worlds.id, c.worldId)).get()
+  if (!world) throw new WorldStateError('世界不存在', 404)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const revision = await ensureUniverseRevision(db, c.worldId, c.timelineId)
+    try {
+      await commitWorldCommand(db, { id: `commitment:${c.id}:${next}`, worldId: c.worldId, timelineId: c.timelineId,
+        userId: world.userId, actorKind: 'system', expectedVersion: revision.version, engineTickLeaseToken,
+        action: { type: 'commitment', commitmentId: c.id, next: next as typeof allowed[number], explanation } })
+      return
+    } catch (error) {
+      const latest = await db.select().from(commitments).where(eq(commitments.id, c.id)).get()
+      if (latest?.status === next) return
+      if (!(error instanceof WorldStateError) || error.status !== 409 || attempt === 1) throw error
+      if (latest?.status !== c.status) throw error
+    }
+  }
 }
 
 /** 虚拟时间跨过截止点才产生失约；没有接受的邀请只过期，不扣关系。 */
-export async function advanceCommitments(db: Db, timelineId: string, simNow: string) {
+export async function advanceCommitments(db: Db, timelineId: string, simNow: string, engineTickLeaseToken?: string) {
   const rows = await db.select().from(commitments).where(and(eq(commitments.timelineId, timelineId), inArray(commitments.status, ['proposed', 'accepted']), lte(commitments.dueSim, simNow))).all()
-  for (const c of rows) await transitionCommitment(db, c, c.status === 'accepted' ? 'missed' : 'expired', simNow)
+  for (const c of rows) await transitionCommitment(db, c, c.status === 'accepted' ? 'missed' : 'expired', simNow, '', engineTickLeaseToken)
 }
 
 export async function canFulfill(db: Db, c: Commitment, simNow: string): Promise<string | null> {

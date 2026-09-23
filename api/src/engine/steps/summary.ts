@@ -1,12 +1,11 @@
-import { and, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../../db/client'
-import { memories } from '../../db/schema'
 import { configFromEnv, complete } from '../../llm/client'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
 import { buildSummaryPrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance, oldestUnsummarized, SUMMARY_BATCH, type Memory } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { recordMemorySummary } from '../../world-state/system'
 
 export interface SummaryInput {
   step: AgentStep
@@ -62,32 +61,15 @@ export const summaryExecutor: StepExecutor<SummaryInput, SummaryOutput> = {
     return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
-  async act(db: Db, _env: Env, input: SummaryInput, output: SummaryOutput): Promise<string> {
+  async act(db: Db, env: Env, input: SummaryInput, output: SummaryOutput): Promise<string> {
     // 摘要的 createdAt 取批次内最新原文的写入时间（而非当前时刻）：
     // 使摘要与被压缩原文的可见性水位一致——分叉线要么同时看到原文与摘要，要么都看不到。
     const latest = input.batch[input.batch.length - 1]
-    await db.insert(memories).values({
-      id: crypto.randomUUID(),
-      personId: input.step.personId!,
-      timelineId: input.step.timelineId,
-      type: 'summary',
-      content: output.content,
-      simTime: latest.simTime,
-      createdAt: latest.createdAt,
-      importance: output.importance,
-    })
-    await db
-      .update(memories)
-      .set({ summarized: true })
-      .where(
-        and(
-          eq(memories.personId, input.step.personId!),
-          inArray(
-            memories.id,
-            input.batch.map((m) => m.id),
-          ),
-        ),
-      )
+    await recordMemorySummary(db, { worldId: input.step.worldId, timelineId: input.step.timelineId,
+      personId: input.step.personId!, sourceMemoryIds: input.batch.map(memory => memory.id),
+      content: output.content, importance: output.importance,
+      simTime: latest.simTime ?? latest.createdAt, createdAt: latest.createdAt,
+      engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN })
     return `summary(${input.ctx.person.name}): 压缩 ${input.batch.length} 条`
   },
 }

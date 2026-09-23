@@ -28,41 +28,23 @@ export default function Home() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
-      {data.persons.length === 0 && (
+      {data.worlds.length === 0 && (
         <div className="rounded-2xl border border-dashed border-ink-faint bg-sheet p-8 text-center">
-          <p className="text-ink-soft">这里还空无一人。</p>
-          <p className="mt-1 text-sm text-ink-faint">What would you like to make possible?</p>
+          <p className="text-ink-soft">从一个世界开始。</p>
+          <p className="mt-1 text-sm text-ink-faint">设定地点与居民，让世界运转，再进入、改变条件、观察不同可能。</p>
           <Link
-            to="/people/new"
+            to={data.persons.length ? '/worlds/new' : '/people/new'}
             className="mt-4 inline-block rounded-xl bg-ink px-6 py-2.5 text-sm text-white"
           >
-            创建第一个人物
+            {data.persons.length ? '创建世界' : '先创建居民，再创建世界'}
           </Link>
         </div>
-      )}
-
-      {data.persons.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-ink-soft">最近的人物</h2>
-          <div className="space-y-2">
-            {data.persons.map((p) => (
-              <Link
-                key={p.id}
-                to={`/people/${p.id}`}
-                className="flex items-center justify-between rounded-xl border border-ink-line bg-sheet px-4 py-3"
-              >
-                <span className="font-medium text-ink">{p.name}</span>
-                <span className="text-xs text-ink-faint">{relativeTime(p.lastActivity)}</span>
-              </Link>
-            ))}
-          </div>
-        </section>
       )}
 
       {data.worlds.length > 0 && (
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-ink-soft">运行中的世界</h2>
+            <h2 className="text-sm font-medium text-ink-soft">你的世界</h2>
             <Link to="/worlds" className="text-xs text-ink-faint hover:text-ink">
               全部世界 →
             </Link>
@@ -120,6 +102,7 @@ export default function Home() {
           </div>
         </section>
       )}
+      {data.persons.length > 0 && <section><div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-medium text-ink-soft">居民资料</h2><Link to="/people" className="text-xs text-ink-faint">全部人物 →</Link></div><div className="space-y-2">{data.persons.map(p => <Link key={p.id} to={`/people/${p.id}`} className="flex items-center justify-between rounded-xl border border-ink-line bg-sheet px-4 py-3"><span className="font-medium text-ink">{p.name}</span><span className="text-xs text-ink-faint">{relativeTime(p.lastActivity)}</span></Link>)}</div></section>}
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { or, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { timelines, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
-import { runTick } from './tick'
+import { runTick, TickLeaseLostError } from './tick'
 import type { Env } from '../index'
 
 export const engineRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -15,7 +15,12 @@ engineRoutes.post('/tick', async (c) => {
     return c.json({ error: '引擎密钥无效' }, 403)
   }
   const db = createDb(c.env.DB)
-  const summary = await runTick(c.env, db)
+  let summary
+  try { summary = await runTick(c.env, db) }
+  catch (error) {
+    if (error instanceof TickLeaseLostError) return c.json({ error: error.message }, 409)
+    throw error
+  }
   if (summary === null) return c.json({ error: '上一拍仍在进行' }, 409)
   return c.json(summary)
 })

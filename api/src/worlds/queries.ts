@@ -1,7 +1,11 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne, or } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { dialogues, dialogueTurns, events, memories, persons, personStates, schedules, timelines, worldPersons, worlds } from '../db/schema'
+import { dialogues, dialogueTurns, events, persons, personStates, schedules, timelines, universeRevisions, worldPersons, worlds } from '../db/schema'
 import { parseLocations, parseScheduleItems, worldDateOf, type LocationDef, type ScheduleItem } from '../agent/engine-context'
+import { visibleMemories } from '../agent/memory'
+import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents } from '../agent/visibility'
+import { readPinnedWorldModel } from '../world-state/model'
+import { readWorldState } from '../world-state/query'
 
 type World = typeof worlds.$inferSelect
 
@@ -27,6 +31,10 @@ export interface WorldSnapshotDto {
   }[]
   currentTimelineId: string
   simNow: string
+  stateVersion: number
+  worldModelVersion: number | null
+  evidenceStatus: 'structured' | 'legacy'
+  currentFacts: { id: string; version: number; simTime: string; factType: string; subjectId: string; value: unknown; sourceCommandId: string }[]
   locationBoard: { location: string; persons: { id: string; name: string; activity: string }[] }[]
   events: WorldEventDto[]
 }
@@ -49,18 +57,25 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
 
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, worldId)).orderBy(asc(timelines.createdAt)).all()
   if (!tls.length) return null
-  const current = (timelineId && tls.find((t) => t.id === timelineId)) || tls.find((t) => t.parentTimelineId === null) || tls[0]
+  // 显式指定的时间线必须属于本世界；不能悄悄回落主线。
+  const current = timelineId !== undefined
+    ? tls.find((t) => t.id === timelineId)
+    : tls.find((t) => t.parentTimelineId === null) || tls[0]
+  if (!current) return null
+  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, current.id)).get()
+  const pinned = revision ? await readPinnedWorldModel(db, worldId, current.id) : null
+  const structuredState = await readWorldState(db, worldId, current.id)
 
   const wpRows = await db.select().from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
   const personIds = wpRows.map((r) => r.personId)
   const personList = personIds.length
     ? await db.select().from(persons).where(inArray(persons.id, personIds)).all()
     : []
-  const nameOf = new Map(personList.map((p) => [p.id, p.name]))
+  const nameOf = new Map(personList.map((p) => [p.id, pinned?.residents.find(r => r.id === p.id)?.name ?? p.name]))
 
   const stateRows = await db.select().from(personStates).where(eq(personStates.timelineId, current.id)).all()
 
-  const locations = parseLocations(world)
+  const locations = pinned?.locations ?? parseLocations(world)
   const locationBoard = locations.map((loc) => ({
     location: loc.name,
     persons: stateRows
@@ -79,16 +94,32 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
 
   // 近 1 世界日事件（对话事件带前两句预览）
   const since = new Date(Date.parse(current.simNow) - 24 * 60 * 60 * 1000).toISOString()
-  const eventRows = await db
+  const eventTimelineIds = new Set([current.id])
+  if (!readForkSnapshot(current)) {
+    for (const cutoff of ancestorCutoffs(current, tls)) eventTimelineIds.add(cutoff.timelineId)
+  }
+  const eventCandidates = await db
     .select()
     .from(events)
-    .where(and(eq(events.timelineId, current.id), gte(events.simTime, since)))
+    .where(inArray(events.timelineId, [...eventTimelineIds]))
     .orderBy(asc(events.simTime))
     .all()
+  const visibleEvents = selectVisibleEvents(eventCandidates, current, tls).events
+  const eventRows = visibleEvents.filter((event) => event.simTime >= since && event.simTime <= current.simNow)
 
   const dialogueIds = [...new Set(eventRows.map((e) => e.dialogueId).filter(Boolean))] as string[]
   const previewMap = new Map<string, { personName: string; utterance: string }[]>()
+  const checkpoint = readForkSnapshot(current)
   for (const did of dialogueIds) {
+    const inherited = eventRows.some(event => event.dialogueId === did && event.timelineId !== current.id)
+    if (inherited) {
+      const included = checkpoint?.dialogues?.some(dialogue => dialogue.id === did) ?? false
+      const turns = included
+        ? (checkpoint?.dialogueTurns ?? []).filter(turn => turn.dialogueId === did).sort((a, b) => a.turnIndex - b.turnIndex).slice(0, 2)
+        : []
+      previewMap.set(did, turns.map(turn => ({ personName: nameOf.get(turn.personId) ?? '某人', utterance: turn.utterance })))
+      continue
+    }
     const turns = await db
       .select()
       .from(dialogueTurns)
@@ -105,8 +136,8 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
   return {
     world: {
       id: world.id,
-      name: world.name,
-      description: world.description,
+      name: pinned?.name ?? world.name,
+      description: pinned?.description ?? world.description,
       status: world.status,
       pauseReason: world.pauseReason,
       isDemo: world.isDemo,
@@ -123,6 +154,11 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     })),
     currentTimelineId: current.id,
     simNow: current.simNow,
+    stateVersion: revision?.version ?? 0,
+    worldModelVersion: revision?.worldModelVersion ?? null,
+    evidenceStatus: structuredState.evidenceStatus,
+    currentFacts: structuredState.current.filter(f => f.visibility === 'world').map(f => ({ id: f.id, version: f.version,
+      simTime: f.simTime, factType: f.factType, subjectId: f.subjectId, value: f.value, sourceCommandId: f.sourceCommandId })),
     locationBoard,
     events: eventRows.map((e) => ({
       id: e.id,
@@ -151,7 +187,7 @@ export interface PersonFocusDto {
   } | null
   thoughts: { id: string; simTime: string | null; content: string; createdAt: string }[]
   schedule: ScheduleItem[] | null
-  memories: { id: string; type: string; content: string; simTime: string | null; importance: number }[]
+  memories: { id: string; type: string; content: string; simTime: string | null; createdAt: string; importance: number; summarized: boolean }[]
 }
 
 export async function personFocus(db: Db, worldId: string, personId: string, timelineId: string): Promise<PersonFocusDto | null> {
@@ -176,27 +212,13 @@ export async function personFocus(db: Db, worldId: string, personId: string, tim
     .where(and(eq(personStates.personId, personId), eq(personStates.timelineId, timelineId)))
     .get()
 
-  // 记忆桶：主线 = NULL ∪ 主线 id；分叉 = 自身（与 memory.ts 的桶约定一致）
-  const isMain = timeline.parentTimelineId === null
-  const bucket = isMain
-    ? or(isNull(memories.timelineId), eq(memories.timelineId, timelineId))
-    : eq(memories.timelineId, timelineId)
-
-  const thoughts = await db
-    .select()
-    .from(memories)
-    .where(and(eq(memories.personId, personId), bucket, eq(memories.type, 'thought')))
-    .orderBy(desc(memories.createdAt))
-    .limit(50)
-    .all()
-
-  const recentMemories = await db
-    .select()
-    .from(memories)
-    .where(and(eq(memories.personId, personId), bucket, ne(memories.type, 'thought')))
-    .orderBy(desc(memories.createdAt))
-    .limit(20)
-    .all()
+  // Keep the drawer consistent with the memories residents can actually recall:
+  // inherited checkpoint rows are visible, while post-fork ancestor rows are not.
+  const visible = await visibleMemories(db, personId, timeline)
+  const newestFirst = <T extends { createdAt: string; id: string }>(rows: T[]) =>
+    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+  const thoughts = newestFirst(visible.filter((memory) => memory.type === 'thought')).slice(0, 50)
+  const recentMemories = newestFirst(visible.filter((memory) => memory.type !== 'thought')).slice(0, 20)
 
   const worldDate = worldDateOf(timeline.simNow)
   const scheduleRow = await db
@@ -219,7 +241,7 @@ export async function personFocus(db: Db, worldId: string, personId: string, tim
       : null,
     thoughts: thoughts.map((t) => ({ id: t.id, simTime: t.simTime, content: t.content, createdAt: t.createdAt })),
     schedule: parseScheduleItems(scheduleRow),
-    memories: recentMemories.map((m) => ({ id: m.id, type: m.type, content: m.content, simTime: m.simTime, importance: m.importance })),
+    memories: recentMemories.map((m) => ({ id: m.id, type: m.type, content: m.content, simTime: m.simTime, createdAt: m.createdAt, importance: m.importance, summarized: m.summarized })),
   }
 }
 
@@ -238,8 +260,31 @@ export interface DialogueDetailDto {
   turns: { turnIndex: number; personId: string; personName: string; utterance: string; thought: string; simTime: string }[]
 }
 
-export async function dialogueDetail(db: Db, dialogueId: string): Promise<DialogueDetailDto | null> {
-  const dialogue = await db.select().from(dialogues).where(eq(dialogues.id, dialogueId)).get()
+export async function dialogueDetail(db: Db, dialogueId: string, timelineId?: string): Promise<DialogueDetailDto | null> {
+  let dialogue: typeof dialogues.$inferSelect | undefined
+  let turns: (typeof dialogueTurns.$inferSelect)[]
+  if (timelineId !== undefined) {
+    const current = await db.select().from(timelines).where(eq(timelines.id, timelineId)).get()
+    if (!current) return null
+    const checkpoint = readForkSnapshot(current)
+    const isVisibleCheckpointDialogue = checkpoint?.events.some(event => event.dialogueId === dialogueId) ?? false
+    if (isVisibleCheckpointDialogue) {
+      dialogue = checkpoint?.dialogues?.find(item => item.id === dialogueId)
+      if (!dialogue) return null // Older checkpoint: do not expose mutable ancestor turns as frozen history.
+      turns = (checkpoint?.dialogueTurns ?? []).filter(turn => turn.dialogueId === dialogueId)
+        .sort((a, b) => a.turnIndex - b.turnIndex)
+    } else {
+      dialogue = await db.select().from(dialogues).where(and(eq(dialogues.id, dialogueId), eq(dialogues.timelineId, timelineId))).get()
+      if (!dialogue) return null
+      turns = await db.select().from(dialogueTurns).where(eq(dialogueTurns.dialogueId, dialogueId))
+        .orderBy(asc(dialogueTurns.turnIndex)).all()
+    }
+  } else {
+    dialogue = await db.select().from(dialogues).where(eq(dialogues.id, dialogueId)).get()
+    if (!dialogue) return null
+    turns = await db.select().from(dialogueTurns).where(eq(dialogueTurns.dialogueId, dialogueId))
+      .orderBy(asc(dialogueTurns.turnIndex)).all()
+  }
   if (!dialogue) return null
   let participantIds: string[] = []
   try {
@@ -251,13 +296,6 @@ export async function dialogueDetail(db: Db, dialogueId: string): Promise<Dialog
     ? await db.select().from(persons).where(inArray(persons.id, participantIds)).all()
     : []
   const nameOf = new Map(personList.map((p) => [p.id, p.name]))
-
-  const turns = await db
-    .select()
-    .from(dialogueTurns)
-    .where(eq(dialogueTurns.dialogueId, dialogueId))
-    .orderBy(asc(dialogueTurns.turnIndex))
-    .all()
 
   return {
     dialogue: {

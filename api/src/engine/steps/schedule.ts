@@ -1,10 +1,11 @@
 import type { Db } from '../../db/client'
-import { schedules } from '../../db/schema'
 import { configFromEnv, complete } from '../../llm/client'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type ScheduleItem, type WorldSnapshot } from '../../agent/engine-context'
 import { buildSchedulePrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { ensureUniverseRevision } from '../../world-state/model'
+import { commitWorldCommand } from '../../world-state/commit'
 
 export interface ScheduleInput {
   step: AgentStep
@@ -97,18 +98,19 @@ export const scheduleExecutor: StepExecutor<ScheduleInput, ScheduleOutput> = {
     return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
-  async act(db: Db, _env: Env, input: ScheduleInput, output: ScheduleOutput): Promise<string> {
+  async act(db: Db, env: Env, input: ScheduleInput, output: ScheduleOutput): Promise<string> {
+    const personId = input.step.personId!
     const now = input.snapshot.timeline.simNow
-    await db
-      .insert(schedules)
-      .values({
-        personId: input.step.personId!,
-        timelineId: input.step.timelineId,
-        worldDate: input.snapshot.worldDate,
-        itemsJson: JSON.stringify(output.items),
-        generatedAt: now,
-      })
-      .onConflictDoNothing()
+    const sourceKey = `schedule:${input.step.timelineId}:${personId}:${input.snapshot.worldDate}`
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sourceKey))
+    const id = `system:schedule:${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`
+    const revision = await ensureUniverseRevision(db, input.step.worldId, input.step.timelineId)
+    await commitWorldCommand(db, { id, worldId: input.step.worldId, timelineId: input.step.timelineId,
+      userId: input.snapshot.world.userId, actorKind: 'system',
+      expectedVersion: revision.version, engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN,
+      action: { type: 'schedule_set', personId, worldDate: input.snapshot.worldDate, generatedAt: now,
+        items: output.items.map(item => ({ start: item.start, end: item.end, location: item.location,
+          activity: item.activity, ...(item.kind === 'sleep' ? { kind: 'sleep' as const } : {}) })) } })
     return `schedule(${input.ctx.person.name}): ${output.items.length} 项`
   },
 }

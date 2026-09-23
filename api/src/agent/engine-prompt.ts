@@ -35,6 +35,9 @@ function buildEngineSystem(ctx: EngineContext): string {
         .join('\n')}`
     : ''
   const memorySection = [sourceMem, settled].filter(Boolean).join('\n\n')
+  const knowledgeSection = ctx.knownFacts?.length
+    ? `## 在这个宇宙里你可依据的记录\n${ctx.knownFacts.map(f => `- [${f.certainty === 'fact' ? '已证实' : '传闻'}；来源 ${f.sourceFactId}] ${f.text}`).join('\n')}\n未列出的私人消息不属于你的知识；传闻不能说成已证实。`
+    : '## 在这个宇宙里你可依据的记录\n没有新的已记录消息。不要把别人的私人消息当成自己知道的事。'
 
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
@@ -66,6 +69,7 @@ function buildEngineSystem(ctx: EngineContext): string {
     items('说话方式', model.speech),
     items('技能与爱好', model.skills),
     memorySection,
+    knowledgeSection,
     items('关系', model.relationships),
     [
       '## 边界与未知（诚实红线）',
@@ -236,7 +240,8 @@ export function buildScenePrompt(
     '  "shouldEnd": true 或 false,',
     '  "memory": {"content": "与眼前这个人（或这场相遇）值得长期记住的事", "importance": 1-10} 或 null,',
     '  "word": "想托付给 TA 的口信，没有就给 null",',
-    '  "commitment": {"title":"具体一起做的事", "kind":"meeting 或 help", "location":"世界中存在的地点", "dueInMinutes":60} 或 null',
+    '  "commitment": {"title":"你主动邀请 TA 的事", "kind":"meeting 或 help", "location":"世界中存在的地点", "dueInMinutes":60} 或 null,',
+    '  "visitorInvitationResponse": {"decision":"accepted", "invitation":{"title":"具体约定", "kind":"meeting 或 help", "location":"世界中存在的地点", "dueInMinutes":60}} 或 {"decision":"declined"} 或 null',
     '}',
     '要求：',
     `- 可以直接叫 ${visitor.name} 的名字；按你的性格决定热络还是矜持。`,
@@ -246,6 +251,8 @@ export function buildScenePrompt(
     '- word 只在真的有话要留给 TA 时给（如"明天开饭前再来一趟""替我问候山下的阿婆"），随口寒暄不要硬留。',
     '- commitment 只有你主动邀请 TA 来见面或帮忙时才给。截止为现在之后 30 到 10080 虚拟分钟，须合理且与你的日程不冲突；见面窗口是截止前半小时。',
     '- 邀请需要 TA 明确接受才能成立；不要替 TA 答应，不要重复提出已有邀请，不要仅为制造任务而邀约。',
+    '- 如果 TA 明确邀请你见面或帮忙，你可以按性格接受或婉拒；visitorInvitationResponse 只能在交谈中确实有这类邀请时填写。接受时给出地点、类型和未来 30 到 10080 虚拟分钟内的截止时间；婉拒时只给 decision=declined，不要创建、接受或履行任何约定。',
+    '- commitment 是你主动邀请 TA；visitorInvitationResponse 是 TA 邀请你，两者不能混淆。没有明确邀请时 visitorInvitationResponse 必须为 null。',
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,

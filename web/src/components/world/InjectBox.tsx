@@ -1,20 +1,24 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface Props {
-  onInject: (text: string) => Promise<void>
+  onInject: (text: string, requestId: string) => Promise<void>
 }
 
 /** 注入事件输入框：主人以自然语言向当前时间线注入一个世界事件（F7） */
 export default function InjectBox({ onInject }: Props) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const requestIdRef = useRef<string | null>(null)
 
   const submit = async () => {
     const t = text.trim()
     if (!t || busy) return
     setBusy(true)
     try {
-      await onInject(t)
+      const requestId = requestIdRef.current ?? crypto.randomUUID()
+      requestIdRef.current = requestId
+      await onInject(t, requestId)
+      requestIdRef.current = null
       setText('')
     } catch {
       // 错误由父级展示
@@ -27,7 +31,7 @@ export default function InjectBox({ onInject }: Props) {
     <div className="mb-3 flex gap-2">
       <input
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { setText(e.target.value); requestIdRef.current = null }}
         onKeyDown={(e) => e.key === 'Enter' && void submit()}
         placeholder="注入一个世界事件，例如：突然下起暴雨"
         className="min-w-0 flex-1 rounded-xl border border-ink-line bg-sheet px-3 py-2 text-sm text-ink-soft placeholder:text-ink-faint focus:border-ink-faint focus:outline-none"

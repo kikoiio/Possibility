@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { PersonFocus } from '../../api/types'
 import { memoriesApi } from '../../api/client'
 import { AvatarChip } from '../../lib/personColor'
@@ -18,6 +18,10 @@ interface Props {
   liveState: PersonLiveState | null
   fallbackName: string
   personId?: string
+  canEditMemories: boolean
+  timelineId: string
+  expectedVersion: number
+  defaultTab?: Tab
   onClose: () => void
   /** 记忆被校正/删除后通知父组件刷新 */
   onMemoriesChanged?: () => void
@@ -26,15 +30,24 @@ interface Props {
 type Tab = 'thoughts' | 'schedule' | 'memories'
 
 /** 人物抽屉：当前状态 + 想法流 / 今日日程 / 记忆（可审计：校正与删除，F12） */
-export default function PersonDrawer({ focus, loading, liveState, fallbackName, personId, onClose, onMemoriesChanged }: Props) {
-  const [tab, setTab] = useState<Tab>('thoughts')
+export default function PersonDrawer({ focus, loading, liveState, fallbackName, personId, canEditMemories, timelineId, expectedVersion, defaultTab = 'thoughts', onClose, onMemoriesChanged }: Props) {
+  const [tab, setTab] = useState<Tab>(defaultTab)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editError, setEditError] = useState('')
+  const pendingCommands = useRef(new Map<string, string>())
   const name = focus?.person.name ?? fallbackName
   const state = liveState ?? focus?.state ?? null
   const id = focus?.person.id ?? personId ?? ''
+
+  const commandId = (key: string) => {
+    const existing = pendingCommands.current.get(key)
+    if (existing) return existing
+    const next = crypto.randomUUID()
+    pendingCommands.current.set(key, next)
+    return next
+  }
 
   const startEdit = (memoryId: string, content: string) => {
     setEditError('')
@@ -42,13 +55,17 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
     setDraft(content)
   }
 
-  const saveEdit = async (memoryId: string) => {
-    if (!draft.trim() || busyId) return
+  const saveEdit = async (memory: PersonFocus['memories'][number]) => {
+    if (!draft.trim() || busyId || !id) return
+    const memoryId = memory.id
     setBusyId(memoryId)
     setEditError('')
     try {
-      await memoriesApi.update(memoryId, { content: draft.trim() })
+      await memoriesApi.update(memoryId, { content: draft.trim(), personId: id, timelineId, expectedVersion,
+        commandId: commandId(`correct:${memoryId}`), before: { type: memory.type, content: memory.content,
+          importance: memory.importance, simTime: memory.simTime, createdAt: memory.createdAt, summarized: memory.summarized } })
       setEditingId(null)
+      pendingCommands.current.delete(`correct:${memoryId}`)
       onMemoriesChanged?.()
     } catch (e) {
       setEditError(e instanceof Error ? e.message : '保存失败')
@@ -57,12 +74,16 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
     }
   }
 
-  const removeMemory = async (memoryId: string) => {
-    if (busyId) return
+  const removeMemory = async (memory: PersonFocus['memories'][number]) => {
+    if (busyId || !id) return
+    const memoryId = memory.id
     setBusyId(memoryId)
     setEditError('')
     try {
-      await memoriesApi.remove(memoryId)
+      await memoriesApi.remove(memoryId, { personId: id, timelineId, expectedVersion,
+        commandId: commandId(`forget:${memoryId}`), before: { type: memory.type, content: memory.content,
+          importance: memory.importance, simTime: memory.simTime, createdAt: memory.createdAt, summarized: memory.summarized } })
+      pendingCommands.current.delete(`forget:${memoryId}`)
       onMemoriesChanged?.()
     } catch (e) {
       setEditError(e instanceof Error ? e.message : '删除失败')
@@ -166,10 +187,12 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
           <div className="space-y-2.5">
             {editError && <p className="text-xs text-red-600">{editError}</p>}
             <p className="text-[11px] leading-relaxed text-ink-faint">
-              这是 TA 真正记住的事——校正会立即生效，删除后 TA 就会忘掉。
+              {canEditMemories
+                ? '这是 TA 真正记住的事——校正会影响后续决策，删除后 TA 就会忘掉。'
+                : '这里展示 TA 当前记得的事；观察与在场模式下只能查看。'}
             </p>
             {(focus?.memories ?? []).map((m) =>
-              editingId === m.id ? (
+              canEditMemories && editingId === m.id ? (
                 <div key={m.id} className="space-y-1.5">
                   <textarea
                     value={draft}
@@ -179,7 +202,7 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
                   />
                   <div className="flex gap-2">
                     <button
-                      onClick={() => void saveEdit(m.id)}
+                      onClick={() => void saveEdit(m)}
                       disabled={busyId === m.id || !draft.trim()}
                       className="rounded bg-ink px-2.5 py-1 text-[11px] text-white disabled:opacity-50"
                     >
@@ -199,22 +222,24 @@ export default function PersonDrawer({ focus, loading, liveState, fallbackName, 
                     <span className="mr-1 rounded bg-paper-deep px-1.5 py-0.5 text-[10px] text-ink-faint">{m.type}</span>
                     {m.content}
                   </p>
-                  <button
-                    onClick={() => startEdit(m.id, m.content)}
-                    title="校正这条记忆"
-                    className="shrink-0 text-[11px] text-ink-faint opacity-0 transition-opacity hover:text-ink-soft group-hover:opacity-100"
-                  >
-                    改
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (window.confirm('删除后 TA 会立刻忘掉这件事，确定？')) void removeMemory(m.id)
-                    }}
-                    title="删除这条记忆"
-                    className="shrink-0 text-[11px] text-ink-faint opacity-0 transition-opacity hover:text-cinnabar group-hover:opacity-100"
-                  >
-                    删
-                  </button>
+                  {canEditMemories && !m.summarized && m.type !== 'summary' && <>
+                    <button
+                      onClick={() => startEdit(m.id, m.content)}
+                      title="校正这条记忆"
+                      className="shrink-0 text-[11px] text-ink-faint opacity-0 transition-opacity hover:text-ink-soft group-hover:opacity-100"
+                    >
+                      改
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('删除后 TA 会立刻忘掉这件事，确定？')) void removeMemory(m)
+                      }}
+                      title="删除这条记忆"
+                      className="shrink-0 text-[11px] text-ink-faint opacity-0 transition-opacity hover:text-cinnabar group-hover:opacity-100"
+                    >
+                      删
+                    </button>
+                  </>}
                 </div>
               ),
             )}

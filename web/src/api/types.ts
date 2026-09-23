@@ -191,6 +191,10 @@ export interface WorldSnapshot {
   timelines: TimelineInfo[]
   currentTimelineId: string
   simNow: string
+  stateVersion: number
+  worldModelVersion: number | null
+  evidenceStatus: 'structured' | 'legacy'
+  currentFacts: Omit<WorldFact, 'timelineId' | 'visibility'>[]
   locationBoard: LocationBoardEntry[]
   events: WorldEventItem[]
 }
@@ -215,7 +219,7 @@ export interface PersonFocus {
   } | null
   thoughts: { id: string; simTime: string | null; content: string; createdAt: string }[]
   schedule: ScheduleItem[] | null
-  memories: { id: string; type: string; content: string; simTime: string | null; importance: number }[]
+  memories: { id: string; type: string; content: string; simTime: string | null; createdAt: string; importance: number; summarized: boolean }[]
 }
 
 export interface DialogueDetail {
@@ -247,6 +251,7 @@ export interface DemoInfo {
 
 /** 世界流推送事件（SSE 按 event 名分发） */
 export type WorldStreamEvent =
+  | { type: 'sync'; stateVersion: number }
   | {
       type: 'event'
       id: string
@@ -276,7 +281,7 @@ export type WorldStreamEvent =
       goal: string
       currentDialogueId: string | null
     }
-  | { type: 'clock'; simNow: string; callsToday: number; worldStatus: WorldSummary['status']; pauseReason: WorldSummary['pauseReason'] }
+  | { type: 'clock'; simNow: string; callsToday: number; worldStatus: WorldSummary['status']; pauseReason: WorldSummary['pauseReason']; stateVersion: number }
 
 /* ===== 章节：时间线事件流的小说化回顾 ===== */
 
@@ -300,6 +305,28 @@ export interface Persona {
   id: string
   name: string
   description: string
+  location: string | null
+}
+
+export interface WorldFact {
+  id: string
+  timelineId: string
+  version: number
+  simTime: string
+  factType: 'location' | 'environment' | 'knowledge' | 'commitment'
+  subjectId: string
+  value: Record<string, unknown>
+  sourceCommandId: string
+  visibility: 'world' | 'private'
+}
+
+export interface WorldState {
+  timelineId: string
+  version: number
+  worldModelVersion: number | null
+  evidenceStatus: 'structured' | 'legacy'
+  current: WorldFact[]
+  facts: WorldFact[]
 }
 
 /** scene SSE 事件（POST /worlds/:id/scene） */

@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
 import { timelines, worlds } from '../db/schema'
 import { dialogueDetail, personFocus, worldSnapshot } from '../worlds/queries'
+import { WorldStateError } from '../world-state/types'
 import { streamWorld } from '../worlds/stream'
 import type { Env } from '../index'
 
@@ -33,7 +34,12 @@ publicRoutes.get('/worlds/:id', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadDemoWorld(db, c.req.param('id'))
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId') || undefined)
+  let snapshot
+  try { snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId')) }
+  catch (error) {
+    if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
   if (!snapshot) return c.json({ error: '世界没有时间线' }, 404)
   return c.json(snapshot)
 })
@@ -71,7 +77,7 @@ publicRoutes.get('/worlds/:id/persons/:pid', async (c) => {
 /** 演示世界对话逐句展开（须属于该演示世界的时间线） */
 publicRoutes.get('/dialogues/:id', async (c) => {
   const db = createDb(c.env.DB)
-  const detail = await dialogueDetail(db, c.req.param('id'))
+  const detail = await dialogueDetail(db, c.req.param('id'), c.req.query('timelineId'))
   if (!detail) return c.json({ error: '对话不存在' }, 404)
   const tl = await db.select().from(timelines).where(eq(timelines.id, detail.dialogue.timelineId)).get()
   const world = tl ? await loadDemoWorld(db, tl.worldId) : null

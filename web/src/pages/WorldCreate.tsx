@@ -39,6 +39,14 @@ export default function WorldCreate() {
     }
   }
 
+  const startManualDraft = () => {
+    setError('')
+    setName('')
+    setDescription(prompt.trim())
+    setLocations(Array.from({ length: 5 }, () => ({ name: '', description: '' })))
+    setStep('edit')
+  }
+
   const locError = locations.length < 5 || locations.length > 8 ? '地点需要 5-8 个' : locations.some((l) => !l.name.trim()) ? '地点名不能为空' : ''
 
   const submit = async () => {
@@ -86,6 +94,15 @@ export default function WorldCreate() {
           >
             {busy ? '生成中（约一分钟）…' : '生成世界骨架'}
           </button>
+          <button
+            type="button"
+            onClick={startManualDraft}
+            disabled={busy}
+            className="block text-sm text-ink-soft underline underline-offset-2 disabled:text-ink-faint"
+          >
+            不调用生成服务，手动搭建世界
+          </button>
+          <p className="text-xs text-ink-faint">手动填写名称、背景和至少 5 个地点；确认创建前都可以修改。</p>
         </div>
       )}
 

@@ -55,6 +55,7 @@ export async function postSSE(
   path: string,
   body: unknown,
   onEvent: (event: SSEEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const token = getToken()
   const res = await fetch(path, {
@@ -64,6 +65,7 @@ export async function postSSE(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
+    signal,
   })
   if (res.status === 401) {
     const hadToken = !!token
@@ -80,27 +82,31 @@ export async function postSSE(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let idx: number
-    while ((idx = buffer.indexOf('\n\n')) >= 0) {
-      const chunk = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      const data = chunk
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trimStart())
-        .join('\n')
-      if (data) {
-        try {
-          onEvent(JSON.parse(data) as SSEEvent)
-        } catch {
-          // 忽略无法解析的心跳/注释行
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const chunk = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        const data = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n')
+        if (data) {
+          try {
+            onEvent(JSON.parse(data) as SSEEvent)
+          } catch {
+            // 忽略无法解析的心跳/注释行
+          }
         }
       }
     }
+  } finally {
+    reader.releaseLock()
   }
 }
 
@@ -111,6 +117,7 @@ import type {
   ChapterSummary,
   DemoInfo,
   DialogueDetail,
+  ForkScenario,
   PersonFocus,
   Persona,
   PersonaMention,
@@ -119,6 +126,7 @@ import type {
   WorldSnapshot,
   WorldStreamEvent,
   WorldSummary,
+  WorldState,
   ReturnBrief,
 } from './types'
 
@@ -129,20 +137,30 @@ export const worldsApi = {
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
   snapshot: (worldId: string, timelineId?: string) =>
     apiFetch<WorldSnapshot>(`/api/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
+  state: (worldId: string, timelineId: string) =>
+    apiFetch<WorldState>(`/api/worlds/${worldId}/state?timelineId=${encodeURIComponent(timelineId)}`),
+  commandStatus: (worldId: string, commandId: string) =>
+    apiFetch<{ id: string; timelineId: string; resultVersion: number }>(`/api/worlds/${worldId}/actions/${encodeURIComponent(commandId)}`),
+  command: (worldId: string, body: { id: string; timelineId: string; expectedVersion: number; action: { type: 'environment'; location: string | null; condition: string; value: string } | { type: 'inform'; recipientId: string; topic: string; content: string; sourceFactId?: string } }) =>
+    apiFetch<{ commandId: string; factId: string; version: number }>(`/api/worlds/${worldId}/actions`, { method: 'POST', body: JSON.stringify(body) }),
   pause: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
   resume: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
   archive: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
-  inject: (worldId: string, text: string, timelineId?: string) =>
-    apiFetch<{ id: string; timelineId: string; simTime: string }>(`/api/worlds/${worldId}/inject`, {
+  inject: (worldId: string, text: string, timelineId: string, requestId: string, expectedVersion: number) =>
+    apiFetch<{ id: string; timelineId: string; simTime: string; version: number; replayed: boolean }>(`/api/worlds/${worldId}/inject`, {
       method: 'POST',
-      body: JSON.stringify({ text, timelineId }),
+      body: JSON.stringify({ text, timelineId, requestId, expectedVersion }),
     }),
-  fork: (worldId: string, timelineId: string) =>
-    apiFetch<{ id: string; simNow: string }>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, { method: 'POST' }),
+  fork: (worldId: string, timelineId: string, requestId: string, scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>) =>
+    apiFetch<{ id: string; simNow: string }>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId, scenario }),
+    }),
   archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
-  dialogueDetail: (dialogueId: string) => apiFetch<DialogueDetail>(`/api/worlds/dialogues/${dialogueId}`),
+  dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(
+    `/api/worlds/dialogues/${dialogueId}${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`),
 }
 
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */
@@ -152,7 +170,8 @@ export const publicApi = {
     apiFetch<WorldSnapshot>(`/api/public/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/public/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
-  dialogueDetail: (dialogueId: string) => apiFetch<DialogueDetail>(`/api/public/dialogues/${dialogueId}`),
+  dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(
+    `/api/public/dialogues/${dialogueId}${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`),
 }
 
 /** 章节：时间线的小说化回顾 */
@@ -168,9 +187,13 @@ export const chaptersApi = {
 
 /** 记忆可审计：校正 / 删除（人物会立刻忘掉） */
 export const memoriesApi = {
-  update: (memoryId: string, patch: { content?: string; importance?: number }) =>
+  update: (memoryId: string, patch: { content?: string; importance?: number; personId: string; timelineId: string;
+    expectedVersion: number; commandId: string; before: { type: string; content: string; importance: number;
+      simTime: string | null; createdAt: string; summarized: boolean } }) =>
     apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  remove: (memoryId: string) => apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'DELETE' }),
+  remove: (memoryId: string, body: { personId: string; timelineId: string; expectedVersion: number; commandId: string;
+    before: { type: string; content: string; importance: number; simTime: string | null; createdAt: string; summarized: boolean } }) =>
+    apiFetch<{ ok: true }>(`/api/memories/${memoryId}`, { method: 'DELETE', body: JSON.stringify(body) }),
 }
 
 /** 你在世界里：登记/改写在场身份 */
@@ -186,10 +209,23 @@ export const personaApi = {
 /** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */
 export const sceneApi = {
   /** 各地点「清醒且空闲」的可交谈人数（避免扑空） */
-  board: (worldId: string, timelineId: string) => apiFetch<{ board: { location: string; count: number }[] }>(`/api/worlds/${worldId}/scene/board?timelineId=${encodeURIComponent(timelineId)}`),
+  board: (worldId: string, timelineId: string) => apiFetch<{ board: { location: string; count: number; people: { id: string; name: string }[] }[] }>(`/api/worlds/${worldId}/scene/board?timelineId=${encodeURIComponent(timelineId)}`),
   history: (worldId: string, timelineId: string, location?: string) => apiFetch<{dialogueId: string | null; location: string | null; turns: {id: string; personId: string; name: string; utterance: string}[]}>(`/api/worlds/${worldId}/scene/history?timelineId=${encodeURIComponent(timelineId)}${location ? `&location=${encodeURIComponent(location)}` : ''}`),
-  send: (worldId: string, body: { timelineId: string; location?: string; content: string; dialogueId?: string; requestId?: string }, onEvent: (event: SSEEvent) => void) =>
-    postSSE(`/api/worlds/${worldId}/scene`, body, onEvent),
+  requestStatus: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}?timelineId=${encodeURIComponent(timelineId)}`),
+  recoverRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/recover?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
+  resolveIntent: (worldId: string, body: { timelineId: string; content: string; requestId: string }) =>
+    apiFetch<{
+      requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
+      status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
+      proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
+      question?: string; reason?: string;
+    }>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }),
+  send: (worldId: string, body: { timelineId: string; location?: string; content: string; dialogueId?: string; requestId?: string }, onEvent: (event: SSEEvent) => void, signal?: AbortSignal) =>
+    postSSE(`/api/worlds/${worldId}/scene`, body, onEvent, signal),
+  position: (worldId: string, body: { timelineId: string; location: string; commandId: string; expectedVersion: number }) =>
+    apiFetch<{ commandId: string; version: number; location: string }>(`/api/worlds/${worldId}/scene/position`, { method: 'POST', body: JSON.stringify(body) }),
+  inform: (worldId: string, body: { timelineId: string; recipientId: string; topic: string; content: string; commandId: string; expectedVersion: number }) =>
+    apiFetch<{ commandId: string; version: number; certainty: 'rumor' }>(`/api/worlds/${worldId}/scene/inform`, { method: 'POST', body: JSON.stringify(body) }),
 }
 
 export const lifeApi = {
@@ -214,7 +250,8 @@ export function subscribeWorldStream(
   const token = getToken()
 
   void (async () => {
-    try {
+    while (!controller.signal.aborted) {
+      try {
       const res = await fetch(`${base}?timelineId=${timelineId}`, {
         headers: token && !opts.isPublic ? { Authorization: `Bearer ${token}` } : {},
         signal: controller.signal,
@@ -246,8 +283,14 @@ export function subscribeWorldStream(
           }
         }
       }
-    } catch (e) {
-      if (!controller.signal.aborted) opts.onError?.(e)
+      } catch (e) {
+        if (!controller.signal.aborted) opts.onError?.(e)
+      }
+      if (controller.signal.aborted) break
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, 2000)
+        controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+      })
     }
   })()
 

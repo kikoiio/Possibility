@@ -1,4 +1,5 @@
-import type { commitments, events, memories, personStates, schedules, timelines } from '../db/schema'
+import type { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, worldFacts } from '../db/schema'
+import type { ProjectionDomain } from '../world-state/model'
 
 export type Timeline = typeof timelines.$inferSelect
 type Memory = typeof memories.$inferSelect
@@ -21,8 +22,19 @@ export interface ForkSnapshot {
   schedules: (typeof schedules.$inferSelect)[]
   memories: Memory[]
   events: Event[]
+  /** Frozen transcripts for dialogue events visible at this checkpoint; absent in older v1 snapshots. */
+  dialogues?: (typeof dialogues.$inferSelect)[]
+  dialogueTurns?: (typeof dialogueTurns.$inferSelect)[]
   commitments: (typeof commitments.$inferSelect)[]
+  /** Frozen visitor messages visible at this checkpoint; absent on older snapshots. */
+  personaMessages?: (typeof personaMessages.$inferSelect)[]
+  /** Domains whose state is fully evidenced by this checkpoint; absent on legacy snapshots. */
+  completeDomains?: ProjectionDomain[]
   historyComplete: boolean
+  /** Structured-state evidence added after the original v1 fork format; absent on legacy forks. */
+  sourceStateVersion?: number
+  worldModelVersion?: number
+  worldFacts?: (typeof worldFacts.$inferSelect)[]
 }
 
 export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
@@ -30,10 +42,22 @@ export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
   if (!raw) return null
   try {
     const value = JSON.parse(raw) as ForkSnapshot
+    const validDomains = value.completeDomains === undefined || (Array.isArray(value.completeDomains)
+      && value.completeDomains.every(domain => ['clock', 'states', 'schedules', 'events', 'commitments', 'memories',
+        'dialogues', 'dialogueTurns', 'personaMessages', 'knowledge'].includes(domain))
+      && (!value.completeDomains.includes('dialogues') || Array.isArray(value.dialogues))
+      && (!value.completeDomains.includes('dialogueTurns') || Array.isArray(value.dialogueTurns))
+      && (!value.completeDomains.includes('personaMessages') || Array.isArray(value.personaMessages))
+      && (!value.completeDomains.includes('knowledge') || Array.isArray(value.worldFacts)))
     return value.version === 1 && value.sourceTimelineId === timeline.parentTimelineId
       && typeof value.sourceSimTime === 'string' && typeof value.capturedAt === 'string'
       && Array.isArray(value.ancestorCutoffs) && Array.isArray(value.states)
       && Array.isArray(value.schedules) && Array.isArray(value.memories) && Array.isArray(value.events)
+      && Array.isArray(value.commitments)
+      && (value.dialogues === undefined || Array.isArray(value.dialogues))
+      && (value.dialogueTurns === undefined || Array.isArray(value.dialogueTurns))
+      && (value.personaMessages === undefined || Array.isArray(value.personaMessages))
+      && validDomains
       ? value : null
   } catch {
     return null
@@ -98,7 +122,9 @@ export function selectVisibleEvents(rows: Event[], timeline: Timeline, worldTime
   const own = rows.filter((e) => e.timelineId === timeline.id && e.simTime <= timeline.simNow)
   return {
     events: [...inherited, ...own].sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id)),
-    historyComplete: snapshot?.historyComplete ?? (!timeline.parentTimelineId
-      || (cutoffs.length > 0 && cutoffs.every((a) => a.simTime !== null))),
+    // A timestamp cutoff can exclude known future events, but it cannot prove
+    // that every ancestor event was captured. Only a persisted Fork checkpoint
+    // can make an inherited history complete.
+    historyComplete: snapshot?.historyComplete ?? !timeline.parentTimelineId,
   }
 }

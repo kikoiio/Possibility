@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSceneOutput } from './parse'
+import { containsExplicitInvitationRequest, parseSceneOutput } from './parse'
 
 const VALID = {
   utterance: '雾大，脚下留神。',
@@ -35,5 +35,18 @@ describe('parseSceneOutput（scene 回应解析）', () => {
   it('只接受结构完整的约定输出', () => {
     expect(parseSceneOutput({ ...VALID, commitment: { title: '晚饭', kind: 'meeting', location: '厨房', dueInMinutes: 90 } }).commitment?.title).toBe('晚饭')
     expect(parseSceneOutput({ ...VALID, commitment: { title: '太快', kind: 'meeting', location: '厨房', dueInMinutes: 2 } }).commitment).toBeNull()
+  })
+  it('只接受结构完整的来访者邀约回应，并区分婉拒', () => {
+    const invitation = { title: '周末去图书馆', kind: 'meeting', location: 'Library', dueInMinutes: 120 }
+    expect(parseSceneOutput({ ...VALID, visitorInvitationResponse: { decision: 'accepted', invitation } }).visitorInvitationResponse)
+      .toEqual({ decision: 'accepted', invitation })
+    expect(parseSceneOutput({ ...VALID, visitorInvitationResponse: { decision: 'declined' } }).visitorInvitationResponse)
+      .toEqual({ decision: 'declined' })
+    expect(parseSceneOutput({ ...VALID, visitorInvitationResponse: { decision: 'accepted', invitation: { ...invitation, dueInMinutes: 2 } } }).visitorInvitationResponse)
+      .toBeNull()
+  })
+  it('只有明确的邀请表达允许居民接受并生成持久约定', () => {
+    expect(containsExplicitInvitationRequest('这周末要不要陪我去图书馆？')).toBe(true)
+    expect(containsExplicitInvitationRequest('今天镇上很安静。')).toBe(false)
   })
 })

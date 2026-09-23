@@ -57,6 +57,83 @@
       "when": 1789815139291,
       "tag": "0007_secret_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790086898967,
+      "tag": "0008_cool_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790109645030,
+      "tag": "0009_immutable_world_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790110293649,
+      "tag": "0010_scene_request_payload_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790111319603,
+      "tag": "0011_universe_revision_sim_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790120000000,
+      "tag": "0012_dialogue_recovery_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790120000001,
+      "tag": "0013_immutable_fork_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1790120000002,
+      "tag": "0014_fork_schedule_checkpoint_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1790120000003,
+      "tag": "0015_curly_ikaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790120000004,
+      "tag": "0016_active_fork_limit_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1790120000005,
+      "tag": "0017_universe_revision_step_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790132994725,
+      "tag": "0018_smart_queen_noir",
+      "breakpoints": true
     }
   ]
 }

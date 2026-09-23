@@ -65,14 +65,18 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
     return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
-  async act(db: Db, _env: Env, input: InjectionInput, output: InjectionOutput): Promise<string> {
+  async act(db: Db, env: Env, input: InjectionInput, output: InjectionOutput): Promise<string> {
     // 复用 beat 写库；水位线推进到当前 simNow（≥ 事件 simTime，即"已感知"）
     await applyBeatOutput(db, {
+      worldId: input.step.worldId,
       timelineId: input.step.timelineId,
       personId: input.ctx.person.id,
       simNow: input.snapshot.timeline.simNow,
       windowStart: input.event.simTime,
       beat: output.beat,
+      cause: 'injection',
+      sourceKey: `injection:${input.event.id}:${input.ctx.person.id}`,
+      engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN,
     })
     return `injection(${input.ctx.person.name}): 反应 ${output.beat.events.length} 事件`
   },

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { createTestDb } from '../test/db'
-import { commitments, events, memories, persons, personStates, timelines, users, worldPersons, worlds } from '../db/schema'
-import { advanceCommitments, nextCommitmentStatus, parseInvitation, statusLabels } from './service'
+import { commitments, dialogues, events, memories, persons, personStates, timelines, users, worldFacts, worldPersons, worlds } from '../db/schema'
+import { advanceCommitments, nextCommitmentStatus, parseInvitation, proposeCommitment, statusLabels } from './service'
 
 describe('持续生活约定', () => {
   it('只接受结构完整且在合理时间窗内的邀请', () => {
@@ -37,6 +37,34 @@ describe('持续生活约定', () => {
       expect((await f.db.select().from(commitments).where(eq(commitments.id, 'c')).get())?.status).toBe('missed')
       expect((await f.db.select().from(events).all()).filter(e => e.id === 'commitment:c:missed')).toHaveLength(1)
       expect((await f.db.select().from(memories).all()).filter(m => m.id === 'commitment:c:missed:memory')).toHaveLength(1)
+    } finally { f.close() }
+  })
+
+  it('把居民提出的邀请与 proposal 记录作为一个版本化事实提交', async () => {
+    const f = createTestDb()
+    try {
+      const now = '2026-09-20T12:00:00.000Z'
+      await f.db.insert(users).values({ id: 'u', username: 'u', passwordHash: 'x', createdAt: now })
+      await f.db.insert(worlds).values({ id: 'w', userId: 'u', name: 'W', description: '', status: 'running',
+        locationsJson: JSON.stringify([{ name: '厨房', description: '' }]) })
+      await f.db.insert(timelines).values({ id: 't', worldId: 'w', simNow: now, createdAt: now })
+      await f.db.insert(persons).values([
+        { id: 'npc', userId: 'u', name: '小夜', modelJson: '{}', createdAt: now },
+        { id: 'visitor', userId: 'u', name: '阿透', modelJson: '{}', createdAt: now, isUser: true },
+      ])
+      await f.db.insert(worldPersons).values([{ worldId: 'w', personId: 'npc', joinedAt: now }, { worldId: 'w', personId: 'visitor', joinedAt: now }])
+      await f.db.insert(dialogues).values({ id: 'scene-1', timelineId: 't', location: '厨房', participantIdsJson: JSON.stringify(['visitor', 'npc']),
+        status: 'scene', kind: 'scene', visitorId: 'visitor', turnLimit: 100, simStart: now })
+      const proposal = { id: 'proposal-1', worldId: 'w', timelineId: 't', personId: 'npc', visitorId: 'visitor', sourceDialogueId: 'scene-1',
+        simNow: now, raw: { title: '晚饭后散步', kind: 'meeting', location: '厨房', dueInMinutes: 90 }, locations: [{ name: '厨房' }] }
+      await proposeCommitment(f.db, proposal)
+      await proposeCommitment(f.db, proposal)
+      expect(await f.db.select().from(commitments).all()).toHaveLength(1)
+      expect((await f.db.select().from(commitments).where(eq(commitments.id, 'proposal-1')).get())?.status).toBe('proposed')
+      const fact = (await f.db.select().from(worldFacts).where(eq(worldFacts.factType, 'commitment')).get())!
+      expect(JSON.parse(fact.valueJson)).toMatchObject({ commitmentId: 'proposal-1', from: null, to: 'proposed', title: '晚饭后散步' })
+      expect(await f.db.select().from(events).all()).toHaveLength(1)
+      expect(fact.version).toBe(1)
     } finally { f.close() }
   })
 })

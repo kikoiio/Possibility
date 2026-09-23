@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { createDb, type Db } from '../db/client'
-import { events, personaMessages, persons, timelines, worldPersons, worlds } from '../db/schema'
+import { events, personaMessages, personStates, persons, timelines, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { PersonModel } from '../agent/types'
 import type { Env } from '../index'
@@ -59,17 +59,19 @@ personaRoutes.get('/worlds/:id/persona', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const persona = await loadPersona(db, world.id, c.get('user').id)
-  if (!persona) return c.json({ persona: null, unread: 0 })
   const tl = await inboxTimeline(db, world.id, c.req.query('timelineId'))
   if (!tl) return c.json({ error: '时间线不存在' }, 404)
+  const persona = await loadPersona(db, world.id, c.get('user').id)
+  if (!persona) return c.json({ persona: null, unread: 0 })
   const unread = await db
     .select({ n: personaMessages.id })
     .from(personaMessages)
     .where(and(eq(personaMessages.recipientPersonId, persona.id), eq(personaMessages.timelineId, tl.id), eq(personaMessages.read, false)))
     .all()
+  const position = await db.select({ location: personStates.location }).from(personStates)
+    .where(and(eq(personStates.timelineId, tl.id), eq(personStates.personId, persona.id))).get()
   return c.json({
-    persona: { id: persona.id, name: persona.name, description: personaDescription(persona) },
+    persona: { id: persona.id, name: persona.name, description: personaDescription(persona), location: position?.location ?? null },
     unread: unread.length,
   })
 })
@@ -112,7 +114,7 @@ personaRoutes.post('/worlds/:id/persona', async (c) => {
 
 async function inboxTimeline(db: Db, worldId: string, timelineId?: string) {
   const rows = await db.select().from(timelines).where(eq(timelines.worldId, worldId)).all()
-  return timelineId ? rows.find(t => t.id === timelineId) : rows.find(t => !t.parentTimelineId)
+  return timelineId !== undefined ? rows.find(t => t.id === timelineId) : rows.find(t => !t.parentTimelineId)
 }
 
 /** 持久收件箱：读取没有副作用，已读内容仍可回看。 */

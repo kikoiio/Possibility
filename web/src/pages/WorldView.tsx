@@ -3,6 +3,7 @@ import { publicApi, subscribeWorldStream, worldsApi, personaApi } from '../api/c
 import type {
   DialogueDetail,
   PersonFocus,
+  ForkScenario,
   WorldEventItem,
   WorldSnapshot,
   WorldStreamEvent,
@@ -11,11 +12,12 @@ import LocationPanel from '../components/world/LocationPanel'
 import WorldEventFeed from '../components/world/WorldEventFeed'
 import PersonDrawer from '../components/world/PersonDrawer'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
-import InjectBox from '../components/world/InjectBox'
 import ChapterPanel from '../components/world/ChapterPanel'
 import ScenePanel from '../components/world/ScenePanel'
 import LifePanel from '../components/world/LifePanel'
 import ComparePanel from '../components/world/ComparePanel'
+import WorldStatePanel from '../components/world/WorldStatePanel'
+import ConstructPanel from '../components/world/ConstructPanel'
 
 const WORLD_SPEED = 6
 
@@ -33,6 +35,20 @@ interface PersonLiveState {
   currentDialogueId: string | null
 }
 
+interface WorldClock {
+  timelineId: string
+  simNow: string
+  callsToday: number
+  worldStatus: string
+  pauseReason: string | null
+  stateVersion: number
+}
+
+function clockFromSnapshot(snap: WorldSnapshot): WorldClock {
+  return { timelineId: snap.currentTimelineId, simNow: snap.simNow, callsToday: snap.world.callsToday,
+    worldStatus: snap.world.status, pauseReason: snap.world.pauseReason, stateVersion: snap.stateVersion }
+}
+
 function fmtSimTime(iso: string): string {
   return iso.slice(0, 16).replace('T', ' ')
 }
@@ -41,32 +57,53 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const api = readonly ? publicApi : worldsApi
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const [timelineId, setTimelineId] = useState<string | null>(null)
+  const activeTimelineRef = useRef<string | null>(timelineId)
+  activeTimelineRef.current = timelineId
+  const selectTimeline = useCallback((next: string | null) => {
+    activeTimelineRef.current = next
+    setTimelineId(next)
+  }, [])
   const [error, setError] = useState('')
   const [events, setEvents] = useState<WorldEventItem[]>([])
   const [liveStates, setLiveStates] = useState<Record<string, PersonLiveState>>({})
   const [turnsByDialogue, setTurnsByDialogue] = useState<Record<string, { turnIndex: number; personId: string; utterance: string; thought: string; simTime: string }[]>>({})
-  const [clock, setClock] = useState<{ simNow: string; callsToday: number; worldStatus: string; pauseReason: string | null } | null>(null)
+  const [clock, setClock] = useState<WorldClock | null>(null)
   const [displayNow, setDisplayNow] = useState<string>('')
   const clockBaseRef = useRef<{ simNow: number; realAt: number } | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [personFocus, setPersonFocus] = useState<PersonFocus | null>(null)
   const [focusLoading, setFocusLoading] = useState(false)
   const [focusRefresh, setFocusRefresh] = useState(0)
-  const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; detail: DialogueDetail | null } | null>(null)
+  const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; timelineId: string; detail: DialogueDetail | null } | null>(null)
   const [actionError, setActionError] = useState('')
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [sceneOpen, setSceneOpen] = useState(false)
   const [personaUnread, setPersonaUnread] = useState(0)
   const [lifeOpen, setLifeOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [mode, setMode] = useState<'observe' | 'presence' | 'construct'>('observe')
+  const [stateRefresh, setStateRefresh] = useState(0)
+  const forkRequestIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    selectTimeline(null)
+    setSelectedPersonId(null)
+  }, [worldId, selectTimeline])
+
+  useEffect(() => {
+    if (mode !== 'presence') setSceneOpen(false)
+  }, [mode])
 
   // 在场身份未读留言角标（打开面板即清零，由面板内送达逻辑标记已读）
   useEffect(() => {
     if (readonly) return
+    let active = true
+    setPersonaUnread(0)
     personaApi
       .get(worldId, timelineId ?? undefined)
-      .then((d) => setPersonaUnread(d.unread))
+      .then((d) => { if (active) setPersonaUnread(d.unread) })
       .catch(() => {})
+    return () => { active = false }
   }, [worldId, timelineId, sceneOpen, readonly])
 
   const names = useMemo(() => {
@@ -77,31 +114,64 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
 
   // 装载快照（世界或时间线切换时重置一切本地增量状态）
   useEffect(() => {
+    let active = true
     setSnapshot(null)
+    setEvents([])
+    setTurnsByDialogue({})
+    setLiveStates({})
+    setClock(null)
+    setDisplayNow('')
+    clockBaseRef.current = null
+    setPersonFocus(null)
+    setFocusLoading(false)
+    setExpandedDialogue(null)
+    setSceneOpen(false)
+    setChaptersOpen(false)
+    setLifeOpen(false)
+    setCompareOpen(false)
+    forkRequestIdRef.current = null
+    setActionError('')
     setError('')
     api
       .snapshot(worldId, timelineId ?? undefined)
       .then((snap) => {
-        setSnapshot(snap)
-        setEvents(snap.events)
+        if (!active) return
+        setSnapshot(cur => cur?.currentTimelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : snap)
+        setEvents(prev => {
+          const byId = new Map([...snap.events, ...prev].map(e => [e.id, e]))
+          return [...byId.values()].sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
+        })
         setTurnsByDialogue({})
         setLiveStates({})
-        setClock({ simNow: snap.simNow, callsToday: snap.world.callsToday, worldStatus: snap.world.status, pauseReason: snap.world.pauseReason })
-        if (!timelineId) setTimelineId(snap.currentTimelineId)
+        setClock(cur => cur?.timelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : clockFromSnapshot(snap))
+        if (!timelineId) selectTimeline(snap.currentTimelineId)
         clockBaseRef.current = { simNow: Date.parse(snap.simNow), realAt: Date.now() }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
+      .catch((e) => { if (active) setError(e instanceof Error ? e.message : '加载失败') })
+    return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worldId, timelineId])
+  }, [api, worldId, timelineId, selectTimeline])
 
   // 订阅增量流
   useEffect(() => {
     if (!timelineId) return
+    let active = true
     const unsub = subscribeWorldStream(
       worldId,
       timelineId,
       (ev: WorldStreamEvent) => {
-        if (ev.type === 'event') {
+        if (!active) return
+        if (ev.type === 'sync') {
+          void api.snapshot(worldId, timelineId).then(snap => {
+            if (!active || snap.currentTimelineId !== timelineId) return
+            setSnapshot(cur => cur?.currentTimelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : snap)
+            setEvents(prev => {
+              const byId = new Map([...snap.events, ...prev].map(e => [e.id, e]))
+              return [...byId.values()].sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
+            })
+            setClock(cur => cur?.timelineId === snap.currentTimelineId && cur.stateVersion > snap.stateVersion ? cur : clockFromSnapshot(snap))
+          }).catch(() => {})
+        } else if (ev.type === 'event') {
           setEvents((prev) =>
             prev.some((e) => e.id === ev.id)
               ? prev
@@ -145,14 +215,26 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             },
           }))
         } else if (ev.type === 'clock') {
-          setClock({ simNow: ev.simNow, callsToday: ev.callsToday, worldStatus: ev.worldStatus, pauseReason: ev.pauseReason })
+          setClock({ timelineId, simNow: ev.simNow, callsToday: ev.callsToday, worldStatus: ev.worldStatus,
+            pauseReason: ev.pauseReason, stateVersion: ev.stateVersion })
           clockBaseRef.current = { simNow: Date.parse(ev.simNow), realAt: Date.now() }
         }
       },
       { isPublic: readonly },
     )
-    return unsub
-  }, [worldId, timelineId, readonly])
+    return () => { active = false; unsub() }
+  }, [api, worldId, timelineId, readonly])
+
+  useEffect(() => {
+    if (!timelineId || !snapshot || !clock || clock.stateVersion <= snapshot.stateVersion) return
+    let active = true
+    api.snapshot(worldId, timelineId).then(next => {
+      if (active && next.currentTimelineId === timelineId) {
+        setSnapshot(cur => cur?.currentTimelineId === timelineId && cur.stateVersion > next.stateVersion ? cur : next)
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [api, worldId, timelineId, clock?.stateVersion, snapshot?.stateVersion])
 
   // 世界时钟：流更新为基准 + 本地 ×6 插值平滑
   useEffect(() => {
@@ -172,31 +254,36 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   useEffect(() => {
     if (!selectedPersonId || !timelineId) {
       setPersonFocus(null)
+      setFocusLoading(false)
       return
     }
+    let active = true
+    setPersonFocus(null)
     setFocusLoading(true)
     api
       .personFocus(worldId, selectedPersonId, timelineId)
-      .then(setPersonFocus)
-      .catch(() => setPersonFocus(null))
-      .finally(() => setFocusLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPersonId, timelineId, worldId, focusRefresh])
+      .then(focus => { if (active) setPersonFocus(focus) })
+      .catch(() => { if (active) setPersonFocus(null) })
+      .finally(() => { if (active) setFocusLoading(false) })
+    return () => { active = false }
+  }, [api, selectedPersonId, timelineId, worldId, focusRefresh])
 
   // 展开对话
   const toggleDialogue = useCallback(
     (dialogueId: string) => {
+      if (!timelineId) return
       setExpandedDialogue((cur) => {
-        if (cur?.id === dialogueId) return null
-        return { id: dialogueId, detail: null }
+        if (cur?.id === dialogueId && cur.timelineId === timelineId) return null
+        return { id: dialogueId, timelineId, detail: null }
       })
-      setExpandedDialogue((cur) => cur)
       api
-        .dialogueDetail(dialogueId)
-        .then((detail) => setExpandedDialogue((cur) => (cur?.id === dialogueId ? { id: dialogueId, detail } : cur)))
-        .catch(() => setExpandedDialogue(null))
+        .dialogueDetail(dialogueId, timelineId)
+        .then((detail) => setExpandedDialogue((cur) =>
+          cur?.id === dialogueId && cur.timelineId === timelineId ? { id: dialogueId, timelineId, detail } : cur))
+        .catch(() => setExpandedDialogue((cur) =>
+          cur?.id === dialogueId && cur.timelineId === timelineId ? null : cur))
     },
-    [api],
+    [api, timelineId],
   )
 
   const handlePauseResume = async () => {
@@ -207,7 +294,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
       else await worldsApi.resume(worldId)
       // 状态由流 clock 事件同步；立刻拉一次快照兜底（流可能尚未推）
       const snap = await worldsApi.snapshot(worldId, timelineId ?? undefined)
-      setClock({ simNow: snap.simNow, callsToday: snap.world.callsToday, worldStatus: snap.world.status, pauseReason: snap.world.pauseReason })
+      if (activeTimelineRef.current === snap.currentTimelineId) setClock(clockFromSnapshot(snap))
     } catch (e) {
       setActionError(e instanceof Error ? e.message : '操作失败')
     }
@@ -219,21 +306,26 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     try {
       await worldsApi.archive(worldId)
       const snap = await worldsApi.snapshot(worldId, timelineId ?? undefined)
-      setClock({ simNow: snap.simNow, callsToday: snap.world.callsToday, worldStatus: snap.world.status, pauseReason: snap.world.pauseReason })
+      if (activeTimelineRef.current === snap.currentTimelineId) setClock(clockFromSnapshot(snap))
     } catch (e) {
       setActionError(e instanceof Error ? e.message : '归档失败')
     }
   }
 
-  const handleFork = async () => {
-    if (!timelineId) return
+  const handleFork = async (scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>): Promise<boolean> => {
+    if (!timelineId) return false
+    const sourceTimelineId = timelineId
     setActionError('')
     try {
-      await worldsApi.fork(worldId, timelineId)
-      const snap = await worldsApi.snapshot(worldId, timelineId)
-      setSnapshot(snap)
+      const requestId = forkRequestIdRef.current ?? crypto.randomUUID()
+      forkRequestIdRef.current = requestId
+      const fork = await worldsApi.fork(worldId, sourceTimelineId, requestId, scenario)
+      forkRequestIdRef.current = null
+      if (activeTimelineRef.current === sourceTimelineId) selectTimeline(fork.id)
+      return true
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Fork 失败')
+      return false
     }
   }
 
@@ -242,21 +334,22 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     try {
       await worldsApi.archiveTimeline(tid)
       if (tid === timelineId) {
-        setTimelineId(null) // 触发重新装载（回落到主线）
+        selectTimeline(null) // 触发重新装载（回落到主线）
       } else {
         const snap = await worldsApi.snapshot(worldId, timelineId ?? undefined)
-        setSnapshot(snap)
+        if (activeTimelineRef.current === snap.currentTimelineId) setSnapshot(snap)
       }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : '归档失败')
     }
   }
 
-  const handleInject = async (text: string) => {
+  const handleInject = async (text: string, requestId: string) => {
     if (!timelineId) return
     setActionError('')
     try {
-      await worldsApi.inject(worldId, text, timelineId)
+      const state = await worldsApi.state(worldId, timelineId)
+      await worldsApi.inject(worldId, text, timelineId, requestId, state.version)
     } catch (e) {
       setActionError(e instanceof Error ? e.message : '注入失败')
       throw e
@@ -264,7 +357,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   }
 
   if (error) return <div className="p-8 text-center text-sm text-red-600">{error}</div>
-  if (!snapshot || !clock) return <div className="p-8 text-center text-sm text-ink-faint">加载中…</div>
+  if (!timelineId || !snapshot || !clock || snapshot.world.id !== worldId
+    || snapshot.currentTimelineId !== timelineId || clock.timelineId !== timelineId) {
+    return <div className="p-8 text-center text-sm text-ink-faint">加载中…</div>
+  }
 
   const running = clock.worldStatus === 'running'
   const capped = clock.worldStatus === 'capped'
@@ -301,7 +397,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                 <TimelineSwitcher
                   timelines={snapshot.timelines}
                   currentTimelineId={timelineId ?? snapshot.currentTimelineId}
-                  onSwitch={(tid) => setTimelineId(tid)}
+                  onSwitch={selectTimeline}
                   onFork={handleFork}
                   onArchive={handleArchive}
                 />
@@ -311,23 +407,10 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                 >
                   {running ? '暂停' : '继续'}
                 </button>
-                <button
-                  onClick={() => {
-                    setSceneOpen(true)
-                  }}
-                  className="relative rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink hover:bg-paper-deep"
-                >
-                  进入世界
-                  {personaUnread > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cinnabar-deep px-1 text-[10px] text-white">
-                      {personaUnread}
-                    </span>
-                  )}
-                </button>
                 <button onClick={() => setLifeOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">
                   你不在时
                 </button>
-                {snapshot.timelines.length > 1 && <button onClick={() => setCompareOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">两种人生</button>}
+                {snapshot.timelines.length > 1 && <button onClick={() => setCompareOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">对照宇宙</button>}
                 <button
                   onClick={() => setChaptersOpen(true)}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
@@ -352,7 +435,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
         {actionError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">{actionError}</p>}
       </div>
 
-      {/* 主体：地点 / 事件流 / 人物抽屉 */}
+      {/* 主体：世界当前态优先；叙事流作为证据 */}
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-ink-line bg-paper p-3 md:block">
           <LocationPanel
@@ -362,14 +445,15 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           />
         </aside>
         <main className="min-w-0 flex-1 overflow-y-auto p-3">
-          {!readonly && <InjectBox onInject={handleInject} />}
-          <WorldEventFeed
-            events={events}
-            names={names}
-            turnsByDialogue={turnsByDialogue}
-            expandedDialogue={expandedDialogue}
-            onToggleDialogue={toggleDialogue}
-          />
+          {!readonly && <nav aria-label="交互模式" className="mb-4 flex gap-2 border-b border-ink-line pb-3">
+            {(['observe', 'presence', 'construct'] as const).map(key => <button key={key} onClick={() => setMode(key)} className={`rounded-lg px-3 py-1.5 text-xs ${mode === key ? 'bg-ink text-white' : 'bg-sheet text-ink-soft'}`}>{key === 'observe' ? '观察' : key === 'presence' ? '在场' : '构造'}</button>)}
+          </nav>}
+          {(readonly || mode === 'observe') && <div className="space-y-5">
+            <WorldStatePanel key={`${worldId}:${timelineId ?? snapshot.currentTimelineId}`} worldId={worldId} timelineId={timelineId ?? snapshot.currentTimelineId} snapshot={snapshot} readonly={readonly} refresh={stateRefresh} />
+            <details className="rounded-xl border border-ink-line bg-sheet p-3"><summary className="cursor-pointer text-sm text-ink-soft">变化证据与交谈记录（{events.length}）</summary><div className="mt-3"><WorldEventFeed events={events} names={names} turnsByDialogue={turnsByDialogue} expandedDialogue={expandedDialogue} onToggleDialogue={toggleDialogue} /></div></details>
+          </div>}
+          {!readonly && mode === 'presence' && <section className="space-y-3 rounded-xl border border-ink-line bg-sheet p-4"><h2 className="font-story text-base text-ink">以在场身份进入</h2><p className="text-xs leading-relaxed text-ink-soft">你需要先进入一个地点，之后显式移动；只能与当时同处一地、清醒且空闲的人交谈。对话不自动等于已证实的世界事实。</p><button onClick={() => setSceneOpen(true)} className="relative rounded-lg bg-ink px-4 py-2 text-xs text-white">进入世界{personaUnread > 0 ? ` · ${personaUnread} 条口信` : ''}</button></section>}
+          {!readonly && mode === 'construct' && timelineId && <ConstructPanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onInject={handleInject} onChanged={() => { setStateRefresh(n => n + 1); void worldsApi.snapshot(worldId, timelineId).then(next => { if (activeTimelineRef.current === timelineId) setSnapshot(cur => cur?.currentTimelineId === timelineId ? next : cur) }).catch(() => {}) }} />}
         </main>
         {selectedPersonId && (
           <PersonDrawer
@@ -378,8 +462,20 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             liveState={liveStates[selectedPersonId] ?? null}
             fallbackName={names.get(selectedPersonId) ?? ''}
             personId={selectedPersonId}
+            canEditMemories={!readonly && mode === 'construct'}
+            timelineId={timelineId ?? snapshot.currentTimelineId}
+            expectedVersion={Math.max(snapshot.stateVersion, clock?.stateVersion ?? 0)}
             onClose={() => setSelectedPersonId(null)}
-            onMemoriesChanged={() => setFocusRefresh((n) => n + 1)}
+            onMemoriesChanged={() => {
+              const targetTimelineId = timelineId ?? snapshot.currentTimelineId
+              setFocusRefresh((n) => n + 1)
+              void worldsApi.snapshot(worldId, targetTimelineId).then(next => {
+                if (activeTimelineRef.current !== targetTimelineId || next.currentTimelineId !== targetTimelineId) return
+                setSnapshot(cur => cur?.currentTimelineId === next.currentTimelineId && cur.stateVersion > next.stateVersion ? cur : next)
+                setClock(cur => cur?.timelineId === targetTimelineId && cur.stateVersion > next.stateVersion
+                  ? cur : clockFromSnapshot(next))
+              }).catch(() => {})
+            }}
           />
         )}
         {chaptersOpen && timelineId && (

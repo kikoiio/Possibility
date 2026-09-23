@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { memories, timelines } from '../db/schema'
+import { memories, timelines, worldPersons } from '../db/schema'
 import { readForkSnapshot, selectVisibleMemories } from './visibility'
 
 type Timeline = typeof timelines.$inferSelect
@@ -38,6 +38,9 @@ async function mainTimelineOf(db: Db, worldId: string): Promise<Timeline | null>
  * 主线自身查询时 NULL 全部可见；分叉仅当主线在其祖先链中时可见 NULL 桶（同样限分叉点之前）。
  */
 export async function visibleMemories(db: Db, personId: string, timeline: Timeline): Promise<Memory[]> {
+  const memberships = await db.select({ worldId: worldPersons.worldId }).from(worldPersons)
+    .where(eq(worldPersons.personId, personId)).all()
+  const sharedAcrossWorlds = new Set(memberships.map(m => m.worldId)).size > 1
   const snapshot = readForkSnapshot(timeline)
   const worldTimelines = snapshot ? [timeline]
     : await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all()
@@ -46,7 +49,10 @@ export async function visibleMemories(db: Db, personId: string, timeline: Timeli
     snapshot ? eq(memories.timelineId, timeline.id)
       : or(isNull(memories.timelineId), inArray(memories.timelineId, worldTimelines.map((t) => t.id))),
   )).all()
-  return selectVisibleMemories(rows, personId, timeline, worldTimelines)
+  const visible = selectVisibleMemories(rows, personId, timeline, worldTimelines)
+  // A legacy NULL bucket cannot be attributed to a particular world once an asset is reused.
+  // Keep it readable in the old data, but do not feed it into another universe's decisions.
+  return sharedAcrossWorlds ? visible.filter(m => m.timelineId !== null) : visible
 }
 
 /**

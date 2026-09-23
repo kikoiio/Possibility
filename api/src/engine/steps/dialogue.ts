@@ -1,12 +1,13 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
-import { dialogues, dialogueTurns, events, memories, personStates } from '../../db/schema'
+import { dialogues, dialogueTurns } from '../../db/schema'
 import { configFromEnv, complete } from '../../llm/client'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
 import { buildDialoguePrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { recordDialogueTurn } from '../../world-state/system'
 
 type Dialogue = typeof dialogues.$inferSelect
 type Turn = typeof dialogueTurns.$inferSelect
@@ -33,15 +34,15 @@ export interface DialogueOutput {
 
 export function normalizeDialogueJson(raw: unknown): Omit<DialogueOutput, 'failed'> {
   const r = (raw ?? {}) as Record<string, unknown>
-  const utterance = String(r.utterance ?? '').trim()
+  const utterance = String(r.utterance ?? '').trim().slice(0, 2000)
   if (!utterance) throw new Error('utterance 为空')
-  const thought = String(r.thought ?? '').trim()
+  const thought = String(r.thought ?? '').trim().slice(0, 2000)
   if (!thought) throw new Error('thought 为空')
   let memory: DialogueOutput['memory'] = null
   if (r.memory && typeof r.memory === 'object') {
     const m = r.memory as Record<string, unknown>
     const content = String(m.content ?? '').trim()
-    if (content) memory = { content, importance: clampImportance(m.importance) }
+    if (content) memory = { content: content.slice(0, 2000), importance: clampImportance(m.importance) }
   }
   return { utterance, thought, shouldEnd: r.shouldEnd === true, memory }
 }
@@ -116,44 +117,9 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
     }
   },
 
-  async act(db: Db, _env: Env, input: DialogueInput, output: DialogueOutput): Promise<string> {
+  async act(db: Db, env: Env, input: DialogueInput, output: DialogueOutput): Promise<string> {
     const simNow = input.snapshot.timeline.simNow
-    const now = new Date().toISOString()
     const speaker = input.ctx.person
-
-    await db.insert(dialogueTurns).values({
-      id: crypto.randomUUID(),
-      dialogueId: input.dialogue.id,
-      turnIndex: input.turnIndex,
-      personId: input.speakerId,
-      utterance: output.utterance,
-      thought: output.thought,
-      simTime: simNow,
-      createdAt: now,
-    })
-    // 想法同步入记忆流（F6）
-    await db.insert(memories).values({
-      id: crypto.randomUUID(),
-      personId: input.speakerId,
-      timelineId: input.step.timelineId,
-      type: 'thought',
-      content: output.thought,
-      simTime: simNow,
-      createdAt: now,
-      importance: 5,
-    })
-    if (output.memory) {
-      await db.insert(memories).values({
-        id: crypto.randomUUID(),
-        personId: input.speakerId,
-        timelineId: input.step.timelineId,
-        type: 'relationship',
-        content: output.memory.content,
-        simTime: simNow,
-        createdAt: now,
-        importance: clampImportance(output.memory.importance),
-      })
-    }
 
     // 结束条件：满轮，或话尽且每位参与者都已发言 ≥2 轮
     const counts = new Map<string, number>()
@@ -168,34 +134,17 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
     const everyoneSpokeTwice = participantIds.every((id) => (counts.get(id) ?? 0) >= 2)
     const shouldClose = input.isLastTurn || (output.shouldEnd && everyoneSpokeTwice)
 
+    await recordDialogueTurn(db, {
+      worldId: input.step.worldId, timelineId: input.step.timelineId,
+      sourceKey: `dialogue:${input.dialogue.id}:${input.turnIndex}`,
+      engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN,
+      action: { type: 'dialogue_turn', dialogueId: input.dialogue.id, speakerId: input.speakerId,
+        turnIndex: input.turnIndex, utterance: output.utterance, thought: output.thought,
+        memory: output.memory ? { content: output.memory.content, importance: clampImportance(output.memory.importance) } : null,
+        shouldEnd: output.shouldEnd },
+    })
     if (shouldClose) {
-      await db
-        .update(dialogues)
-        .set({ status: 'ended', simEnd: simNow })
-        .where(eq(dialogues.id, input.dialogue.id))
-      // 解除对话占用（仅当占用标记仍指向本对话——人物可能已被重启后的新对话占用），
-      // 并把节拍水位推进到对话结束（对话覆盖了这段时间）
-      for (const pid of participantIds) {
-        await db
-          .update(personStates)
-          .set({ lastBeatSimTime: simNow, updatedRealAt: now })
-          .where(and(eq(personStates.personId, pid), eq(personStates.timelineId, input.step.timelineId)))
-        await db
-          .update(personStates)
-          .set({ currentDialogueId: null })
-          .where(
-            and(
-              eq(personStates.personId, pid),
-              eq(personStates.timelineId, input.step.timelineId),
-              eq(personStates.currentDialogueId, input.dialogue.id),
-            ),
-          )
-      }
       const names = participantIds.map((id) => input.snapshot.persons.find((p) => p.id === id)?.name ?? '某人')
-      await db
-        .update(events)
-        .set({ title: `${names.join(' 与 ')} 在${input.dialogue.location}交谈` })
-        .where(eq(events.dialogueId, input.dialogue.id))
       return `dialogue 结束（${input.turnIndex + 1} 轮）：${names.join(' × ')}`
     }
     return `dialogue 第 ${input.turnIndex + 1} 轮：${speaker.name}${output.failed ? '（占位）' : ''}`

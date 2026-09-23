@@ -27,10 +27,12 @@ chapterRoutes.post('/worlds/:id/chapters', async (c) => {
   if (!world) return c.json({ error: '世界不存在' }, 404)
 
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
-  const timeline =
-    (body.timelineId && tls.find((t) => t.id === body.timelineId && t.status === 'active')) ||
-    tls.find((t) => t.parentTimelineId === null) ||
-    tls[0]
+  if (body.timelineId !== undefined && (typeof body.timelineId !== 'string' || !body.timelineId.trim())) {
+    return c.json({ error: '时间线 ID 无效' }, 400)
+  }
+  const timeline = body.timelineId !== undefined
+    ? tls.find((t) => t.id === body.timelineId && t.status === 'active')
+    : tls.find((t) => t.parentTimelineId === null) || tls[0]
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
 
   try {
@@ -48,6 +50,11 @@ chapterRoutes.get('/worlds/:id/chapters', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   const timelineId = c.req.query('timelineId')
+  if (timelineId !== undefined) {
+    const timeline = await db.select({ id: timelines.id }).from(timelines)
+      .where(and(eq(timelines.id, timelineId), eq(timelines.worldId, world.id))).get()
+    if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  }
   const rows = await db
     .select({
       id: chapters.id,
@@ -59,7 +66,7 @@ chapterRoutes.get('/worlds/:id/chapters', async (c) => {
       createdAt: chapters.createdAt,
     })
     .from(chapters)
-    .where(and(eq(chapters.worldId, world.id), timelineId ? eq(chapters.timelineId, timelineId) : undefined))
+    .where(and(eq(chapters.worldId, world.id), timelineId !== undefined ? eq(chapters.timelineId, timelineId) : undefined))
     .orderBy(desc(chapters.createdAt))
     .limit(50)
     .all()

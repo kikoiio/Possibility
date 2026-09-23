@@ -4,8 +4,10 @@ import { nextSimTime, type ToolRunState } from './tools'
 function run(patch: Partial<ToolRunState>): ToolRunState {
   return {
     db: null as never, // nextSimTime 不触库
+    worldId: 'w1',
     personId: 'p1',
     timelineId: 't1',
+    runId: 'run1',
     isMain: true,
     mode: 'chat',
     clock: Date.parse('2026-09-17T10:00:00Z'),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiFetch, postSSE } from '../api/client'
+import { ApiError, apiFetch, postSSE } from '../api/client'
 import type { Message, PersonState } from '../api/types'
 
 interface ChatStreamProps {
@@ -103,23 +103,22 @@ export default function ChatStream({ conversationId, withCatchup = true, onState
           pushNote('error', ev.message)
         }
       })
-    } catch {
-      pushNote('error', '发送失败，请重试')
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setInput(content)
+        pushNote('error', error.message)
+      } else {
+        pushNote('error', '连接中断，正在核对聊天记录；请勿立即重复发送')
+      }
     } finally {
-      const full = streamedRef.current
       streamedRef.current = ''
       setStreaming('')
-      if (full.trim()) {
-        setMessages((ms) => [
-          ...ms,
-          {
-            id: `local-${crypto.randomUUID()}`,
-            conversationId,
-            role: 'person',
-            content: full,
-            createdAt: new Date().toISOString(),
-          },
-        ])
+      try {
+        const saved = await apiFetch<{ messages: Message[] }>(`/api/conversations/${conversationId}/messages`)
+        setMessages(saved.messages)
+      } catch {
+        setMessages((ms) => ms.filter((m) => m.id !== localUser.id))
+        pushNote('error', '无法核对发送结果；刷新页面确认后再继续，不要立即重发')
       }
       setSending(false)
     }

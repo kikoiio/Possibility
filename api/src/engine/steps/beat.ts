@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
-import { dialogues, events, memories, personStates } from '../../db/schema'
+import { dialogues, events } from '../../db/schema'
 import { configFromEnv, complete } from '../../llm/client'
 import type { Env } from '../../index'
 import {
@@ -15,6 +15,7 @@ import {
 import { buildBeatPrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { recordResidentState, recordSimulationCheckpoint, startNpcDialogue } from '../../world-state/system'
 
 export type BeatInput =
   | { kind: 'encounter'; step: AgentStep; snapshot: WorldSnapshot; ctx: EngineContext; partnerId: string }
@@ -76,14 +77,14 @@ export function normalizeBeatJson(raw: unknown, locationNames: string[], windowM
       const offset = Number(o.offsetMin)
       return {
         title: String(o.title ?? '').trim().slice(0, 60),
-        description: String(o.description ?? '').trim(),
+        description: String(o.description ?? '').trim().slice(0, 2000),
         offsetMin: Number.isFinite(offset) ? Math.min(windowMinutes, Math.max(0, Math.round(offset))) : 0,
       }
     })
     .filter((e) => e.title && e.description)
     .slice(0, 3)
   if (!evs.length) throw new Error('events 为空')
-  const thought = String(r.thought ?? '').trim()
+  const thought = String(r.thought ?? '').trim().slice(0, 2000)
   if (!thought) throw new Error('thought 为空')
 
   let memory: BeatJson['memory'] = null
@@ -92,12 +93,12 @@ export function normalizeBeatJson(raw: unknown, locationNames: string[], windowM
     const content = String(m.content ?? '').trim()
     if (content) {
       const type = ['timeline', 'relationship', 'world'].includes(String(m.type)) ? String(m.type) : 'timeline'
-      memory = { content, type, importance: clampImportance(m.importance) }
+      memory = { content: content.slice(0, 2000), type, importance: clampImportance(m.importance) }
     }
   }
   const str = (v: unknown) => {
     const s = String(v ?? '').trim()
-    return s || null
+  return s ? s.slice(0, 200) : null
   }
   let nextLocation = str(r.nextLocation)
   if (nextLocation && !locationNames.includes(nextLocation)) nextLocation = null
@@ -112,68 +113,40 @@ export function normalizeBeatJson(raw: unknown, locationNames: string[], windowM
   }
 }
 
-/** beat act 的公共写库：事件 + 想法 + 可选记忆 + 状态（injection 复用） */
+/** beat 与 injection 共用一个版本化边界提交居民状态、叙述事件及私有记忆。 */
 export async function applyBeatOutput(
   db: Db,
   opts: {
     timelineId: string
+    worldId: string
     personId: string
     simNow: string
     windowStart: string
     beat: BeatJson
+    cause?: 'beat' | 'injection'
+    sourceKey?: string
+    engineTickLeaseToken?: string
   },
 ): Promise<void> {
   const { timelineId, personId, simNow, windowStart, beat } = opts
   const baseMs = Date.parse(windowStart)
-
-  for (const ev of beat.events) {
-    await db.insert(events).values({
-      id: crypto.randomUUID(),
-      timelineId,
-      simTime: new Date(baseMs + ev.offsetMin * 60_000).toISOString(),
-      title: ev.title,
-      description: ev.description,
-      kind: 'action',
-      actorPersonId: personId,
-    })
-  }
-  const now = new Date().toISOString()
-  await db.insert(memories).values({
-    id: crypto.randomUUID(),
-    personId,
-    timelineId,
-    type: 'thought',
-    content: beat.thought,
-    simTime: simNow,
-    createdAt: now,
-    importance: 5,
+  const cause = opts.cause ?? 'beat'
+  const memoriesToWrite: Extract<import('../../world-state/types').WorldAction, { type: 'resident_state' }>['memories'] = [
+    { type: 'thought', content: beat.thought, importance: 5 },
+    ...(beat.memory ? [{ type: beat.memory.type as 'timeline' | 'relationship' | 'world', content: beat.memory.content,
+      importance: clampImportance(beat.memory.importance) }] : []),
+  ]
+  await recordResidentState(db, {
+    worldId: opts.worldId, timelineId, sourceKey: opts.sourceKey ?? `${cause}:${timelineId}:${personId}:${simNow}`,
+    engineTickLeaseToken: opts.engineTickLeaseToken,
+    action: {
+      type: 'resident_state', personId, cause, windowStart,
+      patch: { ...(beat.nextLocation ? { location: beat.nextLocation } : {}), ...(beat.nextActivity ? { activity: beat.nextActivity } : {}),
+        ...(beat.mood ? { mood: beat.mood } : {}), ...(beat.goal ? { goal: beat.goal } : {}), lastBeatSimTime: simNow },
+      events: beat.events.map(ev => ({ simTime: new Date(baseMs + ev.offsetMin * 60_000).toISOString(), title: ev.title, description: ev.description })),
+      memories: memoriesToWrite,
+    },
   })
-  if (beat.memory) {
-    await db.insert(memories).values({
-      id: crypto.randomUUID(),
-      personId,
-      timelineId,
-      type: beat.memory.type,
-      content: beat.memory.content,
-      simTime: simNow,
-      createdAt: now,
-      importance: clampImportance(beat.memory.importance),
-    })
-  }
-
-  const patch: Partial<typeof personStates.$inferInsert> = {
-    simTime: simNow,
-    lastBeatSimTime: simNow,
-    updatedRealAt: now,
-  }
-  if (beat.nextLocation) patch.location = beat.nextLocation
-  if (beat.nextActivity) patch.activity = beat.nextActivity
-  if (beat.mood) patch.mood = beat.mood
-  if (beat.goal) patch.goal = beat.goal
-  await db
-    .update(personStates)
-    .set(patch)
-    .where(and(eq(personStates.personId, personId), eq(personStates.timelineId, timelineId)))
 }
 
 /** 生活节拍（P3）：日程项结束 → 总结经历；相遇检测优先（转为发起对话，不调 LLM） */
@@ -190,10 +163,10 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
     const lastBeat = state.lastBeatSimTime
     if (!lastBeat) {
       // 首次见到该人物：初始化水位线，不产生节拍
-      await db
-        .update(personStates)
-        .set({ lastBeatSimTime: snapshot.timeline.simNow })
-        .where(and(eq(personStates.personId, step.personId), eq(personStates.timelineId, step.timelineId)))
+      await recordSimulationCheckpoint(db, { worldId: step.worldId, timelineId: step.timelineId,
+        sourceKey: `beat-watermark:${step.timelineId}:${step.personId}:${snapshot.timeline.simNow}`,
+        personId: step.personId, lastBeatSimTime: snapshot.timeline.simNow,
+        engineTickLeaseToken: step.engineTickLeaseToken })
       return null
     }
     const itemNow = currentScheduleItem(items, snapshot.timeline.simNow)
@@ -251,49 +224,29 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
     return { value: null, llmCalls: opts?.reserve?.calls ?? llmCalls }
   },
 
-  async act(db: Db, _env: Env, input: BeatInput, output: BeatOutput): Promise<string> {
+  async act(db: Db, env: Env, input: BeatInput, output: BeatOutput): Promise<string> {
     const simNow = input.snapshot.timeline.simNow
     const me = input.ctx.person
     if (output.kind === 'encounter' && input.kind === 'encounter') {
       const partner = input.snapshot.persons.find((p) => p.id === input.partnerId)
       if (!partner) return `encounter 失败：对方不存在`
-      const dialogueId = crypto.randomUUID()
-      const now = new Date().toISOString()
-      await db.insert(dialogues).values({
-        id: dialogueId,
-        timelineId: input.step.timelineId,
-        location: input.ctx.state.location,
-        participantIdsJson: JSON.stringify([me.id, partner.id]),
-        status: 'ongoing',
-        turnLimit: 8,
-        simStart: simNow,
-      })
-      await db.insert(events).values({
-        id: crypto.randomUUID(),
-        timelineId: input.step.timelineId,
-        simTime: simNow,
-        title: `${me.name} 与 ${partner.name} 在${input.ctx.state.location}开始了交谈`,
-        description: '',
-        kind: 'dialogue',
-        dialogueId,
-      })
-      for (const pid of [me.id, partner.id]) {
-        await db
-          .update(personStates)
-          .set({ currentDialogueId: dialogueId, updatedRealAt: now })
-          .where(and(eq(personStates.personId, pid), eq(personStates.timelineId, input.step.timelineId)))
-      }
+      await startNpcDialogue(db, { worldId: input.step.worldId, timelineId: input.step.timelineId,
+        sourceKey: `encounter:${input.step.timelineId}:${simNow}:${me.id}:${partner.id}`,
+        participantIds: [me.id, partner.id], location: input.ctx.state.location, turnLimit: 8,
+        engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN })
       return `encounter: ${me.name} × ${partner.name}`
     }
 
     if (output.kind === 'solo') {
       if (input.kind !== 'solo') throw new Error('input/output 类型不匹配')
       await applyBeatOutput(db, {
+        worldId: input.step.worldId,
         timelineId: input.step.timelineId,
         personId: me.id,
         simNow,
         windowStart: input.windowStart,
         beat: output.beat,
+        engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN,
       })
       return `beat(${me.name}): ${output.beat.events.length} 事件`
     }
