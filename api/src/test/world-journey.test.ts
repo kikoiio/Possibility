@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { persons, personStates, schedules, timelines, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
+import { dialogues, persons, personStates, schedules, sceneRequests, timelines, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
 import { readWorldState } from '../world-state/query'
 import { runTick } from '../engine/tick'
 import { auditUniverse } from '../world-state/invariants'
 import { advanceWorldClock } from '../world-state/system'
+import { SCENE_REQUEST_STALE_MS } from '../scene/routes'
 
 type Fixture = Awaited<ReturnType<typeof createWorldFixture>>
 let fixture: Fixture | null = null
@@ -114,6 +115,48 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
   expect(grandchildResponse.status).toBe(200)
   const { id: grandchildId } = await grandchildResponse.json() as { id: string }
   expect(await auditUniverse(f.db, worldId, grandchildId)).toEqual([])
+
+  // Carry cancellation recovery through the same Root→Child→Grandchild journey.
+  vi.useRealTimers()
+  const personaResponse = await request(`/api/worlds/${worldId}/persona`, 'POST', { name: 'Journey Visitor', description: 'A traveler checking in.' })
+  expect(personaResponse.status).toBe(200)
+  const { persona } = await personaResponse.json() as { persona: { id: string } }
+  const residentState = await f.db.select().from(personStates).where(eq(personStates.timelineId, grandchildId)).get()
+  const visitorEntry = await request(`/api/worlds/${worldId}/scene/position`, 'POST', {
+    timelineId: grandchildId, commandId: 'journey-visitor-entry', expectedVersion: 0, location: residentState!.location,
+  })
+  expect(visitorEntry.status).toBe(200)
+  let providerSignal: AbortSignal | null | undefined
+  const sceneFetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    providerSignal = init?.signal
+    providerSignal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+  }))
+  vi.stubGlobal('fetch', sceneFetch)
+  const cancelledResponse = await request(`/api/worlds/${worldId}/scene`, 'POST', { timelineId: grandchildId,
+    location: residentState!.location, requestId: 'journey-cancelled-request', content: 'Could you help me?' })
+  const cancelledReader = cancelledResponse.body!.getReader()
+  await cancelledReader.read()
+  await vi.waitFor(() => expect(sceneFetch).toHaveBeenCalledTimes(1))
+  expect(providerSignal).toBeDefined()
+  await cancelledReader.cancel()
+  expect(providerSignal?.aborted).toBe(true)
+  await vi.waitFor(async () => expect((await f.db.select().from(sceneRequests)
+    .where(eq(sceneRequests.id, 'journey-cancelled-request')).get())?.status).toBe('failed'))
+  const sceneDialogue = (await f.db.select().from(dialogues).where(eq(dialogues.visitorId, persona.id)).get())!
+
+  const staleAt = Date.now() - SCENE_REQUEST_STALE_MS - 1
+  await f.db.insert(sceneRequests).values({ id: 'journey-expired-request', dialogueId: sceneDialogue.id,
+    contentHash: 'cancelled-after-fork', status: 'pending', createdAt: staleAt, heartbeatAt: staleAt })
+  const grandchildVersionBeforeRecovery = (await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, grandchildId)).get())!.version
+  const requestStatus = await request(`/api/worlds/${worldId}/scene/requests/journey-expired-request?timelineId=${grandchildId}`, 'GET')
+  expect(await requestStatus.json()).toMatchObject({ status: 'pending', recoverable: true })
+  const recovery = await request(`/api/worlds/${worldId}/scene/requests/journey-expired-request/recover?timelineId=${grandchildId}`, 'POST')
+  expect(await recovery.json()).toMatchObject({ status: 'failed', recoverable: false })
+  expect((await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, grandchildId)).get())?.version)
+    .toBe(grandchildVersionBeforeRecovery)
+  expect(await f.db.select().from(worldCommands).where(eq(worldCommands.id, 'scene:journey-expired-request')).get()).toBeUndefined()
+  expect(await auditUniverse(f.db, worldId, grandchildId)).toEqual([])
+
   const laterChildChange = await request(`/api/worlds/${worldId}/actions`, 'POST', { id: 'later-child-weather', timelineId: childId,
     expectedVersion: 1, action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'fog' } })
   expect(laterChildChange.status).toBe(200)
@@ -339,11 +382,20 @@ describe('small world journey without an LLM', () => {
     await f.db.delete(schedules).where(eq(schedules.personId, 'ada'))
     await f.db.update(personStates).set({ currentDialogueId: 'another-scene' }).where(eq(personStates.personId, 'ada'))
     expect((await send('busy-message')).status).toBe(409)
+    await f.db.insert(schedules).values({ personId: 'ada', timelineId: 'home-main', worldDate: WORLD_TIME.slice(0, 10),
+      itemsJson: JSON.stringify([{ start: '08:00', end: '09:00', location: 'Cafe', activity: 'Sleeping', kind: 'sleep' }]), generatedAt: WORLD_TIME })
+    expect((await send('sleeping-and-busy-message')).status).toBe(409)
+    await f.db.delete(schedules).where(eq(schedules.personId, 'ada'))
     expect(await f.db.select().from(worldCommands).all()).toHaveLength(0)
     expect(await f.db.select().from(worldFacts).all()).toHaveLength(0)
     expect(await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, 'home-main')).get()).toBeUndefined()
 
     await f.db.update(personStates).set({ currentDialogueId: null }).where(eq(personStates.personId, 'ada'))
+    await f.db.update(personStates).set({ location: 'Harbor' }).where(eq(personStates.personId, 'ada'))
+    expect((await send('away-message')).status).toBe(409)
+    expect(await f.db.select().from(worldCommands).all()).toHaveLength(0)
+    expect(await f.db.select().from(worldFacts).all()).toHaveLength(0)
+    await f.db.update(personStates).set({ location: 'Cafe' }).where(eq(personStates.personId, 'ada'))
     expect((await send('awake-message')).status).toBe(200)
     expect(await f.db.select().from(worldCommands).all()).toHaveLength(1)
     expect(await f.db.select().from(worldFacts).all()).toHaveLength(1)

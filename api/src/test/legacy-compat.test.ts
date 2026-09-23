@@ -187,6 +187,18 @@ describe('legacy reads and exact timeline scope', () => {
       { personId: 'shared-resident', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe', activity: 'Reading', mood: 'Calm', goal: 'Rest', updatedRealAt: WORLD_TIME },
       { personId: 'shared-resident', timelineId: 'second-main', simTime: WORLD_TIME, location: 'Harbor', activity: 'Walking', mood: 'Curious', goal: 'Explore', updatedRealAt: WORLD_TIME },
     ])
+    await f.db.insert(memories).values([
+      { id: 'shared-memory-home', personId: 'shared-resident', timelineId: 'home-main', type: 'world', content: 'An old memory from the first world', createdAt: WORLD_TIME },
+      { id: 'shared-memory-second', personId: 'shared-resident', timelineId: 'second-main', type: 'world', content: 'An old memory from the second world', createdAt: WORLD_TIME },
+    ])
+    await f.db.insert(conversations).values([
+      { id: 'shared-conversation-home', userId: 'owner', personId: 'shared-resident', timelineId: 'home-main' },
+      { id: 'shared-conversation-second', userId: 'owner', personId: 'shared-resident', timelineId: 'second-main' },
+    ])
+    await f.db.insert(messages).values([
+      { id: 'shared-message-home', conversationId: 'shared-conversation-home', role: 'person', content: 'A reply from the first world', createdAt: WORLD_TIME },
+      { id: 'shared-message-second', conversationId: 'shared-conversation-second', role: 'person', content: 'A reply from the second world', createdAt: WORLD_TIME },
+    ])
     await ensureUniverseRevision(f.db, 'home-world', 'home-main')
     await f.db.update(persons).set({ modelJson: JSON.stringify({ identity: [{ text: 'Second world profile', provenance: 'known' }] }) })
       .where(eq(persons.id, 'shared-resident'))
@@ -203,6 +215,12 @@ describe('legacy reads and exact timeline scope', () => {
     expect(ctx?.person.name).toBe('Resident')
     expect(ctx?.state.location).toBe('Harbor')
     expect(ctx?.model.identity[0]?.text).toBe('Second world profile')
+    expect(firstContext?.memories.map(memory => memory.id)).toEqual(['shared-memory-home'])
+    expect(ctx?.memories.map(memory => memory.id)).toEqual(['shared-memory-second'])
+    const homeHistory = await app.request('/api/conversations/shared-conversation-home/messages', { headers: auth }, f.env)
+    const secondHistory = await app.request('/api/conversations/shared-conversation-second/messages', { headers: auth }, f.env)
+    expect(await homeHistory.json()).toMatchObject({ messages: [expect.objectContaining({ id: 'shared-message-home', content: 'A reply from the first world' })] })
+    expect(await secondHistory.json()).toMatchObject({ messages: [expect.objectContaining({ id: 'shared-message-second', content: 'A reply from the second world' })] })
     const response = await app.request('/api/persons/shared-resident/conversations', { method: 'POST',
       headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ timelineId: 'second-main' }) }, f.env)
     expect(response.status).toBe(200)

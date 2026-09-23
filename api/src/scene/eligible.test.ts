@@ -53,6 +53,22 @@ describe('eligibleAt（可交谈者资格）', () => {
     })
     expect(eligibleAt(snap, '图书室').map((p) => p.id)).toEqual(['b'])
   })
+
+  it('跨越 UTC 午夜时继续按跨夜睡眠日程过滤', () => {
+    const nightShift = [{ start: '23:00', end: '07:00', location: '卧室', activity: '睡觉', kind: 'sleep' }]
+    const cases = [
+      { simNow: '2026-09-17T22:59:00.000Z', expected: ['resident'] },
+      { simNow: '2026-09-17T23:00:00.000Z', expected: [] },
+      { simNow: '2026-09-18T00:00:00.000Z', expected: [] },
+      { simNow: '2026-09-18T06:59:00.000Z', expected: [] },
+      { simNow: '2026-09-18T07:00:00.000Z', expected: ['resident'] },
+    ]
+    for (const testCase of cases) {
+      const snap = snapshot({ simNow: testCase.simNow,
+        entries: [{ id: 'resident', location: '卧室', items: nightShift }] })
+      expect(eligibleAt(snap).map(p => p.id), testCase.simNow).toEqual(testCase.expected)
+    }
+  })
 })
 
 describe('eligibleBoard（可交谈地点看板）', () => {
