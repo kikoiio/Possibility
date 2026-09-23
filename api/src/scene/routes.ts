@@ -629,6 +629,15 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
 
     if (generation.signal.aborted) { await markCancelled(); return }
 
+    // A visitor-only turn is not a completed in-person conversation. Keep all
+    // prepared turns and private effects staged until at least one resident has
+    // responded, then fail the reservation without writing any partial history.
+    if (emittedUtterances.length === 0) {
+      await markCancelled()
+      await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '这次交谈没有收到回应，未写入世界；可以重新发送。' }) })
+      return
+    }
+
     try {
       await commitWorldCommand(db, {
         id: `scene:${requestId}`, worldId: world.id, timelineId: tl.id, userId,

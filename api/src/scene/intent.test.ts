@@ -46,6 +46,33 @@ describe('scene intent proposal endpoint', () => {
     } finally { fixture.close() }
   })
 
+  it('returns a confirmation-required inform proposal using only a verbatim resident message', async () => {
+    const fixture = await setup()
+    try {
+      mockCompletion({ type: 'inform', recipientId: 'ada', topic: 'weather', content: '北边道路被水淹了' })
+      const response = await postIntent(fixture, '请告诉 Ada：北边道路被水淹了')
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ requestId: 'intent-1', timelineId: 'home-main', expectedVersion: 0,
+        currentLocation: 'Cafe', status: 'proposal', confirmationRequired: true,
+        proposal: { type: 'inform', recipientId: 'ada', recipientName: 'Ada', content: '北边道路被水淹了' } })
+      expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(0)
+    } finally { fixture.close() }
+  })
+
+  it('clarifies an inform proposal for a resident who is not present', async () => {
+    const fixture = await setup()
+    try {
+      mockCompletion({ type: 'inform', recipientId: 'absent-resident', topic: 'weather', content: '北边道路被水淹了' })
+      const response = await postIntent(fixture, '请告诉那个人：北边道路被水淹了')
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ status: 'clarification' })
+      expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(universeRevisions).all()).toHaveLength(0)
+    } finally { fixture.close() }
+  })
+
   it('turns model attempts to expand capabilities into clarification and does not mutate the world', async () => {
     const fixture = await setup()
     try {
@@ -77,6 +104,49 @@ describe('scene intent proposal endpoint', () => {
       const status = await app.request(`/api/worlds/home-world/actions/${resolved.requestId}`, { headers }, fixture.env)
       expect(status.status).toBe(200)
       expect(await status.json()).toMatchObject({ id: resolved.requestId, timelineId: 'home-main', resultVersion: 1 })
+    } finally { fixture.close() }
+  })
+
+  it('rejects confirmation of a proposal when the timeline version has advanced', async () => {
+    const fixture = await setup()
+    try {
+      mockCompletion({ type: 'move', to: 'Library' })
+      const proposal = await (await postIntent(fixture, '带我去图书馆')).json() as {
+        requestId: string; expectedVersion: number; proposal: { type: 'move'; to: string }
+      }
+      const intervening = await app.request('/api/worlds/home-world/actions', { method: 'POST', headers,
+        body: JSON.stringify({ id: 'owner-weather-change', timelineId: 'home-main', expectedVersion: 0,
+          action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } }) }, fixture.env)
+      expect(intervening.status).toBe(200)
+
+      const confirmation = await app.request('/api/worlds/home-world/scene/position', { method: 'POST', headers,
+        body: JSON.stringify({ timelineId: 'home-main', location: proposal.proposal.to,
+          commandId: proposal.requestId, expectedVersion: proposal.expectedVersion }) }, fixture.env)
+      expect(confirmation.status).toBe(409)
+      expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(1)
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(1)
+      expect((await fixture.db.select().from(universeRevisions).get())?.version).toBe(1)
+      expect((await fixture.db.select().from(personStates).where(eq(personStates.personId, 'visitor')).get())?.location).toBe('Cafe')
+    } finally { fixture.close() }
+  })
+
+  it('rejects reusing a confirmed proposal ID for a different movement', async () => {
+    const fixture = await setup()
+    try {
+      mockCompletion({ type: 'move', to: 'Library' })
+      const proposal = await (await postIntent(fixture, '带我去图书馆')).json() as {
+        requestId: string; expectedVersion: number; proposal: { type: 'move'; to: string }
+      }
+      const confirm = (location: string) => app.request('/api/worlds/home-world/scene/position', { method: 'POST', headers,
+        body: JSON.stringify({ timelineId: 'home-main', location, commandId: proposal.requestId,
+          expectedVersion: proposal.expectedVersion }) }, fixture.env)
+      expect((await confirm(proposal.proposal.to)).status).toBe(200)
+      const conflict = await confirm('Cafe')
+      expect(conflict.status).toBe(409)
+      expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(1)
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(1)
+      expect((await fixture.db.select().from(universeRevisions).get())?.version).toBe(1)
+      expect((await fixture.db.select().from(personStates).where(eq(personStates.personId, 'visitor')).get())?.location).toBe('Library')
     } finally { fixture.close() }
   })
 
@@ -173,6 +243,30 @@ describe('scene intent proposal endpoint', () => {
       expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(1)
       expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(1)
       expect(await fixture.db.select().from(dialogueTurns).all()).toHaveLength(0)
+    } finally { fixture.close() }
+  })
+
+  it('fails a scene request when every resident attempt fails without committing the visitor-only turn', async () => {
+    const fixture = await setup()
+    try {
+      const fetch = vi.fn(async () => new Response(JSON.stringify({
+        choices: [{ message: { content: 'not valid scene output' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      vi.stubGlobal('fetch', fetch)
+
+      const response = await app.request('/api/worlds/home-world/scene', { method: 'POST', headers,
+        body: JSON.stringify({ timelineId: 'home-main', location: 'Cafe', requestId: 'failed-scene', content: 'Could you help me?' }),
+      }, fixture.env)
+      const stream = await response.text()
+
+      expect(stream).toContain('这次交谈没有收到回应，未写入世界')
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect((await fixture.db.select().from(sceneRequests).where(eq(sceneRequests.id, 'failed-scene')).get())?.status).toBe('failed')
+      expect((await fixture.db.select().from(worldCommands).all()).map(command => command.type)).toEqual(['scene_open'])
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(1)
+      expect(await fixture.db.select().from(dialogueTurns).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(universeRevisions).get()).toMatchObject({ version: 1 })
+      expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
     } finally { fixture.close() }
   })
 })

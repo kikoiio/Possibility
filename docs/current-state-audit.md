@@ -53,6 +53,58 @@
 
 legacy/unknown 的覆盖范围：无结构化根线基线的旧时间线和缺少完整域记录的旧 Fork checkpoint 保持不完整，不根据可变行或叙述文本补造历史；未支持的 command action 明确报告 unsupported。P1 出口所需 AC1–AC12 均有通过证据。
 
+## P2 开发起点与既有覆盖
+
+| 项目 | 记录 |
+|---|---|
+| HEAD | `6a642f0f0722b7020d13afbfe5d2d14b86704f5e` |
+| 分支 | `main` |
+| P2 盘点时工作区 | 仅 `spec_docs/s01/spec.md`、`plan.md`、`task.md`、`checklist.md` 四份本轮规格文档为修改状态；产品实现代码无未提交改动。 |
+| 归属约定 | 上述规格文档编辑不计入 P2 实现成果；P2 实现从该代码 HEAD 起核算。 |
+
+T01 盘点确认现有实现和证据位置如下。盘点来源包括当前源码、现存测试及截至 2026-09-23 的 `docs/world-quality-report.md`；此表是起点清点，不代替本阶段重新执行的验收命令。
+
+| P2 验收范围 | 起点已有覆盖 | 本阶段仍须提供的证据 |
+|---|---|---|
+| AC1–AC2：身份、进入、受限提议与确认 | `scene/intent.test.ts` 已覆盖未进入拒绝、move 提议不写入、越权解析澄清、确认后相同 command ID 重放；scene 路由经版本化命令提交。 | 补齐/复核 inform 提议、旧 expectedVersion、无效地点/接收者及确认失败的完整副作用快照；登录态 UI 确认过期提议失效。 |
+| AC3：交谈事务与资格 | `world-journey.test.ts` 有睡眠/忙碌传话拒绝；`scene/recovery.test.ts` 有取消、请求失败及迟到提交边界；交谈代码以 conversation command 提交发言、记忆/留言和请求状态。 | 在本阶段定向运行并核对成功交谈所有投影同请求/时间线，且故障注入失败不留半成品。 |
+| AC4、AC7：幂等与恢复 | `scene/intent.test.ts` 覆盖同命令 ID 丢响应后重放；`scene/recovery.test.ts` 覆盖 pending 回收及旧 worker fencing；`ScenePanel` 已用 sessionStorage 和 status/history API 恢复交谈。 | 补齐/复核状态矩阵、同 ID 不同载荷、刷新/断流的登录态浏览器实走证据，以及恢复后不重复调用/写入。 |
+| AC5：后续推进读取在场证据 | `world-journey.test.ts` 已验证口信成为 rumor、接收者 `EngineContext` 有来源 fact、固定模型 `runTick` 产生版本化居民变化并通过审计。 | 本阶段重跑现有旅程或补最小缺口测试，记录实际命令和来源→结果链证据。 |
+| AC6：明确接受约定 | `world-journey.test.ts`/场景路由既有覆盖已测试明确邀请接受、婉拒、无邀请时过滤误接受及原子提交；约定状态转换有规则测试。 | 复核时间线来源、后续履约/到期结果与审计，确认无邀请/接受不产生 accepted commitment。 |
+| AC8：权限及状态边界 | `legacy-compat.test.ts`、`public/routes.test.ts`、`world-state/commit.test.ts` 和场景资格测试覆盖归属、公开只读、暂停/归档、预算及忙碌/睡眠边界。 | 按 P2 实际入口重跑关联定向测试，证明每类拒绝均无版本、事实、投影或请求副作用。 |
+| AC9：阶段记录与隔离 | P1 已记录隔离 D1 与确定性测试约定。 | P2 每项需补本阶段命令、实际结果及登录态浏览器证据；无证明项保留未通过/未知，不能仅依据 P1 报告关闭 P2。 |
+
+## P2 实施与验收证据
+
+本轮从上表记录的 `6a642f0f0722b7020d13afbfe5d2d14b86704f5e` 开始。初轮补充了 intent 测试；浏览器 SSE 断流复核发现模型连续失败时服务端会把来访者单句误标为 completed。现已修复 `api/src/scene/routes.ts`：没有任何居民回应时，请求转为 failed，整批暂存 turns、记忆和留言不提交。
+
+| AC | 结果 | 本轮证据 |
+|---|---|---|
+| AC1 | 通过 | `npm --workspace api run test -- src/scene/intent.test.ts`：12/12 通过，覆盖未进入拒绝、有效进入/移动，以及非法和过期请求无额外命令/事实；登录态浏览器在雾影庄的活动主线完成进入大厅和合法移动至图书室。 |
+| AC2 | 通过 | 同一 intent 定向测试新增逐字传话提议、缺席接收者澄清、版本过期确认拒绝和同 ID 不同移动载荷冲突；浏览器固定替身生成“前往大厅”提议并显式确认成功，另以 v10 提议后推进世界版本，再确认时界面移除旧提议并提示重新描述。 |
+| AC3 | 通过 | `commit.test.ts` 35/35 与 `recovery.test.ts` 2/2 覆盖对话/turn、记忆/留言、事件、约定和请求完成的原子提交与故障回滚。新增 `intent.test.ts` 回归：固定替身连续两次返回无效居民回应时，请求为 failed，conversation command、来访者 turn 和私有副作用均未写入，审计无差异。 |
+| AC4 | 通过 | `intent.test.ts` 与 `recovery.test.ts` 的请求重放、载荷冲突、过期版本、完成请求恢复及旧 worker fencing 用例通过；完成对话重开/刷新只恢复现存历史，没有再次发言。 |
+| AC5 | 通过 | `npm --workspace api run test -- src/test/world-journey.test.ts`：5/5 通过。固定模型推进读取带 source fact ID/certainty 的口信证据，提交可追溯的新版本居民结果，`auditUniverse` 无差异。 |
+| AC6 | 通过 | `commit.test.ts` 与 world journey 覆盖明确邀请/接受、婉拒、无邀请时不采纳模型误报、同事务约定提交及后续履约/到期版本事实；审计通过。 |
+| AC7 | 通过 | 本地登录态浏览器完成进入→移动→交谈→刷新/重开面板恢复已完成历史；SSE 请求保持 pending 时刷新/关闭/重开，界面保留原输入并提示复用同一请求 ID。将隔离 D1 中该请求 heartbeat 置旧以模拟 worker 中断，再开面板触发状态查询/回收，显示“上一次尝试未写入世界；可以重新发送”。最终请求 failed；断流请求没有新增 command、turn、memory 或 message。 |
+| AC8 | 通过 | `npm --workspace api run test -- src/test/legacy-compat.test.ts src/public/routes.test.ts`：10/10 通过；`commit.test.ts` 35/35 及 scene/recovery 用例另覆盖错配归属、公开只读、暂停/归档、忙碌/睡眠和预算拒绝及无部分写入。 |
+| AC9 | 通过 | `intent.test.ts`、`recovery.test.ts`、`world-journey.test.ts`：3 个文件、19/19 通过；commit 35/35、legacy/public 10/10；API 与 Web build 均通过。浏览器使用一次性本地 D1 `/tmp/possibility-s01p2-browser`、API `127.0.0.1:8787`、Web `127.0.0.1:5173`、模型替身 `127.0.0.1:8788` 和合成账号；仅调用本地引擎，无真实模型或远端服务。验收后停止服务并清理临时库与替身脚本。 |
+
+浏览器补充观察：确定性替身用于正常交谈；断流旅程将居民完成请求保持挂起，检查刷新/重开后复用同一请求，再模拟过期 heartbeat 触发失败回收。此过程暴露 visitor-only completed 缺陷，修复后以失败响应回归断言无半成品提交。为按同刻位置规则执行移动，另手动触发本地世界节拍。替身不实现 schedule 所需的 `items` 输出，因此该隔离世界的 schedule 决策被跳过；AC5 后续世界影响来自 `world-journey.test.ts`。浏览器开发者控制台无错误。
+
+### 本轮最终命令结果
+
+| 命令 | 结果 |
+|---|---|
+| `npm --workspace api run test -- src/scene/intent.test.ts` | 12/12 通过。 |
+| `npm --workspace api run test -- src/world-state/commit.test.ts` | 35/35 通过。 |
+| `npm --workspace api run test -- src/scene/recovery.test.ts` | 2/2 通过。 |
+| `npm --workspace api run test -- src/test/world-journey.test.ts` | 5/5 通过。 |
+| `npm --workspace api run test -- src/test/legacy-compat.test.ts src/public/routes.test.ts` | 10/10 通过。 |
+| `npm --workspace api run test -- src/scene/intent.test.ts src/scene/recovery.test.ts src/test/world-journey.test.ts` | 19/19 通过。 |
+| `npm --workspace api run build` | 通过。 |
+| `npm --workspace web run build` | 通过。 |
+
 ## P3 开发起点与既有覆盖
 
 ### 开发起点
