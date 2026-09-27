@@ -130,6 +130,7 @@ import type {
   WorldState,
   ReturnBrief,
 } from './types'
+import type { SceneChangeSet, SceneDocument, SceneOperation, SceneDraftResponse, SceneReadResponse } from './types'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
 
@@ -173,7 +174,7 @@ export const chatApi = {
 
 export const worldsApi = {
   draft: (prompt: string) => apiFetch<WorldDraft>('/api/worlds/draft', { method: 'POST', body: JSON.stringify({ prompt }) }),
-  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[] }) =>
+  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[]; scene?: SceneDocument; sceneRequestId?: string }) =>
     apiFetch<{ id: string; timelineId: string }>('/api/worlds', { method: 'POST', body: JSON.stringify(payload) }),
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
   snapshot: (worldId: string, timelineId?: string) =>
@@ -202,6 +203,18 @@ export const worldsApi = {
     apiFetch<PersonFocus>(`/api/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
   dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(
     `/api/worlds/dialogues/${dialogueId}${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`),
+}
+
+export const worldSceneApi = {
+  draft: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<SceneDraftResponse>('/api/scene-drafts', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
+  draftPreview: (draft: SceneDocument, instruction: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; changes: SceneChangeSet }; documentPreview: SceneDocument; world: unknown }>('/api/scene-drafts/edit-preview', { method: 'POST', body: JSON.stringify({ draft, instruction, personIds, requestId }) }),
+  get: (worldId: string) => apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`),
+  legacyPreview: (worldId: string, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; explanation: string; warnings: string[] }>(`/api/worlds/${worldId}/scene/legacy-preview`, { method: 'POST', body: JSON.stringify({ requestId }) }),
+  legacyConfirm: (worldId: string, document: SceneDocument, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/legacy-confirm`, { method: 'POST', body: JSON.stringify({ document, requestId }) }),
+  editPreview: (worldId: string, instruction: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; result: SceneDocument; changes: SceneChangeSet } }>(`/api/worlds/${worldId}/scene/edit-preview`, { method: 'POST', body: JSON.stringify({ instruction, expectedVersion, requestId }) }),
+  commit: (worldId: string, expectedVersion: number, requestId: string, operations: SceneOperation[], kind = 'edit') => apiFetch<{ document: SceneDocument; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/revisions`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, operations, kind }) }),
+  history: (worldId: string) => apiFetch<{ revisions: { version: number; parentVersion: number | null; summary: string; kind: string; createdAt: string }[] }>(`/api/worlds/${worldId}/scene/revisions`),
+  restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
 }
 
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */

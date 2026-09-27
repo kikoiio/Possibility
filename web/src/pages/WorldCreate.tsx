@@ -1,226 +1,95 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, worldsApi } from '../api/client'
-import type { LocationDef, PersonListItem } from '../api/types'
+import { apiFetch, worldSceneApi, worldsApi } from '../api/client'
+import type { PersonListItem, SceneDraftResponse } from '../api/types'
+import type { SceneDocument, SceneMode, SceneOperation, ScenePreviewResult } from '@possibility/scene-contract'
+import { applySceneOperations, contemporaryTheme } from '@possibility/scene-contract'
+import { WorldCanvasViewport } from '../components/scene/WorldCanvasViewport'
+import { SceneCreationPrompt } from '../components/scene/SceneCreationPrompt'
+import { SceneAiComposer } from '../components/scene/SceneAiComposer'
+import { ScenePreviewBar } from '../components/scene/ScenePreviewBar'
+import { SceneAssetDrawer } from '../components/scene/SceneAssetDrawer'
+import { SceneObjectInspector } from '../components/scene/SceneObjectInspector'
+import { SceneHistoryControls } from '../components/scene/SceneHistoryControls'
+import { SceneLockControls } from '../components/scene/SceneLockControls'
+import { WorldModeSwitcher } from '../components/scene/WorldModeSwitcher'
 
-type Step = 'describe' | 'edit' | 'persons'
+const blankScene: SceneDocument = { schemaVersion: 1, themeId: contemporaryTheme.id, size: { columns: 24, rows: 18 }, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
 
-/** Quick World 创建向导：一句话 → 骨架编辑 → 选人入驻（F2） */
 export default function WorldCreate() {
   const navigate = useNavigate()
-  const [step, setStep] = useState<Step>('describe')
-  const [prompt, setPrompt] = useState('')
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [locations, setLocations] = useState<LocationDef[]>([])
-  const [persons, setPersons] = useState<PersonListItem[]>([])
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [prompt, setPrompt] = useState(''); const [persons, setPersons] = useState<PersonListItem[]>([]); const [selected, setSelected] = useState<string[]>([])
+  const [draft, setDraft] = useState<SceneDraftResponse | null>(null); const [document, setDocument] = useState<SceneDocument>(blankScene)
+  const [mode, setMode] = useState<SceneMode>('create'); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const [instruction, setInstruction] = useState(''); const [preview, setPreview] = useState<{ result: ScenePreviewResult; operations: SceneOperation[]; summary: string; warnings: string[] } | null>(null)
+  const [selectedObject, setSelectedObject] = useState<string | null>(null); const [drawer, setDrawer] = useState(false); const [history, setHistory] = useState<SceneDocument[]>([]); const [future, setFuture] = useState<SceneDocument[]>([])
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(null)
+  useEffect(() => { apiFetch<{ persons: PersonListItem[] }>('/api/persons').then(result => setPersons(result.persons)).catch(() => setError('暂时无法读取人物列表。')) }, [])
+  const selectedIds = useMemo(() => new Set(selected), [selected])
+  const pushDoc = (next: SceneDocument) => { setHistory(previous => [...previous, document]); setFuture([]); setDocument(next) }
 
-  useEffect(() => {
-    apiFetch<{ persons: PersonListItem[] }>('/api/persons').then((d) => setPersons(d.persons)).catch(() => {})
-  }, [])
-
-  const genDraft = async () => {
-    if (!prompt.trim() || busy) return
-    setBusy(true)
-    setError('')
+  async function generate() {
+    if (!prompt.trim() || !selected.length || busy) { setError(!selected.length ? '请先选择至少一位居民。' : '请描述你想创造的地方。'); return }
+    setBusy(true); setError('')
+    try { const result = await worldSceneApi.draft(prompt.trim(), selected); setDraft(result); setDocument(result.scene); setPreview(null) }
+    catch (e) { setError(e instanceof Error ? e.message : '场景生成失败；描述和人物选择已保留。') }
+    finally { setBusy(false) }
+  }
+  async function requestPreview() {
+    if (!draft || !instruction.trim() || busy) return
+    setBusy(true); setError('')
     try {
-      const draft = await worldsApi.draft(prompt.trim())
-      setName(draft.name)
-      setDescription(draft.description)
-      setLocations(draft.locations)
-      setStep('edit')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '生成失败')
-    } finally {
-      setBusy(false)
+      const response = await worldSceneApi.draftPreview(document, instruction, selected)
+      setPreview({ result: { document: response.documentPreview, changes: { added: [], moved: [], updated: [], removed: [] } }, operations: response.preview.operations, summary: response.preview.summary, warnings: response.preview.warnings })
+    } catch (e) { setError(e instanceof Error ? e.message : '修改预览失败') }
+    finally { setBusy(false) }
+  }
+  function applyOperation(operation: SceneOperation) {
+    try { const result = applySceneOperations(document, [operation], contemporaryTheme); pushDoc(result.document); setError('') }
+    catch (e) { setError(e instanceof Error ? e.message : '这个位置无法放置。') }
+  }
+  function armAsset(assetId: string) { setActiveAssetId(assetId); setError('请在画布上点击落点；道路和水面可以拖动画笔。') }
+  function placeAt(assetId: string, position: { x: number; y: number }) {
+    const asset = contemporaryTheme.assets.find(item => item.id === assetId); if (!asset) return
+    if (asset.category === 'person') {
+      const current = document.objects.find(object => object.id === selectedObject && object.binding?.kind === 'person')
+      if (current) { applyOperation({ type: 'replace_asset', objectId: current.id, assetId }); return }
+      const bound = new Set(document.objects.flatMap(object => object.binding?.kind === 'person' ? [object.binding.personId] : []))
+      const residentId = selected.find(id => !bound.has(id))
+      if (!residentId) { setError('已选居民都在场景中；先选中一位居民，再为 TA 更换外观。'); return }
+      const person = persons.find(item => item.id === residentId)
+      applyOperation({ type: 'add_object', object: { id: crypto.randomUUID(), assetId, position, binding: { kind: 'person', personId: residentId }, label: person?.name ?? null, purpose: null } }); return
     }
+    if (asset.category === 'terrain') applyOperation({ type: 'paint_cells', category: 'terrain', assetId, cells: [position] })
+    else if (asset.category === 'road' || asset.category === 'water') applyOperation({ type: 'paint_cells', category: asset.category, assetId, cells: [position] })
+    else applyOperation({ type: 'add_object', object: { id: crypto.randomUUID(), assetId, position, binding: null, label: null, purpose: null } })
   }
-
-  const startManualDraft = () => {
-    setError('')
-    setName('')
-    setDescription(prompt.trim())
-    setLocations(Array.from({ length: 5 }, () => ({ name: '', description: '' })))
-    setStep('edit')
+  function paintCells(cells: { x: number; y: number }[]) {
+    const asset = contemporaryTheme.assets.find(item => item.id === activeAssetId)
+    if (!asset || !['terrain', 'road', 'water'].includes(asset.category)) return
+    applyOperation({ type: 'paint_cells', category: asset.category as 'terrain' | 'road' | 'water', assetId: asset.id, cells })
   }
-
-  const locError = locations.length < 5 || locations.length > 8 ? '地点需要 5-8 个' : locations.some((l) => !l.name.trim()) ? '地点名不能为空' : ''
-
-  const submit = async () => {
-    if (busy) return
-    setBusy(true)
-    setError('')
+  async function startLife() {
+    if (!draft || busy) return
+    setBusy(true); setError('')
     try {
-      const res = await worldsApi.create({
-        name: name.trim(),
-        description: description.trim(),
-        locations: locations.map((l) => ({ name: l.name.trim(), description: l.description.trim() })),
-        personIds: [...selected],
-      })
-      navigate(`/worlds/${res.id}`)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '创建失败')
-      setBusy(false)
-    }
+      const result = await worldsApi.create({ name: draft.world.name, description: draft.world.description, locations: draft.world.locations, personIds: selected, scene: document, sceneRequestId: crypto.randomUUID() })
+      navigate(`/worlds/${result.id}`)
+    } catch (e) { setError(e instanceof Error ? e.message : '保存失败；场景仍保留在当前页面。') }
+    finally { setBusy(false) }
   }
+  function undo() { const previous = history.at(-1); if (!previous) return; setFuture(next => [document, ...next]); setHistory(items => items.slice(0, -1)); setDocument(previous) }
+  function redo() { const next = future[0]; if (!next) return; setHistory(items => [...items, document]); setFuture(items => items.slice(1)); setDocument(next) }
 
-  return (
-    <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
-      <h1 className="text-base font-semibold text-ink">创建世界</h1>
-      <ol className="flex gap-2 text-xs text-ink-faint">
-        <li className={step === 'describe' ? 'font-medium text-ink' : ''}>① 描述</li>
-        <li className={step === 'edit' ? 'font-medium text-ink' : ''}>② 骨架</li>
-        <li className={step === 'persons' ? 'font-medium text-ink' : ''}>③ 人物</li>
-      </ol>
+  if (!draft) return <main className="min-h-full bg-[#eef0e7] px-4 py-8 sm:px-8"><div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-6xl flex-col justify-center gap-6">
+    <SceneCreationPrompt value={prompt} onChange={setPrompt} onCreate={generate} busy={busy} error={error} />
+    <section className="mx-auto w-full max-w-3xl rounded-3xl border border-[#e2e5dc] bg-white/85 p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-[#354a3e]">谁会在这里生活？</p><p className="mt-1 text-xs text-[#829083]">选择 1–6 位人物，之后仍可调整场景。</p></div><span className="text-xs text-[#839083]">{selected.length}/6</span></div><div className="mt-3 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id])} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-4 py-2 text-sm ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}{!persons.length && <p className="text-sm text-[#7b867c]">你还没有人物；先创建一位人物，再回来为 TA 准备生活的地方。</p>}</div></section>
+  </div></main>
 
-      {step === 'describe' && (
-        <div className="space-y-3 rounded-2xl border border-ink-line bg-sheet p-5">
-          <p className="text-sm text-ink-soft">用一句话描述你想要的世界：</p>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            placeholder="例如：一个海边小镇，住着几个各怀心事的普通人，日子安静但暗流涌动"
-            className="w-full rounded-xl border border-ink-line px-3 py-2 text-sm text-ink-soft placeholder:text-ink-faint focus:border-ink-faint focus:outline-none"
-          />
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <button
-            onClick={() => void genDraft()}
-            disabled={!prompt.trim() || busy}
-            className="rounded-xl bg-ink px-5 py-2 text-sm text-white disabled:bg-ink-faint"
-          >
-            {busy ? '生成中（约一分钟）…' : '生成世界骨架'}
-          </button>
-          <button
-            type="button"
-            onClick={startManualDraft}
-            disabled={busy}
-            className="block text-sm text-ink-soft underline underline-offset-2 disabled:text-ink-faint"
-          >
-            不调用生成服务，手动搭建世界
-          </button>
-          <p className="text-xs text-ink-faint">手动填写名称、背景和至少 5 个地点；确认创建前都可以修改。</p>
-        </div>
-      )}
-
-      {step === 'edit' && (
-        <div className="space-y-3 rounded-2xl border border-ink-line bg-sheet p-5">
-          <label className="block text-xs text-ink-faint">世界名称</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
-          />
-          <label className="block text-xs text-ink-faint">背景描述</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            className="w-full rounded-xl border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
-          />
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-ink-faint">地点（{locations.length}/8）</label>
-            <button
-              onClick={() => setLocations((ls) => [...ls, { name: '', description: '' }])}
-              disabled={locations.length >= 8}
-              className="text-xs text-woad-deep disabled:text-ink-faint"
-            >
-              ＋ 加地点
-            </button>
-          </div>
-          <div className="space-y-2">
-            {locations.map((loc, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <input
-                    value={loc.name}
-                    onChange={(e) => setLocations((ls) => ls.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-                    placeholder="地点名"
-                    className="w-full rounded-lg border border-ink-line px-2.5 py-1.5 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
-                  />
-                  <input
-                    value={loc.description}
-                    onChange={(e) => setLocations((ls) => ls.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))}
-                    placeholder="一句话描述"
-                    className="w-full rounded-lg border border-ink-line/60 px-2.5 py-1 text-xs text-ink-soft focus:border-ink-faint focus:outline-none"
-                  />
-                </div>
-                <button
-                  onClick={() => setLocations((ls) => ls.filter((_, j) => j !== i))}
-                  disabled={locations.length <= 5}
-                  className="mt-1.5 text-xs text-ink-faint hover:text-red-500 disabled:opacity-30"
-                >
-                  删
-                </button>
-              </div>
-            ))}
-          </div>
-          {(locError || error) && <p className="text-xs text-red-600">{locError || error}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => setStep('describe')} className="rounded-xl border border-ink-line px-4 py-2 text-sm text-ink-soft">
-              上一步
-            </button>
-            <button
-              onClick={() => setStep('persons')}
-              disabled={!!locError || !name.trim() || !description.trim()}
-              className="rounded-xl bg-ink px-5 py-2 text-sm text-white disabled:bg-ink-faint"
-            >
-              下一步：选人物
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 'persons' && (
-        <div className="space-y-3 rounded-2xl border border-ink-line bg-sheet p-5">
-          <p className="text-sm text-ink-soft">选择 1-6 个人物入住「{name}」（已选 {selected.size}）：</p>
-          {persons.length === 0 && (
-            <p className="text-xs text-ink-faint">
-              你还没有人物。先到「人物」页创建，再回来建世界。
-            </p>
-          )}
-          <ul className="space-y-1.5">
-            {persons.map((p) => {
-              const checked = selected.has(p.id)
-              return (
-                <li key={p.id}>
-                  <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-ink-line px-3 py-2.5 hover:bg-paper-deep">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        setSelected((s) => {
-                          const next = new Set(s)
-                          if (next.has(p.id)) next.delete(p.id)
-                          else if (next.size < 6) next.add(p.id)
-                          return next
-                        })
-                      }
-                    />
-                    <span className="text-sm text-ink">{p.name}</span>
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => setStep('edit')} className="rounded-xl border border-ink-line px-4 py-2 text-sm text-ink-soft">
-              上一步
-            </button>
-            <button
-              onClick={() => void submit()}
-              disabled={selected.size < 1 || busy}
-              className="rounded-xl bg-ink px-5 py-2 text-sm text-white disabled:bg-ink-faint"
-            >
-              {busy ? '创建中…' : `创建并启动世界`}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  return <main className="flex min-h-[calc(100vh-7rem)] flex-col gap-3 bg-[#eef0e7] p-3 sm:p-5" data-testid="scene-create-workspace">
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#859184]">{draft.world.name}</p><h1 className="font-story text-xl text-[#2c4435]">继续调整这方天地</h1></div><div className="flex items-center gap-2"><SceneHistoryControls version={document.version} canUndo={history.length > 0} canRedo={future.length > 0} onUndo={undo} onRedo={redo} onHistory={() => setError('创建完成前的操作可逐步撤销与重做。')} /><WorldModeSwitcher mode={mode} onChange={setMode} /></div></header>
+    {error && <p role="alert" className="rounded-xl bg-white px-4 py-2 text-sm text-red-700">{error}</p>}
+    {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onCancel={() => setPreview(null)} onApply={() => { pushDoc(preview.result.document); setPreview(null) }} busy={busy} />}
+    <div className="flex min-h-[480px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3"><WorldCanvasViewport scene={document} mode={mode} preview={preview?.result ?? null} selectedId={selectedObject} activeAssetId={activeAssetId} onSelect={setSelectedObject} onMove={applyOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} /><div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="space-y-2"><SceneObjectInspector scene={document} selectedId={selectedObject} catalog={contemporaryTheme} /><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestPreview} busy={busy} error="" /></div><div className="flex flex-col items-end justify-between gap-3"><SceneLockControls locked={!!selectedObject && document.lockedObjectIds.includes(selectedObject)} onToggle={() => selectedObject && applyOperation({ type: 'lock_object', objectId: selectedObject, locked: !document.lockedObjectIds.includes(selectedObject) })} /><div className="flex gap-2"><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-3 text-sm text-[#42594a]">素材</button><button data-testid="start-life" onClick={startLife} disabled={busy} className="rounded-full bg-[#274739] px-5 py-3 text-sm font-semibold text-white shadow disabled:opacity-45">{busy ? '保存中…' : '让这里开始生活'}</button></div>{activeAssetId && <p className="text-xs text-[#5e7464]">已选素材：{contemporaryTheme.assets.find(asset => asset.id === activeAssetId)?.name} · 点击画布放置<button className="ml-2 underline" onClick={() => setActiveAssetId(null)}>取消</button></p>}</div></div></div>{drawer && <SceneAssetDrawer catalog={contemporaryTheme} onPlace={armAsset} onClose={() => setDrawer(false)} />}</div>
+  </main>
 }

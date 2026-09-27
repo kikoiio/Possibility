@@ -1,0 +1,3 @@
+export function SceneFallbackView({ title = '画布暂时无法显示', message, onRetry, onReturn }: { title?: string; message: string; onRetry: () => void; onReturn: () => void }) {
+  return <section role="alert" className="mx-auto max-w-lg rounded-3xl border border-[#e1e5d9] bg-white p-6 text-center shadow-lg"><h2 className="text-lg font-semibold text-[#33483a]">{title}</h2><p className="mt-2 text-sm leading-6 text-[#6c796f]">{message}</p><div className="mt-4 flex justify-center gap-2"><button onClick={onReturn} className="rounded-full border border-[#d8ded3] px-4 py-2 text-sm text-[#56675a]">返回旧版世界页</button><button onClick={onRetry} className="rounded-full bg-[#315846] px-4 py-2 text-sm text-white">重试</button></div></section>
+}

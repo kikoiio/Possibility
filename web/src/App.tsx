@@ -9,7 +9,7 @@ import PersonDetail from './pages/PersonDetail'
 import TimelineView from './pages/TimelineView'
 import Worlds from './pages/Worlds'
 import WorldCreate from './pages/WorldCreate'
-import WorldView from './pages/WorldView'
+import WorldCanvasPage from './pages/WorldCanvasPage'
 import DemoLanding from './pages/DemoLanding'
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -92,7 +92,7 @@ function WorldViewRoute() {
   if (!id) return <Navigate to="/worlds" replace />
   return (
     <div className="h-full">
-      <WorldView worldId={id} />
+      <WorldCanvasPage worldId={id} />
     </div>
   )
 }
