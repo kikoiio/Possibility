@@ -6,3 +6,9 @@ api/wrangler.staging-test.toml
 *.local
 .DS_Store
 .playwright-mcp
+/docs/
+.agents
+.codex
+.claude
+.git
+
