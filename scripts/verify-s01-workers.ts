@@ -89,9 +89,17 @@ async function verifyOwnerSession(port: number): Promise<void> {
   }
 }
 
-async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstRequest: Promise<void> }> {
+async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstRequest: Promise<void>; firstChatRequest: Promise<void>;
+  cancelledChatRequest: Promise<void>; expiredChatRequest: Promise<void>; chatCalls: () => number }> {
   let signalFirst!: () => void
   const firstRequest = new Promise<void>(resolveFirst => { signalFirst = resolveFirst })
+  let signalFirstChat!: () => void
+  const firstChatRequest = new Promise<void>(resolveFirst => { signalFirstChat = resolveFirst })
+  let signalCancelledChat!: () => void
+  const cancelledChatRequest = new Promise<void>(resolveFirst => { signalCancelledChat = resolveFirst })
+  let signalExpiredChat!: () => void
+  const expiredChatRequest = new Promise<void>(resolveFirst => { signalExpiredChat = resolveFirst })
+  let chatCalls = 0
   let delayedFirst = false
   const server = createServer((request, response) => {
     let body = ''
@@ -102,6 +110,12 @@ async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstR
       try { payload = JSON.parse(body) as typeof payload } catch { /* return a deterministic malformed-request response below */ }
       const prompt = payload.messages?.map(message => message.content ?? '').join('\n') ?? ''
       const isSchedule = prompt.includes('安排今日日程')
+      const isDelayedScene = !payload.stream && prompt.includes('S01 P4 SCENE DELAY')
+      if (isDelayedScene) {
+        const reply = JSON.stringify({ utterance: '我听见了，等了一会儿才回答。', thought: '这是一条可取消场景的本地验收回复。', shouldEnd: true, memory: null })
+        setTimeout(() => send(response, reply), 15_000)
+        return
+      }
       const content = isSchedule ? JSON.stringify({ items: [
         { start: '00:00', end: '08:00', location: 'Cafe', activity: 'Resting', kind: 'sleep' },
         { start: '08:00', end: '09:00', location: 'Library', activity: 'Researching' },
@@ -115,6 +129,20 @@ async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstR
       if (payload.stream) {
         const reply = '你好！我今天打算先在图书馆研究一会儿，之后去咖啡馆休息。'
         response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' })
+        if (prompt.includes('S01 P4 CHAT')) {
+          chatCalls += 1
+          if (chatCalls === 1) signalFirstChat()
+          if (chatCalls === 2) signalCancelledChat()
+          if (chatCalls === 3) signalExpiredChat()
+          const delayMs = prompt.includes('S01 P4 CHAT EXPIRE') ? 2_500 : 1_500
+          setTimeout(() => {
+            if (!response.destroyed) {
+              response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`)
+              response.end('data: [DONE]\n\n')
+            }
+          }, delayMs)
+          return
+        }
         if (prompt.includes('S01 P4 CHAT DROP')) {
           response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '这段不完整的回复不能保存' } }] })}\n\n`)
           setTimeout(() => response.destroy(), 250)
@@ -145,7 +173,8 @@ async function startMockLlm(): Promise<{ server: Server; baseUrl: string; firstR
   await listening
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Could not determine local model stub port')
-  return { server, baseUrl: `http://127.0.0.1:${address.port}`, firstRequest }
+  return { server, baseUrl: `http://127.0.0.1:${address.port}`, firstRequest, firstChatRequest,
+    cancelledChatRequest, expiredChatRequest, chatCalls: () => chatCalls }
 }
 
 function send(response: import('node:http').ServerResponse, content: string) {
@@ -180,6 +209,7 @@ export function seedSql(): string {
     `INSERT INTO person_states (person_id, timeline_id, sim_time, location, activity, mood, goal, updated_real_at, current_dialogue_id, last_beat_sim_time) VALUES ('s01-resident', 's01-main', ${sql(startTime)}, 'Cafe', 'Resting', 'Calm', 'Explore', ${sql(startTime)}, NULL, ${sql(startTime)});`,
     `INSERT INTO world_model_versions (world_id, version, model_json, created_at) VALUES ('s01-world', 1, ${sql(JSON.stringify(model))}, ${sql(createdAt)});`,
     `INSERT INTO universe_revisions (timeline_id, version, sim_time, world_model_version, updated_at) VALUES ('s01-main', 0, ${sql(startTime)}, 1, ${sql(startTime)});`,
+    `INSERT INTO universe_evidence (timeline_id, level, assessed_version, baseline_version, reason_codes_json, assessed_at) VALUES ('s01-main', 'complete', 0, 0, '["fixture_complete"]', ${sql(createdAt)});`,
   ].join('\n')
 }
 
@@ -205,6 +235,11 @@ async function readJsonResponse(response: Response): Promise<Record<string, unkn
   catch { return { error: body || `HTTP ${response.status} returned no JSON body` } }
 }
 
+function isRetryableDatabaseConflict(response: Response, body: Record<string, unknown>): boolean {
+  return response.status === 409 && typeof body.error === 'string'
+    && (body.error.includes('数据库正忙') || body.error.includes('重试'))
+}
+
 async function main() {
   const mode = modeFromArgs(process.argv.slice(2))
   if (mode === 'help') { help(); return }
@@ -227,9 +262,9 @@ async function main() {
       return
     }
     const migrate = wranglerArgs(['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', persistDir])
-    await run(wrangler, migrate, env, { quiet: true })
+    await run(wrangler, migrate, env)
     await writeFile(sqlPath, seedSql(), 'utf8')
-    await run(wrangler, wranglerArgs(['d1', 'execute', 'DB', '--local', '--persist-to', persistDir, '--file', sqlPath]), env, { quiet: true })
+    await run(wrangler, wranglerArgs(['d1', 'execute', 'DB', '--local', '--persist-to', persistDir, '--file', sqlPath]), env)
     console.log(`Prepared isolated local D1 at ${resolvedPersist}; remote=false; metrics=false`)
     if (mode === 'prepare-only') return
 
@@ -283,6 +318,88 @@ async function main() {
     const owner = await ownerPromise
     if (!owner.ok) throw new Error(`Lease owner returned ${owner.status}: ${await owner.text()}`)
 
+    const chatConversationResponse = await fetch(`http://127.0.0.1:${workerPorts[0]}/api/persons/s01-resident/conversations`, {
+      method: 'POST', headers: { Authorization: `Bearer ${ownerSessionToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ timelineId: 's01-main' }),
+    })
+    if (!chatConversationResponse.ok) throw new Error(`Could not create the synthetic chat conversation: ${chatConversationResponse.status} ${await chatConversationResponse.text()}`)
+    const chatConversation = await chatConversationResponse.json() as { id?: string }
+    if (!chatConversation.id) throw new Error('Synthetic chat conversation omitted its id')
+    const chatRequestId = 's01-cross-worker-chat-recovery'
+    const sendChat = (port: number, content: string, requestId = chatRequestId) => fetch(
+      `http://127.0.0.1:${port}/api/conversations/${chatConversation.id}/messages`, {
+        method: 'POST', headers: { Authorization: `Bearer ${ownerSessionToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ content, requestId }),
+    })
+    const firstChatPromise = sendChat(workerPorts[0]!, 'S01 P4 CHAT DELAY cross-worker recovery')
+    await Promise.race([
+      llm.firstChatRequest,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Chat request never reached the deterministic provider')), 15_000)),
+    ])
+    const pendingReplay = await sendChat(workerPorts[1]!, 'S01 P4 CHAT DELAY cross-worker recovery')
+    const pendingReplayBody = await pendingReplay.text()
+    if (!pendingReplay.ok || !pendingReplayBody.includes('"type":"pending"') || llm.chatCalls() !== 1) {
+      throw new Error(`Cross-Worker pending replay was not idempotent: ${JSON.stringify({ status: pendingReplay.status, providerCalls: llm.chatCalls(), body: pendingReplayBody.slice(0, 500) })}`)
+    }
+    const firstChat = await firstChatPromise
+    const firstChatBody = await firstChat.text()
+    if (!firstChat.ok || !firstChatBody.includes('"type":"text"')) {
+      throw new Error(`Original cross-Worker chat did not complete: ${firstChat.status} ${firstChatBody.slice(0, 500)}`)
+    }
+    const completedReplay = await sendChat(workerPorts[1]!, 'S01 P4 CHAT DELAY cross-worker recovery')
+    const completedReplayBody = await completedReplay.text()
+    if (!completedReplay.ok || !completedReplayBody.includes('"replayed":true') || llm.chatCalls() !== 1) {
+      throw new Error(`Cross-Worker completed replay called the provider or omitted the persisted reply: ${completedReplay.status} ${completedReplayBody.slice(0, 500)}`)
+    }
+    const chatConflict = await sendChat(workerPorts[1]!, 'A different payload must conflict')
+    const chatAudit = await queryLocalD1(persistDir, env,
+      `SELECT (SELECT status FROM chat_requests WHERE request_id='${chatRequestId}') AS request_status,
+       (SELECT COUNT(*) FROM messages WHERE conversation_id='${chatConversation.id}' AND role='user') AS user_messages,
+       (SELECT COUNT(*) FROM messages WHERE conversation_id='${chatConversation.id}' AND role='person') AS assistant_messages,
+       (SELECT COUNT(*) FROM llm_call_log WHERE request_id='${chatRequestId}') AS call_receipts`)
+    if (chatConflict.status !== 409 || chatAudit.request_status !== 'completed' || Number(chatAudit.user_messages) !== 1
+      || Number(chatAudit.assistant_messages) !== 1 || Number(chatAudit.call_receipts) !== 1 || llm.chatCalls() !== 1) {
+      throw new Error(`Cross-Worker chat recovery left duplicate or incomplete ledger rows: ${JSON.stringify({ conflict: chatConflict.status, chatAudit, providerCalls: llm.chatCalls() })}`)
+    }
+    const cancelRequestId = 's01-cross-worker-chat-cancel'
+    const cancelChatPromise = sendChat(workerPorts[0]!, 'S01 P4 CHAT CANCEL late reply fencing', cancelRequestId)
+    await Promise.race([llm.cancelledChatRequest,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Cancellation chat did not reach the provider')), 15_000))])
+    const cancelled = await fetch(`http://127.0.0.1:${workerPorts[1]}/api/conversations/${chatConversation.id}/requests/${cancelRequestId}/cancel`, {
+      method: 'POST', headers: { Authorization: `Bearer ${ownerSessionToken}` },
+    })
+    const cancelledBody = await cancelled.json() as { status?: string }
+    if (!cancelled.ok || cancelledBody.status !== 'cancelled') throw new Error(`Cross-Worker chat cancellation failed: ${cancelled.status} ${JSON.stringify(cancelledBody)}`)
+    const cancelStream = await cancelChatPromise
+    await cancelStream.text()
+    const cancelAudit = await queryLocalD1(persistDir, env,
+      `SELECT (SELECT status FROM chat_requests WHERE request_id='${cancelRequestId}') AS status,
+       (SELECT COUNT(*) FROM messages WHERE id=(SELECT user_message_id FROM chat_requests WHERE request_id='${cancelRequestId}')) AS users,
+       (SELECT COUNT(*) FROM messages WHERE id=(SELECT reply_message_id FROM chat_requests WHERE request_id='${cancelRequestId}')) AS replies`)
+    if (cancelAudit.status !== 'cancelled' || Number(cancelAudit.users) !== 1 || Number(cancelAudit.replies) !== 0 || llm.chatCalls() !== 2) {
+      throw new Error(`Late chat response crossed the cancellation fence: ${JSON.stringify({ cancelAudit, providerCalls: llm.chatCalls() })}`)
+    }
+    const expiredRequestId = 's01-cross-worker-chat-expired'
+    const expiredChatPromise = sendChat(workerPorts[0]!, 'S01 P4 CHAT EXPIRE stale recovery fence', expiredRequestId)
+    await Promise.race([llm.expiredChatRequest,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Expiring chat did not reach the provider')), 15_000))])
+    await queryLocalD1(persistDir, env,
+      `UPDATE chat_requests SET heartbeat_at=${Date.now() - 60_000} WHERE request_id='${expiredRequestId}' AND status='pending' RETURNING request_id`)
+    const recovered = await fetch(`http://127.0.0.1:${workerPorts[1]}/api/conversations/${chatConversation.id}/requests/${expiredRequestId}/recover`, {
+      method: 'POST', headers: { Authorization: `Bearer ${ownerSessionToken}` },
+    })
+    const recoveredBody = await recovered.json() as { status?: string }
+    if (!recovered.ok || recoveredBody.status !== 'failed') throw new Error(`Cross-Worker stale chat recovery failed: ${recovered.status} ${JSON.stringify(recoveredBody)}`)
+    const expiredStream = await expiredChatPromise
+    await expiredStream.text()
+    const expiredAudit = await queryLocalD1(persistDir, env,
+      `SELECT (SELECT status FROM chat_requests WHERE request_id='${expiredRequestId}') AS status,
+       (SELECT COUNT(*) FROM messages WHERE id=(SELECT user_message_id FROM chat_requests WHERE request_id='${expiredRequestId}')) AS users,
+       (SELECT COUNT(*) FROM messages WHERE id=(SELECT reply_message_id FROM chat_requests WHERE request_id='${expiredRequestId}')) AS replies`)
+    if (expiredAudit.status !== 'failed' || Number(expiredAudit.users) !== 1 || Number(expiredAudit.replies) !== 0 || llm.chatCalls() !== 3) {
+      throw new Error(`Late chat response crossed the stale-recovery fence: ${JSON.stringify({ expiredAudit, providerCalls: llm.chatCalls() })}`)
+    }
+
     const requestFork = (port: number, requestId: string, whatIf: string) => fetch(
       `http://127.0.0.1:${port}/api/worlds/s01-world/timelines/s01-main/fork`, {
         method: 'POST',
@@ -290,11 +407,26 @@ async function main() {
         body: JSON.stringify({ requestId, scenario: { whatIf, changedVariable: 'message delivery' } }),
       },
     )
-    const forkAttempts = await Promise.all([
+    const initialForkAttempts = await Promise.all([
       requestFork(workerPorts[0], 's01-concurrent-fork-a', 'The message arrives in branch A'),
       requestFork(workerPorts[1], 's01-concurrent-fork-b', 'The message arrives in branch B'),
     ])
-    const forkResults = await Promise.all(forkAttempts.map(async response => await readJsonResponse(response) as { id?: string; error?: string }))
+    const initialForkResults = await Promise.all(initialForkAttempts.map(async response => await readJsonResponse(response) as { id?: string; error?: string }))
+    let forkAttempts = initialForkAttempts
+    let forkResults = initialForkResults
+    let forkInfrastructureRetry = false
+    // Two independent local workerd processes share a SQLite file rather than a
+    // production D1 service. SQLite may reject both simultaneous writers before
+    // either application transaction can win. Treat only the explicit retryable
+    // busy response as infrastructure contention, then prove that the same
+    // request succeeds without partial rows once the lock is released.
+    if (initialForkAttempts.every((response, index) => isRetryableDatabaseConflict(response, initialForkResults[index]!))) {
+      forkInfrastructureRetry = true
+      const recovered = await requestFork(workerPorts[0], 's01-concurrent-fork-a', 'The message arrives in branch A')
+      const recoveredResult = await readJsonResponse(recovered) as { id?: string; error?: string }
+      forkAttempts = [recovered, initialForkAttempts[1]!]
+      forkResults = [recoveredResult, initialForkResults[1]!]
+    }
     if (forkAttempts.some((response, index) => response.status !== 200 && (response.status !== 409 || !forkResults[index].error))) {
       throw new Error(`Concurrent Fork returned an unclassified result: ${forkAttempts.map((response, index) => `${response.status} ${JSON.stringify(forkResults[index])}`).join('; ')}`)
     }
@@ -331,14 +463,21 @@ async function main() {
       body: JSON.stringify({ id: 's01-source-race-action', timelineId: 's01-main', expectedVersion,
         action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'Clear' } }),
     })
-    const [sourceFork, sourceAction] = await Promise.all([
+    let [sourceFork, sourceAction] = await Promise.all([
       requestFork(workerPorts[0], 's01-source-race-fork', 'Fork before or after a source update'),
       requestAction(workerPorts[1]),
     ])
-    const [sourceForkResult, sourceActionResult] = await Promise.all([
+    let [sourceForkResult, sourceActionResult] = await Promise.all([
       readJsonResponse(sourceFork) as Promise<{ id?: string; error?: string; snapshot?: { sourceStateVersion?: number } }>,
       readJsonResponse(sourceAction) as Promise<{ version?: number; error?: string }>,
     ])
+    let sourceRaceInfrastructureRetry = false
+    if (isRetryableDatabaseConflict(sourceFork, sourceForkResult)
+      && isRetryableDatabaseConflict(sourceAction, sourceActionResult)) {
+      sourceRaceInfrastructureRetry = true
+      sourceAction = await requestAction(workerPorts[1])
+      sourceActionResult = await readJsonResponse(sourceAction) as { version?: number; error?: string }
+    }
     if (![200, 409].includes(sourceFork.status) || ![200, 409].includes(sourceAction.status)) {
       throw new Error(`Source version race returned an unclassified result: Fork ${sourceFork.status} ${JSON.stringify(sourceForkResult)}; action ${sourceAction.status} ${JSON.stringify(sourceActionResult)}`)
     }
@@ -407,9 +546,15 @@ async function main() {
       throw new Error(`Shared D1 did not record exactly one completed tick: ${JSON.stringify(audit)}`)
     }
     console.log(JSON.stringify({ mode, workers: 2, contenderStatus: contender.status, ownerStatus: owner.status,
-      concurrentForkStatuses: forkAttempts.map(response => response.status), successfulForkIds: successfulIds,
+      crossWorkerChat: { pendingReplayStatus: pendingReplay.status, completedReplayStatus: completedReplay.status,
+        payloadConflictStatus: chatConflict.status, cancellationStatus: cancelledBody.status, cancelAudit,
+        expiredRecoveryStatus: recoveredBody.status, expiredAudit, providerCalls: llm.chatCalls(), audit: chatAudit },
+      initialConcurrentForkStatuses: initialForkAttempts.map(response => response.status),
+      concurrentForkStatuses: forkAttempts.map(response => response.status), forkInfrastructureRetry,
+      successfulForkIds: successfulIds,
       forkReplayStatus: replay.status, payloadConflictStatus: payloadConflict.status,
-      forkAudit, sourceRaceStatuses: [sourceFork.status, sourceAction.status], sourceForkResult, sourceActionResult, sourceRaceAudit,
+      forkAudit, sourceRaceStatuses: [sourceFork.status, sourceAction.status], sourceRaceInfrastructureRetry,
+      sourceForkResult, sourceActionResult, sourceRaceAudit,
       capacityConflictStatus: capacityConflict.status, rollbackStatus: rollbackFork.status, rollbackAudit,
       clockFacts: audit.clock_facts, revision: audit.revision, simTime: audit.sim_time, activeLeases: audit.active_leases,
       persistence: resolvedPersist, remote: false, metrics: false }, null, 2))

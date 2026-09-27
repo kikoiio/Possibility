@@ -28,9 +28,9 @@ describe('bounded action intent resolution', () => {
     expect(resolveIntentOutput({ type: 'move', to: 'Cafe' }, context).status).toBe('clarification')
     expect(resolveIntentOutput({ type: 'inform', recipientId: 'not-here', topic: 'x', content: '暴雨开始了' }, context).status)
       .toBe('clarification')
-    expect(resolveIntentOutput({ type: 'environment', location: 'Cafe', condition: 'weather', value: 'storm' }, context).status)
-      .toBe('clarification')
-    expect(resolveIntentOutput(null, context).status).toBe('clarification')
+    expect(() => resolveIntentOutput({ type: 'environment', location: 'Cafe', condition: 'weather', value: 'storm' }, context))
+      .toThrow()
+    expect(() => resolveIntentOutput(null, context)).toThrow()
   })
 
   it('preserves explicit clarification or rejection from the resolver', () => {

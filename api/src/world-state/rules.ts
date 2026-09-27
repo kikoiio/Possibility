@@ -84,7 +84,7 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     if (action.type === 'move') await assertUniqueLocationAtTime(action.personId, action.to, timeline.simNow)
     return {
       factType: 'location', subjectId: action.personId,
-      value: { from: state?.location ?? null, to: action.to }, visibility: 'world',
+      value: { from: state?.location ?? null, to: action.to, personName: person?.name ?? '一位人物' }, visibility: 'world',
       eventTitle: `${person?.name ?? '一位人物'}来到${action.to}`,
       eventDescription: state
         ? `${person?.name ?? '一位人物'}从${state.location}来到${action.to}。`
@@ -403,13 +403,14 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
       ? await db.select().from(persons).where(inArray(persons.id, actualParticipants)).all()
       : []
     const names = new Map(people.map(person => [person.id, person.name]))
+    const participantNames = actualParticipants.map(id => names.get(id) ?? '某人')
     const place = dialogue.location
     return {
       factType: 'conversation', subjectId: dialogue.id,
       value: { dialogueId: dialogue.id, requestId: action.requestId, turns: action.turns,
-        participants: actualParticipants, turnCount: action.turns.length,
+        participants: actualParticipants, participantNames, turnCount: action.turns.length,
         ...(acceptedCommitments.length ? { acceptedCommitmentIds: acceptedCommitments.map(item => item.id) } : {}) },
-      visibility: 'world', eventTitle: `${actualParticipants.map(id => names.get(id) ?? '某人').join(' 与 ')} 在${place}交谈`,
+      visibility: 'world', eventTitle: `${participantNames.join(' 与 ')} 在${place}交谈`,
       eventDescription: `一次在场交谈已记录（${action.turns.length} 句）；完整发言见交谈记录。`,
       eventKind: 'dialogue', dialogueId: dialogue.id,
       acceptedCommitments: acceptedCommitments.map(item => ({ ...item, visitorId: dialogue.visitorId!, sourceDialogueId: dialogue.id })),
@@ -437,10 +438,13 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
       throw new WorldStateError('居民没有同时在场或正忙于其他交谈', 409)
     }
     const people = await db.select().from(persons).where(inArray(persons.id, action.participantIds)).all()
+    const names = new Map(people.map(person => [person.id, person.name]))
+    const participantNames = action.participantIds.map(id => names.get(id) ?? '某人')
     return {
       factType: 'conversation', subjectId: action.dialogueId,
-      value: { dialogueId: action.dialogueId, participants: action.participantIds, location: action.location, status: 'ongoing' },
-      visibility: 'world', eventTitle: `${people.map(person => person.name).join(' 与 ')} 在${action.location}开始交谈`,
+      value: { dialogueId: action.dialogueId, participants: action.participantIds, participantNames,
+        location: action.location, status: 'ongoing' },
+      visibility: 'world', eventTitle: `${participantNames.join(' 与 ')} 在${action.location}开始交谈`,
       eventDescription: '居民之间开始了一场交谈。', eventKind: 'dialogue', dialogueId: action.dialogueId,
       dialogueStart: { dialogueId: action.dialogueId, participantIds: action.participantIds, location: action.location, turnLimit: action.turnLimit },
     }
@@ -510,7 +514,7 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     return {
       factType: 'conversation', subjectId: dialogue.id,
       value: { dialogueId: dialogue.id, turnIndex: action.turnIndex, speakerId: action.speakerId,
-        utterance: action.utterance, participants: participantIds, ended: closes },
+        speakerName, utterance: action.utterance, participants: participantIds, ended: closes },
       visibility: 'world', eventTitle: `${speakerName}在${dialogue.location}说话`,
       eventDescription: action.utterance, eventKind: 'dialogue', dialogueId: dialogue.id,
       dialogueTurn: { dialogueId: dialogue.id, speakerId: action.speakerId, turnIndex: action.turnIndex, participantIds, closes },

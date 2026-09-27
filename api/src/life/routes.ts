@@ -7,6 +7,7 @@ import type { Env } from '../index'
 import { canFulfill, nextCommitmentStatus, transitionCommitment, type LifeAction } from './service'
 import { touchWorldActivity } from '../engine/budget'
 import { WorldStateError } from '../world-state/types'
+import { gateUniverseWrite } from '../engine/guard'
 
 export const lifeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 lifeRoutes.use('*', authMiddleware)
@@ -60,7 +61,8 @@ lifeRoutes.post('/worlds/:id/commitments/:commitmentId', async c => {
   if (!item) return c.json({ error: '约定不存在' }, 404)
   const s = await scope(db, item.worldId, item.timelineId, c.get('user').id)
   if (!s) return c.json({ error: '约定不存在' }, 404)
-  if (s.tl.status !== 'active' || s.world.status !== 'running') return c.json({ error: '请先恢复世界与时间线，再改变故事。' }, 409)
+  const gate = await gateUniverseWrite(db, s.world.id, s.tl.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   const next = nextCommitmentStatus(item.status, body.action)
   // 重复点击成功的动作是幂等读取；不重复写入后果。
   const resultStatus = { accept: 'accepted', decline: 'declined', fulfill: 'fulfilled', explain: 'explained' }[body.action]

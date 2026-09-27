@@ -1,7 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { dialogues, events } from '../../db/schema'
-import { configFromEnv, complete } from '../../llm/client'
+import { configFromEnv, completeContract } from '../../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireNumber,
+  requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import {
   buildEngineContext,
@@ -12,7 +14,7 @@ import {
   type ScheduleItem,
   type WorldSnapshot,
 } from '../../agent/engine-context'
-import { buildBeatPrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
+import { buildBeatPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { recordResidentState, recordSimulationCheckpoint, startNpcDialogue } from '../../world-state/system'
@@ -68,48 +70,56 @@ async function lastDialogueBetween(db: Db, timelineId: string, aId: string, bId:
 /** 校验并规范化 beat JSON（宽松补缺；thought 与 events 必填，缺失视为失败触发重试）。
  *  offsetMin 钳制在 [0, windowMinutes]：模型不可把事件写到节拍窗口之外（曾因此出现
  *  "未来事件"——章节 toSim 越过 simNow，且堵住后续章节窗口）。 */
-export function normalizeBeatJson(raw: unknown, locationNames: string[], windowMinutes: number): BeatJson {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const eventsRaw = Array.isArray(r.events) ? r.events : []
-  const evs = eventsRaw
-    .map((e) => {
-      const o = (e ?? {}) as Record<string, unknown>
-      const offset = Number(o.offsetMin)
-      return {
-        title: String(o.title ?? '').trim().slice(0, 60),
-        description: String(o.description ?? '').trim().slice(0, 2000),
-        offsetMin: Number.isFinite(offset) ? Math.min(windowMinutes, Math.max(0, Math.round(offset))) : 0,
-      }
-    })
-    .filter((e) => e.title && e.description)
-    .slice(0, 3)
-  if (!evs.length) throw new Error('events 为空')
-  const thought = String(r.thought ?? '').trim().slice(0, 2000)
-  if (!thought) throw new Error('thought 为空')
+export function normalizeBeatJson(
+  raw: unknown,
+  locationNames: string[],
+  windowMinutes: number,
+  version: string = LLM_CONTRACT_VERSIONS.beat,
+): BeatJson {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
+  const r = raw as Record<string, unknown>
+  if (!Array.isArray(r.events) || r.events.length < 1 || r.events.length > 3) {
+    return contractViolation(version, 'events 必须包含 1-3 项')
+  }
+  const evs = r.events.map((event, index) => {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) {
+      return contractViolation(version, `events[${index}] 必须是对象`)
+    }
+    const o = event as Record<string, unknown>
+    return {
+      title: requireString(o.title, `events[${index}].title`, version, 60),
+      description: requireString(o.description, `events[${index}].description`, version, 2000),
+      offsetMin: Math.round(requireNumber(o.offsetMin, `events[${index}].offsetMin`, version, 0, windowMinutes)),
+    }
+  })
+  const thought = requireString(r.thought, 'thought', version, 2000)
 
   let memory: BeatJson['memory'] = null
   if (r.memory && typeof r.memory === 'object') {
+    if (Array.isArray(r.memory)) return contractViolation(version, 'memory 必须是对象或 null')
     const m = r.memory as Record<string, unknown>
-    const content = String(m.content ?? '').trim()
-    if (content) {
-      const type = ['timeline', 'relationship', 'world'].includes(String(m.type)) ? String(m.type) : 'timeline'
-      memory = { content: content.slice(0, 2000), type, importance: clampImportance(m.importance) }
+    const content = requireString(m.content, 'memory.content', version, 2000)
+    if (m.type !== 'timeline' && m.type !== 'relationship' && m.type !== 'world') {
+      return contractViolation(version, 'memory.type 非法')
     }
+    memory = { content, type: m.type, importance: requireNumber(m.importance, 'memory.importance', version, 1, 10) }
+  } else if (r.memory !== undefined && r.memory !== null) {
+    return contractViolation(version, 'memory 必须是对象或 null')
   }
-  const str = (v: unknown) => {
-    const s = String(v ?? '').trim()
-  return s ? s.slice(0, 200) : null
+  const optionalString = (value: unknown, field: string) => {
+    if (value === null || value === undefined) return null
+    return requireString(value, field, version, 200)
   }
-  let nextLocation = str(r.nextLocation)
-  if (nextLocation && !locationNames.includes(nextLocation)) nextLocation = null
+  const nextLocation = optionalString(r.nextLocation, 'nextLocation')
+  if (nextLocation && !locationNames.includes(nextLocation)) return contractViolation(version, 'nextLocation 不在世界中')
   return {
     events: evs,
     thought,
     memory,
     nextLocation,
-    nextActivity: str(r.nextActivity),
-    mood: str(r.mood),
-    goal: str(r.goal),
+    nextActivity: optionalString(r.nextActivity, 'nextActivity'),
+    mood: optionalString(r.mood, 'mood'),
+    goal: optionalString(r.goal, 'goal'),
   }
 }
 
@@ -208,15 +218,18 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
-        const raw = await complete(
+        const beat = await completeContract(
           config,
           [
             { role: 'system', content: input.prompt.system },
             { role: 'user', content: input.prompt.user },
           ],
-          { maxTokens: 8000 },
+          { maxTokens: 8000, contractVersion: LLM_CONTRACT_VERSIONS.beat,
+            parse: raw => normalizeBeatJson(
+              parseContractObject(raw, LLM_CONTRACT_VERSIONS.beat), locationNames, input.windowMinutes,
+            ) },
         )
-        return { value: { kind: 'solo', beat: normalizeBeatJson(extractJson(raw), locationNames, input.windowMinutes) }, llmCalls: opts?.reserve?.calls ?? llmCalls }
+        return { value: { kind: 'solo', beat }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后放弃
       }

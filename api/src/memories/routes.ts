@@ -6,6 +6,7 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { clampImportance } from '../agent/memory'
 import type { Env } from '../index'
 import { commitWorldCommand } from '../world-state/commit'
+import { gateUniverseWrite } from '../engine/guard'
 import { WorldStateError, type WorldAction } from '../world-state/types'
 
 export const memoryRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -81,6 +82,9 @@ async function versionedMemoryAction(c: Context<{ Bindings: Env; Variables: Auth
   if (memory && memory.timelineId !== body.timelineId) return c.json({ error: '时间线与记忆不匹配' }, 409)
   const timeline = await db.select().from(timelines).where(eq(timelines.id, body.timelineId)).get()
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const gate = await gateUniverseWrite(db, timeline.worldId, timeline.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
+  if (gate.world.userId !== c.get('user').id) return c.json({ error: '时间线不存在' }, 404)
   const action: WorldAction = operation === 'memory_correct'
     ? { type: 'memory_correct', memoryId, personId: body.personId ?? memory!.personId, before, after: after! }
     : { type: 'memory_forget', memoryId, personId: body.personId ?? memory!.personId, before }

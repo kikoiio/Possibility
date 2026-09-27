@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { memories, persons, universeRevisions, worldFacts, worldPersons } from '../db/schema'
+import { memories, persons, universeEvidence, universeRevisions, worldFacts, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 
@@ -12,6 +12,8 @@ describe('constructed memory maintenance routes', () => {
   it('turns edits and forgetting into private, replayable world commands', async () => {
     fixture = await createWorldFixture()
     const f = fixture
+    await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+      baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
     await f.db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Resident', modelJson: '{}', createdAt: WORLD_TIME })
     await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
     await f.db.insert(memories).values({ id: 'structured-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',

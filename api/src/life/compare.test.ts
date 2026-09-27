@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { createTestDb } from '../test/db'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, sessions, timelines, users, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, sessions, timelines, universeEvidence, users, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, retrieveForPrompt } from '../agent/memory'
 import { readForkSnapshot } from '../agent/visibility'
 import { comparisonRoutes, compareTimelines } from './compare'
@@ -39,6 +39,8 @@ async function seed() {
     { id: 'foreign-main', worldId: 'foreign', simNow: SIM, createdAt: REAL },
     { id: 'other-main', worldId: 'other-world', simNow: SIM, createdAt: REAL },
   ])
+  await db.insert(universeEvidence).values({ timelineId: 'main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: REAL })
   for (const id of ['npc', 'visitor']) {
     await db.insert(persons).values({ id, userId: 'owner', name: id, modelJson: '{}', createdAt: REAL, isUser: id === 'visitor' })
     await db.insert(worldPersons).values({ worldId: 'world', personId: id, joinedAt: REAL })
@@ -105,6 +107,8 @@ describe('owner-only, read-only comparison API', () => {
     const body = await response.json() as NonNullable<Awaited<ReturnType<typeof compareTimelines>>>
     expect(body.interpretation).toBe('observed_differences_not_causal_claims')
     expect(body.timeAlignment).toBe('same_sim_time')
+    expect(body.left.evidence).toEqual({ level: 'complete', reasonCodes: ['test_complete'] })
+    expect(body.right.evidence).toEqual({ level: 'complete', reasonCodes: ['fork_checkpoint_complete'] })
     expect(body.differences.states).toEqual([{ personId: 'npc', changes: [
       expect.objectContaining({ field: 'mood', left: 'Calm', right: 'Excited', rightEvidence: expect.objectContaining({ table: 'person_states', timelineId: fork.id, simTime: SIM }) }),
       expect.objectContaining({ field: 'goal', left: 'Finish the book', right: 'Meet a friend' }),
@@ -147,6 +151,7 @@ describe('owner-only, read-only comparison API', () => {
 
     const result = await compareTimelines(fixture.db, 'world', 'main', 'legacy-fork')
     expect(result?.right.historyComplete).toBe(false)
+    expect(result?.right.evidence).toEqual({ level: 'unassessed', reasonCodes: ['evidence_unassessed'] })
     expect(result?.differences.events.rightOnly.map(event => event.id)).toContain('legacy-own-event')
     expect(result?.sharedForkOrigin?.rightFork).toMatchObject({ provenance: 'legacy', scenario: { startTime: SIM } })
     expect(result?.limitations).toContain('Legacy fork history lacks an immutable event snapshot; unavailable ancestor events are omitted.')
@@ -295,6 +300,8 @@ describe('fork snapshots', () => {
       { id: 'active-fork-b', worldId: 'world', parentTimelineId: 'main', simNow: SIM, createdAt: REAL, status: 'active' },
       { id: 'archived-fork', worldId: 'world', parentTimelineId: 'main', simNow: SIM, createdAt: REAL, status: 'archived' },
     ])
+    await fixture.db.insert(universeEvidence).values({ timelineId: 'archived-fork', level: 'complete', assessedVersion: 0,
+      baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: REAL })
 
     expect(() => fixture.sqlite.prepare(`INSERT INTO timelines
       (id, world_id, parent_timeline_id, sim_now, created_at, status)
@@ -325,8 +332,8 @@ describe('fork snapshots', () => {
       (SELECT COUNT(*) FROM world_commands) AS commands,
       (SELECT COUNT(*) FROM world_facts) AS facts`).get()
 
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: '只能分叉活跃时间线' })
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: '时间线不存在或已归档' })
     expect(after).toEqual(before)
   })
 
@@ -644,6 +651,9 @@ describe('fork snapshots', () => {
     await expect(forkTimeline(fixture.db, 'world', 'main')).rejects.toThrow()
     expect(await fixture.db.select().from(timelines).where(eq(timelines.worldId, 'world')).all()).toHaveLength(1)
     expect(await fixture.db.select().from(personStates).all()).toHaveLength(2)
+    expect(await fixture.db.select().from(universeEvidence).all()).toEqual([
+      expect.objectContaining({ timelineId: 'main', level: 'complete' }),
+    ])
   })
 
   it('rejects a stale checkpoint even when a legacy state writer changed no revision', async () => {

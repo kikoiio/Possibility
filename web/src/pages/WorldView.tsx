@@ -19,8 +19,9 @@ import LifePanel from '../components/world/LifePanel'
 import ComparePanel from '../components/world/ComparePanel'
 import WorldStatePanel from '../components/world/WorldStatePanel'
 import ConstructPanel from '../components/world/ConstructPanel'
+import EvidenceNotice from '../components/world/EvidenceNotice'
 import { withTimelineParam } from '../lib/timelineUrl'
-import { isTimelineUpdateCurrent } from '../lib/timelineGuard'
+import { isStreamGenerationCurrent, isTimelineUpdateCurrent } from '../lib/timelineGuard'
 
 const WORLD_SPEED = 6
 
@@ -62,6 +63,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [searchParams, setSearchParams] = useSearchParams()
   const timelineId = searchParams.get('timeline')
   const activeTimelineRef = useRef<string | null>(timelineId)
+  const streamGenerationRef = useRef(0)
   activeTimelineRef.current = timelineId
   const selectTimeline = useCallback((next: string | null) => {
     activeTimelineRef.current = next
@@ -163,6 +165,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   useEffect(() => {
     if (!timelineId) return
     let active = true
+    const generation = ++streamGenerationRef.current
     const unsub = subscribeWorldStream(
       worldId,
       timelineId,
@@ -227,7 +230,8 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           clockBaseRef.current = { simNow: Date.parse(ev.simNow), realAt: Date.now() }
         }
       },
-      { isPublic: readonly },
+      { isPublic: readonly, generation,
+        isGenerationCurrent: candidate => isStreamGenerationCurrent(candidate, streamGenerationRef.current) },
     )
     return () => { active = false; unsub() }
   }, [api, worldId, timelineId, readonly])
@@ -372,6 +376,8 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const running = clock.worldStatus === 'running'
   const capped = clock.worldStatus === 'capped'
   const archived = clock.worldStatus === 'archived'
+  const evidenceReadonly = snapshot.evidence.level !== 'complete'
+  const interactionReadonly = readonly || evidenceReadonly
 
   return (
     <div className="flex h-full flex-col">
@@ -407,13 +413,14 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   onSwitch={selectTimeline}
                   onFork={handleFork}
                   onArchive={handleArchive}
+                  writeLocked={evidenceReadonly}
                 />
-                <button
+                {(!evidenceReadonly || running) && <button
                   onClick={handlePauseResume}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
                 >
                   {running ? '暂停' : '继续'}
-                </button>
+                </button>}
                 <button onClick={() => setLifeOpen(true)} className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep">
                   你不在时
                 </button>
@@ -439,6 +446,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             今日调用已达上限，世界已自动暂停，次日自动恢复运行。
           </p>
         )}
+        <EvidenceNotice evidence={snapshot.evidence} />
         {actionError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">{actionError}</p>}
       </div>
 
@@ -452,15 +460,15 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           />
         </aside>
         <main className="min-w-0 flex-1 overflow-y-auto p-3">
-          {!readonly && <nav aria-label="交互模式" className="mb-4 flex gap-2 border-b border-ink-line pb-3">
+          {!interactionReadonly && <nav aria-label="交互模式" className="mb-4 flex gap-2 border-b border-ink-line pb-3">
             {(['observe', 'presence', 'construct'] as const).map(key => <button key={key} onClick={() => setMode(key)} className={`rounded-lg px-3 py-1.5 text-xs ${mode === key ? 'bg-ink text-white' : 'bg-sheet text-ink-soft'}`}>{key === 'observe' ? '观察' : key === 'presence' ? '在场' : '构造'}</button>)}
           </nav>}
-          {(readonly || mode === 'observe') && <div className="space-y-5">
+          {(interactionReadonly || mode === 'observe') && <div className="space-y-5">
             <WorldStatePanel key={`${worldId}:${timelineId ?? snapshot.currentTimelineId}`} worldId={worldId} timelineId={timelineId ?? snapshot.currentTimelineId} snapshot={snapshot} readonly={readonly} refresh={stateRefresh} />
             <details className="rounded-xl border border-ink-line bg-sheet p-3"><summary className="cursor-pointer text-sm text-ink-soft">变化证据与交谈记录（{events.length}）</summary><div className="mt-3"><WorldEventFeed events={events} names={names} turnsByDialogue={turnsByDialogue} expandedDialogue={expandedDialogue} onToggleDialogue={toggleDialogue} /></div></details>
           </div>}
-          {!readonly && mode === 'presence' && <section className="space-y-3 rounded-xl border border-ink-line bg-sheet p-4"><h2 className="font-story text-base text-ink">以在场身份进入</h2><p className="text-xs leading-relaxed text-ink-soft">你需要先进入一个地点，之后显式移动；只能与当时同处一地、清醒且空闲的人交谈。对话不自动等于已证实的世界事实。</p><button onClick={() => setSceneOpen(true)} className="relative rounded-lg bg-ink px-4 py-2 text-xs text-white">进入世界{personaUnread > 0 ? ` · ${personaUnread} 条口信` : ''}</button></section>}
-          {!readonly && mode === 'construct' && timelineId && <ConstructPanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onInject={handleInject} onChanged={() => { setStateRefresh(n => n + 1); void worldsApi.snapshot(worldId, timelineId).then(next => { if (activeTimelineRef.current === timelineId) setSnapshot(cur => cur?.currentTimelineId === timelineId ? next : cur) }).catch(() => {}) }} />}
+          {!interactionReadonly && mode === 'presence' && <section className="space-y-3 rounded-xl border border-ink-line bg-sheet p-4"><h2 className="font-story text-base text-ink">以在场身份进入</h2><p className="text-xs leading-relaxed text-ink-soft">你需要先进入一个地点，之后显式移动；只能与当时同处一地、清醒且空闲的人交谈。对话不自动等于已证实的世界事实。</p><button onClick={() => setSceneOpen(true)} className="relative rounded-lg bg-ink px-4 py-2 text-xs text-white">进入世界{personaUnread > 0 ? ` · ${personaUnread} 条口信` : ''}</button></section>}
+          {!interactionReadonly && mode === 'construct' && timelineId && <ConstructPanel worldId={worldId} timelineId={timelineId} locations={snapshot.world.locations} onInject={handleInject} onChanged={() => { setStateRefresh(n => n + 1); void worldsApi.snapshot(worldId, timelineId).then(next => { if (activeTimelineRef.current === timelineId) setSnapshot(cur => cur?.currentTimelineId === timelineId ? next : cur) }).catch(() => {}) }} />}
         </main>
         {selectedPersonId && (
           <PersonDrawer
@@ -469,8 +477,8 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             liveState={liveStates[selectedPersonId] ?? null}
             fallbackName={names.get(selectedPersonId) ?? ''}
             personId={selectedPersonId}
-            canChat={!readonly}
-            canEditMemories={!readonly && mode === 'construct'}
+            canChat={!interactionReadonly}
+            canEditMemories={!interactionReadonly && mode === 'construct'}
             timelineId={timelineId ?? snapshot.currentTimelineId}
             expectedVersion={Math.max(snapshot.stateVersion, clock?.stateVersion ?? 0)}
             onClose={() => setSelectedPersonId(null)}

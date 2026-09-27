@@ -74,6 +74,26 @@ export interface Message {
   createdAt: string
 }
 
+export type ChatRequestStatus = 'pending' | 'completed' | 'failed' | 'cancelled'
+
+/** 普通聊天的持久请求状态；回复只在 completed 时存在。 */
+export interface ChatRequestState {
+  requestId: string
+  conversationId: string
+  worldId: string
+  timelineId: string
+  personId: string
+  userMessageId: string
+  replyMessageId: string
+  status: ChatRequestStatus
+  heartbeatAt: number
+  createdAt: string
+  updatedAt: string
+  finishedAt: string | null
+  errorCode: string | null
+  reply: Pick<Message, 'id' | 'role' | 'content' | 'createdAt'> | null
+}
+
 export interface TimelineEvent {
   id: string
   timelineId: string
@@ -88,6 +108,7 @@ export interface TimelineDetail {
   person: { id: string; name: string } | null
   events: TimelineEvent[]
   state: PersonState | null
+  evidence: PublicUniverseEvidence
 }
 
 export interface HomeData {
@@ -194,9 +215,15 @@ export interface WorldSnapshot {
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'
+  evidence: PublicUniverseEvidence
   currentFacts: Omit<WorldFact, 'timelineId' | 'visibility'>[]
   locationBoard: LocationBoardEntry[]
   events: WorldEventItem[]
+}
+
+export interface PublicUniverseEvidence {
+  level: 'unassessed' | 'complete' | 'upgradeable' | 'incomplete'
+  reasonCodes: string[]
 }
 
 export interface ScheduleItem {
@@ -250,7 +277,15 @@ export interface DemoInfo {
 }
 
 /** 世界流推送事件（SSE 按 event 名分发） */
-export type WorldStreamEvent =
+export interface WorldStreamEnvelope {
+  worldId: string
+  timelineId: string
+  streamId: string
+  sequence: number
+  stateVersion: number
+}
+
+export type WorldStreamEvent = WorldStreamEnvelope & (
   | { type: 'sync'; stateVersion: number }
   | {
       type: 'event'
@@ -282,6 +317,7 @@ export type WorldStreamEvent =
       currentDialogueId: string | null
     }
   | { type: 'clock'; simNow: string; callsToday: number; worldStatus: WorldSummary['status']; pauseReason: WorldSummary['pauseReason']; stateVersion: number }
+)
 
 /* ===== 章节：时间线事件流的小说化回顾 ===== */
 

@@ -2,18 +2,19 @@ import { Hono } from 'hono'
 import { and, asc, count, eq } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import { createDb } from '../db/client'
-import { events, persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
+import { events, persons, personStates, timelines, universeEvidence, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
 import { readForkSnapshot } from '../agent/visibility'
-import { forkTimeline } from '../life/fork'
+import { forkConflict, forkTimeline } from '../life/fork'
 import { runAgentTurn } from '../agent/loop'
 import { complete, configFromEnv } from '../llm/client'
 import { budgetFromEnv } from '../engine/budget'
-import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
+import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { WorldStateError } from '../world-state/types'
 import type { ForkScenario } from '../agent/types'
 import type { Env } from '../index'
+import { readPublicUniverseEvidence } from '../world-state/evidence-status'
 
 /** 活跃时间线上限（与世界级 fork 一致）：超出需先归档 */
 const MAX_ACTIVE_TIMELINES = 3
@@ -68,6 +69,8 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
     mode: 'simulate',
   })
   if (!ctx) return c.json({ error: '人物不存在' }, 404)
+  const universe = await gateUniverseWrite(db, ctx.world.id, ctx.timeline.id)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
 
   const cfg = budgetFromEnv(c.env)
   const gate = await gateWorld(db, ctx.world.id, cfg)
@@ -130,6 +133,8 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
     mode: 'simulate',
   })
   if (!base) return c.json({ error: '人物不存在' }, 404)
+  const universe = await gateUniverseWrite(db, base.world.id, base.timeline.id)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
 
   const cfg = budgetFromEnv(c.env)
   const gate = await gateWorld(db, base.world.id, cfg)
@@ -229,6 +234,33 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
   return c.json({ ok: true, status: 'archived' })
 })
 
+/** 重新激活只恢复调度资格，不修补历史；证据不完整时保持只读。 */
+timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
+  const db = createDb(c.env.DB)
+  const timeline = await db.select().from(timelines).where(eq(timelines.id, c.req.param('id'))).get()
+  if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const world = await db.select().from(worlds).where(and(
+    eq(worlds.id, timeline.worldId), eq(worlds.userId, c.get('user').id),
+  )).get()
+  if (!world) return c.json({ error: '时间线不存在' }, 404)
+  if (timeline.status === 'active') return c.json({ ok: true, status: 'active' })
+  const evidence = await db.select().from(universeEvidence)
+    .where(eq(universeEvidence.timelineId, timeline.id)).get()
+  if (evidence?.level !== 'complete') {
+    return c.json({ error: '该时间线的历史证据不完整，目前只能保持归档' }, 409)
+  }
+  try {
+    await db.update(timelines).set({ status: 'active' }).where(and(
+      eq(timelines.id, timeline.id), eq(timelines.status, 'archived'),
+    ))
+  } catch (error) {
+    const conflict = forkConflict(error)
+    if (conflict) return c.json({ error: conflict.message }, conflict.status)
+    throw error
+  }
+  return c.json({ ok: true, status: 'active' })
+})
+
 /** 时间线详情：timeline + events（按 sim_time 排序）+ 该线人物状态 */
 timelineRoutes.get('/timelines/:id', async (c) => {
   const db = createDb(c.env.DB)
@@ -293,5 +325,6 @@ timelineRoutes.get('/timelines/:id', async (c) => {
     person: person ? { id: person.id, name: person.name } : null,
     events: eventList,
     state: state ?? null,
+    evidence: await readPublicUniverseEvidence(db, timeline.id),
   })
 })

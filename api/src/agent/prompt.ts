@@ -61,6 +61,9 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
         .join('\n')}`
     : ''
   const memorySection = [sourceMem, settled].filter(Boolean).join('\n\n')
+  const knowledgeSection = ctx.knownFacts.length
+    ? `## 在这个宇宙里你可依据的记录\n${ctx.knownFacts.map(f => `- [${f.certainty === 'fact' ? '已证实' : '传闻'}；来源 ${f.sourceFactId}] ${f.text}`).join('\n')}\n未列出的私人消息不属于你的知识；传闻不能说成已证实。`
+    : '## 在这个宇宙里你可依据的记录\n没有新的已记录消息。不要把别人的私人消息当成自己知道的事。'
 
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
@@ -76,6 +79,7 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
     items('说话方式', model.speech),
     items('技能与爱好', model.skills),
     memorySection,
+    knowledgeSection,
     items('关系', model.relationships),
     [
       '## 边界与未知（诚实红线）',

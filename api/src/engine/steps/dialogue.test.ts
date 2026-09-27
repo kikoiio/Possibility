@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { buildEngineContext, buildWorldSnapshot } from '../../agent/engine-context'
 import { buildBeatPrompt } from '../../agent/engine-prompt'
-import { dialogues, persons, personStates, worldPersons, worldFacts } from '../../db/schema'
+import { dialogues, persons, personStates, universeEvidence, worldPersons, worldFacts } from '../../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../../test/world-fixture'
 import { commitWorldCommand } from '../../world-state/commit'
 import { startNpcDialogue } from '../../world-state/system'
@@ -26,6 +26,8 @@ it('does not expose one resident’s private knowledge to another resident’s o
     await fixture.db.insert(personStates).values({ personId, timelineId: 'home-main', simTime: WORLD_TIME,
       location: 'Cafe', activity: 'Talking', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
   }
+  await fixture.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
   await commitWorldCommand(fixture.db, { id: 'private-note', worldId: 'home-world', timelineId: 'home-main',
     userId: 'owner', expectedVersion: 0,
     action: { type: 'inform', recipientId: 'resident-a', topic: 'locked drawer', content: 'brass-key-secret-941 is hidden beneath the loose floorboard' } })
@@ -54,7 +56,7 @@ it('does not expose one resident’s private knowledge to another resident’s o
       priority: 1, dialogueId: dialogue.id }
     const input = await dialogueExecutor.perceive(fixture.db, step, snapshot!)
     expect(input?.speakerId).toBe(personId)
-    const reserve = Object.assign(async () => {}, { calls: 1 })
+    const reserve = Object.assign(async () => 'test-receipt', { calls: 1, settle: async () => {} })
     const decision = await dialogueExecutor.decide(fixture.env, input!, { maxCalls: 1, reserve })
     expect(decision.value).not.toBeNull()
     await dialogueExecutor.act(fixture.db, fixture.env, input!, decision.value!)

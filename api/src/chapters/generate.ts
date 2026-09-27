@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { chapters, events, persons, timelines, worlds, worldPersons } from '../db/schema'
-import { complete, configFromEnv, type ChatMessage } from '../llm/client'
+import { completeContract, configFromEnv, type ChatMessage } from '../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../llm/contracts'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
 import type { Env } from '../index'
@@ -64,21 +65,13 @@ export function buildChapterPrompt(input: ChapterInput): ChatMessage[] {
   ]
 }
 
-/** 宽松解析章节 JSON（纯函数，供单测） */
+/** 严格解析章节 JSON（纯函数，供单测） */
 export function normalizeChapter(raw: unknown): { title: string; content: string } {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const content = String(r.content ?? '').trim()
-  if (!content) throw new Error('章节正文为空')
-  const title = String(r.title ?? '').trim().slice(0, 30) || '无题'
-  return { title, content }
-}
-
-function extractJson(raw: string): unknown {
-  const cleaned = raw.replace(/```(?:json)?/g, '').trim()
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start < 0 || end <= start) throw new Error('返回中未找到 JSON')
-  return JSON.parse(cleaned.slice(start, end + 1))
+  const version = LLM_CONTRACT_VERSIONS.chapter
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
+  const r = raw as Record<string, unknown>
+  return { title: requireString(r.title, 'title', version, 30),
+    content: requireString(r.content, 'content', version, 20_000) }
 }
 
 function fmtEventLine(e: Event, nameOf: Map<string, string>): string {
@@ -179,8 +172,9 @@ export async function generateChapter(
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const raw = await complete(config, messages, { maxTokens: 8000 })
-      const { title, content } = normalizeChapter(extractJson(raw))
+      const { title, content } = await completeContract(config, messages, { maxTokens: 8000,
+        contractVersion: LLM_CONTRACT_VERSIONS.chapter,
+        parse: raw => normalizeChapter(parseContractObject(raw, LLM_CONTRACT_VERSIONS.chapter)) })
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
       const dto: ChapterDto = {

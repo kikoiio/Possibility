@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, sceneRequests, sessions, timelines, universeRevisions, worldModelVersions, worlds, worldCommands, worldFacts, worldPersons } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, sceneRequests, sessions, timelines, universeEvidence, universeRevisions, worldModelVersions, worlds, worldCommands, worldFacts, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { commitWorldCommand } from './commit'
 import { WorldStateError } from './types'
@@ -27,12 +27,31 @@ async function setup() {
   for (const personId of ['a', 'b']) {
     await f.db.insert(personStates).values({ personId, timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe', activity: 'Talking', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
   }
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
   return f
 }
 
 const base = { worldId: 'home-world', timelineId: 'home-main', userId: 'owner' }
 
 describe('versioned world command', () => {
+  it('fails closed before writes and rechecks evidence at the SQL commit boundary', async () => {
+    const fixture = await setup()
+    await fixture.db.update(universeEvidence).set({ level: 'incomplete' }).where(eq(universeEvidence.timelineId, 'home-main'))
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'blocked-evidence', expectedVersion: 0,
+      action: { type: 'move', personId: 'a', to: 'Library' } })).rejects.toMatchObject({ status: 409 })
+    expect(await fixture.db.select().from(worldCommands).all()).toEqual([])
+    expect(await fixture.db.select().from(worldFacts).all()).toEqual([])
+    expect((await fixture.db.select().from(personStates).where(eq(personStates.personId, 'a')).get())?.location).toBe('Cafe')
+
+    await fixture.db.update(universeEvidence).set({ level: 'complete' }).where(eq(universeEvidence.timelineId, 'home-main'))
+    fixture.sqlite.exec("CREATE TRIGGER downgrade_before_command BEFORE INSERT ON world_commands BEGIN UPDATE universe_evidence SET level = 'incomplete' WHERE timeline_id = NEW.timeline_id; END")
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'raced-evidence', expectedVersion: 0,
+      action: { type: 'move', personId: 'a', to: 'Library' } })).rejects.toThrow('universe_evidence_incomplete')
+    expect(await fixture.db.select().from(worldCommands).all()).toEqual([])
+    expect((await fixture.db.select().from(universeEvidence).get())?.level).toBe('complete')
+  })
+
   it('writes one fact, one event and the location projection atomically; replay returns the same fact', async () => {
     const fixture = await setup()
     const input = { ...base, id: 'move-a', expectedVersion: 0, action: { type: 'move' as const, personId: 'a', to: 'Library' } }

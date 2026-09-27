@@ -9,9 +9,9 @@ describe('normalizeChapter（章节 JSON 解析）', () => {
     expect(() => normalizeChapter({ title: 'x', content: '  ' })).toThrow()
     expect(() => normalizeChapter({})).toThrow()
   })
-  it('缺标题给缺省值，超长标题截断', () => {
-    expect(normalizeChapter({ content: '正文' }).title).toBe('无题')
-    expect(normalizeChapter({ title: '长'.repeat(40), content: '正文' }).title).toHaveLength(30)
+  it('缺标题或超长标题都拒绝，不自动伪造/截断模型结果', () => {
+    expect(() => normalizeChapter({ content: '正文' })).toThrow()
+    expect(() => normalizeChapter({ title: '长'.repeat(40), content: '正文' })).toThrow()
   })
 })
 

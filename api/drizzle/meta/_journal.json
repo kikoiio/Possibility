@@ -134,6 +134,27 @@
       "when": 1790132994725,
       "tag": "0018_smart_queen_noir",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1790227902303,
+      "tag": "0019_little_justice",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790228795312,
+      "tag": "0020_dizzy_hannibal_king",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790232176226,
+      "tag": "0021_slim_chamber",
+      "breakpoints": true
     }
   ]
 }

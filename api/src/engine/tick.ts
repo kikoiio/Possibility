@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { dialogues, events, personStates, timelines, worlds } from '../db/schema'
+import { dialogues, events, personStates, timelines, universeEvidence, worlds } from '../db/schema'
 import type { Env } from '../index'
 import {
   buildWorldSnapshot,
@@ -128,11 +128,12 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
     const tickBudget: TickBudget = { used: 0, limit: cfg.tickCallCap }
     const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0, timelines: [] }
 
-    const activeTimelines = await db
-      .select()
+    const activeTimelines = (await db
+      .select({ timeline: timelines })
       .from(timelines)
-      .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active')))
-      .all()
+      .innerJoin(universeEvidence, eq(universeEvidence.timelineId, timelines.id))
+      .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active'), eq(universeEvidence.level, 'complete')))
+      .all()).map(row => row.timeline)
 
     for (const tl of activeTimelines) {
       await assertLease()

@@ -8,7 +8,7 @@ export type WorldAction =
   | { type: 'commitment_proposal'; commitmentId: string; personId: string; visitorId: string; sourceDialogueId: string;
       title: string; kind: 'meeting' | 'help'; location: string; dueSim: string }
   | { type: 'conversation'; dialogueId: string; requestId: string; turns: { id: string; personId: string; utterance?: string }[];
-      sceneProjection?: { location: string; participantIds: string[]; simTime: string; turnLimit: number };
+      sceneProjection?: { location: string; participantIds: string[]; simTime: string; turnLimit: number; createdAt?: string };
       acceptedCommitments?: { id: string; personId: string; title: string; kind: 'meeting' | 'help'; location: string; dueSim: string }[];
       privateEffects?: {
         memories: { id: string; personId: string; type: 'thought' | 'relationship'; content: string; importance: number;

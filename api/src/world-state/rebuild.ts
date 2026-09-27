@@ -1,29 +1,17 @@
-import { and, asc, eq, or, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { readForkSnapshot } from '../agent/visibility'
-import {
-  commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules,
-  timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions,
-} from '../db/schema'
+import type { CollectedReplayInput, CurrentProjectionView } from './evidence'
 import { auditProjectionEvidence, type InvariantViolation } from './invariants'
-import { PROJECTION_DOMAINS, type ProjectionBaseline, type ProjectionDomain, type ProjectionRows } from './model'
-
-export interface TimelineEvidence {
-  timeline: typeof timelines.$inferSelect | null
-  revision: typeof universeRevisions.$inferSelect | null
-  baseline: ProjectionBaseline | null
-  commands: (typeof worldCommands.$inferSelect)[]
-  facts: (typeof worldFacts.$inferSelect)[]
-  modelRows: (typeof worldModelVersions.$inferSelect)[]
-  current: ProjectionRows
-}
+import { PROJECTION_DOMAINS, type ProjectionDomain, type ProjectionRows } from './model'
+import { reduceProjection, type ReplayDiagnostic } from './projector'
 
 export interface ProjectionDifference {
   domain: ProjectionDomain | 'history'
   recordId?: string
-  kind: 'missing' | 'mismatch' | 'unproven' | 'unsupported'
+  kind: 'missing' | 'extra' | 'mismatch' | 'unproven' | 'unsupported' | 'wrong_version' | 'wrong_timeline'
   commandId?: string
+  factId?: string
   version?: number
+  reasonCode?: string
   detail: string
 }
 
@@ -31,86 +19,6 @@ export interface ReconstructionResult {
   status: 'complete' | 'incomplete' | 'legacy' | 'unsupported'
   throughVersion: number
   differences: ProjectionDifference[]
-}
-
-function parseBaseline(value: unknown): ProjectionBaseline | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const candidate = value as Record<string, unknown>
-  const domains = candidate.completeDomains
-  if ((candidate.source !== 'root' && candidate.source !== 'fork')
-    || !Number.isInteger(candidate.version) || typeof candidate.capturedAt !== 'string'
-    || typeof candidate.simTime !== 'string' || !Array.isArray(domains)
-    || domains.some(domain => typeof domain !== 'string' || !(PROJECTION_DOMAINS as readonly string[]).includes(domain))
-    || !candidate.rows || typeof candidate.rows !== 'object' || Array.isArray(candidate.rows)) return null
-  const rows = candidate.rows as Record<string, unknown>
-  const rowDomain: Partial<Record<ProjectionDomain, string>> = {
-    states: 'states', schedules: 'schedules', events: 'events', commitments: 'commitments', memories: 'memories',
-    dialogues: 'dialogues', dialogueTurns: 'dialogueTurns', personaMessages: 'personaMessages',
-  }
-  if (domains.some(domain => typeof domain === 'string' && rowDomain[domain as ProjectionDomain]
-    && !Array.isArray(rows[rowDomain[domain as ProjectionDomain]!])) ) return null
-  return candidate as unknown as ProjectionBaseline
-}
-
-/** Collect replay inputs and current projections in one read-only D1 batch. */
-export async function collectTimelineEvidence(db: Db, worldId: string, timelineId: string): Promise<TimelineEvidence> {
-  const [timelineRows, revisionRows, commands, facts, states, scheduleRows, eventRows, commitmentRows, memoryRows,
-    dialogueRows, turnRows, messageRows, modelRows] = await db.batch([
-    db.select().from(timelines).where(and(eq(timelines.id, timelineId), eq(timelines.worldId, worldId))),
-    db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)),
-    db.select().from(worldCommands).where(eq(worldCommands.timelineId, timelineId)).orderBy(asc(worldCommands.resultVersion)),
-    db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).orderBy(asc(worldFacts.version)),
-    db.select().from(personStates).where(eq(personStates.timelineId, timelineId)),
-    db.select().from(schedules).where(eq(schedules.timelineId, timelineId)),
-    db.select().from(events).where(eq(events.timelineId, timelineId)),
-    db.select().from(commitments).where(and(eq(commitments.worldId, worldId), eq(commitments.timelineId, timelineId))),
-    db.select().from(memories).where(or(eq(memories.timelineId, timelineId), isNull(memories.timelineId))),
-    db.select().from(dialogues).where(eq(dialogues.timelineId, timelineId)),
-    db.select().from(dialogueTurns),
-    db.select().from(personaMessages).where(and(eq(personaMessages.worldId, worldId), eq(personaMessages.timelineId, timelineId))),
-    db.select().from(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)),
-  ])
-  const timeline = timelineRows[0] ?? null
-  const revision = revisionRows[0] ?? null
-  const baseline = (() => {
-    if (!timeline || !revision) return null
-    if (timeline.parentTimelineId) {
-      const checkpoint = readForkSnapshot(timeline)
-      if (!checkpoint?.completeDomains) return null
-      return parseBaseline({
-        source: 'fork', version: checkpoint.sourceStateVersion ?? 0, capturedAt: checkpoint.capturedAt,
-        simTime: checkpoint.sourceSimTime, completeDomains: checkpoint.completeDomains,
-        rows: {
-          states: checkpoint.states, schedules: checkpoint.schedules, events: checkpoint.events,
-          commitments: checkpoint.commitments, memories: checkpoint.memories, dialogues: checkpoint.dialogues ?? [],
-          dialogueTurns: checkpoint.dialogueTurns ?? [], personaMessages: checkpoint.personaMessages ?? [],
-        },
-      })
-    }
-    const model = modelRows.find(row => row.version === revision.worldModelVersion)
-    try {
-      const pinned = model ? JSON.parse(model.modelJson) as { projectionBaseline?: unknown } : null
-      return parseBaseline(pinned?.projectionBaseline)
-    } catch { return null }
-  })()
-  const memoryProjection = timeline?.parentTimelineId
-    ? memoryRows.filter(row => row.timelineId === timelineId)
-    : memoryRows.filter(row => row.timelineId === null || row.timelineId === timelineId)
-  const dialoguesById = new Set(dialogueRows.map(row => row.id))
-  const current: ProjectionRows = {
-    simTime: revision?.simTime ?? timeline?.simNow ?? '',
-    states, schedules: scheduleRows, events: eventRows, commitments: commitmentRows,
-    memories: memoryProjection,
-    dialogues: dialogueRows,
-    dialogueTurns: turnRows.filter(row => dialoguesById.has(row.dialogueId)),
-    personaMessages: messageRows,
-    knowledge: [
-      ...(timeline ? readForkSnapshot(timeline)?.worldFacts ?? [] : []),
-      ...facts,
-    ].filter(fact => fact.factType === 'knowledge'),
-  }
-  const pinnedModelRows = revision ? modelRows.filter(row => row.version === revision.worldModelVersion) : []
-  return { timeline, revision, baseline, commands, facts, modelRows: pinnedModelRows, current }
 }
 
 function projectionDomain(code: string): ProjectionDomain | 'history' {
@@ -137,25 +45,63 @@ function violationDifference(violation: InvariantViolation): ProjectionDifferenc
   }
 }
 
+function replayDifference(diagnostic: ReplayDiagnostic): ProjectionDifference {
+  return { domain: diagnostic.domain, kind: diagnostic.kind, commandId: diagnostic.commandId,
+    factId: diagnostic.factId, recordId: diagnostic.recordId, version: diagnostic.version,
+    reasonCode: diagnostic.reasonCode, detail: diagnostic.reasonCode }
+}
+
 /** Run the established deterministic replay/invariant reducers against the collected snapshot. */
-export async function rebuildProjection(db: Db, worldId: string, timelineId: string, evidence: TimelineEvidence): Promise<ReconstructionResult> {
+export async function rebuildProjection(
+  db: Db,
+  worldId: string,
+  timelineId: string,
+  evidence: CollectedReplayInput,
+  current: CurrentProjectionView,
+): Promise<ReconstructionResult> {
   if (!evidence.timeline) return { status: 'incomplete', throughVersion: 0, differences: [{
     domain: 'history', kind: 'missing', detail: 'missing_timeline: Timeline does not belong to the requested world',
   }] }
   if (!evidence.revision) return { status: 'legacy', throughVersion: 0, differences: [] }
-  const violations = await auditProjectionEvidence(db, worldId, timelineId, evidence)
+  const violations = await auditProjectionEvidence(db, worldId, timelineId, evidence, current)
   const complete = evidence.baseline !== null
     && PROJECTION_DOMAINS.every(domain => evidence.baseline!.completeDomains.includes(domain))
-  const hasUnsupported = violations.some(violation => violation.code.includes('unsupported'))
+  // A partial/absent legacy baseline is classification evidence, not proof that the
+  // materialized projection is corrupt. Only compare an independently rebuilt
+  // projection once every domain has an immutable starting point.
+  const replay = complete ? reduceProjection({
+    worldId,
+    timelineId,
+    baseline: evidence.baseline,
+    commands: evidence.commands,
+    facts: evidence.facts,
+    throughVersion: evidence.revision.version,
+    personNames: evidence.personNames,
+    sourceFacts: evidence.sourceFacts,
+    visibleTimelineIds: evidence.visibleTimelineIds,
+  }) : null
+  const independentDifferences = replay ? [
+    ...replay.diagnostics.map(replayDifference),
+    ...(replay.projection ? compareProjection(replay.projection, current.rows, {
+      timelineId,
+      baselineVersion: evidence.baseline?.version,
+    }) : []),
+  ] : []
+  const hasUnsupported = replay?.diagnostics.some(diagnostic => diagnostic.kind === 'unsupported')
+    || violations.some(violation => violation.code.includes('unsupported'))
   return {
     status: hasUnsupported ? 'unsupported' : complete ? 'complete' : 'incomplete',
     throughVersion: evidence.revision.version,
-    differences: violations.map(violationDifference),
+    differences: [...independentDifferences, ...violations.map(violationDifference)],
   }
 }
 
 /** Compare semantic row content while ignoring storage-only timestamps and timeline ownership columns. */
-export function compareProjection(expected: ProjectionRows, current: ProjectionRows): ProjectionDifference[] {
+export function compareProjection(
+  expected: ProjectionRows,
+  current: ProjectionRows,
+  context: { timelineId?: string; baselineVersion?: number } = {},
+): ProjectionDifference[] {
   const ignored = new Set(['timelineId', 'updatedRealAt'])
   const stable = (value: unknown): string => {
     if (Array.isArray(value)) return `[${value.map(stable).sort().join(',')}]`
@@ -166,14 +112,36 @@ export function compareProjection(expected: ProjectionRows, current: ProjectionR
     return JSON.stringify(value)
   }
   const differences: ProjectionDifference[] = []
-  if (expected.simTime !== current.simTime) differences.push({ domain: 'clock', kind: 'mismatch', detail: `Expected ${expected.simTime}, got ${current.simTime}` })
+  if (expected.simTime !== current.simTime) differences.push({ domain: 'clock', kind: 'mismatch',
+    reasonCode: 'clock_projection_mismatch', detail: `Expected ${expected.simTime}, got ${current.simTime}` })
+  const rowId = (domain: Exclude<ProjectionDomain, 'clock'>, row: unknown): string => {
+    const value = row as Record<string, unknown>
+    if (domain === 'states') return String(value.personId)
+    if (domain === 'schedules') return `${String(value.personId)}:${String(value.worldDate)}`
+    return String(value.id)
+  }
   for (const domain of PROJECTION_DOMAINS) {
     if (domain === 'clock') continue
     const expectedRows = expected[domain] as unknown[]
     const currentRows = current[domain] as unknown[]
-    if (stable(expectedRows) !== stable(currentRows)) differences.push({
-      domain, kind: 'mismatch', detail: `Projection rows differ for ${domain}`,
-    })
+    const expectedById = new Map(expectedRows.map(row => [rowId(domain, row), row]))
+    const currentById = new Map(currentRows.map(row => [rowId(domain, row), row]))
+    for (const [recordId, row] of expectedById) {
+      const actual = currentById.get(recordId)
+      if (!actual) {
+        differences.push({ domain, kind: 'missing', recordId, reasonCode: `${domain}_projection_missing`,
+          commandId: context.baselineVersion === 0 ? `baseline:${context.timelineId}` : undefined,
+          version: context.baselineVersion, detail: `Expected ${domain} record ${recordId} is missing` })
+      } else if (stable(row) !== stable(actual)) {
+        differences.push({ domain, kind: 'mismatch', recordId, reasonCode: `${domain}_projection_mismatch`,
+          commandId: context.baselineVersion === 0 ? `baseline:${context.timelineId}` : undefined,
+          version: context.baselineVersion, detail: `Projection record ${recordId} differs for ${domain}` })
+      }
+    }
+    for (const recordId of currentById.keys()) {
+      if (!expectedById.has(recordId)) differences.push({ domain, kind: 'extra', recordId,
+        reasonCode: `${domain}_projection_extra`, detail: `Projection has unexpected ${domain} record ${recordId}` })
+    }
   }
   return differences
 }

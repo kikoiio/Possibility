@@ -3,7 +3,7 @@ import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
-import { dialogues, persons, personStates, timelines, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { LocationDef } from '../agent/engine-context'
@@ -11,7 +11,7 @@ import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { BudgetRefusal, gateUser } from '../engine/guard'
+import { BudgetRefusal, gateUniverseWrite, gateUser } from '../engine/guard'
 import { commitWorldCommand } from '../world-state/commit'
 import { createRootProjectionBaseline, ensureUniverseRevision } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
@@ -143,6 +143,8 @@ worldsRoutes.post('/', async (c) => {
   statements.push(
     db.insert(worldModelVersions).values({ worldId, version: 1, modelJson: JSON.stringify(initialModel), createdAt: now }),
     db.insert(universeRevisions).values({ timelineId: mainTimelineId, version: 0, simTime: now, worldModelVersion: 1, updatedAt: now }),
+    db.insert(universeEvidence).values({ timelineId: mainTimelineId, level: 'complete', assessedVersion: 0,
+      baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
   await db.batch(statements)
   return c.json({ id: worldId, timelineId: mainTimelineId })
@@ -225,6 +227,10 @@ worldsRoutes.post('/:id/actions', async (c) => {
     return c.json({ error: '构造者只能改变环境条件或传递信息，不能替居民行动' }, 403)
   }
   const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const gate = await gateUniverseWrite(db, world.id, body.timelineId)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
     const result = await commitWorldCommand(db, {
       id: body.id, worldId: c.req.param('id'), timelineId: body.timelineId,
@@ -299,6 +305,14 @@ worldsRoutes.post('/:id/resume', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
+  const activeTimelines = await db.select({ id: timelines.id }).from(timelines)
+    .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active'))).all()
+  const completeEvidence = activeTimelines.length ? await db.select({ timelineId: universeEvidence.timelineId })
+    .from(universeEvidence).where(and(inArray(universeEvidence.timelineId, activeTimelines.map(timeline => timeline.id)),
+      eq(universeEvidence.level, 'complete'))).all() : []
+  if (!activeTimelines.length || completeEvidence.length !== activeTimelines.length) {
+    return c.json({ error: '该世界仍有证据不完整的活跃时间线，目前只能保持冻结' }, 409)
+  }
   await db.update(worlds).set({ status: 'running', pauseReason: null }).where(eq(worlds.id, world.id))
   await touchWorldActivity(db, world.id)
   return c.json({ ok: true, status: 'running' })
@@ -333,8 +347,8 @@ worldsRoutes.post('/:id/inject', async (c) => {
     ? await db.select().from(timelines).where(and(eq(timelines.id, body.timelineId), eq(timelines.worldId, world.id))).get()
     : await db.select().from(timelines).where(and(eq(timelines.worldId, world.id), isNull(timelines.parentTimelineId))).get()
   if (!tl) return c.json({ error: '时间线不存在' }, 404)
-  if (world.status !== 'running') return c.json({ error: '世界未运行，不能执行叙事干预' }, 409)
-  if (tl.status !== 'active') return c.json({ error: '时间线已归档，不能执行叙事干预' }, 409)
+  const gate = await gateUniverseWrite(db, world.id, tl.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   const requestId = body?.requestId?.trim() || crypto.randomUUID()
   const id = `inject:${requestId}`
   const existing = await db.select().from(worldCommands).where(eq(worldCommands.id, id)).get()
@@ -370,6 +384,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
+  const sourceGate = await gateUniverseWrite(db, world.id, c.req.param('tid'))
+  if (!sourceGate.ok) return c.json({ error: sourceGate.error }, sourceGate.status)
   if (requestId) {
     const existing = await db.select().from(timelines).where(eq(timelines.id, requestId)).get()
     if (existing && existing.worldId === world.id && existing.parentTimelineId === c.req.param('tid')) {
@@ -381,8 +397,6 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
     }
     if (existing) return c.json({ error: '分叉请求 ID 已用于另一条时间线' }, 409)
   }
-  if (world.status !== 'running') return c.json({ error: '世界未运行，不能分叉' }, 409)
-
   const source = await db
     .select()
     .from(timelines)

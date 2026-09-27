@@ -1,8 +1,10 @@
 import type { Db } from '../../db/client'
-import { configFromEnv, complete } from '../../llm/client'
+import { configFromEnv, completeContract } from '../../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireNumber,
+  requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
-import { buildSummaryPrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
+import { buildSummaryPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance, oldestUnsummarized, SUMMARY_BATCH, type Memory } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { recordMemorySummary } from '../../world-state/system'
@@ -21,10 +23,11 @@ export interface SummaryOutput {
 }
 
 export function normalizeSummaryJson(raw: unknown): SummaryOutput {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const content = String(r.content ?? '').trim()
-  if (!content) throw new Error('content 为空')
-  return { content, importance: clampImportance(r.importance) }
+  const version = LLM_CONTRACT_VERSIONS.summary
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
+  const r = raw as Record<string, unknown>
+  return { content: requireString(r.content, 'content', version, 6000),
+    importance: requireNumber(r.importance, 'importance', version, 1, 10) }
 }
 
 /** 记忆压缩（P5）：把最老一批未压缩记忆蒸馏为一条 summary，原文标记保留可回溯 */
@@ -45,15 +48,16 @@ export const summaryExecutor: StepExecutor<SummaryInput, SummaryOutput> = {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
-        const raw = await complete(
+        const output = await completeContract(
           config,
           [
             { role: 'system', content: input.prompt.system },
             { role: 'user', content: input.prompt.user },
           ],
-          { maxTokens: 12000 },
+          { maxTokens: 12000, contractVersion: LLM_CONTRACT_VERSIONS.summary,
+            parse: raw => normalizeSummaryJson(parseContractObject(raw, LLM_CONTRACT_VERSIONS.summary)) },
         )
-        return { value: normalizeSummaryJson(extractJson(raw)), llmCalls: opts?.reserve?.calls ?? llmCalls }
+        return { value: output, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后跳过
       }

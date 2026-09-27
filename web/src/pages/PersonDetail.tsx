@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
-import type { DistillDraft, PersonDetail as Detail, PersonState, TimelineDetail } from '../api/types'
+import type { DistillDraft, PersonDetail as Detail, PersonState, PublicUniverseEvidence, TimelineDetail } from '../api/types'
 import StateBar from '../components/StateBar'
 import ChatStream from '../components/ChatStream'
 import PersonCard from '../components/PersonCard'
 import { timelineHref } from '../lib/timelineUrl'
+import EvidenceNotice from '../components/world/EvidenceNotice'
 
 type Tab = 'chat' | 'card' | 'timelines'
 
@@ -20,6 +21,7 @@ export default function PersonDetail() {
   const [state, setState] = useState<PersonState | null>(null)
   const [tab, setTab] = useState<Tab>('chat')
   const [error, setError] = useState('')
+  const [evidence, setEvidence] = useState<PublicUniverseEvidence | null>(null)
 
   const [cardDraft, setCardDraft] = useState<DistillDraft | null>(null)
   const [cardEditing, setCardEditing] = useState(false)
@@ -32,16 +34,19 @@ export default function PersonDetail() {
     try {
       const d = await apiFetch<Detail>(`/api/persons/${id}`)
       setDetail(d)
-      const convo = await apiFetch<{ id: string }>(`/api/persons/${id}/conversations`, {
-        method: 'POST',
-        body: JSON.stringify({ timelineId: timelineId ?? null }),
-      })
-      setConversationId(convo.id)
-      if (timelineId) {
-        const t = await apiFetch<TimelineDetail>(`/api/timelines/${timelineId}`)
+      const selected = timelineId ?? d.timelines.find(t => t.parentTimelineId === null)?.id
+      if (selected) {
+        const t = await apiFetch<TimelineDetail>(`/api/timelines/${selected}`)
         setState(t.state)
+        setEvidence(t.evidence)
+        if (t.evidence.level === 'complete') {
+          const convo = await apiFetch<{ id: string }>(`/api/persons/${id}/conversations`, {
+            method: 'POST', body: JSON.stringify({ timelineId: selected }),
+          })
+          setConversationId(convo.id)
+        }
       } else {
-        setState(d.state)
+        setState(d.state); setEvidence(null)
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '加载失败')
@@ -122,6 +127,7 @@ export default function PersonDetail() {
             <StateBar state={state} />
           </div>
         )}
+        {evidence && <EvidenceNotice evidence={evidence} />}
       </div>
 
       {/* 标签页 */}
@@ -148,8 +154,9 @@ export default function PersonDetail() {
       {error && <p className="bg-red-50 px-4 py-2 text-center text-xs text-red-600">{error}</p>}
 
       {/* 内容区 */}
-      {tab === 'chat' &&
-        (conversationId ? (
+      {tab === 'chat' && (evidence?.level !== 'complete'
+        ? <div className="p-8 text-center text-sm text-ink-faint">历史证据处于只读保护，暂不能发起交谈。</div>
+        : (conversationId ? (
           <ChatStream
             key={conversationId}
             conversationId={conversationId}
@@ -158,7 +165,7 @@ export default function PersonDetail() {
           />
         ) : (
           <div className="p-8 text-center text-sm text-ink-faint">准备通话…</div>
-        ))}
+        )))}
 
       {tab === 'card' && (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -194,7 +201,8 @@ export default function PersonDetail() {
               />
               <button
                 onClick={startEditCard}
-                className="w-full rounded-xl border border-ink-faint py-2.5 text-ink-soft"
+                disabled={evidence?.level !== 'complete'}
+                className="w-full rounded-xl border border-ink-faint py-2.5 text-ink-soft disabled:opacity-40"
               >
                 校正人物卡
               </button>

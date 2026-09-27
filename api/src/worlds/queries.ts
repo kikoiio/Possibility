@@ -6,6 +6,7 @@ import { visibleMemories } from '../agent/memory'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents } from '../agent/visibility'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
+import { readPublicUniverseEvidence, type PublicUniverseEvidence } from '../world-state/evidence-status'
 
 type World = typeof worlds.$inferSelect
 
@@ -34,6 +35,7 @@ export interface WorldSnapshotDto {
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'
+  evidence: PublicUniverseEvidence
   currentFacts: { id: string; version: number; simTime: string; factType: string; subjectId: string; value: unknown; sourceCommandId: string }[]
   locationBoard: { location: string; persons: { id: string; name: string; activity: string }[] }[]
   events: WorldEventDto[]
@@ -157,6 +159,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     stateVersion: revision?.version ?? 0,
     worldModelVersion: revision?.worldModelVersion ?? null,
     evidenceStatus: structuredState.evidenceStatus,
+    evidence: structuredState.evidence,
     currentFacts: structuredState.current.filter(f => f.visibility === 'world').map(f => ({ id: f.id, version: f.version,
       simTime: f.simTime, factType: f.factType, subjectId: f.subjectId, value: f.value, sourceCommandId: f.sourceCommandId })),
     locationBoard,
@@ -177,6 +180,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
 /** 人物详情（世界视图抽屉）：状态/想法流/当日日程/近期记忆 */
 export interface PersonFocusDto {
   person: { id: string; name: string }
+  evidence: PublicUniverseEvidence
   state: {
     simTime: string
     location: string
@@ -229,6 +233,7 @@ export async function personFocus(db: Db, worldId: string, personId: string, tim
 
   return {
     person: { id: person.id, name: person.name },
+    evidence: await readPublicUniverseEvidence(db, timelineId),
     state: state
       ? {
           simTime: state.simTime,

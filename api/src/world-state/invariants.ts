@@ -3,7 +3,7 @@ import type { Db } from '../db/client'
 import { readForkSnapshot } from '../agent/visibility'
 import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions } from '../db/schema'
 import { parsePinnedWorldModel } from './model'
-import type { TimelineEvidence } from './rebuild'
+import type { CollectedReplayInput, CurrentProjectionView } from './evidence'
 
 export interface InvariantViolation { code: string; timelineId: string; commandId?: string; recordId?: string; version?: number; detail: string }
 
@@ -119,15 +119,27 @@ function factVisibilityForCommand(action: Record<string, unknown>): 'world' | 'p
 }
 
 /** Read-only diagnosis; legacy prose is deliberately excluded from the fact proof. */
-export async function auditProjectionEvidence(db: Db, worldId: string, timelineId: string, evidence: TimelineEvidence): Promise<InvariantViolation[]> {
+export async function auditProjectionEvidence(
+  db: Db,
+  worldId: string,
+  timelineId: string,
+  evidence: CollectedReplayInput,
+  current: CurrentProjectionView,
+): Promise<InvariantViolation[]> {
   const timeline = evidence.timeline
   if (!timeline) return [{ code: 'missing_timeline', timelineId, detail: 'Timeline does not belong to the requested world' }]
   const revision = evidence.revision
   if (!revision) return [] // Legacy timeline: no invented state history to audit.
+  const forkSnapshot = timeline.parentTimelineId ? readForkSnapshot(timeline) : null
+  const ownDialogueIds = new Set(current.rows.dialogues
+    .filter(dialogue => dialogue.timelineId === timelineId).map(dialogue => dialogue.id))
   const [commands, facts, stateRows, eventRows, commitmentRows, memoryRows, dialogueRows, turnRows, modelRows, personaMessageRows, scheduleRows] = [
-    evidence.commands, evidence.facts, evidence.current.states, evidence.current.events, evidence.current.commitments,
-    evidence.current.memories, evidence.current.dialogues, evidence.current.dialogueTurns, evidence.modelRows,
-    evidence.current.personaMessages, evidence.current.schedules,
+    evidence.commands, evidence.facts, current.rows.states,
+    current.rows.events.filter(event => event.timelineId === timelineId), current.rows.commitments,
+    current.rows.memories.filter(memory => !timeline.parentTimelineId || memory.timelineId === timelineId),
+    current.rows.dialogues.filter(dialogue => dialogue.timelineId === timelineId),
+    current.rows.dialogueTurns.filter(turn => !timeline.parentTimelineId || ownDialogueIds.has(turn.dialogueId)), evidence.modelRows,
+    current.rows.personaMessages.filter(message => message.timelineId === timelineId), current.rows.schedules,
   ]
   const violations: InvariantViolation[] = []
   const report = (code: string, detail: string, commandId?: string, version?: number, recordId?: string) => violations.push({ code, timelineId, commandId, recordId, version, detail })
@@ -267,7 +279,6 @@ export async function auditProjectionEvidence(db: Db, worldId: string, timelineI
   let memoryBaselineAt: string | null = null
   const baselineRows: { personId: string; state: RebuiltState }[] = []
   const baselineScheduleRows: (typeof scheduleRows[number])[] = []
-  const forkSnapshot = timeline.parentTimelineId ? readForkSnapshot(timeline) : null
   let baselineEventIds: Set<string> | null = null
   const availableFactsById = new Map([...(forkSnapshot?.worldFacts ?? []), ...facts].map(fact => [fact.id, fact]))
   if (forkSnapshot) {
@@ -384,6 +395,34 @@ export async function auditProjectionEvidence(db: Db, worldId: string, timelineI
     commandId: string; version: number }>()
   const expectedTurns = new Map<string, { dialogueId: string; turnIndex: number; personId: string; utterance?: string;
     thought?: string; commandId: string; version: number }>()
+  // A complete root projection baseline is immutable evidence for every domain,
+  // not only states and schedules. Treating baseline dialogue/message/commitment
+  // rows as unexplained current data made legitimate recovery commands impossible
+  // to audit even though the pure reducer could replay them exactly.
+  if (!timeline.parentTimelineId && evidence.baseline?.source === 'root') {
+    const rows = evidence.baseline.rows
+    for (const item of rows.commitments ?? []) latestCommitments.set(item.id, {
+      status: item.status, title: item.title, kind: item.kind, location: item.location, dueSim: item.dueSim,
+      personId: item.personId, visitorId: item.visitorId, sourceDialogueId: item.sourceDialogueId ?? undefined,
+      updatedSim: item.updatedSim, commandId: `baseline:${timelineId}`, version: 0,
+    })
+    for (const item of rows.dialogues ?? []) expectedDialogues.set(item.id, {
+      location: item.location, participantIdsJson: item.participantIdsJson, status: item.status, kind: item.kind,
+      turnLimit: item.turnLimit, simStart: item.simStart, simEnd: item.simEnd,
+      commandId: `baseline:${timelineId}`, version: 0,
+    })
+    for (const item of rows.dialogueTurns ?? []) expectedTurns.set(item.id, {
+      dialogueId: item.dialogueId, turnIndex: item.turnIndex, personId: item.personId,
+      utterance: item.utterance, thought: item.thought, commandId: `baseline:${timelineId}`, version: 0,
+    })
+    for (const item of rows.personaMessages ?? []) expectedPersonaMessages.set(item.id, {
+      senderPersonId: item.senderPersonId, recipientPersonId: item.recipientPersonId, content: item.content,
+      location: item.location, simTime: item.simTime, createdAt: item.createdAt,
+      commandId: `baseline:${timelineId}`, version: 0,
+    })
+    const baselineIds = (rows.events ?? []).map(item => item.id)
+    if (baselineIds.length) baselineEventIds = new Set([...(baselineEventIds ?? []), ...baselineIds])
+  }
   const stateForFact = (personId: string, fact: typeof facts[number]) => {
     const entry = rebuiltStates.get(personId) ?? { state: {}, commandId: fact.sourceCommandId, version: fact.version }
     entry.commandId = fact.sourceCommandId
@@ -858,15 +897,21 @@ export async function auditProjectionEvidence(db: Db, worldId: string, timelineI
 
 /** Public read-only audit entry: collect one D1 snapshot, replay it, then expose invariant diagnostics. */
 export async function auditUniverse(db: Db, worldId: string, timelineId: string): Promise<InvariantViolation[]> {
-  const { collectTimelineEvidence, rebuildProjection } = await import('./rebuild')
-  const evidence = await collectTimelineEvidence(db, worldId, timelineId)
-  const result = await rebuildProjection(db, worldId, timelineId, evidence)
+  const [{ collectReplayInput, readCurrentProjection }, { rebuildProjection }] = await Promise.all([
+    import('./evidence'), import('./rebuild'),
+  ])
+  const [evidence, current] = await Promise.all([
+    collectReplayInput(db, worldId, timelineId),
+    readCurrentProjection(db, worldId, timelineId),
+  ])
+  const result = await rebuildProjection(db, worldId, timelineId, evidence, current)
   return result.differences.map(difference => {
     const separator = difference.detail.indexOf(': ')
     return {
-      code: separator < 0 ? difference.kind : difference.detail.slice(0, separator),
+      code: difference.reasonCode ?? (separator < 0 ? difference.kind : difference.detail.slice(0, separator)),
       timelineId,
       commandId: difference.commandId,
+      recordId: difference.recordId,
       version: difference.version,
       detail: separator < 0 ? difference.detail : difference.detail.slice(separator + 2),
     }

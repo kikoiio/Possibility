@@ -8,3 +8,7 @@ export function isTimelineUpdateCurrent(
   if (!active || requestedTimelineId !== selectedTimelineId) return false
   return !requestedTimelineId || !responseTimelineId || responseTimelineId === requestedTimelineId
 }
+
+export function isStreamGenerationCurrent(expected: number, current: number): boolean {
+  return expected === current
+}

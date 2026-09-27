@@ -7,10 +7,11 @@ interface Props {
   onSwitch: (timelineId: string) => void
   onFork: (scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>) => Promise<boolean>
   onArchive: (timelineId: string) => void
+  writeLocked?: boolean
 }
 
 /** 时间线切换器：列表 + Fork 入口（活跃线上限 3）+ 归档 */
-export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onArchive }: Props) {
+export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onArchive, writeLocked = false }: Props) {
   const [open, setOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
   const [whatIf, setWhatIf] = useState('')
@@ -107,10 +108,10 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
                 setForkError('')
                 setForkOpen(true)
               }}
-              disabled={active.length >= 3}
+              disabled={writeLocked || active.length >= 3}
               className="w-full rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:bg-ink-faint"
             >
-              {active.length >= 3 ? '活跃宇宙已满（先归档一条）' : '从当前时刻创造平行宇宙'}
+              {writeLocked ? '历史证据只读，暂不能分叉' : active.length >= 3 ? '活跃宇宙已满（先归档一条）' : '从当前时刻创造平行宇宙'}
             </button>
           </div>
         </div>

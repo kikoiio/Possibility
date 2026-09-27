@@ -3,8 +3,9 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, type Timeline } from '../agent/visibility'
 import { createDb, type Db } from '../db/client'
-import { events, personStates, timelines, universeRevisions, worldFacts, worlds } from '../db/schema'
+import { events, personStates, timelines, universeEvidence, universeRevisions, worldFacts, worlds } from '../db/schema'
 import type { Env } from '../index'
+import { publicUniverseEvidence } from '../world-state/evidence-status'
 
 function forkEvidence(child: Timeline | undefined) {
   if (!child) return null
@@ -51,7 +52,7 @@ export function sharedForkOrigin(left: Timeline, right: Timeline, worldTimelines
 
 export async function compareTimelines(db: Db, worldId: string, leftId: string, rightId: string) {
   // One read transaction keeps state, clocks, and event evidence on the same database snapshot.
-  const [worldTimelines, states, eventRows, revisions, factRows] = await db.batch([
+  const [worldTimelines, states, eventRows, revisions, factRows, evidenceRows] = await db.batch([
     db.select().from(timelines).where(eq(timelines.worldId, worldId)),
     db.select().from(personStates).where(inArray(personStates.timelineId,
       db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.worldId, worldId), inArray(timelines.id, [leftId, rightId]))))),
@@ -61,6 +62,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
       db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.worldId, worldId), inArray(timelines.id, [leftId, rightId]))))),
     db.select().from(worldFacts).where(inArray(worldFacts.timelineId,
       db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.worldId, worldId), inArray(timelines.id, [leftId, rightId]))))),
+    db.select().from(universeEvidence).where(inArray(universeEvidence.timelineId, [leftId, rightId])),
   ])
   const left = worldTimelines.find((t) => t.id === leftId)
   const right = worldTimelines.find((t) => t.id === rightId)
@@ -76,6 +78,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
       worldModelVersion: revision?.worldModelVersion ?? null,
       evidenceStatus: !revision || (timeline.parentTimelineId && readForkSnapshot(timeline)?.sourceStateVersion == null)
         ? 'legacy' as const : 'structured' as const,
+      evidence: publicUniverseEvidence(evidenceRows.find(row => row.timelineId === timeline.id)),
       current: [...current.values()].map(fact => ({ ...fact, value: JSON.parse(fact.valueJson) as unknown })),
     }
   }
@@ -114,6 +117,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
   })
   const timelineEvidence = (t: Timeline, historyComplete: boolean) => ({
     id: t.id, simNow: t.simNow, status: t.status, parentTimelineId: t.parentTimelineId, historyComplete,
+    evidence: t.id === left.id ? leftWorldState.evidence : rightWorldState.evidence,
   })
   return {
     worldId,
@@ -137,7 +141,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
       ...(left.simNow !== right.simNow ? ['The timelines are at different simulated times; advance them to a shared time before interpreting the differences.'] : []),
       ...(!leftEvents.historyComplete || !rightEvents.historyComplete
         ? ['Legacy fork history lacks an immutable event snapshot; unavailable ancestor events are omitted.'] : []),
-      ...(leftWorldState.evidenceStatus === 'legacy' || rightWorldState.evidenceStatus === 'legacy'
+      ...(leftWorldState.evidence.level !== 'complete' || rightWorldState.evidence.level !== 'complete'
         ? ['At least one timeline predates structured facts; missing facts mean unknown, not unchanged.'] : []),
     ],
   }

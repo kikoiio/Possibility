@@ -1,11 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { dialogueTurns, dialogues, events, memories, messages, personaMessages, persons, personStates, sceneRequests, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { dialogueTurns, dialogues, events, memories, messages, personaMessages, persons, personStates, sceneRequests, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
 import { runTick } from '../engine/tick'
+import { collectReplayInput, readCurrentProjection } from '../world-state/evidence'
+import { rebuildProjection } from '../world-state/rebuild'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { vi.useRealTimers(); fixture?.close(); fixture = null; vi.unstubAllGlobals() })
@@ -29,6 +31,8 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   const defaultMain = personData.timelines.find(timeline => timeline.parentTimelineId === null)!
   const personRevision = await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, defaultMain.id)).get()
   const personModel = await f.db.select().from(worldModelVersions).where(eq(worldModelVersions.worldId, personData.world.id)).get()
+  expect(await f.db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, defaultMain.id)).get())
+    .toMatchObject({ level: 'complete', assessedVersion: 0, baselineVersion: 0 })
   expect(JSON.parse(personModel!.modelJson).projectionBaseline).toMatchObject({
     source: 'root', version: 0, simTime: personRevision!.simTime,
     completeDomains: expect.arrayContaining(['clock', 'states', 'schedules', 'events', 'commitments', 'memories',
@@ -51,6 +55,8 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   const { id: worldId, timelineId } = await createResponse.json() as { id: string; timelineId: string }
   const universeRevision = await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
   const worldModel = await f.db.select().from(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)).get()
+  expect(await f.db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, timelineId)).get())
+    .toMatchObject({ level: 'complete', assessedVersion: 0, baselineVersion: 0 })
   expect(JSON.parse(worldModel!.modelJson).projectionBaseline).toMatchObject({
     source: 'root', version: 0, simTime: universeRevision!.simTime,
     completeDomains: expect.arrayContaining(['clock', 'states', 'schedules', 'events', 'commitments', 'memories',
@@ -79,7 +85,7 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   expect(observed.status).toBe(200)
   expect(await observed.json()).toMatchObject({
     world: { name: 'Harbor Town', status: 'running' }, currentTimelineId: timelineId,
-    evidenceStatus: 'structured', worldModelVersion: 1,
+    evidenceStatus: 'structured', evidence: { level: 'complete', reasonCodes: ['created_complete'] }, worldModelVersion: 1,
     locationBoard: expect.arrayContaining([expect.objectContaining({ location: 'Cafe' })]),
   })
   expect(await auditUniverse(f.db, worldId, timelineId)).toEqual([])
@@ -127,6 +133,8 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   expect(forkResponse.status).toBe(200)
   const { id: branchId } = await forkResponse.json() as { id: string }
   const storedFork = await f.db.select().from(timelines).where(eq(timelines.id, branchId)).get()
+  expect(await f.db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, branchId)).get())
+    .toMatchObject({ level: 'complete', assessedVersion: 0, baselineVersion: 2 })
   expect(JSON.parse(storedFork!.forkSnapshotJson!).completeDomains).toEqual(expect.arrayContaining([
     'clock', 'states', 'schedules', 'events', 'commitments', 'memories', 'dialogues', 'dialogueTurns',
     'personaMessages', 'knowledge',
@@ -234,6 +242,16 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   expect(await auditUniverse(f.db, worldId, timelineId)).toContainEqual(expect.objectContaining({
     code: 'unproven_event_projection',
   }))
+  await f.db.delete(events).where(eq(events.id, 'uncommanded-event'))
+
+  // Independently replay every supported projection domain after the full
+  // CREATE → ENTER → ACT → FORK → COMPARE → RETURN → CHAT journey.
+  for (const replayTimelineId of [timelineId, branchId]) {
+    const replay = await rebuildProjection(f.db, worldId, replayTimelineId,
+      await collectReplayInput(f.db, worldId, replayTimelineId),
+      await readCurrentProjection(f.db, worldId, replayTimelineId))
+    expect(replay, `independent replay for ${replayTimelineId}`).toMatchObject({ status: 'complete', differences: [] })
+  }
 })
 
 it('rolls back person and world creation if the immutable baseline cannot be written', async () => {
@@ -254,10 +272,17 @@ it('rolls back person and world creation if the immutable baseline cannot be wri
   expect(count('timelines')).toBe(2)
 
   f.sqlite.exec('DROP TRIGGER reject_universe_baseline')
+  f.sqlite.exec("CREATE TRIGGER reject_universe_evidence BEFORE INSERT ON universe_evidence BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END")
+  expect((await request('/api/persons', 'POST', { name: 'Atomic Evidence Person', model: {} })).status).toBe(500)
+  expect(count('persons')).toBe(0)
+  expect(count('world_model_versions')).toBe(0)
+  expect(count('worlds')).toBe(2)
+  expect(count('timelines')).toBe(2)
+  f.sqlite.exec('DROP TRIGGER reject_universe_evidence')
   const person = await request('/api/persons', 'POST', { name: 'Atomic Person', model: {} })
   expect(person.status).toBe(200)
   const personId = (await person.json() as { id: string }).id
-  f.sqlite.exec("CREATE TRIGGER reject_universe_baseline BEFORE INSERT ON universe_revisions BEGIN SELECT RAISE(ABORT, 'forced baseline failure'); END")
+  f.sqlite.exec("CREATE TRIGGER reject_universe_evidence BEFORE INSERT ON universe_evidence BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END")
   expect((await request('/api/worlds', 'POST', {
     name: 'Atomic Universe', description: 'Must not be half-created', personIds: [personId],
     locations: ['Cafe', 'Harbor', 'Market', 'Library', 'Square'].map(name => ({ name, description: '' })),
@@ -266,6 +291,7 @@ it('rolls back person and world creation if the immutable baseline cannot be wri
   expect(count('timelines')).toBe(3)
   expect(count('world_model_versions')).toBe(1)
   expect(count('world_persons')).toBe(1)
+  expect(count('universe_evidence')).toBe(2) // fixture root and the person's default world remain
 })
 
 it('advances the selected world, completes ordinary chat, and forks from the resulting history', async () => {
@@ -275,6 +301,8 @@ it('advances the selected world, completes ordinary chat, and forks from the res
   vi.useFakeTimers()
   vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
   await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
 
   const tick = await runTick({ ...f.env, WORLD_SPEED: '6', DIRECTOR_LLM: '0' }, f.db)
   const simNow = tick?.worlds.find(world => world.id === 'home-world')?.timelines[0]?.simNow
@@ -301,9 +329,16 @@ it('advances the selected world, completes ordinary chat, and forks from the res
   )))
   const factsBeforeChat = await f.db.select().from(worldFacts).all()
   const sent = await app.request(`/api/conversations/${conversation.id}/messages`, { method: 'POST', headers,
-    body: JSON.stringify({ content: 'How are you today?' }) }, f.env)
+    body: JSON.stringify({ content: 'How are you today?', requestId: 'run-chat-request' }) }, f.env)
   expect(sent.status).toBe(200)
   expect(await sent.text()).toContain('I am glad you came by.')
+  const restored = await app.request(`/api/conversations/${conversation.id}/requests/run-chat-request`,
+    { headers }, f.env)
+  expect(await restored.json()).toMatchObject({ status: 'completed',
+    reply: { id: 'chat:reply:run-chat-request', content: 'I am glad you came by.' } })
+  const replay = await app.request(`/api/conversations/${conversation.id}/messages`, { method: 'POST', headers,
+    body: JSON.stringify({ content: 'How are you today?', requestId: 'run-chat-request' }) }, f.env)
+  expect(await replay.text()).toContain('"replayed":true')
   expect((await f.db.select().from(messages).where(eq(messages.conversationId, conversation.id)).all())
     .map(message => message.role)).toEqual(['user', 'person'])
   expect(await f.db.select().from(worldFacts).all()).toEqual(factsBeforeChat)

@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { persons, personStates, schedules, timelines, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../../db/schema'
+import { persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts,
+  worldPersons, worlds } from '../../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../../test/world-fixture'
 import { auditUniverse } from '../../world-state/invariants'
 import type { Env } from '../../index'
@@ -18,6 +19,8 @@ it('persists an engine-generated resident schedule through a system world comman
   await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
   await f.db.insert(personStates).values({ personId: 'resident', timelineId: 'home-main', simTime: WORLD_TIME,
     location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Read', updatedRealAt: WORLD_TIME })
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
   const world = (await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())!
   const timeline = (await f.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
   const snapshot = { world, timeline, worldDate: WORLD_TIME.slice(0, 10), stateVersion: 0 } as WorldSnapshot

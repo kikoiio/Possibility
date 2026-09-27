@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -91,6 +91,22 @@ export const timelines = sqliteTable('timelines', {
   forkSnapshotJson: text('fork_snapshot_json'),
 })
 
+/** Audited replay evidence for one Universe timeline. Non-complete rows are fail-closed. */
+export const universeEvidence = sqliteTable(
+  'universe_evidence',
+  {
+    timelineId: text('timeline_id')
+      .primaryKey()
+      .references(() => timelines.id),
+    level: text('level').notNull().default('unassessed'),
+    assessedVersion: integer('assessed_version'),
+    baselineVersion: integer('baseline_version'),
+    reasonCodesJson: text('reason_codes_json').notNull().default('[]'),
+    assessedAt: text('assessed_at').notNull(),
+  },
+  (t) => [index('universe_evidence_level').on(t.level)],
+)
+
 export const personStates = sqliteTable(
   'person_states',
   {
@@ -160,6 +176,21 @@ export const sceneRequests = sqliteTable('scene_requests', {
   heartbeatAt: integer('heartbeat_at').notNull().default(0),
 })
 
+/** Server-side pending natural-language proposals, recoverable across browser sessions. */
+export const sceneIntentProposals = sqliteTable('scene_intent_proposals', {
+  requestId: text('request_id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  personId: text('person_id').notNull().references(() => persons.id),
+  content: text('content').notNull(),
+  resolutionJson: text('resolution_json').notNull(),
+  expectedVersion: integer('expected_version').notNull(),
+  status: text('status').notNull().default('pending'),
+  createdAt: integer('created_at').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+})
+
 export const dialogueTurns = sqliteTable('dialogue_turns', {
   id: text('id').primaryKey(),
   dialogueId: text('dialogue_id')
@@ -213,14 +244,21 @@ export const events = sqliteTable('events', {
 /** 成本护栏与可观测性：每次 LLM 调用一行；世界创建前的调用（蒸馏/骨架）记 user_id、world_id 为空 */
 export const llmCallLog = sqliteTable('llm_call_log', {
   id: text('id').primaryKey(),
+  requestId: text('request_id'),
   worldId: text('world_id'),
   userId: text('user_id'),
   timelineId: text('timeline_id'),
   personId: text('person_id'),
   // schedule / beat / dialogue_turn / injection / summary / chat / distill / world_draft / fork_preview / fork_simulate / chapter / director / scene
   purpose: text('purpose').notNull(),
+  contextHash: text('context_hash'),
+  contractVersion: text('contract_version'),
+  // Existing rows predate receipts and keep null as an explicit unknown legacy outcome.
+  status: text('status'),
+  errorCode: text('error_code'),
   // 真实时间（每日上限按真实日期统计）
   createdAt: text('created_at').notNull(),
+  completedAt: text('completed_at'),
 })
 
 export const conversations = sqliteTable(
@@ -249,6 +287,25 @@ export const messages = sqliteTable('messages', {
   role: text('role').notNull(),
   content: text('content').notNull(),
   createdAt: text('created_at').notNull(),
+})
+
+/** Durable idempotency/recovery state for ordinary chat SSE requests across devices. */
+export const chatRequests = sqliteTable('chat_requests', {
+  requestId: text('request_id').primaryKey(),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  personId: text('person_id').notNull().references(() => persons.id),
+  contentHash: text('content_hash').notNull(),
+  userMessageId: text('user_message_id').notNull().references(() => messages.id),
+  replyMessageId: text('reply_message_id').notNull(),
+  status: text('status').notNull().default('pending'),
+  heartbeatAt: integer('heartbeat_at').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  finishedAt: text('finished_at'),
+  errorCode: text('error_code'),
 })
 
 /** 章节：时间线事件流的小说化回顾（驻场叙事者一次 LLM 调用生成，可反复阅读） */

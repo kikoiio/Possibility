@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
-import { persons, personStates, timelines, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { persons, personStates, timelines, universeEvidence, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
 import { budgetFromEnv } from '../engine/budget'
@@ -111,6 +111,8 @@ personRoutes.post('/', async (c) => {
       projectionBaseline: createRootProjectionBaseline(now, now, [baselineState]),
     }), createdAt: now }),
     db.insert(universeRevisions).values({ timelineId, version: 0, simTime: now, worldModelVersion: 1, updatedAt: now }),
+    db.insert(universeEvidence).values({ timelineId, level: 'complete', assessedVersion: 0,
+      baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   ])
   return c.json({ id: personId })
 })

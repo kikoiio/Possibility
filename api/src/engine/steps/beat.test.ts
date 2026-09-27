@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { memories, persons, personStates, worldCommands, worldFacts, worldPersons, events } from '../../db/schema'
+import { memories, persons, personStates, universeEvidence, worldCommands, worldFacts, worldPersons, events } from '../../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../../test/world-fixture'
 import { applyBeatOutput, normalizeBeatJson } from './beat'
 
@@ -28,8 +28,8 @@ describe('normalizeBeatJson（beat 输出校验）', () => {
     expect(beat.mood).toBe('凝重')
   })
 
-  it('offsetMin 钳制在节拍窗口内：负值归零、超出截断（回归：未来事件越过 simNow）', () => {
-    const beat = normalizeBeatJson(
+  it('offsetMin 超出节拍窗口即拒绝，不生成未来事件', () => {
+    expect(() => normalizeBeatJson(
       {
         events: [
           { title: 'A', description: 'a', offsetMin: -5 },
@@ -40,18 +40,17 @@ describe('normalizeBeatJson（beat 输出校验）', () => {
       },
       LOCS,
       60,
-    )
-    expect(beat.events.map((e) => e.offsetMin)).toEqual([0, 60, 30])
+    )).toThrow()
   })
 
-  it('非数字 offsetMin 视为 0', () => {
-    const beat = normalizeBeatJson({ events: [{ title: 'A', description: 'a', offsetMin: '很快' }], thought: 't' }, LOCS, 60)
-    expect(beat.events[0].offsetMin).toBe(0)
+  it('非数字 offsetMin 不做强制转换', () => {
+    expect(() => normalizeBeatJson({ events: [{ title: 'A', description: 'a', offsetMin: '很快' }],
+      thought: 't' }, LOCS, 60)).toThrow()
   })
 
-  it('地点不在世界名单内则丢弃 nextLocation', () => {
-    const beat = normalizeBeatJson({ events: [{ title: 'A', description: 'a' }], thought: 't', nextLocation: '月球' }, LOCS, 60)
-    expect(beat.nextLocation).toBeNull()
+  it('地点不在世界名单内则拒绝', () => {
+    expect(() => normalizeBeatJson({ events: [{ title: 'A', description: 'a', offsetMin: 0 }],
+      thought: 't', nextLocation: '月球' }, LOCS, 60)).toThrow()
   })
 
   it('事件为空或想法为空视为失败（抛错触发重试）', () => {
@@ -68,6 +67,8 @@ describe('versioned beat application', () => {
       await fixture.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident-a', joinedAt: WORLD_TIME })
       await fixture.db.insert(personStates).values({ personId: 'resident-a', timelineId: 'home-main', simTime: WORLD_TIME,
         location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
+      await fixture.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+        baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
       const beat = { events: [{ title: '读完一页', description: '窗外的雨声渐密。', offsetMin: 0 }],
         thought: '这里很安静。', memory: { type: 'relationship', content: '来访者提起了旧火车站。', importance: 7 },
         nextLocation: 'Library', nextActivity: 'Reading', mood: 'Thoughtful', goal: 'Find the old map' }

@@ -68,20 +68,38 @@ export interface CallMeta {
   timelineId: string | null
   personId: string | null
   purpose: CallPurpose
+  requestId?: string | null
+  contractVersion?: string | null
 }
+
+export interface ReceiptDetails {
+  requestId?: string | null
+  contextHash?: string | null
+  contractVersion?: string | null
+}
+
+export type ReceiptStatus = 'completed' | 'failed' | 'cancelled'
 
 /** D1 batch is transactional: the conditional insert and counter increment commit together.
  * Admission reads the live row in SQL; never write a counter derived from a caller's snapshot.
- * Failed/uncertain provider attempts remain charged. There is no post-call settlement.
+ * Failed/uncertain provider attempts remain charged. Settlement changes observability only,
+ * never the already-consumed budget counter.
  */
-export async function reserveWorldCall(db: Db, worldId: string, cfg: BudgetConfig, meta: CallMeta): Promise<boolean> {
+export async function reserveWorldCall(
+  db: Db,
+  worldId: string,
+  cfg: BudgetConfig,
+  meta: CallMeta,
+  details: ReceiptDetails = {},
+): Promise<string | null> {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
   const day = now.slice(0, 10)
   const used = sql<number>`case when ${worlds.callsDay} = ${day} then ${worlds.callsToday} else 0 end`
   const [admitted] = await db.batch([
-    db.insert(llmCallLog).select(sql`select ${id}, ${worlds.id}, ${worlds.userId},
-      ${meta.timelineId}, ${meta.personId}, ${meta.purpose}, ${now}
+    db.insert(llmCallLog).select(sql`select ${id}, ${details.requestId ?? meta.requestId ?? null}, ${worlds.id}, ${worlds.userId},
+      ${meta.timelineId}, ${meta.personId}, ${meta.purpose}, ${details.contextHash ?? null},
+      ${details.contractVersion ?? meta.contractVersion ?? null}, 'reserved', null, ${now}, null
       from ${worlds} where ${worlds.id} = ${worldId}
       and ${worlds.status} = 'running' and ${used} < ${cfg.dailyCallCap}`)
       .returning({ id: llmCallLog.id }),
@@ -92,18 +110,40 @@ export async function reserveWorldCall(db: Db, worldId: string, cfg: BudgetConfi
       pauseReason: sql`case when ${used} + 1 >= ${cfg.dailyCallCap} then 'daily_cap' else ${worlds.pauseReason} end`,
     }).where(and(eq(worlds.id, worldId), sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`)),
   ])
-  return admitted.length === 1
+  return admitted[0]?.id ?? null
 }
 
 /** A single INSERT ... SELECT serializes the user's check and reservation, including parallel retries. */
-export async function reserveUserCall(db: Db, userId: string, cfg: BudgetConfig, purpose: CallPurpose): Promise<boolean> {
+export async function reserveUserCall(
+  db: Db,
+  userId: string,
+  cfg: BudgetConfig,
+  purpose: CallPurpose,
+  details: ReceiptDetails = {},
+): Promise<string | null> {
   const now = new Date().toISOString()
   const day = now.slice(0, 10)
-  const rows = await db.insert(llmCallLog).select(sql`select ${crypto.randomUUID()}, null, ${userId}, null, null, ${purpose}, ${now}
+  const rows = await db.insert(llmCallLog).select(sql`select ${crypto.randomUUID()}, ${details.requestId ?? null}, null,
+    ${userId}, null, null, ${purpose}, ${details.contextHash ?? null}, ${details.contractVersion ?? null},
+    'reserved', null, ${now}, null
     where (select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userId}
       and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'}
-      and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}) < ${cfg.preworldDailyCap}`)
+    and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}) < ${cfg.preworldDailyCap}`)
     .returning({ id: llmCallLog.id })
+  return rows[0]?.id ?? null
+}
+
+/** A receipt is terminal exactly once. Prompt and output are deliberately never accepted here. */
+export async function settleCallReceipt(
+  db: Db,
+  receiptId: string,
+  status: ReceiptStatus,
+  errorCode: string | null = null,
+  completedAt = new Date(),
+): Promise<boolean> {
+  const rows = await db.update(llmCallLog).set({ status, errorCode, completedAt: completedAt.toISOString() })
+    .where(and(eq(llmCallLog.id, receiptId), eq(llmCallLog.status, 'reserved')))
+    .returning({ id: llmCallLog.id }).all()
   return rows.length === 1
 }
 

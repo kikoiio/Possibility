@@ -26,6 +26,8 @@ export interface ForkSnapshot {
   dialogues?: (typeof dialogues.$inferSelect)[]
   dialogueTurns?: (typeof dialogueTurns.$inferSelect)[]
   commitments: (typeof commitments.$inferSelect)[]
+  /** Exact active commitment rows materialized for the child, including remapped IDs. */
+  projectedCommitments?: (typeof commitments.$inferSelect)[]
   /** Frozen visitor messages visible at this checkpoint; absent on older snapshots. */
   personaMessages?: (typeof personaMessages.$inferSelect)[]
   /** Domains whose state is fully evidenced by this checkpoint; absent on legacy snapshots. */
@@ -54,6 +56,7 @@ export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
       && Array.isArray(value.ancestorCutoffs) && Array.isArray(value.states)
       && Array.isArray(value.schedules) && Array.isArray(value.memories) && Array.isArray(value.events)
       && Array.isArray(value.commitments)
+      && (value.projectedCommitments === undefined || Array.isArray(value.projectedCommitments))
       && (value.dialogues === undefined || Array.isArray(value.dialogues))
       && (value.dialogueTurns === undefined || Array.isArray(value.dialogueTurns))
       && (value.personaMessages === undefined || Array.isArray(value.personaMessages))

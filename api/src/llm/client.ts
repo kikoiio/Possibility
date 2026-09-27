@@ -1,5 +1,7 @@
 /** OpenAI 兼容协议客户端：chat completions + streaming + tools（N5） */
 
+import { LlmContractError, llmError } from './contracts'
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null
@@ -28,18 +30,30 @@ export interface LlmConfig {
   baseUrl: string
   apiKey: string
   model: string
-  reserve?: () => Promise<void>
+  provider?: { fetch(request: Request): Promise<Response> }
+  reserve?: ReceiptReservation
+}
+
+export type ReceiptOutcome = 'completed' | 'failed' | 'cancelled'
+export type ReceiptReservation = ((details: {
+  requestId: string | null
+  contextHash: string
+  contractVersion: string
+}) => Promise<string | void>) & {
+  settle?: (receiptId: string, status: ReceiptOutcome, errorCode?: string | null) => Promise<void>
 }
 
 export function configFromEnv(env: {
   LLM_BASE_URL: string
   LLM_API_KEY: string
   LLM_MODEL: string
-}, reserve?: () => Promise<void>): LlmConfig {
+  LLM_PROVIDER?: { fetch(request: Request): Promise<Response> }
+}, reserve?: ReceiptReservation): LlmConfig {
   return {
     baseUrl: env.LLM_BASE_URL.replace(/\/+$/, ''),
     apiKey: env.LLM_API_KEY,
     model: env.LLM_MODEL,
+    provider: env.LLM_PROVIDER,
     reserve,
   }
 }
@@ -48,15 +62,25 @@ export interface CallOptions {
   maxTokens?: number
   timeoutMs?: number
   signal?: AbortSignal
+  requestId?: string
+  contractVersion?: string
+}
+
+export interface ContractCallOptions<T> extends CallOptions {
+  contractVersion: string
+  parse: (content: string) => T
 }
 
 /** Covers headers AND body, even when a mocked/noncompliant transport ignores abort. */
 function requestScope(opts: CallOptions, defaultTimeout: number) {
   const controller = new AbortController()
-  const abort = () => controller.abort(opts.signal?.reason ?? new Error('LLM 请求已取消'))
+  const abort = () => controller.abort(new LlmContractError('cancelled', 'LLM 请求已取消', {
+    cause: opts.signal?.reason,
+  }))
   if (opts.signal?.aborted) abort()
   else opts.signal?.addEventListener('abort', abort, { once: true })
-  const timer = setTimeout(() => controller.abort(new Error('LLM 请求超时')), opts.timeoutMs ?? defaultTimeout)
+  const timer = setTimeout(() => controller.abort(new LlmContractError('timeout', 'LLM 请求超时')),
+    opts.timeoutMs ?? defaultTimeout)
   return {
     signal: controller.signal,
     async wait<T>(promise: Promise<T>): Promise<T> {
@@ -100,36 +124,75 @@ async function readText(res: Response, scope: RequestScope): Promise<string> {
     }
   } finally {
     scope.signal.removeEventListener('abort', cancel)
-    cancel()
+    await reader.cancel(scope.signal.reason).catch(() => {})
     reader.releaseLock()
   }
 }
 
-async function postChat(config: LlmConfig, payload: Record<string, unknown>, scope: RequestScope): Promise<Response> {
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function receiptFailure(error: unknown, scope: RequestScope): { status: 'failed' | 'cancelled'; errorCode: string } {
+  const normalized = scope.signal.aborted ? llmError(scope.signal.reason) : llmError(error)
+  return {
+    status: normalized.code === 'timeout' || normalized.code === 'cancelled' ? 'cancelled' : 'failed',
+    errorCode: normalized.code,
+  }
+}
+
+async function settleReceipt(
+  config: LlmConfig,
+  receiptId: string | null,
+  status: ReceiptOutcome,
+  errorCode: string | null = null,
+): Promise<void> {
+  if (receiptId && config.reserve?.settle) await config.reserve.settle(receiptId, status, errorCode)
+}
+
+async function postChat(
+  config: LlmConfig,
+  payload: Record<string, unknown>,
+  scope: RequestScope,
+  opts: CallOptions,
+): Promise<{ response: Response; receiptId: string | null }> {
   const body = JSON.stringify(payload)
   scope.signal.throwIfAborted()
   if (!config.reserve) throw new Error('LLM 调用缺少预算 reservation')
-  await config.reserve()
-  scope.signal.throwIfAborted()
-  const pending = fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body,
-    signal: scope.signal,
-  })
-  // A transport resolving headers after cancellation must not leave an unread body alive.
-  void pending.then((res) => {
-    if (scope.signal.aborted) void res.body?.cancel().catch(() => {})
-  }, () => {})
-  const res = await scope.wait(pending)
-  if (!res.ok) {
-    const text = await readText(res, scope)
-    throw new Error(`LLM 请求失败（${res.status}）：${text.slice(0, 500)}`)
+  const receiptId = await config.reserve({
+    requestId: opts.requestId ?? null,
+    contextHash: await sha256(body),
+    contractVersion: opts.contractVersion ?? 'chat-completions/v1',
+  }) ?? null
+  try {
+    scope.signal.throwIfAborted()
+    const url = `${config.baseUrl}/chat/completions`
+    const init: RequestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body,
+      signal: scope.signal,
+    }
+    const pending = config.provider ? config.provider.fetch(new Request(url, init)) : fetch(url, init)
+    // A transport resolving headers after cancellation must not leave an unread body alive.
+    void pending.then((res) => {
+      if (scope.signal.aborted) void res.body?.cancel().catch(() => {})
+    }, () => {})
+    const res = await scope.wait(pending)
+    if (!res.ok) {
+      const text = await readText(res, scope)
+      throw new LlmContractError('provider_http_error', `LLM 请求失败（${res.status}）：${text.slice(0, 500)}`)
+    }
+    return { response: res, receiptId }
+  } catch (error) {
+    const failure = receiptFailure(error, scope)
+    await settleReceipt(config, receiptId, failure.status, failure.errorCode)
+    throw error
   }
-  return res
 }
 
 function toApiTools(tools: ToolDef[] | undefined): unknown[] | undefined {
@@ -140,16 +203,16 @@ function toApiTools(tools: ToolDef[] | undefined): unknown[] | undefined {
   }))
 }
 
-/** 非流式一次性调用，返回文本（供蒸馏、Fork 预览等 JSON 输出场景）；timeoutMs 防挂死 */
-export async function complete(
+async function completeParsed<T>(
   config: LlmConfig,
   messages: ChatMessage[],
-  opts: CallOptions = {},
-): Promise<string> {
+  opts: CallOptions,
+  parse: (content: string) => T,
+): Promise<T> {
   const scope = requestScope(opts, 180_000)
-  let data: { choices?: { message?: { content?: string } }[] }
+  let receiptId: string | null = null
   try {
-    const res = await postChat(
+    const posted = await postChat(
       config,
       {
         model: config.model,
@@ -158,16 +221,57 @@ export async function complete(
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       },
       scope,
+      opts,
     )
-    data = JSON.parse(await readText(res, scope)) as typeof data
+    receiptId = posted.receiptId
+    let data: { choices?: { message?: { content?: string } }[] }
+    try {
+      data = JSON.parse(await readText(posted.response, scope)) as typeof data
+    } catch (error) {
+      throw new LlmContractError('invalid_json', 'LLM 返回的 JSON 无法解析', { cause: error })
+    }
+    const content = data.choices?.[0]?.message?.content
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new LlmContractError('invalid_response', 'LLM 返回缺少内容')
+    }
+    // “completed” means the caller-visible contract has passed, not merely that
+    // the provider returned a non-empty string. Contract callers therefore parse
+    // inside this receipt boundary.
+    const result = parse(content)
+    await settleReceipt(config, receiptId, 'completed')
+    receiptId = null
+    return result
+  } catch (error) {
+    if (receiptId) {
+      const failure = receiptFailure(error, scope)
+      await settleReceipt(config, receiptId, failure.status, failure.errorCode)
+      receiptId = null
+    }
+    throw error
   } finally {
     scope.close()
   }
-  const content = data.choices?.[0]?.message?.content
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('LLM 返回缺少内容')
-  }
-  return content
+}
+
+/** 非流式一次性调用，返回文本；timeoutMs 防挂死。 */
+export async function complete(
+  config: LlmConfig,
+  messages: ChatMessage[],
+  opts: CallOptions = {},
+): Promise<string> {
+  return completeParsed(config, messages, opts, content => content)
+}
+
+/**
+ * 结构化合同调用。只有 parse 完成后 receipt 才进入 completed；解析或业务合同
+ * 校验失败会以稳定错误码进入 failed，避免“传输成功”冒充“合同成功”。
+ */
+export async function completeContract<T>(
+  config: LlmConfig,
+  messages: ChatMessage[],
+  opts: ContractCallOptions<T>,
+): Promise<T> {
+  return completeParsed(config, messages, opts, opts.parse)
 }
 
 /**
@@ -183,9 +287,11 @@ export async function* streamChat(
   const apiTools = toApiTools(tools)
   const scope = requestScope(opts, 120_000)
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let receiptId: string | null = null
+  let settled = false
   const cancel = () => { void reader?.cancel(scope.signal.reason).catch(() => {}) }
   try {
-    const res = await postChat(
+    const posted = await postChat(
       config,
       {
         model: config.model,
@@ -195,7 +301,10 @@ export async function* streamChat(
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       },
       scope,
+      opts,
     )
+  receiptId = posted.receiptId
+  const res = posted.response
   if (!res.body) throw new Error('LLM 流式响应缺少 body')
 
   reader = res.body.getReader()
@@ -235,10 +344,13 @@ export async function* streamChat(
         if (!data) continue
         if (data === '[DONE]') {
           for (const ev of drainToolCalls()) yield ev
+          await settleReceipt(config, receiptId, 'completed')
+          settled = true
           yield { type: 'done' }
           return
         }
         let json: {
+          type?: string
           choices?: {
             delta?: {
               content?: string | null
@@ -253,8 +365,15 @@ export async function* streamChat(
         }
         try {
           json = JSON.parse(data)
-        } catch {
-          continue
+        } catch (error) {
+          throw new LlmContractError('malformed_stream', 'LLM 流包含无法解析的数据帧', { cause: error })
+        }
+        if (json.type === 'response.completed' || json.type === 'message_stop') {
+          for (const ev of drainToolCalls()) yield ev
+          await settleReceipt(config, receiptId, 'completed')
+          settled = true
+          yield { type: 'done' }
+          return
         }
         const choice = json.choices?.[0]
         if (!choice) continue
@@ -278,9 +397,18 @@ export async function* streamChat(
       }
     }
   }
-  for (const ev of drainToolCalls()) yield ev
-  yield { type: 'done' }
+  throw new LlmContractError('truncated', buffer.trim()
+    ? 'LLM 流在完整数据帧中途结束'
+    : 'LLM 流在明确完成标志前结束')
+  } catch (error) {
+    if (receiptId && !settled) {
+      const failure = receiptFailure(error, scope)
+      await settleReceipt(config, receiptId, failure.status, failure.errorCode)
+      settled = true
+    }
+    throw error
   } finally {
+    if (receiptId && !settled) await settleReceipt(config, receiptId, 'cancelled', 'consumer_cancelled')
     scope.signal.removeEventListener('abort', cancel)
     cancel()
     reader?.releaseLock()

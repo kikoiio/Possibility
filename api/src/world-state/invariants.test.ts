@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { commitWorldCommand } from './commit'
 import { ensureUniverseRevision } from './model'
@@ -719,10 +719,12 @@ it('reports corrupted history that assigns two locations to one resident at one 
 })
 
 it('reports a fact sourced from another timeline instead of silently omitting it from replay', async () => {
-  fixture = await createWorldFixture()
+  fixture = await createWorldFixture({ writable: false })
   await fixture.db.insert(timelines).values({ id: 'foreign-line', worldId: 'home-world', parentTimelineId: null,
     forkScenarioJson: null, simNow: WORLD_TIME, createdAt: WORLD_TIME, status: 'active', ancestorIdsJson: '[]',
     lastRealTickAt: null, forkSnapshotJson: null })
+  await fixture.db.insert(universeEvidence).values({ timelineId: 'foreign-line', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME })
   await fixture.db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, modelJson: '{}', createdAt: WORLD_TIME })
   await fixture.db.insert(universeRevisions).values({ timelineId: 'home-main', version: 1, simTime: WORLD_TIME,
     worldModelVersion: 1, updatedAt: WORLD_TIME })

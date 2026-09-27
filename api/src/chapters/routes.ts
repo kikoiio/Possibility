@@ -4,6 +4,7 @@ import { createDb } from '../db/client'
 import { chapters, timelines, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { generateChapter } from './generate'
+import { gateUniverseWrite } from '../engine/guard'
 import type { Env } from '../index'
 
 export const chapterRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -32,8 +33,10 @@ chapterRoutes.post('/worlds/:id/chapters', async (c) => {
   }
   const timeline = body.timelineId !== undefined
     ? tls.find((t) => t.id === body.timelineId && t.status === 'active')
-    : tls.find((t) => t.parentTimelineId === null) || tls[0]
+    : tls.find((t) => t.parentTimelineId === null && t.status === 'active') || tls.find((t) => t.status === 'active')
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const gate = await gateUniverseWrite(db, world.id, timeline.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
 
   try {
     const chapter = await generateChapter(c.env, db, world, timeline)

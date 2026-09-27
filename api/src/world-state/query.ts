@@ -1,14 +1,16 @@
 import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions } from '../db/schema'
+import { timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions } from '../db/schema'
 import { readForkSnapshot } from '../agent/visibility'
 import { WorldStateError } from './types'
+import { publicUniverseEvidence } from './evidence-status'
 
 export async function readWorldState(db: Db, worldId: string, timelineId: string) {
   const timeline = await db.select().from(timelines)
     .where(and(eq(timelines.id, timelineId), eq(timelines.worldId, worldId))).get()
   if (!timeline) throw new WorldStateError('时间线不存在', 404)
   const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
+  const evidenceRow = await db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, timelineId)).get()
   const model = revision ? await db.select().from(worldModelVersions)
     .where(and(eq(worldModelVersions.worldId, worldId), eq(worldModelVersions.version, revision.worldModelVersion))).get() : null
   const facts = await db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId))
@@ -24,6 +26,7 @@ export async function readWorldState(db: Db, worldId: string, timelineId: string
     worldModelVersion: revision?.worldModelVersion ?? null,
     evidenceStatus: !revision || (timeline.parentTimelineId && forkSnapshot?.sourceStateVersion == null)
       ? 'legacy' as const : 'structured' as const,
+    evidence: publicUniverseEvidence(evidenceRow),
     model: model ? JSON.parse(model.modelJson) as unknown : null,
     facts: allFacts.map(f => ({ ...f, value: JSON.parse(f.valueJson) as unknown })),
     current: [...current.values()].map(f => ({ ...f, value: JSON.parse(f.valueJson) as unknown })),

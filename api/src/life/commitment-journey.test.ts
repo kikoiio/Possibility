@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { commitments, memories, persons, personStates, timelines, universeRevisions, worldFacts, worldPersons } from '../db/schema'
+import { commitments, memories, persons, personStates, timelines, universeEvidence, universeRevisions, worldFacts, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { ensureUniverseRevision } from '../world-state/model'
 import { commitWorldCommand } from '../world-state/commit'
@@ -20,6 +20,8 @@ it('completes an invited meeting through acceptance, arrival-window refusal, att
   await f.db.insert(personStates).values({ personId: 'meeting-resident', timelineId: 'home-main', simTime: WORLD_TIME,
     location: 'Cafe', activity: 'Waiting for a visitor', mood: 'Calm', goal: 'Meet a friend', updatedRealAt: WORLD_TIME })
   await ensureUniverseRevision(f.db, 'home-world', 'home-main')
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
 
   const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
   const personaResponse = await app.request('/api/worlds/home-world/persona', { method: 'POST', headers,

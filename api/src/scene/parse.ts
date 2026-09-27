@@ -1,4 +1,5 @@
 import { normalizeDialogueJson } from '../engine/steps/dialogue'
+import { contractViolation, LLM_CONTRACT_VERSIONS } from '../llm/contracts'
 import { parseInvitation, type Invitation } from '../life/service'
 
 export interface SceneOutput {
@@ -22,10 +23,14 @@ export function containsExplicitInvitationRequest(text: string): boolean {
 
 /** 解析 scene 回应 JSON（纯函数，供单测）：复用对话格式 + 可选 word 留言字段 */
 export function parseSceneOutput(raw: unknown): SceneOutput {
-  const base = normalizeDialogueJson(raw)
-  const wordRaw = (raw as Record<string, unknown> | null)?.word
-  const commitment = parseInvitation((raw as Record<string, unknown> | null)?.commitment)
-  const responseRaw = (raw as Record<string, unknown> | null)?.visitorInvitationResponse
+  const version = LLM_CONTRACT_VERSIONS.sceneResponse
+  const base = normalizeDialogueJson(raw, version)
+  const record = raw as Record<string, unknown>
+  const wordRaw = record.word
+  const commitmentRaw = record.commitment
+  const commitment = parseInvitation(commitmentRaw)
+  if (commitmentRaw != null && !commitment) return contractViolation(version, 'commitment 结构或业务范围非法')
+  const responseRaw = record.visitorInvitationResponse
   const response = responseRaw && typeof responseRaw === 'object'
     ? responseRaw as Record<string, unknown> : null
   const visitorInvitationResponse = response?.decision === 'declined'
@@ -36,7 +41,11 @@ export function parseSceneOutput(raw: unknown): SceneOutput {
         return invitation ? { decision: 'accepted' as const, invitation } : null
       })()
       : null
-  if (typeof wordRaw !== 'string') return { ...base, word: null, commitment, visitorInvitationResponse }
-  const word = wordRaw.trim().slice(0, WORD_MAX)
+  if (responseRaw != null && !visitorInvitationResponse) {
+    return contractViolation(version, 'visitorInvitationResponse 结构或业务范围非法')
+  }
+  if (wordRaw != null && typeof wordRaw !== 'string') return contractViolation(version, 'word 必须是字符串或 null')
+  const word = typeof wordRaw === 'string' ? wordRaw.trim() : ''
+  if (word.length > WORD_MAX) return contractViolation(version, `word 不能超过 ${WORD_MAX} 字`)
   return { ...base, word: word || null, commitment, visitorInvitationResponse }
 }

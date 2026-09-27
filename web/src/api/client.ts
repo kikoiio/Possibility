@@ -113,6 +113,7 @@ export async function postSSE(
 /* ===== 阶段二：世界服务与公共只读接口 ===== */
 
 import type {
+  ChatRequestState,
   Chapter,
   ChapterSummary,
   DemoInfo,
@@ -129,6 +130,46 @@ import type {
   WorldState,
   ReturnBrief,
 } from './types'
+import { createSseParser } from '../lib/sseParser'
+import { createWorldStreamGuard } from '../lib/streamGuard'
+
+/** 普通聊天：持久 request ID 是恢复与幂等边界。 */
+export const chatApi = {
+  history: (conversationId: string) =>
+    apiFetch<{ messages: import('./types').Message[] }>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+    ),
+  send: (
+    conversationId: string,
+    content: string,
+    requestId: string,
+    onEvent: (event: SSEEvent) => void,
+    signal?: AbortSignal,
+  ) => postSSE(
+    `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+    { content, requestId },
+    onEvent,
+    signal,
+  ),
+  requestStatus: (conversationId: string, requestId: string) =>
+    apiFetch<ChatRequestState>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/requests/${encodeURIComponent(requestId)}`,
+    ),
+  pendingRequests: (conversationId: string) =>
+    apiFetch<{ requests: Pick<ChatRequestState, 'requestId' | 'status' | 'heartbeatAt' | 'createdAt' | 'updatedAt'>[] }>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/requests/pending`,
+    ),
+  cancelRequest: (conversationId: string, requestId: string) =>
+    apiFetch<ChatRequestState>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/requests/${encodeURIComponent(requestId)}/cancel`,
+      { method: 'POST' },
+    ),
+  recoverRequest: (conversationId: string, requestId: string) =>
+    apiFetch<ChatRequestState>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/requests/${encodeURIComponent(requestId)}/recover`,
+      { method: 'POST' },
+    ),
+}
 
 export const worldsApi = {
   draft: (prompt: string) => apiFetch<WorldDraft>('/api/worlds/draft', { method: 'POST', body: JSON.stringify({ prompt }) }),
@@ -207,12 +248,20 @@ export const personaApi = {
 }
 
 /** 你在世界里：到场交谈（SSE 逐句回应；每人一句 = 1 次 LLM 调用，走预算护栏） */
+export type SceneIntentResolution = {
+  requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
+  status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
+  proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
+  question?: string; reason?: string;
+}
+
 export const sceneApi = {
   /** 各地点「清醒且空闲」的可交谈人数（避免扑空） */
   board: (worldId: string, timelineId: string) => apiFetch<{ board: { location: string; count: number; people: { id: string; name: string }[] }[] }>(`/api/worlds/${worldId}/scene/board?timelineId=${encodeURIComponent(timelineId)}`),
   history: (worldId: string, timelineId: string, location?: string) => apiFetch<{dialogueId: string | null; location: string | null; turns: {id: string; personId: string; name: string; utterance: string}[]}>(`/api/worlds/${worldId}/scene/history?timelineId=${encodeURIComponent(timelineId)}${location ? `&location=${encodeURIComponent(location)}` : ''}`),
   requestStatus: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}?timelineId=${encodeURIComponent(timelineId)}`),
   recoverRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/recover?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
+  cancelRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/cancel?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
   resolveIntent: (worldId: string, body: { timelineId: string; content: string; requestId: string }) =>
     apiFetch<{
       requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
@@ -220,6 +269,11 @@ export const sceneApi = {
       proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
       question?: string; reason?: string;
     }>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }),
+  pendingIntent: (worldId: string, timelineId: string) =>
+    apiFetch<{ text: string; result: SceneIntentResolution } | { proposal: null }>(
+      `/api/worlds/${worldId}/scene/intent/pending?timelineId=${encodeURIComponent(timelineId)}`),
+  cancelIntent: (worldId: string, requestId: string) =>
+    apiFetch<{ status: 'cancelled' | 'missing' }>(`/api/worlds/${worldId}/scene/intent/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' }),
   send: (worldId: string, body: { timelineId: string; location?: string; content: string; dialogueId?: string; requestId?: string }, onEvent: (event: SSEEvent) => void, signal?: AbortSignal) =>
     postSSE(`/api/worlds/${worldId}/scene`, body, onEvent, signal),
   position: (worldId: string, body: { timelineId: string; location: string; commandId: string; expectedVersion: number }) =>
@@ -243,9 +297,14 @@ export function subscribeWorldStream(
   worldId: string,
   timelineId: string,
   onEvent: (event: WorldStreamEvent) => void,
-  opts: { isPublic?: boolean; onError?: (e: unknown) => void } = {},
+  opts: { isPublic?: boolean; onError?: (e: unknown) => void; generation?: number;
+    isGenerationCurrent?: (generation: number) => boolean } = {},
 ): () => void {
   const controller = new AbortController()
+  let active = true
+  const generation = opts.generation ?? 0
+  const guard = createWorldStreamGuard({ worldId, timelineId, generation,
+    isGenerationCurrent: opts.isGenerationCurrent ?? (() => active) })
   const base = opts.isPublic ? `/api/public/worlds/${worldId}/stream` : `/api/worlds/${worldId}/stream`
   const token = getToken()
 
@@ -259,25 +318,15 @@ export function subscribeWorldStream(
       if (!res.ok || !res.body) throw new Error(`流连接失败（${res.status}）`)
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      const parser = createSseParser()
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let idx: number
-        while ((idx = buffer.indexOf('\n\n')) >= 0) {
-          const chunk = buffer.slice(0, idx)
-          buffer = buffer.slice(idx + 2)
-          let eventName = 'message'
-          const dataLines: string[] = []
-          for (const line of chunk.split('\n')) {
-            if (line.startsWith('event:')) eventName = line.slice(6).trim()
-            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
-          }
-          const data = dataLines.join('\n')
-          if (!data || eventName === 'ping') continue
+        for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+          if (frame.event === 'ping') continue
           try {
-            onEvent(JSON.parse(data) as WorldStreamEvent)
+            const event = JSON.parse(frame.data) as WorldStreamEvent
+            if (guard.accept(event)) onEvent(event)
           } catch {
             // 忽略无法解析的帧
           }
@@ -294,5 +343,5 @@ export function subscribeWorldStream(
     }
   })()
 
-  return () => controller.abort()
+  return () => { active = false; guard.invalidate(); controller.abort() }
 }

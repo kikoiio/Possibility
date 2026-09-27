@@ -77,7 +77,9 @@ export async function* runAgentTurn(
     const calls: { id: string; name: string; args: Record<string, unknown> }[] = []
 
     try {
-      for await (const ev of streamChat(config, messages, tools, { timeoutMs: STREAM_TIMEOUT_MS, signal: opts.signal })) {
+      for await (const ev of streamChat(config, messages, tools, {
+        timeoutMs: STREAM_TIMEOUT_MS, signal: opts.signal, requestId: run.runId,
+      })) {
         if (ev.type === 'text') {
           text += ev.delta
           yield { type: 'text', delta: ev.delta }

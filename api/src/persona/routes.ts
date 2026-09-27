@@ -5,6 +5,7 @@ import { events, personaMessages, personStates, persons, timelines, worldPersons
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { PersonModel } from '../agent/types'
 import type { Env } from '../index'
+import { gateUniverseWrite } from '../engine/guard'
 
 type World = typeof worlds.$inferSelect
 type Person = typeof persons.$inferSelect
@@ -88,6 +89,10 @@ personaRoutes.post('/worlds/:id/persona', async (c) => {
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
   if (!world) return c.json({ error: '世界不存在' }, 404)
+  const timeline = await inboxTimeline(db, world.id)
+  if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const gate = await gateUniverseWrite(db, world.id, timeline.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
 
   const existing = await loadPersona(db, world.id, userId)
   if (existing) {
@@ -190,6 +195,8 @@ personaRoutes.post('/worlds/:id/persona/messages/read', async c => {
   const tl = await inboxTimeline(db, world.id, body.timelineId)
   const persona = await loadPersona(db, world.id, c.get('user').id)
   if (!tl || !persona) return c.json({ error: '身份或时间线不存在' }, 404)
+  const gate = await gateUniverseWrite(db, world.id, tl.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   if (body.ids.length) await db.update(personaMessages).set({ read: true }).where(and(eq(personaMessages.recipientPersonId, persona.id), eq(personaMessages.timelineId, tl.id), inArray(personaMessages.id, body.ids)))
   return c.json({ ok: true })
 })

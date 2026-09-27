@@ -15,26 +15,26 @@ describe('parseSceneOutput（scene 回应解析）', () => {
     expect(out.word).toBeNull()
     expect(out.memory).toBeNull()
   })
-  it('word 字段原样取出并截断到 200 字', () => {
+  it('word 字段原样取出并拒绝超过 200 字', () => {
     const out = parseSceneOutput({ ...VALID, word: '明早开饭前再来一趟。' })
     expect(out.word).toBe('明早开饭前再来一趟。')
-    expect(parseSceneOutput({ ...VALID, word: '长'.repeat(300) }).word).toHaveLength(200)
+    expect(() => parseSceneOutput({ ...VALID, word: '长'.repeat(300) })).toThrow()
   })
-  it('word 为空白/非字符串时视为 null', () => {
+  it('word 为空白时视为 null，非字符串则拒绝', () => {
     expect(parseSceneOutput({ ...VALID, word: '   ' }).word).toBeNull()
-    expect(parseSceneOutput({ ...VALID, word: 123 }).word).toBeNull()
+    expect(() => parseSceneOutput({ ...VALID, word: 123 })).toThrow()
   })
   it('utterance/thought 为空仍按对话格式报错', () => {
     expect(() => parseSceneOutput({ ...VALID, utterance: ' ' })).toThrow()
     expect(() => parseSceneOutput({ ...VALID, thought: '' })).toThrow()
   })
   it('memory 解析与对话格式一致', () => {
-    const out = parseSceneOutput({ ...VALID, memory: { content: '阿透先生数的是灯', importance: 99 } })
+    const out = parseSceneOutput({ ...VALID, memory: { content: '阿透先生数的是灯', importance: 9 } })
     expect(out.memory?.content).toBe('阿透先生数的是灯')
   })
   it('只接受结构完整的约定输出', () => {
     expect(parseSceneOutput({ ...VALID, commitment: { title: '晚饭', kind: 'meeting', location: '厨房', dueInMinutes: 90 } }).commitment?.title).toBe('晚饭')
-    expect(parseSceneOutput({ ...VALID, commitment: { title: '太快', kind: 'meeting', location: '厨房', dueInMinutes: 2 } }).commitment).toBeNull()
+    expect(() => parseSceneOutput({ ...VALID, commitment: { title: '太快', kind: 'meeting', location: '厨房', dueInMinutes: 2 } })).toThrow()
   })
   it('只接受结构完整的来访者邀约回应，并区分婉拒', () => {
     const invitation = { title: '周末去图书馆', kind: 'meeting', location: 'Library', dueInMinutes: 120 }
@@ -42,8 +42,9 @@ describe('parseSceneOutput（scene 回应解析）', () => {
       .toEqual({ decision: 'accepted', invitation })
     expect(parseSceneOutput({ ...VALID, visitorInvitationResponse: { decision: 'declined' } }).visitorInvitationResponse)
       .toEqual({ decision: 'declined' })
-    expect(parseSceneOutput({ ...VALID, visitorInvitationResponse: { decision: 'accepted', invitation: { ...invitation, dueInMinutes: 2 } } }).visitorInvitationResponse)
-      .toBeNull()
+    expect(() => parseSceneOutput({ ...VALID, visitorInvitationResponse: {
+      decision: 'accepted', invitation: { ...invitation, dueInMinutes: 2 },
+    } })).toThrow()
   })
   it('只有明确的邀请表达允许居民接受并生成持久约定', () => {
     expect(containsExplicitInvitationRequest('这周末要不要陪我去图书馆？')).toBe(true)

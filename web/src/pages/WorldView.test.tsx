@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { timelineHref, withTimelineParam } from '../lib/timelineUrl'
-import { isTimelineUpdateCurrent } from '../lib/timelineGuard'
+import { isStreamGenerationCurrent, isTimelineUpdateCurrent } from '../lib/timelineGuard'
 
 describe('world timeline URL', () => {
   it('keeps the selected timeline in the query while preserving other parameters', () => {
@@ -36,5 +36,10 @@ describe('world timeline async result guard', () => {
   it('accepts results for the selected timeline and the default timeline request', () => {
     expect(isTimelineUpdateCurrent(true, 'child', 'child', 'child')).toBe(true)
     expect(isTimelineUpdateCurrent(true, null, null, 'main')).toBe(true)
+  })
+
+  it('invalidates the old stream generation when a replacement starts', () => {
+    expect(isStreamGenerationCurrent(7, 7)).toBe(true)
+    expect(isStreamGenerationCurrent(7, 8)).toBe(false)
   })
 })

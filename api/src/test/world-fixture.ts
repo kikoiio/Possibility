@@ -1,10 +1,10 @@
-import { sessions, timelines, users, worlds } from '../db/schema'
+import { sessions, timelines, universeEvidence, users, worlds } from '../db/schema'
 import { createTestDb } from './db'
 
 export const WORLD_TIME = '2026-09-21T08:00:00.000Z'
 
 /** Stable, model-free world seed for route and state-transition tests. */
-export async function createWorldFixture() {
+export async function createWorldFixture(options: { writable?: boolean } = { writable: true }) {
   const fixture = createTestDb()
   await fixture.db.insert(users).values([
     { id: 'owner', username: 'owner', passwordHash: 'unused', createdAt: WORLD_TIME },
@@ -19,5 +19,7 @@ export async function createWorldFixture() {
     { id: 'home-main', worldId: 'home-world', simNow: WORLD_TIME, createdAt: WORLD_TIME },
     { id: 'other-main', worldId: 'other-world', simNow: WORLD_TIME, createdAt: WORLD_TIME },
   ])
+  if (options.writable) await fixture.db.insert(universeEvidence).values({ timelineId: 'home-main',
+    level: 'complete', assessedVersion: 0, baselineVersion: 0, reasonCodesJson: '["test_fixture_complete"]', assessedAt: WORLD_TIME })
   return fixture
 }

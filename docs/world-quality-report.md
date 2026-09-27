@@ -1,14 +1,14 @@
 # s01 实施质量报告
 
-最后核对：2026-09-24。此报告记录本地实现证据和未满足的门槛，不代表 S01 全局验收已完成。
+最后核对：2026-09-27。下方“2026-09-27 收口复验”覆盖此前较早记录的测试数量、staging 状态及真实模型样本结论；此报告不代表 S01 全局验收已完成。
 
 ## 本轮已验证
 
-- `npm --workspace api test`：226 项通过；`npm --workspace web test`：9 项通过。自动测试共 235 项。
+- 最新 `npm --workspace api run test`：45 文件/330 项通过；`npm --workspace web run test`：6 文件/20 项通过。API/Web production build 通过。
 - `npm --workspace api run build`：通过。
 - `npm --workspace web run build`：通过。
 - `git diff --check`：通过。
-- Cloudflare D1 staging：迁移 0000–0018 已全部应用；远端 Wrangler 4.126 的 `migrations apply` 将含有多个触发器的 migration 合并为单个 SQL，Cloudflare 拒绝 0008 并回滚该迁移。`npm run apply:s01:remote-test-migrations` 按仓库 `statement-breakpoint` 边界逐条执行，并安全限制目标配置名必须包含 test/staging/acceptance；迁移账本 19/19 且无待应用项。两个独立 `wrangler dev --remote` Worker 共用此 D1，最后一个 active Fork 名额的并发请求得到 200/409；跨 Worker 同请求重放 200、改载荷冲突 409、超容量 409。两 Worker `/api/engine/tick` 在 D1 由外部 owner 持锁时均返回 409 且 revision/clock fact 不变；两独立 D1 命令的原子租约 UPSERT 只有一个 owner；直接越级 revision 写入被真实 D1 trigger 拒绝。Worker、lease 和 Fork 临时记录在脚本结束时清理；脚本通过 `S01_REMOTE_D1_CONFIG` 与 `S01_REMOTE_D1_ID` 显式指定目标，不将账户凭据写入仓库。
+- Cloudflare D1 staging：迁移 0000–0019 已全部应用；远端 Wrangler 4.126 的 `migrations apply` 将含有多个触发器的 migration 合并为单个 SQL，Cloudflare 拒绝 0008 并回滚该迁移。`npm run apply:s01:remote-test-migrations` 按仓库 `statement-breakpoint` 边界逐条执行，并安全限制目标配置名必须包含 test/staging/acceptance；迁移账本 20/20 且无待应用项。两个独立 `wrangler dev --remote` Worker 共用此 D1，最后一个 active Fork 名额的并发请求得到 200/409；跨 Worker 同请求重放 200、改载荷冲突 409、超容量 409。两 Worker `/api/engine/tick` 在 D1 由外部 owner 持锁时均返回 409 且 revision/clock fact 不变；两独立 D1 命令的原子租约 UPSERT 只有一个 owner；直接越级 revision 写入被真实 D1 trigger 拒绝。Worker、lease 和 Fork 临时记录在脚本结束时清理；脚本通过 `S01_REMOTE_D1_CONFIG` 与 `S01_REMOTE_D1_ID` 显式指定目标，不将账户凭据写入仓库。
 - 有结构化 revision 的宇宙若缺失其指向的固定模型版本，此前普通读取和行动校验会得到 `null`，继而退回可编辑资产资料。现在模型读取明确报冲突；主人/公开快照返回 409，世界行动被拒且不写事实。`model_json` 为 `null`、非法 JSON 或缺少必要顶层字段时也拒绝读取，审计报告 `world_model_version_invalid`；回归覆盖 `null` 内容。没有 revision 的 legacy 世界继续走兼容读取。API 225 项及构建通过。仍不能把这视为修复损坏数据本身，需保留审计定位与人工修复边界。
 - 旧聊天与 Fork 预览先前直接使用可编辑的 `persons.modelJson`，即使引擎已固定宇宙模型，也可能在共享人物卡改动后呈现另一套性格设定。`buildAgentContext` 现按时间线读取固定的人物模型、名字和世界描述；只有没有固定记录的 legacy 世界继续读取当前资产行。定向回归先在世界 A/B 各自固定不同人物设定，再修改共享人物卡，确认两世界的旧聊天上下文仍分别读取原固定内容。API 203 项与构建通过；世界中后加入、未纳入原模型快照的人物仍需另行定义设定版本更新语义。
 - T03 的精确时间线定位补上空字符串边界：世界/公开快照、对话详情、章节列表/生成、在场看板/历史/发送、身份收件箱与归来回顾仅在参数真正省略时使用主线默认。显式空 ID 不再按 falsy 值回落；章节列表的异世界/不存在 ID 返回 404，而不是伪装成空列表。定向路由回归与 API 全套 203 项、API 构建通过；兼容的省略 ID 默认路径未改变。
@@ -93,26 +93,26 @@
 
 | 验收 | 当前状态 | 证据与剩余差距 |
 |---|---|---|
-| AC01 | 通过 | 原始 79 项基线测试仍在；最新 API 226 项、Web 9 项测试共 235 项，API/Web 构建通过。新增测试连续独立生成小世界夹具，核对世界、时间线、地点和 ID 稳定；已记录基线及缺口。 |
+| AC01 | 通过 | 原始 79 项基线测试仍在；最新 API 45 文件/330 项、Web 6 文件/20 项，API/Web 构建通过。新增测试连续独立生成小世界夹具，核对世界、时间线、地点和 ID 稳定；已记录基线及缺口。 |
 | AC02 | 通过 | 回归覆盖旧世界、事件、对话、记忆、承诺及不完整 Fork 的读取，并确认不把旧叙述推断为新事实；匿名公共快照显式传递 legacy/structured 证据状态，UI 不因只读而误报全部是旧世界；新增迁移在代表性旧数据集上逐表比较迁移前后行内容，且全新隔离 D1 应用后重跑无待迁移项。 |
-| AC03 | 部分 | 移动、环境、知识、承诺、居民节拍/日程切换/日程生成/注入、NPC 交谈、来访场景开启、agent 工具、虚拟时钟、节拍水位线、过期对话锁恢复、记忆压缩及构造者记忆维护已有版本化命令/事实与原子投影。固定响应模型的 16 拍旅程跨越至少 24 小时，每拍执行审计并覆盖 Root→Child→Grandchild；七项日程、四次跨日程变化另有 `runTick` 覆盖。`0017` revision guard 与 `0018` stale-command fence 已在 Cloudflare D1 上验证；两个远端 Worker 的 Fork 容量竞争通过。仍缺全部投影域从独立 reducer 完整重建的等价证明及更丰富居民连续生活矩阵。 |
-| AC04 | 部分 | 测试覆盖命令重放、冲突、并发 CAS、场景同 ID 并发仅一次提交、过期 pending 回收与 late-worker DB guard、命令/事实/设定版本不可变、居民事实、时钟事实、节拍检查点、过期对话恢复及记忆压缩的原子回滚；人物/世界及初始模型版本在同一创建 batch，故障注入确认初始化失败全量回滚。新增路由级 SSE reader 取消→请求状态查询→同 ID 重试回归，且登录态浏览器覆盖 pending 请求复用及过期回收；全局 AC04 的完整矩阵仍未完成。 |
-| AC05 | 部分 | 宇宙内知识按接收者过滤，居民上下文明确区分已证实记录/传闻/来源；转述传闻不能因引用原事实 ID 升级为已证实，私人知识不进入公共快照。固定模型回归执行普通节拍提示构造和两轮 NPC 对话路由，验证只有获知者的提示包含私密消息。新增审计核验 knowledge visibility 与引用来源 certainty，故障注入可发现私密事实公开及 rumor 被提升为 fact。尚未证明真实模型输出始终遵守知识边界，也未完成人工走查及更多转述渠道矩阵。 |
-| AC06 | 部分 | 在场者须先进入，再显式移动；发起交谈的来访者被另一场进行中交谈占用时拒绝，回应者通过位置、忙碌锁与睡眠日程过滤；消息传递校验共处且可交谈。路由级矩阵覆盖睡眠、忙碌、同时睡眠且忙碌、不同地点四种拒绝，均无命令/事实/版本副作用；清醒、空闲、同地点后成功传话。UTC 午夜边界测试验证 23:00–07:00 跨夜睡眠日程在 22:59、23:00、00:00、06:59、07:00 的资格判定。仍缺全套日程转换与明确世界时区语义的端到端旅程。 |
-| AC07 | 部分 | 普通在场交谈提交版本化 conversation fact，指向具体 dialogue/turn IDs；公开发言、居民私有记忆、访客留言、事实、事件及请求完成状态在同一 batch 内原子提交；不可变命令证据可核验这些私有投影。固定响应端到端测试验证居民记忆进入后续上下文、重放不重复调用模型；产品旅程也会在交谈提交后重新构造下一拍 `EngineContext`，确认关系记忆可供居民读取；新增小世界旅程验证传话成为带来源 rumor，并经完整 `runTick` 进入固定模型请求、被用于产出居民目标变化，随后作为新版本 `resident_state` 事实提交。证明确定性引擎通路而非真实模型行为保证；刷新/离开后继续推进与真实居民多拍决策未验收。本地浏览器另验证返回主宇宙后能给居民传话，版本 v3 提示明确说明“已听到”但仍属传闻、不会自动升级为世界事实，今日模型调用为 0。本轮结构化居民邀请回应验证明确邀请产生承诺、婉拒/无邀请误报不产生承诺、写入故障整体回滚；新增约定旅程从真实 scene_open 和居民提议开始，经访客接受、约定前半小时外拒绝履约、进入履约窗口后访客在约定地点赴约，最终产生 fulfilled fact/event/relationship memory 并显示在归来回顾。仍需真实模型/人工验证多轮语境中的回应判断及真实居民多拍决策。 |
-| AC08 | 部分 | 场景提交状态查询及刷新恢复已有 API 测试；T09 有限自然语言提议经过 T06 规则校验、明确确认后复用版本化动作接口，越界/歧义被澄清或拒绝且解析本身不写世界。待确认提议保存在 sessionStorage；同一 requestId 作为命令 ID，刷新/丢响应后可查已提交结果，pending 超时可由客户端请求回收，重复确认只回放一份事实。提议解析取消和场景 SSE 取消均有 API 回归，取消后状态查询确认 failed，同 ID 不重跑模型；预算触顶拒绝模型解析且不记录 LLM 调用。待登录态真实浏览器验证关闭面板和丢响应完整恢复。仍未覆盖通用动作解析及跨浏览器/存储不可用时的恢复。
-| AC09 | 部分 | Fork 保存事实边界/模型版本并有源版本、时间、居民状态一致性检查；`0013` 在数据库层固定已创建 Fork 的分叉条件、来源、完整快照和祖先路径；`0014` 校验快照中的当前/未来日程；`0016` 在数据库层限制每个世界最多 3 条 active 时间线（新建和重新激活均覆盖），并将并发超限/源状态冲突转换为路由 409，故障注入确认不留子时间线。Fork 子线开放承诺可从不可变快照核对到复制投影，并检测异常额外行。自动小世界 API 旅程通过在场传话验证消息仅抵达子线、源线版本/知识不变且 Compare 呈现差异。新建 Fork 必须附带明确 what-if 与改变变量，服务端固定源线当前模拟时间；浏览器已验证条件显示及返回主线。现有隔离 SQLite/本地浏览器证据之外，Cloudflare D1 上两个独立 Worker 的最后名额竞争、跨 Worker 重放/冲突及容量拒绝也通过。尚无高并发压力证据。由于旧/legacy 线可能缺完整状态证据，且旧引擎记录没有全量投影重建保证，当前仍不能宣称任意现存 Universe 都有完整 Checkpoint。 |
+| AC03 | 通过 | `replay-combination.test.ts` 通过真实 `commitWorldCommand` 连续提交并在每一步重新收集不可变证据、独立重建和逐域比较，覆盖全部 19 类 `WorldAction`；普通路径覆盖 18 类，独立 stale dialogue 旅程覆盖 `dialogue_recovery`。Root/Child/Grandchild、九个行投影域 missing/extra/mismatch 和时钟标量 mismatch 继续通过。 |
+| AC04 | 通过 | 命令重放/载荷冲突/版本冲突/CAS 并发、场景同 ID 并发仅一次提交、过期 pending 回收与 late-worker DB guard、命令/事实/设定版本不可变均有回归。`world-state/atomicity-matrix.test.ts` 以 DB trigger 对 environment/intervention/inform、enter、schedule_set、memory_summary、memory_correct/forget、dialogue_recovery、simulation_checkpoint、scene_open、dialogue_turn、commitment_proposal、commitment transition、clock_advance 注入失败；各用例核对 command/fact/event/revision 与受影响 projection 全量回滚。既有 commit 测试覆盖 move、resident_state beat/story-event、NPC dialogue_start、scene conversation turns/private memories/messages 的回滚；product journey 覆盖人物/世界及初始模型 baseline 初始化失败；双 Worker/场景取消恢复有 CAS 和迟到提交 fencing。路由级 SSE reader 取消→状态查询→同 ID 重试及 pending 请求复用/过期回收也通过。当前版本化写入和失败原子性矩阵均有行动域证据，AC04 通过。 |
+| AC05 | 通过 | `verify:s01:live-closure` 在隔离内存 D1 内以 8 次真实调用、零自动重试完成普通聊天、在场场景、私密隔离、NPC 多跳转述、引擎 beat 和记忆摘要；第 7 次真实返回合同无效结果，回执为 `failed/contract_violation` 且命令、事实、版本和投影不变，第 8 次从持久上下文成功恢复并提交。全部回执含 context hash，最终独立重放 complete/零差异。 |
+| AC06 | 通过 | 在场者须先进入，再显式移动；发起交谈的来访者被另一场进行中交谈占用时拒绝，回应者通过位置、忙碌锁与睡眠日程过滤；消息传递校验共处且可交谈。路由级矩阵覆盖睡眠、忙碌、同时睡眠且忙碌、不同地点四种拒绝，均无命令/事实/版本副作用；清醒、空闲、同地点后成功传话。UTC 午夜边界测试验证 23:00–07:00 跨夜睡眠日程资格，`currentScheduleItem` 将带时区的模拟时刻解析为 UTC instant；等价 offset、无效时间及跨日边界有回归。`engine/tick.test.ts` 固定模型全日推进 16 拍、每拍审计版本与投影，并精确断言工作/休息/睡眠转移事实各出现一次、无重复模拟时刻且最终状态一致。 |
+| AC07 | 通过 | 结构化 conversation facts、居民私有记忆、访客留言和邀请承诺旅程均有固定模型与原子事务证据；真实模型收口旅程又覆盖六类渠道、多跳 rumor、真实无效输出及后续恢复。连续旅程、fresh context、跨 profile 浏览器恢复与独立重放均通过。 |
+| AC08 | 通过 | `0019–0021` 的 scene/chat 服务端恢复、request fencing 与 owner-scoped pending discovery 均通过本地及 staging 双 Worker验证；两个独立浏览器 profile 完成 pending 发现和回复恢复。真实浏览器另用产品 `subscribeWorldStream` 与原生 `ReadableStream` 注入旧时间线 SSE 半帧：切换 generation/URL/时间线并释放剩余分片后，页面仍为新线、仅接收新事件且旧 AbortSignal 已终止，浏览器 warning/error 为 0。 |
+| AC09 | 通过（安全保留） | staging 并发、Root→Child→Grandchild、取消/恢复和最终清理均通过。缺少不可变来源的旧 checkpoint 没有被补造：分类器稳定保留为 `incomplete/read-only`，读与 Compare 可用，所有运行/写入/恢复被拒绝，暂停/归档安全冻结可用。此“通过”指安全降级策略验收通过，不代表旧历史被虚构为 complete。 |
 | AC10 | 通过 | 结构化事实按时间线隔离、模型定义被 Fork 固定；Root→Child→Grandchild 组合矩阵把对话、事件、记忆、承诺、知识的分叉前继承与祖先分叉后隔离放入同场景，并分别审计三条线。共享人物旧数据矩阵另用同一居民在两个世界的历史档案、状态、记忆和聊天记录验证显式时间线选择及无跨世界串读；后续改名、改模型和改世界说明不会改写已固定上下文。世界首页、人物抽屉及对话详情读取冻结历史。P4 浏览器另将主线快照延迟 12 秒，在延迟响应返回前切到 Fork；旧快照未覆盖 Fork 页面。 |
-| AC11 | 部分 | Compare API 在单个 D1 batch 快照中对齐时间线、人物状态、事件、修订与本地事实，并从不可变 Fork checkpoint 继承共同过去；无快照的旧 Fork 即使具有分叉时间也明确标记历史不完整，同时保留其自身事件。对照 UI 展示分叉条件、Checkpoint 与共同事件样例，差异显示证据 ID/版本/时间。浏览器检查确认条件、共同祖先、环境事实值、证据 ID/版本及对齐时间，且能返回主宇宙；仍需对所有历史/因果文案作人工场景走查。 |
+| AC11 | 通过 | Compare API 在单个 D1 batch 快照中对齐时间线、人物状态、事件、修订与本地事实，并从不可变 Fork checkpoint 继承共同过去；无快照的旧 Fork 即使具有分叉时间也明确标记历史不完整，同时保留其自身事件。对照 UI 展示分叉条件、Checkpoint 与共同事件样例，差异显示证据 ID/版本/时间；已有登录态浏览器场景验证分叉条件、共同祖先、事实值、证据 ID/版本、时间对齐/未对齐及返回主线。本轮逐项人工复核 `ComparePanel`、`TimelineSwitcher`、`ConstructPanel` 的历史与因果文案：时间未对齐时明确警示；未知共同祖先时不推断共同历史；无 checkpoint 的 legacy 线提示证据不完整；没有结构化事实差异不声称相同；分叉只记录假设、当前时刻复制，不称为因果证明；环境事实与叙事干预分开表述，居民后续回应保持开放。 |
 | AC12 | 通过 | API 固定旅程覆盖 CREATE→RUN→OBSERVE→ENTER→ACT→FORK→COMPARE→RETURN，并在返回主线继续交谈。跨 P2/P3/P4 登录态本地浏览器记录覆盖世界/人物创建和行动、Fork/Compare 返回、实际 tick 推进、普通聊天完成/断流以及返回时间线恢复；所有旅程使用固定模型替身。 |
 | AC13 | 通过 | 三种模式边界和记忆权限由组件回归覆盖。新增长线态浏览器实测：在一次性 D1 插入真实 timeline memory，构造模式校正后刷新仍显示新内容且 revision 从 0 到 1；观察模式只读显示且无改/删操作；回到构造模式遗忘该记忆，D1 记录删除且 revision 到 2。摘要不可单独编辑/删除另由 `PersonDrawer.test.tsx` 与 API 记忆维护测试覆盖。 |
-| AC14 | 部分 | 新增路由有归属/时间线检查，跨用户世界/状态/交谈读取及命令写入被拒，公开演示写入口拒绝，暂停世界/归档线写入无半成品；Hono 命令 API 测试验证跨用户、同用户错世界时间线、paused、capped、archived 均拒绝且不留下 command/fact/revision；Fork/Compare 回归验证跨用户及跨世界时间线被拒且不创建子线。旧聊天发送现在先过世界/时间线/预算闸门，暂停或归档后不会残留被拒绝的用户消息，已有聊天仍可读。预算触顶与全部旧/新入口的完整权限矩阵仍缺。 |
-| AC15 | 未满足 | 最新 API 226 项、Web 9 项自动测试通过；revision guard 在真实 Cloudflare D1 上拒绝越级写入。两个独立 Wrangler remote Worker 共用真实 D1，最后一个 Fork 名额竞争返回 200/409、跨 Worker 重放返回 200、载荷冲突和容量拒绝返回 409，数据库投影计数相符；两个独立远端 D1 请求竞争原子 tick lease UPSERT 时恰有一个 owner；持有外部 D1 租约时两个 Worker `/api/engine/tick` 均返回 409 且没有世界副作用。新增远端过期 owner 模拟：两个 Worker 同时请求 tick 时只有一个接管成功（200）、另一个为 409；成功者推进 revision 和 clock fact 后释放 lease。本地固定模型完整日旅程现把 Root→Child→Grandchild、孙线真实 SSE 取消及过期 pending 请求恢复放入同一条旅程，确认取消/恢复无半成品对话或额外版本。本地双 Worker 另覆盖 tick 完成/租约释放、源写入竞争和故障回滚。仍未实测远端 Wrangler Worker 进程被强制中止后的接管，以及在真实远端 D1 上重复取消/恢复与多级 Fork 的统一旅程；AC15 仍是 S01 全局出口阻塞项。 |
+| AC14 | 通过 | `policy-matrix.test.ts` 枚举人类入口、内部 tick/director/schedule/beat/dialogue/injection/summary、恢复入口，以及 `world.pause/resume/archive`、`timeline.archive/reactivate`。归属、世界/时间线状态和 evidence `missing/unassessed/upgradeable/incomplete/complete` 组合验证：仅 complete 可恢复/激活；安全冻结对 incomplete 可用；所有拒绝在模型/预算前发生且历史账本不变。 |
+| AC15 | 通过 | 最新 API 46 文件/344 项、Web 6 文件/20 项自动测试及两端构建通过；revision guard 在真实 Cloudflare D1 上拒绝越级写入。两个独立 Wrangler remote Worker 共用真实 D1；staging 24 并发 Fork 名额竞争返回 1×200/23×409，跨 Worker重放、容量、lease、取消和恢复证据均通过。本地双 Worker对 Miniflare 文件锁的显式 retryable conflict 做有界恢复后，聊天/Fork/tick/rollback 全部通过且无临时资源残留。 |
 
 ## 阶段判断
 
-- **P0：具体兼容与权限检查已通过，阶段闸门仍未通过。** 旧数据迁移/读取、固定夹具重复生成、私人接口跨账号拒绝和公开演示只读均有测试；全局 AC15 要求的取消/恢复/并发/多级 Fork 全矩阵尚未完成。
-- **P1：关键底座已建立，出口未通过。** 世界变化主路径、虚拟时钟推进、节拍水位线、过期对话占用恢复、日程生成/切换和记忆压缩/维护已迁入版本化提交边界；日程边界跨拍重复记账已修正并由 `runTick` 回归覆盖。审计能核对居民状态、事件、承诺、对话/发言、口信、记忆及日程的主要投影，并发现结构化基线后的部分孤儿投影。仍缺全量投影重建/一致性门槛、完整居民多拍连续推进及 AC14/AC15 全矩阵。
+- **P0：具体兼容与权限检查已通过，阶段闸门仍未通过。** 旧数据迁移/读取、固定夹具重复生成、私人接口跨账号拒绝和公开演示只读均有测试；AC03/AC05/AC07/AC08/AC09/AC14 的剩余范围见验收表，仍不能关闭全局出口。
+- **P1：关键底座已建立，出口未通过。** 世界变化主路径、虚拟时钟推进、节拍水位线、过期对话占用恢复、日程生成/切换和记忆压缩/维护已迁入版本化提交边界；日程边界跨拍重复记账已修正并由 `runTick` 回归覆盖。审计能核对居民状态、事件、承诺、对话/发言、口信、记忆及日程的主要投影，并发现结构化基线后的部分孤儿投影。仍缺独立完整投影重建、一部分故障/权限矩阵及真实模型与连续旅程证据。
 - **P2：S01 P2 出口通过。** 意图与失败恢复回归覆盖逐字传话、缺席居民澄清、过期版本、请求 ID 冲突和无居民回应时不留 visitor-only 半成品；登录态本地浏览器完成进入、移动、明确行动确认、交谈、刷新/重开恢复、pending 请求复用、过期 SSE 请求回收及返回观察页；固定模型小世界旅程证明在场口信进入后续居民决策并形成可审计的新版本结果。隔离浏览器节拍使用的固定替身不实现 schedule 的 `items` 输出，因此该 UI 演示不作为居民日程/后续影响证据。
 - **P3：S01 P3 出口通过。** 隔离本地 D1 上两个 Worker 的真实 Fork/源写入竞争、幂等、容量拒绝和故障回滚通过；Root→Child→Grandchild 记忆/承诺/知识组合矩阵及三线审计通过；消息来源进入接收者上下文并对旁支/其他居民保持隔离；登录态 Compare 浏览器走查覆盖条件证据、不同模拟时刻、legacy 不完整提示及返回选线。详细的状态码、账本结果、浏览器实际文案、命令和边界见本报告后附的“S01 P3 本轮验收”。P4 阶段出口通过，证据见下节。
 - **P4：阶段出口通过。** 登录态浏览器完成真实本地 tick、普通聊天完成/断流恢复、迟到聊天回复切线隔离、延迟旧快照到达隔离及 Fork→Compare→返回；匿名 demo 首页只读控件边界通过。API/Web 全量测试及构建通过。传输层旧世界 SSE 帧未单独延迟注入，清理订阅和 timeline 归属由前端守卫单测覆盖。
@@ -150,3 +150,16 @@ P3 关闭四项原报告缺口。规格和逐条结果见 [`spec_docs/s01/spec.m
 - **AC8：通过。** API 33 个测试文件/226 项通过，Web 2 个文件/9 项通过，API/Web build 与 `git diff --check` 通过；`npm run verify:s01:workers` 退出码 0。临时 D1 和本地服务均已清理，AC1–AC7 均有对应证据，S01 P4 阶段出口通过。
 
 本轮未部署或访问远端/生产数据库，未调用真实模型。传输层旧世界 SSE 帧没有独立的延迟注入证据，其回调清理和 timeline 归属由前端守卫单测覆盖。
+
+## S01 收口复验（2026-09-27，当前权威状态）
+
+本节更新并覆盖本报告前文 2026-09-24 的测试计数、staging migration 版本和真实模型失败结论；历史证据保留用于追溯。
+
+- 最新自动化：API 46 文件/344 项、Web 6 文件/20 项通过；API/Web build 通过；`verify:s01:legacy` 与本地双 Worker 通过，远端双 Worker、远端 Root→Child→Grandchild 旅程使用此前授权证据；真实模型收口脚本通过；`git diff --check` 通过。
+- T44 staging：migration ledger 22/22，幂等复核 pending=0。旧 root baseline 由正式分类器根据 immutable legacy states/empty events 唯一推导并通过全域 replay 后成为 `complete`。远端 chat 跨 Worker pending/completed replay 200、异载荷冲突 409，单 request ID 为 1 user/1 person reply/1 call receipt；Fork 24 路竞争 1×200/23×409；held tick 2×409 无副作用，expired lease takeover 1×200/1×409 并推进一次。取消及产品 API isolate 中断后的跨 Worker recovery 通过。
+- staging 终态只读审计：1 个 world、只有 root timeline active、0 个 active synthetic timeline、0 个 tick lease、0 个 pending scene、0 个 pending chat、root evidence complete。不可变验收 Fork/历史行保留为 archived；多轮测试产生的 settled synthetic chat rows 保留作审计；临时 provider/crash Worker 已删除。
+- T46/T51/T52 真实模型：收口脚本最终一轮 8 次真实调用中 7 条 completed、1 条预期 `failed/contract_violation`；六类渠道、私密隔离、多跳来源链、失败无污染与下一节拍恢复全部通过，零自动重试，完整重放零差异。本次授权窗口累计实际使用 24/50 次；前两轮失败均保留为真实验收结果，未被固定模型替代。
+- AC03 组合重放：新增 19 类命令/恢复路径的真实提交组合，逐命令重收证据并独立重建；全部九个行投影域及标量时钟保持零差异。
+- AC08 浏览器：除两个独立 profile 的聊天恢复外，真实浏览器使用产品订阅函数释放旧 SSE 半帧，generation guard 丢弃旧事件且 URL/时间线/版本保持新线。
+- AC09 按要求保留：无不可变来源的 legacy checkpoint 仍为 `incomplete/read-only`，没有补造；安全降级矩阵通过。
+- **最终判断：** 原 AC01–AC15 全部具有通过证据；S01 全局出口通过。旧 checkpoint 的 `incomplete/read-only` 是已验收的保守终态，不是待补造缺口。

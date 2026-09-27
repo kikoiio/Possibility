@@ -6,6 +6,7 @@ import type { PersonModel } from './types'
 import { lifeContext } from '../life/service'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
+import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
@@ -44,7 +45,7 @@ export interface WorldSnapshot {
 /** 单个决策点的完整上下文（perceive 的产出） */
 export interface EngineContext {
   lifeContext?: string
-  knownFacts?: { kind: 'environment' | 'knowledge'; text: string; sourceFactId: string; certainty: 'fact' | 'rumor' }[]
+  knownFacts?: VisibleKnowledgeFact[]
   snapshot: WorldSnapshot
   person: Person
   model: PersonModel
@@ -117,7 +118,10 @@ export function itemContains(item: ScheduleItem, hhmm: string): boolean {
 /** 当前时刻对应的日程项（无则 null） */
 export function currentScheduleItem(items: ScheduleItem[] | null, simNow: string): ScheduleItem | null {
   if (!items) return null
-  const hhmm = simNow.slice(11, 16)
+  const timestamp = Date.parse(simNow)
+  if (!Number.isFinite(timestamp)) return null
+  const instant = new Date(timestamp)
+  const hhmm = `${String(instant.getUTCHours()).padStart(2, '0')}:${String(instant.getUTCMinutes()).padStart(2, '0')}`
   return items.find((it) => itemContains(it, hhmm)) ?? null
 }
 
@@ -222,17 +226,7 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
 
   const mySchedule = parseScheduleItems(snapshot.schedules.get(personId))
   const structured = await readWorldState(db, snapshot.world.id, snapshot.timeline.id)
-  const knownFacts: NonNullable<EngineContext['knownFacts']> = []
-  for (const fact of structured.current) {
-    const value = fact.value as Record<string, unknown>
-    if (fact.factType === 'environment') {
-      knownFacts.push({ kind: 'environment', text: `${String(value.location ?? '全世界')}的${String(value.condition)}：${String(value.value)}`,
-        sourceFactId: fact.id, certainty: 'fact' })
-    } else if (fact.factType === 'knowledge' && value.recipientId === personId) {
-      knownFacts.push({ kind: 'knowledge', text: `${String(value.topic)}：${String(value.content)}`,
-        sourceFactId: fact.id, certainty: value.certainty === 'fact' ? 'fact' : 'rumor' })
-    }
-  }
+  const knownFacts = visibleKnowledgeForPerson(structured.current, personId)
   const sameLocationAwake = snapshot.persons.filter((p) => {
     if (p.id === personId) return false
     const s = snapshot.states.get(p.id)

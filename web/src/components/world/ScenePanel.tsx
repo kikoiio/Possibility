@@ -120,6 +120,18 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
             setIntentText(pendingIntent.text)
             setIntentNotice('已恢复尚未确认的行动提议；确认前会再次检查世界版本。')
           }
+          void sceneApi.pendingIntent(worldId, timelineId).then(pending => {
+            if (!active) return
+            if ('result' in pending && pending.result.status === 'proposal') {
+              setIntentProposal(pending.result)
+              setIntentText(pending.text)
+              savePendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona!.id), { text: pending.text, result: pending.result })
+              setIntentNotice('已从服务器恢复尚未确认的行动提议；确认前会再次检查世界版本。')
+            } else if (pendingIntent) {
+              clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona!.id))
+              setIntentProposal(null)
+            }
+          }).catch(() => { /* Existing tab storage remains a local recovery fallback. */ })
         }
       })
       .catch(() => { if (active) setError('身份加载失败') })
@@ -245,6 +257,9 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
 
   const handleClose = () => {
     sceneAbortRef.current?.abort()
+    if (persona && pendingRef.current) {
+      void sceneApi.cancelRequest(worldId, timelineId, pendingRef.current.id).catch(() => {})
+    }
     onClose()
   }
 
@@ -285,6 +300,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
     if (!persona?.location || persona.location !== location || !content || intentBusy || busy) return
     setIntentBusy(true)
     setIntentNotice('')
+    if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
     setIntentProposal(null)
     try {
       const result = await sceneApi.resolveIntent(worldId, { timelineId, content, requestId: crypto.randomUUID() })
@@ -331,6 +347,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       }
       const state = await worldsApi.state(worldId, timelineId)
       if (state.version !== result.expectedVersion) {
+        void sceneApi.cancelIntent(worldId, result.requestId).catch(() => {})
         clearPendingIntentProposal(storageKey)
         setIntentProposal(null)
         setIntentNotice('提议后世界状态已经变化，请重新描述并生成提议。')
@@ -578,7 +595,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
             </div>
 
             <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">明确告诉现场某人一条消息</summary><p className="mt-1 text-[11px] text-ink-faint">这是可追踪的当面传话；对方会记为传闻。普通聊天不会自动变成已证实事实。</p><div className="mt-2 flex flex-wrap gap-2"><select aria-label="消息接收者" value={infoRecipient} onChange={e => setInfoRecipient(e.target.value)} className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs"><option value="">选择现场的人</option>{(peopleByLocation[location] ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="消息主题" value={infoTopic} onChange={e => setInfoTopic(e.target.value)} placeholder="消息主题" maxLength={80} className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><input aria-label="消息内容" value={infoContent} onChange={e => setInfoContent(e.target.value)} placeholder="你要告诉 TA 什么" maxLength={500} className="min-w-0 flex-[2] rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleInform()} disabled={infoBusy || !persona.location || persona.location !== location || !infoRecipient || !infoTopic.trim() || !infoContent.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">告诉 TA</button></div>{infoNotice && <p className="mt-2 text-xs text-ink-soft">{infoNotice}</p>}</details>
-            <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">尝试一个行动</summary><p className="mt-1 text-[11px] text-ink-faint">先把自然语言整理成有限提议；只有你确认后才会执行。普通聊天不会自动改变世界。</p><div className="mt-2 flex gap-2"><input aria-label="行动描述" value={intentText} onChange={e => { setIntentText(e.target.value); setIntentProposal(null); setIntentNotice(''); if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)) }} maxLength={1000} placeholder="例如：带我去图书馆，或告诉 Ada 暴雨开始了" className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleResolveIntent()} disabled={intentBusy || busy || !persona.location || persona.location !== location || !intentText.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{intentBusy && !intentProposal ? '整理中…' : '生成提议'}</button></div>{intentProposal?.status === 'proposal' && intentProposal.proposal && <div className="mt-2 rounded-lg border border-ink-line bg-sheet p-3 text-xs"><p className="text-ink-soft">提议（世界状态 v{intentProposal.expectedVersion}）</p><p className="mt-1 text-ink">{intentProposal.proposal.type === 'move' ? `前往${intentProposal.proposal.to}` : `告诉${intentProposal.proposal.recipientName}：「${intentProposal.proposal.content}」`}</p><div className="mt-2 flex gap-2"><button onClick={() => void handleConfirmIntent()} disabled={intentBusy} className="rounded-lg bg-ink px-3 py-1 text-white disabled:opacity-50">{intentBusy ? '提交中…' : '确认执行'}</button><button onClick={() => { if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)); setIntentProposal(null); setIntentNotice('已取消提议。') }} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-ink-soft">取消</button></div></div>}{intentNotice && <p className="mt-2 text-xs text-ink-soft">{intentNotice}</p>}</details>
+            <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">尝试一个行动</summary><p className="mt-1 text-[11px] text-ink-faint">先把自然语言整理成有限提议；只有你确认后才会执行。普通聊天不会自动改变世界。</p><div className="mt-2 flex gap-2"><input aria-label="行动描述" value={intentText} onChange={e => { if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {}); setIntentText(e.target.value); setIntentProposal(null); setIntentNotice(''); if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)) }} maxLength={1000} placeholder="例如：带我去图书馆，或告诉 Ada 暴雨开始了" className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleResolveIntent()} disabled={intentBusy || busy || !persona.location || persona.location !== location || !intentText.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{intentBusy && !intentProposal ? '整理中…' : '生成提议'}</button></div>{intentProposal?.status === 'proposal' && intentProposal.proposal && <div className="mt-2 rounded-lg border border-ink-line bg-sheet p-3 text-xs"><p className="text-ink-soft">提议（世界状态 v{intentProposal.expectedVersion}）</p><p className="mt-1 text-ink">{intentProposal.proposal.type === 'move' ? `前往${intentProposal.proposal.to}` : `告诉${intentProposal.proposal.recipientName}：「${intentProposal.proposal.content}」`}</p><div className="mt-2 flex gap-2"><button onClick={() => void handleConfirmIntent()} disabled={intentBusy} className="rounded-lg bg-ink px-3 py-1 text-white disabled:opacity-50">{intentBusy ? '提交中…' : '确认执行'}</button><button onClick={() => { if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {}); if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)); setIntentProposal(null); setIntentNotice('已取消提议。') }} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-ink-soft">取消</button></div></div>}{intentNotice && <p className="mt-2 text-xs text-ink-soft">{intentNotice}</p>}</details>
             <div className="flex items-end gap-2 border-t border-ink-line/60 px-4 py-3">
               <textarea
                 value={input}

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { createTestDb } from '../test/db'
-import { commitments, dialogues, events, memories, persons, personStates, timelines, users, worldFacts, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogues, events, memories, persons, personStates, timelines, universeEvidence, users, worldFacts, worldPersons, worlds } from '../db/schema'
 import { advanceCommitments, nextCommitmentStatus, parseInvitation, proposeCommitment, statusLabels } from './service'
 
 describe('持续生活约定', () => {
@@ -25,6 +25,8 @@ describe('持续生活约定', () => {
       await f.db.insert(users).values({ id: 'u', username: 'u', passwordHash: 'x', createdAt: now })
       await f.db.insert(worlds).values({ id: 'w', userId: 'u', name: 'W', description: '', status: 'running' })
       await f.db.insert(timelines).values({ id: 't', worldId: 'w', simNow: now, createdAt: now })
+      await f.db.insert(universeEvidence).values({ timelineId: 't', level: 'complete', assessedVersion: 0,
+        baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: now })
       await f.db.insert(persons).values([
         { id: 'npc', userId: 'u', name: '小夜', modelJson: '{}', createdAt: now },
         { id: 'visitor', userId: 'u', name: '阿透', modelJson: '{}', createdAt: now, isUser: true },
@@ -48,6 +50,8 @@ describe('持续生活约定', () => {
       await f.db.insert(worlds).values({ id: 'w', userId: 'u', name: 'W', description: '', status: 'running',
         locationsJson: JSON.stringify([{ name: '厨房', description: '' }]) })
       await f.db.insert(timelines).values({ id: 't', worldId: 'w', simNow: now, createdAt: now })
+      await f.db.insert(universeEvidence).values({ timelineId: 't', level: 'complete', assessedVersion: 0,
+        baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: now })
       await f.db.insert(persons).values([
         { id: 'npc', userId: 'u', name: '小夜', modelJson: '{}', createdAt: now },
         { id: 'visitor', userId: 'u', name: '阿透', modelJson: '{}', createdAt: now, isUser: true },

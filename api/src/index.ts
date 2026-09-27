@@ -24,6 +24,8 @@ export interface Env {
   LLM_BASE_URL: string
   LLM_API_KEY: string
   LLM_MODEL: string
+  /** Optional Cloudflare service binding for controlled provider routing. */
+  LLM_PROVIDER?: Fetcher
   ENGINE_TICK_SECRET?: string
   WORLD_SPEED?: string
   TICK_CALL_CAP?: string

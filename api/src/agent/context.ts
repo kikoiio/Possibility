@@ -4,6 +4,8 @@ import { persons, personStates, timelines, worldPersons, worlds } from '../db/sc
 import { visibleMemories, type Memory } from './memory'
 import type { AgentMode, PersonModel } from './types'
 import { readPinnedWorldModel } from '../world-state/model'
+import { readWorldState } from '../world-state/query'
+import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
 
 type Person = typeof persons.$inferSelect
 type World = typeof worlds.$inferSelect
@@ -18,6 +20,7 @@ export interface AgentContextData {
   mainTimelineId: string
   isMain: boolean
   memories: Memory[] // 已按隔离规则查询好
+  knownFacts: VisibleKnowledgeFact[]
   state: PersonState
   mode: AgentMode
 }
@@ -90,6 +93,8 @@ export async function buildAgentContext(
   const mems = await visibleMemories(db, person.id, timeline)
   const pinned = await readPinnedWorldModel(db, world.id, timeline.id)
   const recorded = pinned?.residents.find(resident => resident.id === person.id)
+  const structured = await readWorldState(db, world.id, timeline.id)
+  const knownFacts = visibleKnowledgeForPerson(structured.current, person.id)
 
   return {
     person: recorded ? { ...person, name: recorded.name } : person,
@@ -99,6 +104,7 @@ export async function buildAgentContext(
     mainTimelineId: mainTimeline.id,
     isMain: timeline.id === mainTimeline.id,
     memories: mems,
+    knownFacts,
     state,
     mode: opts.mode,
   }

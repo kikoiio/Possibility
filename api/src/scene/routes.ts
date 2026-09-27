@@ -1,19 +1,20 @@
 import { Hono } from 'hono'
-import { and, asc, desc, eq, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, lte, notExists, or } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { SSEStreamingApi } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
-import { memories, personaMessages, personStates, persons, timelines, worlds, worldCommands, worldPersons, dialogues, dialogueTurns, sceneRequests, universeRevisions } from '../db/schema'
+import { memories, personaMessages, personStates, persons, timelines, worlds, worldCommands, worldPersons, dialogues, dialogueTurns, sceneRequests, sceneIntentProposals, universeRevisions } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildWorldSnapshot, buildEngineContext } from '../agent/engine-context'
-import { buildScenePrompt, extractJson, type DialogueTurnView } from '../agent/engine-prompt'
+import { buildScenePrompt, type DialogueTurnView } from '../agent/engine-prompt'
 import { containsExplicitInvitationRequest, parseSceneOutput } from './parse'
 import { eligibleAt, eligibleBoard } from './eligible'
 import { clampImportance } from '../agent/memory'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
-import { complete, configFromEnv } from '../llm/client'
+import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
+import { completeContract, configFromEnv } from '../llm/client'
+import { LLM_CONTRACT_VERSIONS, parseContractObject } from '../llm/contracts'
 import { proposeCommitment } from '../life/service'
 import { commitWorldCommand } from '../world-state/commit'
 import { ensureUniverseRevision } from '../world-state/model'
@@ -33,6 +34,7 @@ sceneRoutes.use('*', authMiddleware)
 export const MAX_SCENE_RESPONDERS = 3
 /** One model call can take 180s; the extra minute is a recovery margin. */
 export const SCENE_REQUEST_STALE_MS = 240_000
+const activeSceneRequests = new Map<string, AbortController>()
 
 async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<World | null> {
   const w = await db
@@ -138,6 +140,8 @@ sceneRoutes.post('/worlds/:id/scene/requests/:requestId/recover', async (c) => {
     eq(timelines.id, timelineId), eq(timelines.worldId, world.id),
   )).get() : null
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const gate = await gateUniverseWrite(db, world.id, timeline.id)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   const request = await db.select().from(sceneRequests).where(eq(sceneRequests.id, c.req.param('requestId'))).get()
   if (!request) return c.json({ status: 'missing' as const, recoverable: false })
   const dialogue = await db.select().from(dialogues).where(and(
@@ -164,6 +168,85 @@ sceneRoutes.post('/worlds/:id/scene/requests/:requestId/recover', async (c) => {
     recoverable: latest?.status === 'pending' && latest.heartbeatAt <= cutoff })
 })
 
+/** Cancel a live visitor request when its panel closes; late workers are fenced by the DB trigger. */
+sceneRoutes.post('/worlds/:id/scene/requests/:requestId/cancel', async (c) => {
+  const db = createDb(c.env.DB)
+  const userId = c.get('user').id
+  const world = await loadOwnedWorld(db, c.req.param('id'), userId)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const persona = await loadPersona(db, world.id, userId)
+  if (!persona) return c.json({ error: '先登记身份' }, 400)
+  const timelineId = c.req.query('timelineId')
+  const timeline = timelineId ? await db.select().from(timelines).where(and(
+    eq(timelines.id, timelineId), eq(timelines.worldId, world.id),
+  )).get() : null
+  if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  const requestId = c.req.param('requestId')
+  const request = await db.select().from(sceneRequests).where(eq(sceneRequests.id, requestId)).get()
+  if (!request) return c.json({ status: 'missing' as const })
+  const dialogue = await db.select().from(dialogues).where(and(
+    eq(dialogues.id, request.dialogueId), eq(dialogues.timelineId, timeline.id),
+    eq(dialogues.visitorId, persona.id), eq(dialogues.kind, 'scene'),
+  )).get()
+  if (!dialogue) return c.json({ error: '交谈请求不存在' }, 404)
+  const commandId = `scene:${requestId}`
+  const [cancelled] = await db.update(sceneRequests).set({ status: 'failed' }).where(and(
+    eq(sceneRequests.id, requestId), eq(sceneRequests.status, 'pending'),
+    notExists(db.select({ id: worldCommands.id }).from(worldCommands).where(and(
+      eq(worldCommands.id, commandId), eq(worldCommands.worldId, world.id), eq(worldCommands.timelineId, timeline.id),
+    ))),
+  )).returning({ id: sceneRequests.id }).all()
+  if (cancelled) {
+    activeSceneRequests.get(requestId)?.abort(new Error('来访者关闭了场景面板'))
+    return c.json({ status: 'failed' as const })
+  }
+  const committed = await db.select({ id: worldCommands.id }).from(worldCommands).where(and(
+    eq(worldCommands.id, commandId), eq(worldCommands.worldId, world.id), eq(worldCommands.timelineId, timeline.id),
+  )).get()
+  if (committed) {
+    await db.update(sceneRequests).set({ status: 'completed' }).where(and(
+      eq(sceneRequests.id, requestId), eq(sceneRequests.status, 'pending'),
+    ))
+    return c.json({ status: 'completed' as const })
+  }
+  const latest = await db.select().from(sceneRequests).where(eq(sceneRequests.id, requestId)).get()
+  return c.json({ status: (latest?.status ?? 'missing') as 'failed' | 'pending' | 'completed' | 'missing' })
+})
+
+sceneRoutes.get('/worlds/:id/scene/intent/pending', async (c) => {
+  const timelineId = c.req.query('timelineId')
+  if (!timelineId) return c.json({ error: 'timelineId 必填' }, 400)
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const timeline = await db.select().from(timelines).where(and(
+    eq(timelines.id, timelineId), eq(timelines.worldId, world.id), eq(timelines.status, 'active'),
+  )).get()
+  if (!timeline) return c.json({ error: '时间线不存在或已归档' }, 404)
+  const persona = await loadPersona(db, world.id, c.get('user').id)
+  if (!persona) return c.json({ proposal: null })
+  const row = await db.select().from(sceneIntentProposals).where(and(
+    eq(sceneIntentProposals.worldId, world.id), eq(sceneIntentProposals.timelineId, timelineId),
+    eq(sceneIntentProposals.userId, c.get('user').id), eq(sceneIntentProposals.personId, persona.id),
+    eq(sceneIntentProposals.status, 'pending'),
+  )).orderBy(desc(sceneIntentProposals.createdAt)).get()
+  if (!row || row.expiresAt <= Date.now()) return c.json({ proposal: null })
+  return c.json({ text: row.content, result: JSON.parse(row.resolutionJson) })
+})
+
+sceneRoutes.post('/worlds/:id/scene/intent/:requestId/cancel', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const [cancelled] = await db.update(sceneIntentProposals).set({ status: 'cancelled' }).where(and(
+    eq(sceneIntentProposals.requestId, c.req.param('requestId')), eq(sceneIntentProposals.worldId, world.id),
+    eq(sceneIntentProposals.userId, c.get('user').id), or(
+      eq(sceneIntentProposals.status, 'pending'), eq(sceneIntentProposals.status, 'resolving'),
+    ),
+  )).returning({ requestId: sceneIntentProposals.requestId }).all()
+  return c.json({ status: cancelled ? 'cancelled' as const : 'missing' as const })
+})
+
 /** Resolve a visitor's natural-language intent to a bounded proposal; never executes it. */
 sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
   const body = await c.req.json<{ timelineId?: string; content?: string; requestId?: string }>().catch(() => null)
@@ -180,8 +263,22 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
   const timelinesInWorld = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
   const timeline = timelinesInWorld.find(item => item.id === body.timelineId)
   if (!timeline || timeline.status !== 'active') return c.json({ error: '时间线不存在或已归档' }, 404)
+  const universe = await gateUniverseWrite(db, world.id, timeline.id)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
   const persona = await loadPersona(db, world.id, userId)
   if (!persona) return c.json({ error: '先登记在场身份' }, 400)
+  const priorProposal = await db.select().from(sceneIntentProposals).where(eq(sceneIntentProposals.requestId, requestId)).get()
+  if (priorProposal) {
+    if (priorProposal.worldId !== world.id || priorProposal.timelineId !== timeline.id
+      || priorProposal.userId !== userId || priorProposal.personId !== persona.id || priorProposal.content !== content) {
+      return c.json({ error: 'requestId 已用于另一项行动提议' }, 409)
+    }
+    if (priorProposal.status === 'resolving') return c.json({ error: '这项行动提议仍在解析中，请稍后查询' }, 409)
+    if (priorProposal.status !== 'pending' || priorProposal.expiresAt <= Date.now()) {
+      return c.json({ error: '这项行动提议已失效，请重新描述并生成提议' }, 409)
+    }
+    return c.json(JSON.parse(priorProposal.resolutionJson))
+  }
   const state = await db.select().from(personStates).where(and(
     eq(personStates.personId, persona.id), eq(personStates.timelineId, timeline.id),
   )).get()
@@ -200,15 +297,31 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
     residents: eligibleAt(snapshot, state.location).map(person => ({ id: person.id, name: person.name })),
   }
   try {
+    const now = Date.now()
+    await db.update(sceneIntentProposals).set({ status: 'expired' }).where(and(
+      eq(sceneIntentProposals.worldId, world.id), eq(sceneIntentProposals.timelineId, timeline.id),
+      eq(sceneIntentProposals.userId, userId), eq(sceneIntentProposals.personId, persona.id),
+      eq(sceneIntentProposals.status, 'pending'),
+    ))
+    const [reservation] = await db.insert(sceneIntentProposals).values({ requestId, worldId: world.id,
+      timelineId: timeline.id, userId, personId: persona.id, content, resolutionJson: '{}',
+      expectedVersion: revision?.version ?? 0, status: 'resolving', createdAt: now, expiresAt: now + 30 * 60_000,
+    }).onConflictDoNothing().returning({ requestId: sceneIntentProposals.requestId }).all()
+    if (!reservation) {
+      const raced = await db.select().from(sceneIntentProposals).where(eq(sceneIntentProposals.requestId, requestId)).get()
+      if (raced && raced.worldId === world.id && raced.timelineId === timeline.id && raced.userId === userId
+        && raced.personId === persona.id && raced.content === content && raced.status === 'pending'
+        && raced.expiresAt > Date.now()) return c.json(JSON.parse(raced.resolutionJson))
+      return c.json({ error: '这项行动提议已提交或正在解析，请稍后重试' }, 409)
+    }
     const reserve = worldReservation(db, world.id, budgetFromEnv(c.env), {
       timelineId: timeline.id, personId: persona.id, purpose: 'scene',
     })
-    const raw = await complete(configFromEnv(c.env, reserve), buildIntentMessages(intentContext), {
-      maxTokens: 300, signal: c.req.raw.signal,
+    let resolution = await completeContract(configFromEnv(c.env, reserve), buildIntentMessages(intentContext), {
+      maxTokens: 300, signal: c.req.raw.signal, requestId,
+      contractVersion: LLM_CONTRACT_VERSIONS.sceneIntent,
+      parse: raw => resolveIntentOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneIntent), intentContext),
     })
-    let parsed: unknown
-    try { parsed = extractJson(raw) } catch { parsed = null }
-    let resolution = resolveIntentOutput(parsed, intentContext)
     if (resolution.status === 'proposal') {
       try {
         const proposal = resolution.proposal
@@ -223,9 +336,19 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
         resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请重新描述这个行动。' }
       }
     }
-    return c.json({ requestId, timelineId: timeline.id, expectedVersion: revision?.version ?? 0,
-      currentLocation: state.location, ...resolution })
+    const result = { requestId, timelineId: timeline.id, expectedVersion: revision?.version ?? 0,
+      currentLocation: state.location, ...resolution }
+    const [resolvedReservation] = await db.update(sceneIntentProposals).set({
+      status: result.status === 'proposal' ? 'pending' : 'resolved', resolutionJson: JSON.stringify(result),
+      expectedVersion: result.expectedVersion, expiresAt: Date.now() + (result.status === 'proposal' ? 30 * 60_000 : 0),
+    }).where(and(eq(sceneIntentProposals.requestId, requestId), eq(sceneIntentProposals.status, 'resolving')))
+      .returning({ requestId: sceneIntentProposals.requestId }).all()
+    if (!resolvedReservation) return c.json({ error: '提议解析已取消' }, 409)
+    return c.json(result)
   } catch (error) {
+    await db.update(sceneIntentProposals).set({ status: 'failed' }).where(and(
+      eq(sceneIntentProposals.requestId, requestId), eq(sceneIntentProposals.status, 'resolving'),
+    )).catch(() => undefined)
     if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)
     return c.json({ error: '暂时无法解析行动，请重试；世界状态未改变', requestId }, 502)
   }
@@ -241,8 +364,23 @@ sceneRoutes.post('/worlds/:id/scene/position', async (c) => {
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
   if (!world) return c.json({ error: '世界不存在' }, 404)
+  const universe = await gateUniverseWrite(db, world.id, body.timelineId)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
   const persona = await loadPersona(db, world.id, userId)
   if (!persona) return c.json({ error: '先登记在场身份' }, 400)
+  const savedProposal = await db.select().from(sceneIntentProposals).where(and(
+    eq(sceneIntentProposals.requestId, body.commandId), eq(sceneIntentProposals.worldId, world.id),
+    eq(sceneIntentProposals.userId, userId),
+  )).get()
+  if (savedProposal) {
+    let proposal: { type?: string; to?: string } | null = null
+    try { proposal = JSON.parse(savedProposal.resolutionJson).proposal ?? null } catch { proposal = null }
+    if (savedProposal.timelineId !== body.timelineId || savedProposal.personId !== persona.id
+      || proposal?.type !== 'move' || proposal.to !== body.location || savedProposal.expectedVersion !== body.expectedVersion
+      || (savedProposal.status !== 'pending' && savedProposal.status !== 'committed')) {
+      return c.json({ error: '行动提议已失效或与确认内容不符' }, 409)
+    }
+  }
   const prior = await db.select().from(worldCommands).where(eq(worldCommands.id, body.commandId)).get()
   const state = await db.select().from(personStates).where(and(eq(personStates.personId, persona.id), eq(personStates.timelineId, body.timelineId))).get()
   try {
@@ -256,6 +394,9 @@ sceneRoutes.post('/worlds/:id/scene/position', async (c) => {
       actorKind: 'visitor', actorPersonId: persona.id, expectedVersion: body.expectedVersion!,
       action,
     })
+    if (savedProposal) await db.update(sceneIntentProposals).set({ status: 'committed' }).where(and(
+      eq(sceneIntentProposals.requestId, body.commandId), eq(sceneIntentProposals.status, 'pending'),
+    ))
     await touchWorldActivity(db, world.id)
     return c.json({ ...result, location: body.location })
   } catch (error) {
@@ -274,8 +415,24 @@ sceneRoutes.post('/worlds/:id/scene/inform', async (c) => {
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
   if (!world) return c.json({ error: '世界不存在' }, 404)
+  const universe = await gateUniverseWrite(db, world.id, body.timelineId)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
   const persona = await loadPersona(db, world.id, userId)
   if (!persona) return c.json({ error: '先登记在场身份' }, 400)
+  const savedProposal = await db.select().from(sceneIntentProposals).where(and(
+    eq(sceneIntentProposals.requestId, body.commandId), eq(sceneIntentProposals.worldId, world.id),
+    eq(sceneIntentProposals.userId, userId),
+  )).get()
+  if (savedProposal) {
+    let proposal: { type?: string; recipientId?: string; topic?: string; content?: string } | null = null
+    try { proposal = JSON.parse(savedProposal.resolutionJson).proposal ?? null } catch { proposal = null }
+    if (savedProposal.timelineId !== body.timelineId || savedProposal.personId !== persona.id
+      || proposal?.type !== 'inform' || proposal.recipientId !== body.recipientId || proposal.topic !== body.topic
+      || proposal.content !== body.content || savedProposal.expectedVersion !== body.expectedVersion
+      || (savedProposal.status !== 'pending' && savedProposal.status !== 'committed')) {
+      return c.json({ error: '行动提议已失效或与确认内容不符' }, 409)
+    }
+  }
   const snapshot = await buildWorldSnapshot(db, world.id, body.timelineId)
   if (!snapshot || !eligibleAt(snapshot).some(p => p.id === body.recipientId)) return c.json({ error: '对方不在可交谈的现场' }, 409)
   try {
@@ -283,6 +440,9 @@ sceneRoutes.post('/worlds/:id/scene/inform', async (c) => {
       userId, actorKind: 'visitor', actorPersonId: persona.id, expectedVersion: body.expectedVersion!,
       action: { type: 'inform', recipientId: body.recipientId, topic: body.topic, content: body.content },
     })
+    if (savedProposal) await db.update(sceneIntentProposals).set({ status: 'committed' }).where(and(
+      eq(sceneIntentProposals.requestId, body.commandId), eq(sceneIntentProposals.status, 'pending'),
+    ))
     await touchWorldActivity(db, world.id)
     return c.json({ ...result, certainty: 'rumor' })
   } catch (error) {
@@ -314,6 +474,8 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
   const tls = await db.select().from(timelines).where(eq(timelines.worldId, world.id)).all()
   const tl = body?.timelineId !== undefined ? tls.find((t) => t.id === body.timelineId) : tls.find((t) => t.parentTimelineId === null)
   if (!tl || tl.status !== 'active') return c.json({ error: '时间线不存在或已归档' }, 404)
+  const universe = await gateUniverseWrite(db, world.id, tl.id)
+  if (!universe.ok) return c.json({ error: universe.error }, universe.status)
 
   const persona = await loadPersona(db, world.id, userId)
   if (!persona) return c.json({ error: '先在世界中登记你的在场身份（进入世界时会引导你）' }, 400)
@@ -522,11 +684,17 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
             await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '交谈请求已失效，请使用新的请求 ID 重试。' }) })
             return
           }
-          const raw = await complete(responderConfig, [
-            { role: 'system', content: prompt.system },
-            { role: 'user', content: prompt.user },
-          ], { signal: generation.signal })
-          output = parseSceneOutput(extractJson(raw))
+          activeSceneRequests.set(requestId, generation)
+          try {
+            output = await completeContract(responderConfig, [
+              { role: 'system', content: prompt.system },
+              { role: 'user', content: prompt.user },
+            ], { signal: generation.signal, requestId,
+              contractVersion: LLM_CONTRACT_VERSIONS.sceneResponse,
+              parse: raw => parseSceneOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneResponse)) })
+          } finally {
+            if (activeSceneRequests.get(requestId) === generation) activeSceneRequests.delete(requestId)
+          }
         } catch (e) {
           if (generation.signal.aborted) { await markCancelled(); return }
           if (e instanceof BudgetRefusal) {
@@ -643,7 +811,8 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
         id: `scene:${requestId}`, worldId: world.id, timelineId: tl.id, userId,
         actorKind: 'visitor', actorPersonId: persona.id, expectedVersion: startingRevision.version,
         action: { type: 'conversation', dialogueId, requestId, turns: newTurns,
-          sceneProjection: { location: pickedLoc, participantIds: [persona.id, ...responders.map(responder => responder.id)], simTime: simNow, turnLimit: 100 },
+          sceneProjection: { location: pickedLoc, participantIds: [persona.id, ...responders.map(responder => responder.id)],
+            simTime: simNow, turnLimit: 100, createdAt: now },
           privateEffects,
           ...(acceptedCommitments.length ? { acceptedCommitments } : {}) },
       }, [

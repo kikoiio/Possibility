@@ -1,10 +1,11 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMemories, type ForkSnapshot } from '../agent/visibility'
 import type { ForkScenario } from '../agent/types'
 import { ensureUniverseRevision, PROJECTION_DOMAINS, type ProjectionDomain } from '../world-state/model'
 import { WorldStateError } from '../world-state/types'
+import { requireWritableUniverse } from '../engine/guard'
 
 function databaseErrorMessages(error: unknown): string[] {
   const messages: string[] = []
@@ -51,6 +52,11 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
   }
   const existing = await replay()
   if (existing) return existing
+  const selectedSource = await db.select().from(timelines).where(and(
+    eq(timelines.id, sourceId), eq(timelines.worldId, worldId),
+  )).get()
+  if (!selectedSource || selectedSource.status !== 'active') throw new Error('只能分叉活跃时间线')
+  await requireWritableUniverse(db, worldId, sourceId)
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   if (!world || world.status !== 'running') throw new Error('世界未运行，不能分叉')
   await ensureUniverseRevision(db, worldId, sourceId)
@@ -128,10 +134,14 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     ...personaMessageRows.filter(message => message.timelineId === source.id),
   ].map(message => [message.id, message])).values()]
   const copiedSchedules = scheduleRows.filter((s) => s.worldDate >= source.simNow.slice(0, 10))
+  // Persist the exact child IDs inside its immutable checkpoint. Reconstructing
+  // them later from source commitments would otherwise be impossible.
+  const copiedCommitments = commitmentRows.filter((commitment) => commitment.status === 'proposed' || commitment.status === 'accepted')
+    .map((commitment) => ({ ...commitment, id: `fork:${forkId}:${commitment.id}`, timelineId: forkId }))
   const snapshot: ForkSnapshot = {
     version: 1, sourceTimelineId: source.id, sourceSimTime: source.simNow, capturedAt: now,
     ancestorCutoffs: [{ timelineId: source.id, realTime: now, simTime: source.simNow }, ...cutoffs],
-    states, schedules: copiedSchedules, commitments: commitmentRows,
+    states, schedules: copiedSchedules, commitments: commitmentRows, projectedCommitments: copiedCommitments,
     memories: [...new Set([...states.map((s) => s.personId), ...memoryRows.map((m) => m.personId)])]
       .flatMap((personId) => selectVisibleMemories(memoryRows, personId, source, worldTimelines))
       .filter(m => m.timelineId !== null || !sharedPersonIds.has(m.personId)),
@@ -153,12 +163,13 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     insertTimeline,
     db.insert(universeRevisions).values({ timelineId: forkId, version: 0, simTime: source.simNow,
       worldModelVersion: sourceRevision.worldModelVersion, updatedAt: now }),
+    db.insert(universeEvidence).values({ timelineId: forkId, level: 'complete', assessedVersion: 0,
+      baselineVersion: sourceRevision.version, reasonCodesJson: '["fork_checkpoint_complete"]', assessedAt: now }),
     ...states.map((s) => db.insert(personStates).values({
       ...s, timelineId: forkId, currentDialogueId: null, updatedRealAt: now,
     })),
     ...copiedSchedules.map((s) => db.insert(schedules).values({ ...s, timelineId: forkId })),
-    ...commitmentRows.filter((c) => c.status === 'proposed' || c.status === 'accepted')
-      .map((c) => db.insert(commitments).values({ ...c, id: crypto.randomUUID(), timelineId: forkId })),
+    ...copiedCommitments.map((commitment) => db.insert(commitments).values(commitment)),
   ]) } catch (error) {
     const committed = await replay()
     if (committed) return committed

@@ -21,10 +21,39 @@ interface StreamCursors {
   lastCallsToday: number
   lastStatus: string
   lastStateVersion: number
+  streamId: string
+  sequence: number
+}
+
+export interface WorldStreamEnvelope {
+  worldId: string
+  timelineId: string
+  streamId: string
+  sequence: number
+  stateVersion: number
+  type: string
+  [key: string]: unknown
+}
+
+/** Attach connection identity and a monotonic cursor to every non-heartbeat frame. */
+export function envelopeWorldStreamFrame(
+  cur: Pick<StreamCursors, 'streamId' | 'sequence' | 'lastStateVersion'>,
+  worldId: string,
+  timelineId: string,
+  payload: Record<string, unknown> & { type: string },
+  observedVersion: number,
+): WorldStreamEnvelope {
+  cur.sequence++
+  cur.lastStateVersion = Math.max(cur.lastStateVersion, observedVersion)
+  return { ...payload, worldId, timelineId, streamId: cur.streamId, sequence: cur.sequence,
+    stateVersion: cur.lastStateVersion }
 }
 
 async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timelineId: string, cur: StreamCursors): Promise<number> {
   let sent = 0
+  const openingRevision = await db.select().from(universeRevisions)
+    .where(eq(universeRevisions.timelineId, timelineId)).get()
+  const frameVersion = Math.max(cur.lastStateVersion, openingRevision?.version ?? 0)
 
   // 新事件（rowid 自增游标）
   const newEvents = await db
@@ -36,7 +65,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
   for (const { rowid, e } of newEvents) {
     await stream.writeSSE({
       event: 'event',
-      data: JSON.stringify({
+      data: JSON.stringify(envelopeWorldStreamFrame(cur, worldId, timelineId, {
         type: 'event',
         id: e.id,
         simTime: e.simTime,
@@ -45,7 +74,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
         kind: e.kind,
         actorPersonId: e.actorPersonId,
         dialogueId: e.dialogueId,
-      }),
+      }, frameVersion)),
     })
     cur.lastEventRowid = rowid
     sent++
@@ -67,7 +96,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
     for (const { rowid, t } of newTurns) {
       await stream.writeSSE({
         event: 'dialogue_turn',
-        data: JSON.stringify({
+        data: JSON.stringify(envelopeWorldStreamFrame(cur, worldId, timelineId, {
           type: 'dialogue_turn',
           dialogueId: t.dialogueId,
           turnIndex: t.turnIndex,
@@ -75,7 +104,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
           utterance: t.utterance,
           thought: t.thought,
           simTime: t.simTime,
-        }),
+        }, frameVersion)),
       })
       cur.lastTurnRowid = rowid
       sent++
@@ -95,7 +124,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
   for (const s of changedStates) {
     await stream.writeSSE({
       event: 'state',
-      data: JSON.stringify({
+      data: JSON.stringify(envelopeWorldStreamFrame(cur, worldId, timelineId, {
         type: 'state',
         personId: s.personId,
         simTime: s.simTime,
@@ -104,7 +133,7 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
         mood: s.mood,
         goal: s.goal,
         currentDialogueId: s.currentDialogueId,
-      }),
+      }, frameVersion)),
     })
     if (s.updatedRealAt > cur.lastStateAt) cur.lastStateAt = s.updatedRealAt
     sent++
@@ -119,19 +148,17 @@ async function pushDelta(db: Db, stream: SSEStreamingApi, worldId: string, timel
     if (tl.simNow !== cur.lastSimNow || world.callsToday !== cur.lastCallsToday || world.status !== cur.lastStatus || stateVersion !== cur.lastStateVersion) {
       await stream.writeSSE({
         event: 'clock',
-        data: JSON.stringify({
+        data: JSON.stringify(envelopeWorldStreamFrame(cur, worldId, timelineId, {
           type: 'clock',
           simNow: tl.simNow,
           callsToday: world.callsToday,
           worldStatus: world.status,
           pauseReason: world.pauseReason,
-          stateVersion,
-        }),
+        }, stateVersion)),
       })
       cur.lastSimNow = tl.simNow
       cur.lastCallsToday = world.callsToday
       cur.lastStatus = world.status
-      cur.lastStateVersion = stateVersion
       sent++
     }
   }
@@ -166,11 +193,15 @@ export async function streamWorld(
     lastCallsToday: world?.callsToday ?? 0,
     lastStatus: world?.status ?? '',
     lastStateVersion: revision?.version ?? 0,
+    streamId: crypto.randomUUID(),
+    sequence: 0,
   }
 
   // The client fetches a fresh snapshot after this boundary. Changes before the cursor
   // are in that snapshot; changes after the cursor are streamed and deduplicated by ID.
-  await stream.writeSSE({ event: 'sync', data: JSON.stringify({ type: 'sync', stateVersion: cur.lastStateVersion }) })
+  await stream.writeSSE({ event: 'sync', data: JSON.stringify(envelopeWorldStreamFrame(
+    cur, worldId, timelineId, { type: 'sync' }, cur.lastStateVersion,
+  )) })
 
   let idleMs = 0
   while (!stream.aborted && !c.req.raw.signal.aborted) {

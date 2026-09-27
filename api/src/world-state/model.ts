@@ -33,7 +33,7 @@ export interface ProjectionBaseline {
   capturedAt: string
   simTime: string
   completeDomains: ProjectionDomain[]
-  rows: Partial<Omit<ProjectionRows, 'simTime' | 'knowledge'>>
+  rows: Partial<Omit<ProjectionRows, 'simTime'>>
 }
 
 export function createRootProjectionBaseline(
@@ -56,6 +56,7 @@ export function createRootProjectionBaseline(
       dialogues: [],
       dialogueTurns: [],
       personaMessages: [],
+      knowledge: [],
     },
   }
 }

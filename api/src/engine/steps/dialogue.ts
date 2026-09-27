@@ -1,10 +1,12 @@
 import { asc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { dialogues, dialogueTurns } from '../../db/schema'
-import { configFromEnv, complete } from '../../llm/client'
+import { configFromEnv, completeContract } from '../../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireBoolean, requireNumber,
+  requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
-import { buildDialoguePrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
+import { buildDialoguePrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { recordDialogueTurn } from '../../world-state/system'
@@ -32,19 +34,24 @@ export interface DialogueOutput {
   failed: boolean
 }
 
-export function normalizeDialogueJson(raw: unknown): Omit<DialogueOutput, 'failed'> {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const utterance = String(r.utterance ?? '').trim().slice(0, 2000)
-  if (!utterance) throw new Error('utterance 为空')
-  const thought = String(r.thought ?? '').trim().slice(0, 2000)
-  if (!thought) throw new Error('thought 为空')
+export function normalizeDialogueJson(
+  raw: unknown,
+  version: string = LLM_CONTRACT_VERSIONS.dialogue,
+): Omit<DialogueOutput, 'failed'> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
+  const r = raw as Record<string, unknown>
+  const utterance = requireString(r.utterance, 'utterance', version, 2000)
+  const thought = requireString(r.thought, 'thought', version, 2000)
   let memory: DialogueOutput['memory'] = null
   if (r.memory && typeof r.memory === 'object') {
+    if (Array.isArray(r.memory)) return contractViolation(version, 'memory 必须是对象或 null')
     const m = r.memory as Record<string, unknown>
-    const content = String(m.content ?? '').trim()
-    if (content) memory = { content: content.slice(0, 2000), importance: clampImportance(m.importance) }
+    memory = { content: requireString(m.content, 'memory.content', version, 2000),
+      importance: requireNumber(m.importance, 'memory.importance', version, 1, 10) }
+  } else if (r.memory !== undefined && r.memory !== null) {
+    return contractViolation(version, 'memory 必须是对象或 null')
   }
-  return { utterance, thought, shouldEnd: r.shouldEnd === true, memory }
+  return { utterance, thought, shouldEnd: requireBoolean(r.shouldEnd, 'shouldEnd', version), memory }
 }
 
 /** 对话轮转（P1）：每拍推进一轮发言；满轮或话尽则收尾并沉淀记忆 */
@@ -97,15 +104,16 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
-        const raw = await complete(
+        const output = await completeContract(
           config,
           [
             { role: 'system', content: input.prompt.system },
             { role: 'user', content: input.prompt.user },
           ],
-          { maxTokens: 4000 },
+          { maxTokens: 4000, contractVersion: LLM_CONTRACT_VERSIONS.dialogue,
+            parse: raw => normalizeDialogueJson(parseContractObject(raw, LLM_CONTRACT_VERSIONS.dialogue)) },
         )
-        return { value: { ...normalizeDialogueJson(extractJson(raw)), failed: false }, llmCalls: opts?.reserve?.calls ?? llmCalls }
+        return { value: { ...output, failed: false }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // 重试一次
       }

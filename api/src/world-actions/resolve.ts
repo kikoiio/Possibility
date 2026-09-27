@@ -1,27 +1,39 @@
 import type { IntentContext, IntentResolution, WorldActionProposal } from './types'
+import { contractViolation, LLM_CONTRACT_VERSIONS } from '../llm/contracts'
 
 const fallbackQuestion = '我还不能确定你想做什么。你可以明确说要去哪个地点，或把哪句话告诉现场的哪位居民。'
 
 /** Strictly validates model output against server-supplied capabilities and the user's literal message. */
 export function resolveIntentOutput(raw: unknown, context: IntentContext): IntentResolution {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { status: 'clarification', question: fallbackQuestion }
+  const version = LLM_CONTRACT_VERSIONS.sceneIntent
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
   const value = raw as Record<string, unknown>
+  if (!['move', 'inform', 'clarify', 'reject'].includes(String(value.type))) {
+    return contractViolation(version, 'type 不在允许动作中')
+  }
   if (value.type === 'clarify') {
-    const question = typeof value.question === 'string' ? value.question.trim() : ''
-    return { status: 'clarification', question: question.slice(0, 200) || fallbackQuestion }
+    if (typeof value.question !== 'string') return contractViolation(version, 'clarify.question 必须是字符串')
+    const question = value.question.trim()
+    if (!question || question.length > 200) return contractViolation(version, 'clarify.question 长度非法')
+    return { status: 'clarification', question }
   }
   if (value.type === 'reject') {
-    const reason = typeof value.reason === 'string' ? value.reason.trim() : ''
-    return { status: 'rejected', reason: reason.slice(0, 200) || '这个行动目前不在可执行范围内。' }
+    if (typeof value.reason !== 'string') return contractViolation(version, 'reject.reason 必须是字符串')
+    const reason = value.reason.trim()
+    if (!reason || reason.length > 200) return contractViolation(version, 'reject.reason 长度非法')
+    return { status: 'rejected', reason }
   }
 
   let proposal: WorldActionProposal | null = null
-  if (value.type === 'move' && typeof value.to === 'string') {
+  if (value.type === 'move') {
+    if (typeof value.to !== 'string') return contractViolation(version, 'move.to 必须是字符串')
     const to = value.to.trim()
     if (context.locations.includes(to) && to !== context.currentLocation) proposal = { type: 'move', to }
   }
-  if (value.type === 'inform' && typeof value.recipientId === 'string'
-    && typeof value.topic === 'string' && typeof value.content === 'string') {
+  if (value.type === 'inform') {
+    if (typeof value.recipientId !== 'string' || typeof value.topic !== 'string' || typeof value.content !== 'string') {
+      return contractViolation(version, 'inform 字段类型非法')
+    }
     const recipient = context.residents.find(person => person.id === value.recipientId)
     const topic = value.topic.trim()
     const content = value.content.trim()

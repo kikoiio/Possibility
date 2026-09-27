@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { events } from '../db/schema'
-import { complete, configFromEnv } from '../llm/client'
+import { completeContract, configFromEnv } from '../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject } from '../llm/contracts'
 import type { Env } from '../index'
 import type { WorldSnapshot } from '../agent/engine-context'
-import { extractJson } from '../agent/engine-prompt'
 import { MAX_REACTORS_PER_EVENT } from './director'
 import type { AgentStep, DecideOpts } from './steps/types'
 
@@ -45,23 +45,20 @@ export function buildDirectorPrompt(
   return { system, user }
 }
 
-/** 解析导演排序：剥非法 id、去重；任何解析问题返回 []（调用方回退机械排序） */
+/** 解析导演排序：候选、类型、重复均是合同错误；调用方有限重试后机械回退。 */
 export function parseDirectorOrder(raw: unknown, validIds: string[]): string[] {
-  try {
-    const order = (raw as { order?: unknown })?.order
-    if (!Array.isArray(order)) return []
-    const valid = new Set(validIds)
-    const seen = new Set<string>()
-    const out: string[] = []
-    for (const id of order.map(String)) {
-      if (!valid.has(id) || seen.has(id)) continue
-      seen.add(id)
-      out.push(id)
-    }
-    return out
-  } catch {
-    return []
+  const version = LLM_CONTRACT_VERSIONS.director
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
+  const order = (raw as { order?: unknown }).order
+  if (!Array.isArray(order) || order.length < 1 || order.length > MAX_REACTORS_PER_EVENT) {
+    return contractViolation(version, `order 必须包含 1-${MAX_REACTORS_PER_EVENT} 个候选人`)
   }
+  if (order.some(id => typeof id !== 'string')) return contractViolation(version, 'order 只能包含字符串 ID')
+  const ids = order as string[]
+  if (new Set(ids).size !== ids.length) return contractViolation(version, 'order 不得包含重复 ID')
+  const valid = new Set(validIds)
+  if (ids.some(id => !valid.has(id))) return contractViolation(version, 'order 包含候选列表外的 ID')
+  return ids
 }
 
 /** 一次导演仲裁（含一次重试）；order 为 null 表示 LLM 侧失败，调用方回退机械排序 */
@@ -77,11 +74,12 @@ export async function callDirector(
   for (let attempt = 0; attempt < Math.max(0, Math.min(2, opts.maxCalls ?? MAX_DIRECTOR_CALLS_PER_TICK)); attempt++) {
     llmCalls++
     try {
-      const raw = await complete(config, [
+      const order = await completeContract(config, [
         { role: 'system', content: system },
         { role: 'user', content: user },
-      ])
-      const order = parseDirectorOrder(extractJson(raw), candidates.map((c) => c.personId))
+      ], { contractVersion: LLM_CONTRACT_VERSIONS.director,
+        parse: raw => parseDirectorOrder(parseContractObject(raw, LLM_CONTRACT_VERSIONS.director),
+          candidates.map((c) => c.personId)) })
       if (order.length) return { order, llmCalls: opts.reserve?.calls ?? llmCalls }
     } catch {
       // 重试一次

@@ -1,10 +1,11 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { events } from '../../db/schema'
-import { configFromEnv, complete } from '../../llm/client'
+import { configFromEnv, completeContract } from '../../llm/client'
+import { LLM_CONTRACT_VERSIONS, parseContractObject } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
-import { buildInjectionPrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
+import { buildInjectionPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { applyBeatOutput, normalizeBeatJson, type BeatJson } from './beat'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 
@@ -49,15 +50,19 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       llmCalls++
       try {
-        const raw = await complete(
+        const beat = await completeContract(
           config,
           [
             { role: 'system', content: input.prompt.system },
             { role: 'user', content: input.prompt.user },
           ],
-          { maxTokens: 8000 },
+          { maxTokens: 8000, contractVersion: LLM_CONTRACT_VERSIONS.injection,
+            parse: raw => normalizeBeatJson(
+              parseContractObject(raw, LLM_CONTRACT_VERSIONS.injection), locationNames, windowMinutes,
+              LLM_CONTRACT_VERSIONS.injection,
+            ) },
         )
-        return { value: { beat: normalizeBeatJson(extractJson(raw), locationNames, windowMinutes) }, llmCalls: opts?.reserve?.calls ?? llmCalls }
+        return { value: { beat }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
         // D17：重试一次后跳过该决策点
       }

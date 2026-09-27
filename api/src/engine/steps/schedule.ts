@@ -1,8 +1,9 @@
 import type { Db } from '../../db/client'
-import { configFromEnv, complete } from '../../llm/client'
+import { configFromEnv, completeContract } from '../../llm/client'
+import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type ScheduleItem, type WorldSnapshot } from '../../agent/engine-context'
-import { buildSchedulePrompt, extractJson, type PromptPair } from '../../agent/engine-prompt'
+import { buildSchedulePrompt, type PromptPair } from '../../agent/engine-prompt'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { ensureUniverseRevision } from '../../world-state/model'
 import { commitWorldCommand } from '../../world-state/commit'
@@ -20,23 +21,25 @@ export interface ScheduleOutput {
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 
-/** 校验并规范化日程：6-10 项、HH:MM 合法、时间升序不重叠；非法地点替换为首个地点 */
+/** 严格校验日程：6-10 项、HH:MM 合法、时间升序不重叠、地点必须存在。 */
 export function normalizeScheduleItems(raw: unknown, locationNames: string[], fallbackLocation: string): ScheduleItem[] {
-  if (!raw || typeof raw !== 'object') throw new Error('日程不是对象')
+  const version = LLM_CONTRACT_VERSIONS.schedule
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '日程不是对象')
   const items = (raw as { items?: unknown }).items
-  if (!Array.isArray(items)) throw new Error('缺少 items 数组')
-  if (items.length < 6 || items.length > 10) throw new Error(`日程项数 ${items.length} 不在 6-10`)
+  if (!Array.isArray(items)) return contractViolation(version, '缺少 items 数组')
+  if (items.length < 6 || items.length > 10) return contractViolation(version, `日程项数 ${items.length} 不在 6-10`)
 
   const out: ScheduleItem[] = []
   for (const it of items) {
-    const o = (it ?? {}) as Record<string, unknown>
-    const start = String(o.start ?? '')
-    const end = String(o.end ?? '')
-    if (!HHMM.test(start) || !HHMM.test(end)) throw new Error(`时间格式非法：${start}-${end}`)
-    const activity = String(o.activity ?? '').trim()
-    if (!activity) throw new Error('activity 为空')
-    let location = String(o.location ?? '').trim()
-    if (!locationNames.includes(location)) location = fallbackLocation
+    if (!it || typeof it !== 'object' || Array.isArray(it)) return contractViolation(version, '日程项必须是对象')
+    const o = it as Record<string, unknown>
+    const start = requireString(o.start, 'items[].start', version, 5)
+    const end = requireString(o.end, 'items[].end', version, 5)
+    if (!HHMM.test(start) || !HHMM.test(end)) return contractViolation(version, `时间格式非法：${start}-${end}`)
+    const activity = requireString(o.activity, 'items[].activity', version, 200)
+    const location = requireString(o.location, 'items[].location', version, 200)
+    if (!locationNames.includes(location)) return contractViolation(version, `地点不在世界中：${location || fallbackLocation}`)
+    if (o.kind != null && o.kind !== 'sleep') return contractViolation(version, 'kind 只能为 sleep 或省略')
     const kind = o.kind === 'sleep' ? 'sleep' : undefined
     out.push({ start, end, location, activity, ...(kind ? { kind } : {}) })
   }
@@ -54,7 +57,7 @@ export function normalizeScheduleItems(raw: unknown, locationNames: string[], fa
     let e = toMin(it.end)
     if (e <= rawStart) e += 24 * 60
     e += dayOffset
-    if (s < prevEnd) throw new Error(`日程时间重叠：${it.start} < 上一项结束`)
+    if (s < prevEnd) return contractViolation(version, `日程时间重叠：${it.start} < 上一项结束`)
     prevEnd = e
   }
   return out
@@ -80,15 +83,17 @@ export const scheduleExecutor: StepExecutor<ScheduleInput, ScheduleOutput> = {
       llmCalls++
       try {
         // 推理模型 reasoning 烧预算，给足（D13 + 实测：记忆变多后 8000 会被 reasoning 烧光返回空）
-        const raw = await complete(
+        const items = await completeContract(
           config,
           [
             { role: 'system', content: input.prompt.system },
             { role: 'user', content: input.prompt.user },
           ],
-          { maxTokens: 16000 },
+          { maxTokens: 16000, contractVersion: LLM_CONTRACT_VERSIONS.schedule,
+            parse: raw => normalizeScheduleItems(
+              parseContractObject(raw, LLM_CONTRACT_VERSIONS.schedule), locationNames, fallback,
+            ) },
         )
-        const items = normalizeScheduleItems(extractJson(raw), locationNames, fallback)
         return { value: { items }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch (e) {
         // D17：失败重试一次，再失败则跳过该决策点；日志便于提示词调优

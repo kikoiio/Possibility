@@ -1,11 +1,12 @@
 import { and, eq, exists, isNull } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
-import { commitments, dialogueTurns, dialogues, events, memories, persons, personStates, schedules, timelines, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
 import { ensureUniverseRevision } from './model'
 import { validateWorldAction } from './rules'
 import type { WorldCommandInput } from './types'
 import { WorldStateError } from './types'
+import { requireWritableUniverse } from '../engine/guard'
 
 export interface CommitResult { commandId: string; factId: string; version: number; replayed: boolean }
 
@@ -21,6 +22,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
   const world = await db.select().from(worlds)
     .where(and(eq(worlds.id, input.worldId), eq(worlds.userId, input.userId))).get()
   if (!world) throw new WorldStateError('世界不存在', 404)
+  await requireWritableUniverse(db, world.id, input.timelineId)
   if (input.actorKind === 'visitor') {
     const visitor = input.actorPersonId ? await db.select().from(persons)
       .where(and(eq(persons.id, input.actorPersonId), eq(persons.userId, input.userId), eq(persons.isUser, true))).get() : null
@@ -110,6 +112,11 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
       ?? plan.commitmentProposal?.personId ?? plan.commitment?.visitorId ?? (input.actorKind === 'visitor' ? input.actorPersonId : null),
     dialogueId: plan.dialogueId ?? plan.commitment?.dialogueId ?? null,
   })
+  const evidenceAdvance = db.update(universeEvidence).set({ assessedVersion: resultVersion, assessedAt: now }).where(and(
+    eq(universeEvidence.timelineId, timeline.id), eq(universeEvidence.level, 'complete'),
+    eq(universeEvidence.assessedVersion, input.expectedVersion),
+  ))
+  const finalAtomicWrites = [...atomicWrites, evidenceAdvance]
   try {
     if (plan.clockAdvance) {
       await db.batch([
@@ -117,14 +124,14 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         db.update(timelines).set({ simNow: plan.clockAdvance.to, lastRealTickAt: plan.clockAdvance.observedAt })
           .where(and(eq(timelines.id, timeline.id), eq(timelines.simNow, plan.clockAdvance.from), eq(timelines.status, 'active'))),
         fact,
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.simulationCheckpoint) {
       await db.batch([
         command, advance, fact,
         db.update(personStates).set({ lastBeatSimTime: plan.simulationCheckpoint.lastBeatSimTime, updatedRealAt: now })
           .where(and(eq(personStates.personId, plan.simulationCheckpoint.personId), eq(personStates.timelineId, timeline.id))),
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.dialogueRecovery) {
       const recovery = plan.dialogueRecovery
@@ -141,7 +148,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           eq(personStates.currentDialogueId, recovery.dialogueId),
         )),
         fact,
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.memorySummary) {
       const summary = plan.memorySummary
@@ -153,7 +160,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         ...summary.sourceMemoryIds.map(memoryId => db.update(memories).set({ summarized: true }).where(and(
           eq(memories.id, memoryId), eq(memories.personId, summary.personId), eq(memories.summarized, false),
         ))),
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.memoryMaintenance) {
       const maintenance = plan.memoryMaintenance
@@ -171,19 +178,19 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
       const projection = maintenance.operation === 'correct' && maintenance.after
         ? db.update(memories).set(maintenance.after).where(memoryBefore)
         : db.delete(memories).where(memoryBefore)
-      await db.batch([command, guardedAdvance, fact, projection, event, ...atomicWrites])
+      await db.batch([command, guardedAdvance, fact, projection, event, ...finalAtomicWrites])
     } else if (plan.scheduleProjection) {
       const schedule = plan.scheduleProjection
       await db.batch([command, advance, fact, db.insert(schedules).values({ personId: schedule.personId,
         timelineId: timeline.id, worldDate: schedule.worldDate, itemsJson: JSON.stringify(schedule.items),
-        generatedAt: schedule.generatedAt }), ...atomicWrites])
+        generatedAt: schedule.generatedAt }), ...finalAtomicWrites])
     } else if (plan.sceneOpen) {
       const scene = plan.sceneOpen
       await db.batch([command, advance, fact,
         db.insert(dialogues).values({ id: scene.dialogueId, timelineId: timeline.id, location: scene.location,
           participantIdsJson: JSON.stringify(scene.participantIds), status: 'scene', kind: 'scene',
           visitorId: scene.visitorId, turnLimit: scene.turnLimit, simStart: timeline.simNow, simEnd: timeline.simNow }),
-        ...atomicWrites])
+        ...finalAtomicWrites])
     } else if (plan.commitmentProposal) {
       const item = plan.commitmentProposal
       await db.batch([
@@ -192,7 +199,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           personId: item.personId, visitorId: item.visitorId, sourceDialogueId: item.sourceDialogueId,
           title: item.title, kind: item.kind, location: item.location, dueSim: item.dueSim,
           status: 'proposed', createdSim: timeline.simNow, updatedSim: timeline.simNow, createdAt: now }),
-        fact, event, ...atomicWrites,
+        fact, event, ...finalAtomicWrites,
       ])
     } else if (plan.commitment) {
       const item = plan.commitment
@@ -208,7 +215,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         ...(item.mood ? [db.update(personStates).set({ mood: item.mood, updatedRealAt: now }).where(and(
           eq(personStates.personId, item.personId), eq(personStates.timelineId, timeline.id),
         ))] : []),
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.enterPersonId && plan.moveTo) {
       await db.batch([
@@ -216,14 +223,14 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         db.insert(personStates).values({ personId: plan.enterPersonId, timelineId: timeline.id,
           simTime: timeline.simNow, location: plan.moveTo, activity: '刚来到这里', mood: '平静',
           goal: '探索这个世界', updatedRealAt: now, lastBeatSimTime: timeline.simNow }),
-        event, ...atomicWrites,
+        event, ...finalAtomicWrites,
       ])
     } else if (plan.movePersonId && plan.moveTo) {
       await db.batch([
         command, advance, fact,
         db.update(personStates).set({ location: plan.moveTo, simTime: timeline.simNow, updatedRealAt: now })
           .where(and(eq(personStates.timelineId, timeline.id), eq(personStates.personId, plan.movePersonId))),
-        event, ...atomicWrites,
+        event, ...finalAtomicWrites,
       ])
     } else if (plan.statePersonId && plan.statePatch) {
       const action = input.action
@@ -246,7 +253,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           type: memory.type, content: memory.content, simTime: commitSimTime, createdAt: now,
           importance: memory.importance, summarized: false,
         })),
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else if (plan.dialogueStart) {
       const action = input.action
@@ -259,7 +266,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         ...action.participantIds.map(personId => db.update(personStates).set({
           currentDialogueId: action.dialogueId, updatedRealAt: now,
         }).where(and(eq(personStates.timelineId, timeline.id), eq(personStates.personId, personId)))),
-        event, ...atomicWrites,
+        event, ...finalAtomicWrites,
       ])
     } else if (plan.dialogueTurn) {
       const action = input.action
@@ -284,7 +291,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           }).where(and(eq(personStates.timelineId, timeline.id), eq(personStates.personId, personId),
             eq(personStates.currentDialogueId, action.dialogueId)))),
         ] : []),
-        ...atomicWrites,
+        ...finalAtomicWrites,
       ])
     } else {
       await db.batch([command, advance, fact,
@@ -293,7 +300,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           sourceDialogueId: item.sourceDialogueId, title: item.title, kind: item.kind, location: item.location,
           dueSim: item.dueSim, status: 'accepted', createdSim: timeline.simNow, updatedSim: timeline.simNow, createdAt: now,
         })),
-        event, ...atomicWrites])
+        event, ...finalAtomicWrites])
     }
   } catch (error) {
     const committed = await db.select().from(worldCommands).where(eq(worldCommands.id, input.id)).get()

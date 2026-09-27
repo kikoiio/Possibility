@@ -26,12 +26,13 @@ describe('parseDirectorOrder（导演排序解析）', () => {
   it('正常解析并保持顺序', () => {
     expect(parseDirectorOrder({ order: ['p3', 'p1'] }, valid)).toEqual(['p3', 'p1'])
   })
-  it('剥掉非法 id 与重复项', () => {
-    expect(parseDirectorOrder({ order: ['p9', 'p1', 'p1', 'p2'] }, valid)).toEqual(['p1', 'p2'])
+  it('拒绝非法 id 与重复项', () => {
+    expect(() => parseDirectorOrder({ order: ['p9', 'p1'] }, valid)).toThrow()
+    expect(() => parseDirectorOrder({ order: ['p1', 'p1'] }, valid)).toThrow()
   })
-  it('结构非法或非字符串 id 时返回空（调用方回退机械排序）', () => {
-    expect(parseDirectorOrder({ order: 'p1' }, valid)).toEqual([])
-    expect(parseDirectorOrder(null, valid)).toEqual([])
-    expect(parseDirectorOrder({ order: [1, 2] }, valid)).toEqual([])
+  it('结构非法或非字符串 id 时抛出合同错误（调用方有限重试后回退）', () => {
+    expect(() => parseDirectorOrder({ order: 'p1' }, valid)).toThrow()
+    expect(() => parseDirectorOrder(null, valid)).toThrow()
+    expect(() => parseDirectorOrder({ order: [1, 2] }, valid)).toThrow()
   })
 })

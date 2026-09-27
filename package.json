@@ -15,9 +15,14 @@
     "seed": "tsx scripts/seed.ts",
     "migrate:p2": "tsx scripts/migrate-p2.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
+    "verify:s01:legacy": "node --import tsx scripts/verify-s01-legacy.ts",
     "verify:s01:workers": "node --experimental-strip-types scripts/verify-s01-workers.ts",
     "verify:s01:remote-workers": "node --experimental-strip-types scripts/verify-s01-remote-workers.ts",
-    "apply:s01:remote-test-migrations": "node --experimental-strip-types scripts/apply-s01-remote-migrations.ts"
+    "apply:s01:remote-test-migrations": "node --experimental-strip-types scripts/apply-s01-remote-migrations.ts",
+    "verify:s01:remote-journey": "node --experimental-strip-types scripts/verify-s01-remote-journey.ts",
+    "verify:s01:live-model": "tsx scripts/verify-s01-live-model.ts",
+    "verify:s01:live-journey": "node --import tsx scripts/verify-s01-live-journey.ts",
+    "verify:s01:live-closure": "node --import tsx scripts/verify-s01-live-closure.ts"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

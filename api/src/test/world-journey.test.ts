@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { dialogues, persons, personStates, schedules, sceneRequests, timelines, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
+import { dialogues, llmCallLog, persons, personStates, schedules, sceneRequests, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
 import { readWorldState } from '../world-state/query'
 import { runTick } from '../engine/tick'
 import { auditUniverse } from '../world-state/invariants'
 import { advanceWorldClock } from '../world-state/system'
+import { commitWorldCommand } from '../world-state/commit'
 import { SCENE_REQUEST_STALE_MS } from '../scene/routes'
+import { collectReplayInput, readCurrentProjection } from '../world-state/evidence'
+import { rebuildProjection } from '../world-state/rebuild'
 
 type Fixture = Awaited<ReturnType<typeof createWorldFixture>>
 let fixture: Fixture | null = null
@@ -32,6 +35,11 @@ async function addBaselineResidents(f: Fixture) {
   await f.db.insert(worldPersons).values(['baseline-resident', 'baseline-visitor'].map(personId => ({
     worldId: 'home-world', personId, joinedAt: WORLD_TIME,
   })))
+}
+
+async function markMainComplete(f: Fixture) {
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
 }
 
 async function describeFixture(f: Fixture) {
@@ -71,24 +79,37 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
     { start: '17:00', end: '20:00', location: 'Library', activity: 'Researching' },
     { start: '20:00', end: '00:00', location: 'Cafe', activity: 'Sleeping', kind: 'sleep' as const },
   ]
-  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  const modelFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] }
     const prompt = body.messages.map(message => message.content).join('\n')
     const content = prompt.includes('安排今日日程')
       ? JSON.stringify({ items: scheduleItems })
-      : JSON.stringify({ events: [], thought: 'A quiet fixed day.', memory: null,
+      : JSON.stringify({ events: [{ title: 'Continues the day', description: 'The resident follows the next part of the routine.', offsetMin: 1 }],
+        thought: 'A quiet fixed day.', memory: null,
         nextLocation: null, nextActivity: null, mood: null, goal: null })
     return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-  }))
+  })
+  vi.stubGlobal('fetch', modelFetch)
 
   const realAnchor = Date.now()
   await f.db.update(timelines).set({ lastRealTickAt: new Date(realAnchor).toISOString() }).where(eq(timelines.id, timelineId))
+  let previousVersion = 0
   for (let tick = 1; tick <= 16; tick++) {
     vi.setSystemTime(realAnchor + tick * 15_000)
     const result = await runTick({ ...f.env, WORLD_SPEED: '360', DIRECTOR_LLM: '0' }, f.db)
     const timeline = result?.worlds.find(world => world.id === worldId)?.timelines.find(item => item.id === timelineId)
     expect(Date.parse(timeline?.simNow ?? '') - Date.parse(journeyStart)).toBe(tick * 90 * 60_000)
     expect(await auditUniverse(f.db, worldId, timelineId)).toEqual([])
+    const revision = (await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get())!
+    expect(revision.version).toBeGreaterThan(previousVersion)
+    previousVersion = revision.version
+    // Each run is a fresh server invocation (the deterministic equivalent of the
+    // page being absent); persisted receipts and history are the only continuity.
+    const receipts = await f.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, worldId)).all()
+    expect(receipts).toHaveLength(modelFetch.mock.calls.length)
+    expect(receipts.every(receipt => receipt.status === 'completed'
+      && /^[a-f0-9]{64}$/.test(receipt.contextHash ?? '')
+      && (receipt.contractVersion === 'schedule/v1' || receipt.contractVersion === 'beat/v1'))).toBe(true)
   }
 
   const rootFactsAtFork = await f.db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).all()
@@ -118,14 +139,25 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
 
   // Carry cancellation recovery through the same Root→Child→Grandchild journey.
   vi.useRealTimers()
+  // The 24-hour tick journey may legitimately spend the fixture's daily call budget.
+  // Reset it so this next section tests cancellation/recovery rather than budget refusal.
+  await f.db.update(worlds).set({ status: 'running', pauseReason: null, callsToday: 0,
+    callsDay: new Date().toISOString().slice(0, 10) }).where(eq(worlds.id, worldId))
   const personaResponse = await request(`/api/worlds/${worldId}/persona`, 'POST', { name: 'Journey Visitor', description: 'A traveler checking in.' })
   expect(personaResponse.status).toBe(200)
   const { persona } = await personaResponse.json() as { persona: { id: string } }
   const residentState = await f.db.select().from(personStates).where(eq(personStates.timelineId, grandchildId)).get()
+  const grandchildTimeline = await f.db.select().from(timelines).where(eq(timelines.id, grandchildId)).get()
+  const nextMorning = new Date(grandchildTimeline!.simNow)
+  nextMorning.setUTCHours(10, 0, 0, 0)
+  if (nextMorning.getTime() <= Date.parse(grandchildTimeline!.simNow)) nextMorning.setUTCDate(nextMorning.getUTCDate() + 1)
+  await commitWorldCommand(f.db, { id: 'journey-next-morning', worldId, timelineId: grandchildId,
+    userId: 'owner', actorKind: 'system', expectedVersion: 0, action: { type: 'clock_advance',
+      from: grandchildTimeline!.simNow, to: nextMorning.toISOString(), observedAt: new Date().toISOString() } })
   const visitorEntry = await request(`/api/worlds/${worldId}/scene/position`, 'POST', {
-    timelineId: grandchildId, commandId: 'journey-visitor-entry', expectedVersion: 0, location: residentState!.location,
+    timelineId: grandchildId, commandId: 'journey-visitor-entry', expectedVersion: 1, location: residentState!.location,
   })
-  expect(visitorEntry.status).toBe(200)
+  expect(visitorEntry.status, await visitorEntry.clone().text()).toBe(200)
   let providerSignal: AbortSignal | null | undefined
   const sceneFetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
     providerSignal = init?.signal
@@ -135,7 +167,8 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
   const cancelledResponse = await request(`/api/worlds/${worldId}/scene`, 'POST', { timelineId: grandchildId,
     location: residentState!.location, requestId: 'journey-cancelled-request', content: 'Could you help me?' })
   const cancelledReader = cancelledResponse.body!.getReader()
-  await cancelledReader.read()
+  const firstSceneFrame = await cancelledReader.read()
+  expect(new TextDecoder().decode(firstSceneFrame.value)).toContain('"type":"scene_start"')
   await vi.waitFor(() => expect(sceneFetch).toHaveBeenCalledTimes(1))
   expect(providerSignal).toBeDefined()
   await cancelledReader.cancel()
@@ -171,6 +204,13 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
   expect(await auditUniverse(f.db, worldId, timelineId)).toEqual([])
   expect(await auditUniverse(f.db, worldId, childId)).toEqual([])
   expect(await auditUniverse(f.db, worldId, grandchildId)).toEqual([])
+
+  for (const replayTimelineId of [timelineId, childId, grandchildId]) {
+    const replay = await rebuildProjection(f.db, worldId, replayTimelineId,
+      await collectReplayInput(f.db, worldId, replayTimelineId),
+      await readCurrentProjection(f.db, worldId, replayTimelineId))
+    expect(replay, `independent replay for ${replayTimelineId}`).toMatchObject({ status: 'complete', differences: [] })
+  }
 })
 
 /** A deterministic slice: enter -> fork -> change a condition -> inform one resident -> compare. */
@@ -178,6 +218,7 @@ describe('small world journey without an LLM', () => {
   it('delivers a child-line message into only the intended recipient knowledge', async () => {
     fixture = await createWorldFixture()
     const f = fixture
+    await markMainComplete(f)
     const modelJson = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
     await f.db.insert(persons).values([
       { id: 'ada', userId: 'owner', name: 'Ada', modelJson, createdAt: WORLD_TIME },
@@ -238,6 +279,7 @@ describe('small world journey without an LLM', () => {
   it('keeps branch knowledge private and rejects unsafe actions without partial writes', async () => {
     fixture = await createWorldFixture()
     const f = fixture
+    await markMainComplete(f)
     await f.db.insert(persons).values([
       { id: 'ada', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME },
       { id: 'bo', userId: 'owner', name: 'Bo', modelJson: '{}', createdAt: WORLD_TIME },
@@ -291,6 +333,7 @@ describe('small world journey without an LLM', () => {
   it('lets an informed resident use the message in a later engine decision and versioned world change', async () => {
     fixture = await createWorldFixture()
     const f = fixture
+    await markMainComplete(f)
     const modelJson = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
     await f.db.insert(persons).values([
       { id: 'ada', userId: 'owner', name: 'Ada', modelJson, createdAt: WORLD_TIME },
@@ -364,6 +407,7 @@ describe('small world journey without an LLM', () => {
   it('rejects in-person messages to sleeping or busy residents without advancing the world', async () => {
     fixture = await createWorldFixture()
     const f = fixture
+    await markMainComplete(f)
     await f.db.insert(persons).values([
       { id: 'ada', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME },
       { id: 'visitor', userId: 'owner', name: 'Visitor', modelJson: '{}', isUser: true, createdAt: WORLD_TIME },

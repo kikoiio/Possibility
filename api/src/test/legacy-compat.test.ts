@@ -4,7 +4,7 @@ import app from '../index'
 import { buildAgentContext } from '../agent/context'
 import { ensureUniverseRevision } from '../world-state/model'
 import { auditUniverse } from '../world-state/invariants'
-import { chapters, commitments, conversations, dialogueTurns, dialogues, events, memories, messages, persons, personStates, sessions, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { chapters, commitments, conversations, dialogueTurns, dialogues, events, memories, messages, persons, personStates, sessions, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 
 type Fixture = Awaited<ReturnType<typeof createWorldFixture>>
@@ -16,6 +16,7 @@ const auth = { Authorization: 'Bearer owner-token' }
 describe('legacy reads and exact timeline scope', () => {
   it('keeps old structured rows readable without inventing missing fork history', async () => {
     fixture = await createWorldFixture()
+    await fixture.db.delete(universeEvidence).where(eq(universeEvidence.timelineId, 'home-main'))
     await fixture.db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Resident', modelJson: '{}', createdAt: WORLD_TIME })
     await fixture.db.insert(persons).values({ id: 'visitor', userId: 'owner', name: 'Visitor', modelJson: '{}', isUser: true, createdAt: WORLD_TIME })
     await fixture.db.insert(worldPersons).values(['resident', 'visitor'].map(personId => ({ worldId: 'home-world', personId, joinedAt: WORLD_TIME })))
@@ -48,17 +49,20 @@ describe('legacy reads and exact timeline scope', () => {
     expect(await selectedFork.json()).toMatchObject({ currentTimelineId: 'old-fork' })
     const compare = await app.request('/api/worlds/home-world/compare?left=home-main&right=old-fork', { headers: auth }, fixture.env)
     expect(compare.status).toBe(200)
-    const evidence = await compare.json() as { right: { historyComplete: boolean } }
+    const evidence = await compare.json() as { right: { historyComplete: boolean; evidence: { level: string } } }
     expect(evidence.right.historyComplete).toBe(false)
+    expect(evidence.right.evidence.level).toBe('unassessed')
 
     const legacyState = await app.request('/api/worlds/home-world/state?timelineId=home-main', { headers: auth }, fixture.env)
-    expect(await legacyState.json()).toMatchObject({ evidenceStatus: 'legacy', facts: [], current: [] })
+    expect(await legacyState.json()).toMatchObject({ evidenceStatus: 'legacy',
+      evidence: { level: 'unassessed', reasonCodes: ['evidence_unassessed'] }, facts: [], current: [] })
     const history = await app.request('/api/worlds/home-world/scene/history?timelineId=home-main&location=Cafe', { headers: auth }, fixture.env)
     expect(await history.json()).toMatchObject({ dialogueId: 'old-dialogue', turns: [expect.objectContaining({ utterance: 'Is anyone here?' })] })
     const oldChat = await app.request('/api/conversations/old-conversation/messages', { headers: auth }, fixture.env)
     expect(await oldChat.json()).toMatchObject({ messages: [expect.objectContaining({ content: 'An old reply' })] })
     const focus = await app.request('/api/worlds/home-world/persons/resident?timelineId=home-main', { headers: auth }, fixture.env)
-    expect(await focus.json()).toMatchObject({ memories: [expect.objectContaining({ id: 'old-memory', content: 'A remembered visit' })] })
+    expect(await focus.json()).toMatchObject({ evidence: { level: 'unassessed', reasonCodes: ['evidence_unassessed'] },
+      memories: [expect.objectContaining({ id: 'old-memory', content: 'A remembered visit' })] })
     const returned = await app.request('/api/worlds/home-world/return?timelineId=home-main', { headers: auth }, fixture.env)
     expect(await returned.json()).toMatchObject({ commitments: [expect.objectContaining({ id: 'old-commitment', status: 'proposed' })] })
     expect((await app.request('/api/worlds/dialogues/old-dialogue?timelineId=', { headers: auth }, fixture.env)).status).toBe(404)
@@ -103,8 +107,22 @@ describe('legacy reads and exact timeline scope', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('keeps pause and archive safe while refusing resume and reactivation without complete evidence', async () => {
+    fixture = await createWorldFixture({ writable: false })
+    const f = fixture
+    const headers = { Authorization: 'Bearer owner-token' }
+    expect((await app.request('/api/worlds/home-world/pause', { method: 'POST', headers }, f.env)).status).toBe(200)
+    expect((await app.request('/api/worlds/home-world/resume', { method: 'POST', headers }, f.env)).status).toBe(409)
+    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())?.status).toBe('paused')
+    await f.db.insert(timelines).values({ id: 'legacy-archived', worldId: 'home-world', parentTimelineId: 'home-main',
+      simNow: WORLD_TIME, createdAt: WORLD_TIME, status: 'archived' })
+    expect((await app.request('/api/timelines/legacy-archived/reactivate', { method: 'POST', headers }, f.env)).status).toBe(409)
+    expect((await f.db.select().from(timelines).where(eq(timelines.id, 'legacy-archived')).get())?.status).toBe('archived')
+    expect((await app.request('/api/worlds/home-world/archive', { method: 'POST', headers }, f.env)).status).toBe(200)
+  })
+
   it('does not fall back to mutable assets when a structured world loses its pinned model', async () => {
-    fixture = await createWorldFixture()
+    fixture = await createWorldFixture({ writable: false })
     await fixture.db.insert(universeRevisions).values({ timelineId: 'home-main', version: 0,
       simTime: WORLD_TIME, worldModelVersion: 99, updatedAt: WORLD_TIME })
     const read = await app.request('/api/worlds/home-world?timelineId=home-main', { headers: auth }, fixture.env)
@@ -160,15 +178,16 @@ describe('legacy reads and exact timeline scope', () => {
     await f.db.insert(personStates).values({ personId: 'chat-resident', timelineId: 'home-main', simTime: WORLD_TIME,
       location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
     await f.db.insert(conversations).values({ id: 'chat-conversation', userId: 'owner', personId: 'chat-resident', timelineId: 'home-main' })
+    let requestNumber = 0
     const send = () => app.request('/api/conversations/chat-conversation/messages', { method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Hello' }) }, f.env)
+      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Hello', requestId: `legacy-send-${++requestNumber}` }) }, f.env)
     await f.db.update(worlds).set({ status: 'paused' }).where(eq(worlds.id, 'home-world'))
     expect((await app.request('/api/persons/chat-resident/conversations', { method: 'POST',
       headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ timelineId: 'home-main' }) }, f.env)).status).toBe(200)
     expect((await send()).status).toBe(409)
     await f.db.update(worlds).set({ status: 'running' }).where(eq(worlds.id, 'home-world'))
     await f.db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, 'home-main'))
-    expect((await send()).status).toBe(409)
+    expect((await send()).status).toBe(404)
     expect(await f.db.select().from(messages).where(eq(messages.conversationId, 'chat-conversation')).all()).toHaveLength(0)
   })
 
@@ -228,7 +247,7 @@ describe('legacy reads and exact timeline scope', () => {
   })
 
   it('does not save a partial legacy reply as a completed message when its model stream breaks', async () => {
-    fixture = await createWorldFixture()
+    fixture = await createWorldFixture({ writable: false })
     const f = fixture
     const model = { identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] }
     await f.db.insert(persons).values({ id: 'stream-resident', userId: 'owner', name: 'Resident', modelJson: JSON.stringify(model), createdAt: WORLD_TIME })
@@ -236,6 +255,8 @@ describe('legacy reads and exact timeline scope', () => {
     await f.db.insert(personStates).values({ personId: 'stream-resident', timelineId: 'home-main', simTime: WORLD_TIME,
       location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
     await f.db.insert(conversations).values({ id: 'stream-conversation', userId: 'owner', personId: 'stream-resident', timelineId: 'home-main' })
+    await f.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+      baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
     const encoder = new TextEncoder()
     let reads = 0
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
@@ -245,8 +266,8 @@ describe('legacy reads and exact timeline scope', () => {
       },
     }), { headers: { 'Content-Type': 'text/event-stream' } })))
     const response = await app.request('/api/conversations/stream-conversation/messages', { method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Hello' }) }, f.env)
-    expect(response.status).toBe(200)
+      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Hello', requestId: 'legacy-stream-first' }) }, f.env)
+    expect(response.status, await response.clone().text()).toBe(200)
     expect(await response.text()).toContain('model stream lost')
     expect((await f.db.select().from(messages).where(eq(messages.conversationId, 'stream-conversation')).all())
       .map(message => message.role)).toEqual(['user'])
@@ -256,7 +277,7 @@ describe('legacy reads and exact timeline scope', () => {
       { headers: { 'Content-Type': 'text/event-stream' } },
     )))
     const completed = await app.request('/api/conversations/stream-conversation/messages', { method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Try again' }) }, f.env)
+      headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'Try again', requestId: 'legacy-stream-retry' }) }, f.env)
     expect(completed.status).toBe(200)
     await completed.text()
     expect((await f.db.select().from(messages).where(eq(messages.conversationId, 'stream-conversation')).all())
@@ -279,7 +300,7 @@ describe('legacy reads and exact timeline scope', () => {
     const otherAuth = { Authorization: 'Bearer other-token', 'Content-Type': 'application/json' }
     expect((await app.request('/api/conversations/owner-conversation/messages', { headers: otherAuth }, f.env)).status).toBe(404)
     expect((await app.request('/api/conversations/owner-conversation/messages', { method: 'POST', headers: otherAuth,
-      body: JSON.stringify({ content: 'Should not run' }) }, f.env)).status).toBe(404)
+      body: JSON.stringify({ content: 'Should not run', requestId: 'cross-account-request' }) }, f.env)).status).toBe(404)
     expect((await app.request('/api/memories/owner-memory', { method: 'PATCH', headers: otherAuth,
       body: JSON.stringify({ content: 'Stolen' }) }, f.env)).status).toBe(404)
     expect((await app.request('/api/memories/owner-memory', { method: 'DELETE', headers: otherAuth }, f.env)).status).toBe(404)

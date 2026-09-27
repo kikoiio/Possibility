@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { persons, personStates, schedules, timelines, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { llmCallLog, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 import app from '../index'
@@ -15,8 +15,25 @@ afterEach(() => {
   fixture = null
 })
 
+async function markMainComplete() {
+  await fixture!.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
+}
+
+it('skips active timelines whose evidence is not complete without changing history', async () => {
+  fixture = await createWorldFixture()
+  await fixture.db.update(universeEvidence).set({ level: 'incomplete', baselineVersion: null,
+    reasonCodesJson: '["test_incomplete"]' }).where(eq(universeEvidence.timelineId, 'home-main'))
+  const before = await fixture.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()
+  const result = await runTick({ ...fixture.env, DIRECTOR_LLM: '0' }, fixture.db)
+  expect(result?.worlds.find(world => world.id === 'home-world')?.timelines).toEqual([])
+  expect(await fixture.db.select().from(worldFacts).all()).toEqual([])
+  expect(await fixture.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()).toEqual(before)
+})
+
 it('applies a crossed schedule transition once across consecutive ticks', async () => {
   fixture = await createWorldFixture()
+  await markMainComplete()
   const realAnchor = new Date()
   const firstTick = new Date(realAnchor.getTime() + 15_000)
   vi.useFakeTimers()
@@ -54,6 +71,7 @@ it('applies a crossed schedule transition once across consecutive ticks', async 
 
 it('keeps a resident at one location per virtual instant across repeated schedule and beat ticks', async () => {
   fixture = await createWorldFixture()
+  await markMainComplete()
   const realAnchor = new Date()
   vi.useFakeTimers()
   await fixture.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
@@ -95,8 +113,91 @@ it('keeps a resident at one location per virtual instant across repeated schedul
   expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
 })
 
+it('persists receipts across independent ticks, fails one invalid decision safely, and resumes on the next tick', async () => {
+  fixture = await createWorldFixture()
+  await markMainComplete()
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  await fixture.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
+  const emptyModel = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
+  await fixture.db.insert(persons).values({ id: 'continuous-resident', userId: 'owner', name: 'Continuous Resident',
+    modelJson: emptyModel, createdAt: WORLD_TIME })
+  await fixture.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'continuous-resident', joinedAt: WORLD_TIME })
+  await fixture.db.insert(personStates).values({ personId: 'continuous-resident', timelineId: 'home-main', simTime: WORLD_TIME,
+    location: 'Cafe', activity: 'Reading', mood: 'Calm', goal: 'Continue', lastBeatSimTime: WORLD_TIME,
+    updatedRealAt: WORLD_TIME })
+  await fixture.db.insert(schedules).values({ personId: 'continuous-resident', timelineId: 'home-main',
+    worldDate: WORLD_TIME.slice(0, 10), generatedAt: WORLD_TIME, itemsJson: JSON.stringify([
+      { start: '00:00', end: '08:01', location: 'Cafe', activity: 'Reading' },
+      { start: '08:01', end: '08:03', location: 'Library', activity: 'Researching' },
+      { start: '08:03', end: '08:05', location: 'Cafe', activity: 'Writing' },
+      { start: '08:05', end: '12:00', location: 'Library', activity: 'Studying' },
+      { start: '12:00', end: '18:00', location: 'Cafe', activity: 'Working' },
+      { start: '18:00', end: '00:00', location: 'Cafe', activity: 'Resting' },
+    ]) })
+
+  const validBeat = (title: string) => JSON.stringify({
+    events: [{ title, description: `${title} is recorded as a deterministic event.`, offsetMin: 1 }],
+    thought: `Thinking about ${title}.`, memory: null,
+    nextLocation: null, nextActivity: null, mood: null, goal: null,
+  })
+  const replies = [validBeat('First decision'), JSON.stringify({ events: [] }), JSON.stringify({ events: [] }),
+    validBeat('Recovered decision')]
+  const modelFetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: replies.shift() } }] }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  vi.stubGlobal('fetch', modelFetch)
+  const env = { ...fixture.env, WORLD_SPEED: '6', DIRECTOR_LLM: '0' }
+
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  const first = await runTick(env, fixture.db)
+  expect(first?.worlds[0]?.timelines[0]?.steps).toContainEqual(expect.objectContaining({ kind: 'beat', ok: true }))
+  const firstRevision = (await fixture.db.select().from(universeRevisions)
+    .where(eq(universeRevisions.timelineId, 'home-main')).get())!.version
+  const afterFirst = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
+  expect(afterFirst).toEqual([expect.objectContaining({ purpose: 'beat', status: 'completed', errorCode: null,
+    contractVersion: 'beat/v1', contextHash: expect.stringMatching(/^[a-f0-9]{64}$/) })])
+  const firstBeatFacts = (await fixture.db.select().from(worldFacts).all())
+    .filter(fact => JSON.parse(fact.valueJson).cause === 'beat').length
+  expect(firstBeatFacts).toBe(1)
+  expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
+
+  // No browser/client state is retained between these invocations. Both retries
+  // return schema-invalid JSON, so the decision fails without a beat write.
+  vi.setSystemTime(new Date(realAnchor.getTime() + 30_000))
+  const failed = await runTick(env, fixture.db)
+  expect(failed?.worlds[0]?.timelines[0]?.steps).toContainEqual(expect.objectContaining({ kind: 'beat', ok: false }))
+  const failedRevision = (await fixture.db.select().from(universeRevisions)
+    .where(eq(universeRevisions.timelineId, 'home-main')).get())!.version
+  expect(failedRevision).toBeGreaterThan(firstRevision)
+  const afterFailure = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
+  expect(afterFailure).toHaveLength(3)
+  expect(afterFailure.slice(1)).toEqual([
+    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v1' }),
+    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v1' }),
+  ])
+  expect((await fixture.db.select().from(worldFacts).all())
+    .filter(fact => JSON.parse(fact.valueJson).cause === 'beat')).toHaveLength(firstBeatFacts)
+  expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
+
+  vi.setSystemTime(new Date(realAnchor.getTime() + 45_000))
+  const recovered = await runTick(env, fixture.db)
+  expect(recovered?.worlds[0]?.timelines[0]?.steps).toContainEqual(expect.objectContaining({ kind: 'beat', ok: true }))
+  const recoveredRevision = (await fixture.db.select().from(universeRevisions)
+    .where(eq(universeRevisions.timelineId, 'home-main')).get())!.version
+  expect(recoveredRevision).toBeGreaterThan(failedRevision)
+  const finalReceipts = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
+  expect(finalReceipts).toHaveLength(4)
+  expect(finalReceipts.at(-1)).toMatchObject({ status: 'completed', errorCode: null, contractVersion: 'beat/v1' })
+  expect(finalReceipts.every(receipt => /^[a-f0-9]{64}$/.test(receipt.contextHash ?? ''))).toBe(true)
+  expect((await fixture.db.select().from(worldFacts).all())
+    .filter(fact => JSON.parse(fact.valueJson).cause === 'beat')).toHaveLength(firstBeatFacts + 1)
+  expect(modelFetch).toHaveBeenCalledTimes(4)
+  expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
+})
+
 it('advances an accelerated fixed world through a full simulated day and audits each tick', async () => {
   fixture = await createWorldFixture()
+  await markMainComplete()
   const realAnchor = new Date()
   vi.useFakeTimers()
   await fixture.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
@@ -121,7 +222,8 @@ it('advances an accelerated fixed world through a full simulated day and audits 
   const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [initialState])
   baseline.rows.schedules = initialSchedules
   await fixture.db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, createdAt: WORLD_TIME,
-    modelJson: JSON.stringify({ name: 'Home world', description: 'A small town', locations: [], residents: [],
+    modelJson: JSON.stringify({ name: 'Home world', description: 'A small town', locations: [],
+      residents: [{ id: 'day-resident', name: 'Day Resident', model: {} }],
       initialStates: { capturedAt: WORLD_TIME, states: [initialState] }, initialEvents: { timelineId: 'home-main', eventIds: [] },
       projectionBaseline: baseline }) })
   await fixture.db.insert(universeRevisions).values({ timelineId: 'home-main', version: 0, simTime: WORLD_TIME,
@@ -148,11 +250,17 @@ it('advances an accelerated fixed world through a full simulated day and audits 
     - Date.parse(WORLD_TIME)).toBeGreaterThanOrEqual(24 * 60 * 60_000)
   expect(scheduleFacts.length).toBeGreaterThanOrEqual(3)
   expect(new Set(scheduleFacts.map(fact => fact.simTime)).size).toBe(scheduleFacts.length)
+  const scheduleTransitions = (await fixture.db.select().from(worldFacts).all())
+    .filter(fact => fact.subjectId === 'day-resident' && JSON.parse(fact.valueJson).cause === 'schedule')
+  expect(scheduleTransitions.map(fact => JSON.parse(fact.valueJson).after.activity)).toEqual(['Working', 'Resting', 'Sleeping'])
+  expect(new Set(scheduleTransitions.map(fact => fact.simTime)).size).toBe(scheduleTransitions.length)
+  expect((await fixture.db.select().from(personStates).where(eq(personStates.personId, 'day-resident')).get())?.location).toBe('Cafe')
   expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
 })
 
 it('rejects an overlapping engine HTTP tick while the active tick finishes once', async () => {
   fixture = await createWorldFixture()
+  await markMainComplete()
   const realAnchor = new Date()
   vi.useFakeTimers()
   vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))

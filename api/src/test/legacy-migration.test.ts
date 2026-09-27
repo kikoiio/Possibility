@@ -158,6 +158,77 @@ describe('s01 migration keeps legacy rows intact', () => {
       sqlite.close()
     }
   })
+
+  it('adds chat recovery and fail-closed evidence without rewriting pre-0020 rows', () => {
+    const sqlite = new DatabaseSync(':memory:')
+    try {
+      sqlite.exec('PRAGMA foreign_keys = ON')
+      const files = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
+      for (const file of files.filter(name => Number.parseInt(name.slice(0, 4), 10) < 20)) applySqlFile(sqlite, file)
+      sqlite.exec(`
+        INSERT INTO users (id, username, password_hash, created_at)
+          VALUES ('legacy-user', 'legacy-chat-user', 'hash', '${time}');
+        INSERT INTO persons (id, user_id, name, model_json, created_at)
+          VALUES ('legacy-person', 'legacy-user', 'Resident', '{}', '${time}');
+        INSERT INTO worlds (id, user_id, name, description, locations_json, status, created_at)
+          VALUES ('legacy-world', 'legacy-user', 'Legacy world', 'Preserve this world', '[]', 'paused', '${time}');
+        INSERT INTO world_persons (world_id, person_id, joined_at)
+          VALUES ('legacy-world', 'legacy-person', '${time}');
+        INSERT INTO timelines (id, world_id, sim_now, created_at, status, ancestor_ids_json)
+          VALUES ('legacy-main', 'legacy-world', '${time}', '${time}', 'active', '[]');
+        INSERT INTO conversations (id, user_id, person_id, timeline_id)
+          VALUES ('legacy-conversation', 'legacy-user', 'legacy-person', 'legacy-main');
+        INSERT INTO messages (id, conversation_id, role, content, created_at)
+          VALUES ('legacy-message', 'legacy-conversation', 'user', 'Preserve this message', '${time}');
+        INSERT INTO llm_call_log (id, world_id, user_id, timeline_id, person_id, purpose, created_at)
+          VALUES ('legacy-call', 'legacy-world', 'legacy-user', 'legacy-main', 'legacy-person', 'chat', '${time}');
+      `)
+
+      const stableQueries = {
+        worlds: 'SELECT id, user_id, name, description, status, created_at FROM worlds ORDER BY id',
+        timelines: 'SELECT id, world_id, parent_timeline_id, sim_now, status, ancestor_ids_json FROM timelines ORDER BY id',
+        messages: 'SELECT id, conversation_id, role, content, created_at FROM messages ORDER BY id',
+        calls: 'SELECT id, world_id, user_id, timeline_id, person_id, purpose, created_at FROM llm_call_log ORDER BY id',
+      }
+      const before = Object.fromEntries(Object.entries(stableQueries)
+        .map(([name, query]) => [name, sqlite.prepare(query).all()]))
+
+      applySqlFile(sqlite, files.find(name => name.startsWith('0020_'))!)
+      applySqlFile(sqlite, files.find(name => name.startsWith('0021_'))!)
+
+      const after = Object.fromEntries(Object.entries(stableQueries)
+        .map(([name, query]) => [name, sqlite.prepare(query).all()]))
+      expect(after).toEqual(before)
+      expect(sqlite.prepare("SELECT request_id, context_hash, contract_version, status, error_code, completed_at FROM llm_call_log WHERE id = 'legacy-call'").get())
+        .toEqual({ request_id: null, context_hash: null, contract_version: null, status: null, error_code: null, completed_at: null })
+      expect(sqlite.prepare("SELECT timeline_id, level, assessed_version, baseline_version, reason_codes_json FROM universe_evidence WHERE timeline_id = 'legacy-main'").get())
+        .toEqual({ timeline_id: 'legacy-main', level: 'unassessed', assessed_version: null, baseline_version: null,
+          reason_codes_json: '["legacy_unassessed"]' })
+      expect(sqlite.prepare(`
+        SELECT COUNT(*) AS n
+        FROM timelines t
+        JOIN universe_evidence e ON e.timeline_id = t.id
+        WHERE t.id = 'legacy-main' AND e.level = 'complete'
+      `).get()?.n).toBe(0)
+
+      sqlite.exec(`
+        INSERT INTO chat_requests (
+          request_id, conversation_id, user_id, world_id, timeline_id, person_id, content_hash,
+          user_message_id, reply_message_id, status, heartbeat_at, created_at, updated_at, finished_at, error_code
+        ) VALUES (
+          'legacy-request', 'legacy-conversation', 'legacy-user', 'legacy-world', 'legacy-main', 'legacy-person',
+          'sha256:test', 'legacy-message', 'late-reply', 'failed', 1, '${time}', '${time}', '${time}', 'transport_error'
+        );
+      `)
+      expect(() => sqlite.prepare(`
+        INSERT INTO messages (id, conversation_id, role, content, created_at)
+        VALUES ('late-reply', 'legacy-conversation', 'person', 'Must not persist', '${time}')
+      `).run()).toThrow('chat request is not pending')
+      expect(sqlite.prepare("SELECT COUNT(*) AS n FROM messages WHERE id = 'late-reply'").get()?.n).toBe(0)
+    } finally {
+      sqlite.close()
+    }
+  })
 })
 
 function applySqlFile(sqlite: DatabaseSync, file: string) {
