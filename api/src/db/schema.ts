@@ -49,6 +49,27 @@ export const worlds = sqliteTable('worlds', {
   createdAt: text('created_at').notNull().default(''),
 })
 
+/** Visual layout lives beside a world and never creates universe evidence/revisions. */
+export const worldScenes = sqliteTable('world_scenes', {
+  worldId: text('world_id').primaryKey().references(() => worlds.id),
+  currentVersion: integer('current_version').notNull(),
+  themeId: text('theme_id').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const worldSceneRevisions = sqliteTable('world_scene_revisions', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  version: integer('version').notNull(),
+  parentVersion: integer('parent_version'),
+  requestId: text('request_id').notNull(),
+  contentHash: text('content_hash').notNull(),
+  documentJson: text('document_json').notNull(),
+  summary: text('summary').notNull(),
+  kind: text('kind').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [uniqueIndex('world_scene_revision_version').on(t.worldId, t.version), uniqueIndex('world_scene_revision_request').on(t.worldId, t.requestId), index('world_scene_revision_history').on(t.worldId, t.version)])
+
 /** Cross-Worker single-flight guard for the autonomous engine tick. */
 export const engineTickLeases = sqliteTable('engine_tick_leases', {
   id: text('id').primaryKey(),

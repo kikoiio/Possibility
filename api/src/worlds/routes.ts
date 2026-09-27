@@ -4,6 +4,9 @@ import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
 import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { contemporaryTheme, validateScene } from '@possibility/scene-contract'
+import type { SceneDocument } from '@possibility/scene-contract'
+import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { LocationDef } from '../agent/engine-context'
@@ -53,7 +56,7 @@ worldsRoutes.post('/draft', async (c) => {
 /** 确认创建世界：骨架 + 选定 1-6 人物 → 世界/关联/主线/初始状态，直接开跑 */
 worldsRoutes.post('/', async (c) => {
   const body = await c.req
-    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[] }>()
+    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; scene?: SceneDocument; sceneRequestId?: string }>()
     .catch(() => null)
   const name = body?.name?.trim()
   const description = body?.description?.trim()
@@ -64,6 +67,13 @@ worldsRoutes.post('/', async (c) => {
   if (!body || !name || !description) return c.json({ error: 'name 与 description 必填' }, 400)
   if (locations.length < 5 || locations.length > 8) return c.json({ error: '地点需 5-8 个' }, 400)
   if (personIds.length < 1 || personIds.length > 6) return c.json({ error: '人物需 1-6 个' }, 400)
+  if (body.scene) {
+    const validation = validateScene(body.scene, contemporaryTheme)
+    if (!validation.ok || !body.sceneRequestId) return c.json({ error: '场景草稿无效或缺少创建请求标识', issues: validation.issues }, 400)
+    const boundLocations = new Set(body.scene.objects.flatMap(o => o.binding?.kind === 'location' ? [o.binding.locationName] : []))
+    const boundPersons = new Set(body.scene.objects.flatMap(o => o.binding?.kind === 'person' ? [o.binding.personId] : []))
+    if (boundLocations.size !== locations.length || locations.some(l => !boundLocations.has(l.name)) || boundPersons.size !== personIds.length || personIds.some(id => !boundPersons.has(id))) return c.json({ error: '场景绑定必须与世界地点或居民完全一致' }, 400)
+  }
 
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
@@ -146,6 +156,7 @@ worldsRoutes.post('/', async (c) => {
     db.insert(universeEvidence).values({ timelineId: mainTimelineId, level: 'complete', assessedVersion: 0,
       baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
+  if (body.scene && body.sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, body.sceneRequestId))
   await db.batch(statements)
   return c.json({ id: worldId, timelineId: mainTimelineId })
 })

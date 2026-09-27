@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@possibility/scene-contract": "^0.0.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5"
   },

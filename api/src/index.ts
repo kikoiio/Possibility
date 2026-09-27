@@ -15,6 +15,7 @@ import { sceneRoutes } from './scene/routes'
 import { publicRoutes } from './public/routes'
 import { lifeRoutes } from './life/routes'
 import { comparisonRoutes } from './life/compare'
+import { scenesRoutes } from './scenes/routes'
 
 export interface Env {
   DB: D1Database
@@ -52,6 +53,7 @@ app.route('/api/public', publicRoutes)
 // 注意：chat/timeline 两个子应用挂在 /api 且带全局 authMiddleware，
 // 后续新路由必须注册在它们之前，否则会被拦成 401
 app.route('/api/engine', engineRoutes)
+app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
 app.route('/api/worlds', worldsRoutes)
 app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
