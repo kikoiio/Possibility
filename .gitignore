@@ -11,4 +11,5 @@ api/wrangler.staging-test.toml
 .codex
 .claude
 .git
+spec_docs
 
