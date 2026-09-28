@@ -92,10 +92,20 @@ async function ensureDemoBaseline(db: Db, worldId: string, timelineId: string) {
   else if (active.sceneVersion !== scene.version || active.contentHash !== scene.contentHash) await db.update(demoBaselines).set({
     sceneVersion: scene.version, contentHash: scene.contentHash,
   }).where(eq(demoBaselines.id, active.id))
-  await db.insert(universeEvidence).values({
-    timelineId, level: 'complete', assessedVersion: 0, baselineVersion: 0,
-    reasonCodesJson: '["curated_demo_baseline"]', assessedAt: now,
-  }).onConflictDoNothing()
+  // 该世界的全部活跃时间线都标记为证据完整（策展基线）：时间线创建流程会先写入 unassessed 行，
+  // 故必须 upsert 而非 onConflictDoNothing，否则存量世界永远停在 unassessed、引擎跳过整线
+  const worldTimelines = await db.select({ id: timelines.id }).from(timelines)
+    .where(and(eq(timelines.worldId, worldId), eq(timelines.status, 'active'))).all()
+  for (const timeline of worldTimelines.length ? worldTimelines : [{ id: timelineId }]) {
+    await db.insert(universeEvidence).values({
+      timelineId: timeline.id, level: 'complete', assessedVersion: 0, baselineVersion: 0,
+      reasonCodesJson: '["curated_demo_baseline"]', assessedAt: now,
+    }).onConflictDoUpdate({
+      target: universeEvidence.timelineId,
+      // assessed_version 必须一并重置：world_commands 触发器要求 level='complete' 且 assessed_version=expected_version，存量 unassessed 行该值为 NULL
+      set: { level: 'complete', assessedVersion: 0, baselineVersion: 0, reasonCodesJson: '["curated_demo_baseline"]', assessedAt: now },
+    })
+  }
 }
 
 const WORLD_DESCRIPTION =
