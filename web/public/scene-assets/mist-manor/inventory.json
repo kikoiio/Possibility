@@ -1,0 +1,22 @@
+{
+  "themeId": "mist-manor",
+  "projection": { "kind": "isometric-2-to-1", "tileWidth": 64, "tileHeight": 32, "shadowDirection": "south-east" },
+  "atlases": [
+    { "id": "exterior-core", "src": "exterior-core.png", "loading": "critical" },
+    { "id": "environment", "src": "../contemporary/environment-atlas-clean.png", "loading": "critical", "usage": "ground-and-path-compatibility" },
+    { "id": "residents", "src": "../contemporary/persons-atlas-clean.png", "loading": "critical", "usage": "resident-motion-compatibility" }
+  ],
+  "frames": [
+    { "id": "manor-main", "atlas": "exterior-core", "state": "day", "size": [600, 675], "groundContact": [300, 628], "use": "main-building" },
+    { "id": "gatehouse", "atlas": "exterior-core", "state": "day", "size": [360, 675], "groundContact": [180, 594], "use": "gatehouse" },
+    { "id": "greenhouse", "atlas": "exterior-core", "state": "day", "size": [374, 675], "groundContact": [187, 582], "use": "greenhouse" },
+    { "id": "courtyard-pond", "atlas": "exterior-core", "state": "day", "size": [430, 604], "groundContact": [215, 550], "use": "courtyard" },
+    { "id": "mountain-trail", "atlas": "exterior-core", "state": "day", "size": [340, 604], "groundContact": [170, 552], "use": "mountain-trail" },
+    { "id": "town-road", "atlas": "exterior-core", "state": "day", "size": [320, 604], "groundContact": [160, 550], "use": "town-road" },
+    { "id": "garden-lantern-maple", "atlas": "exterior-core", "state": "night-lit", "size": [264, 604], "groundContact": [132, 535], "use": "atmosphere" }
+  ],
+  "locations": ["大厅", "书房", "餐厅", "图书室", "温室花房", "门房小屋", "后山散步道"],
+  "residents": ["雾野 透", "三田村 千鹤", "白川 怜", "小夜", "雾野 透", "柊 一成"],
+  "states": { "building": ["day", "night-lit"], "resident": ["idle", "walk-1", "walk-2", "activity"], "weather": ["mist", "rain"] },
+  "deferred": ["rain", "dense-mist", "secondary-furniture"]
+}

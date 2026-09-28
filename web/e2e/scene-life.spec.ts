@@ -5,10 +5,18 @@ const snapshot = (timelineId = 'timeline-main', simNow = '2026-09-28T20:00:00.00
 
 test('shows a live scene and two recorded timeline states in possibility mode', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '河畔街' }] } }))
+  await page.route('**/api/worlds/world-1/stream**', route => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
   await page.route('**/api/worlds/world-1?*', route => {
     const id = new URL(route.request().url()).searchParams.get('timelineId')
     return route.fulfill({ json: snapshot(id ?? 'timeline-main', id === 'timeline-other' ? '2026-09-28T12:00:00.000Z' : undefined) })
   })
+  await page.route('**/api/worlds/world-1/map/bootstrap**', route => {
+    const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
+    const state = snapshot(id, id === 'timeline-other' ? '2026-09-28T12:00:00.000Z' : undefined)
+    return route.fulfill({ json: { access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false }, world: state, scene: { status: 'ready', document: scene }, presentation: { timelineId: state.currentTimelineId, stateVersion: state.stateVersion, simNow: state.simNow, timeOfDay: 'night', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] }, theme: { id: 'contemporary-daily-life', assetVersion: 'e2e' }, resume: { worldId: 'world-1', timelineId: state.currentTimelineId, spaceId: 'exterior', mode: 'life', updatedAt: state.simNow } } })
+  })
+  await page.route('**/api/worlds/world-1/map/resume', route => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', document: scene, version: 1, contentHash: 'abc', createdAt: '2026-09-28T00:00:00.000Z' } }))
   await page.route('**/api/worlds/world-1/compare?*', route => route.fulfill({ json: { differences: { facts: [{ key: 'weather' }], states: [{ personId: 'person-1' }], events: { shared: [], leftOnly: [{ id: 'event-1' }], rightOnly: [] } } } }))
   await page.goto('/worlds/world-1?timeline=timeline-main')

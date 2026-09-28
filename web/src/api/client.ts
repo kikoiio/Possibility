@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'possibility_token'
+const GUEST_TOKEN_KEY = 'possibility_guest_token'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -11,6 +12,10 @@ export function setToken(token: string): void {
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY)
 }
+
+export function getGuestToken(): string | null { return localStorage.getItem(GUEST_TOKEN_KEY) }
+export function setGuestToken(token: string): void { localStorage.setItem(GUEST_TOKEN_KEY, token) }
+export function clearGuestToken(): void { localStorage.removeItem(GUEST_TOKEN_KEY) }
 
 export class ApiError extends Error {
   constructor(
@@ -26,11 +31,16 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  else {
+    const guestToken = getGuestToken()
+    if (guestToken) headers.set('X-Possibility-Guest', guestToken)
+  }
 
   const res = await fetch(path, { ...options, headers })
   if (res.status === 401) {
     const hadToken = !!token
-    clearToken()
+    if (hadToken) clearToken()
+    else clearGuestToken()
     const data = (await res.json().catch(() => ({}))) as { error?: string }
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
     if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
@@ -58,11 +68,13 @@ export async function postSSE(
   signal?: AbortSignal,
 ): Promise<void> {
   const token = getToken()
+  const guestToken = token ? null : getGuestToken()
   const res = await fetch(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(guestToken ? { 'X-Possibility-Guest': guestToken } : {}),
     },
     body: JSON.stringify(body),
     signal,
@@ -205,6 +217,33 @@ export const worldsApi = {
     `/api/worlds/dialogues/${dialogueId}${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`),
 }
 
+export const mapApi = {
+  recent: () => apiFetch<{ worldId: string; updatedAt: string } | null>('/api/map/resume/recent'),
+  bootstrap: (worldId: string, timelineId?: string, signal?: AbortSignal) => apiFetch<import('./map').MapBootstrap>(
+    `/api/worlds/${encodeURIComponent(worldId)}/map/bootstrap${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`,
+    { signal },
+  ),
+  saveResume: (worldId: string, input: { timelineId: string; spaceId: string; mode: 'create' | 'life' | 'possibility' }) =>
+    apiFetch<{ ok: true }>(`/api/worlds/${encodeURIComponent(worldId)}/map/resume`, { method: 'PUT', body: JSON.stringify(input) }),
+}
+
+export const demoApi = {
+  start: async () => {
+    const result = await apiFetch<{ token: string; sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) })
+    setGuestToken(result.token)
+    return result
+  },
+  current: () => apiFetch<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session'),
+  reset: () => apiFetch<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session/reset', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) }),
+  claim: () => apiFetch<{ worldId: string }>('/api/demo/session/claim', {
+    method: 'POST',
+    headers: getGuestToken() ? { 'X-Possibility-Guest': getGuestToken()! } : undefined,
+    body: JSON.stringify({ requestId: crypto.randomUUID() }),
+  }),
+  fork: (worldId: string, timelineId: string, input: { whatIf: string; changedVariable: string }) => apiFetch<{ id: string; simNow: string }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId: crypto.randomUUID() }) }),
+  compare: (worldId: string, left: string, right: string) => apiFetch<{ differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } }; limitations: string[] }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
+}
+
 export const worldSceneApi = {
   draft: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<SceneDraftResponse>('/api/scene-drafts', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
   draftPreview: (draft: SceneDocument, instruction: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; changes: SceneChangeSet }; documentPreview: SceneDocument; world: unknown }>('/api/scene-drafts/edit-preview', { method: 'POST', body: JSON.stringify({ draft, instruction, personIds, requestId }) }),
@@ -220,8 +259,9 @@ export const worldSceneApi = {
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */
 export const publicApi = {
   demo: () => apiFetch<DemoInfo>('/api/public/demo'),
-  snapshot: (worldId: string, timelineId?: string) =>
-    apiFetch<WorldSnapshot>(`/api/public/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
+  scene: (worldId: string, signal?: AbortSignal) => apiFetch<SceneReadResponse>(`/api/public/worlds/${encodeURIComponent(worldId)}/scene`, { signal }),
+  snapshot: (worldId: string, timelineId?: string, signal?: AbortSignal) =>
+    apiFetch<WorldSnapshot>(`/api/public/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`, { signal }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/public/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
   dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(
@@ -320,12 +360,13 @@ export function subscribeWorldStream(
     isGenerationCurrent: opts.isGenerationCurrent ?? (() => active) })
   const base = opts.isPublic ? `/api/public/worlds/${worldId}/stream` : `/api/worlds/${worldId}/stream`
   const token = getToken()
+  const guestToken = token ? null : getGuestToken()
 
   void (async () => {
     while (!controller.signal.aborted) {
       try {
       const res = await fetch(`${base}?timelineId=${timelineId}`, {
-        headers: token && !opts.isPublic ? { Authorization: `Bearer ${token}` } : {},
+        headers: opts.isPublic ? {} : token ? { Authorization: `Bearer ${token}` } : guestToken ? { 'X-Possibility-Guest': guestToken } : {},
         signal: controller.signal,
       })
       if (!res.ok || !res.body) throw new Error(`流连接失败（${res.status}）`)

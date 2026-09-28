@@ -1,6 +1,7 @@
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
-import { apiFetch, clearToken, getToken } from './api/client'
+import { apiFetch, clearToken, getToken, mapApi, worldsApi } from './api/client'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import People from './pages/People'
@@ -17,10 +18,29 @@ function RequireAuth({ children }: { children: ReactElement }) {
   return children
 }
 
-/** 落地页分派：未登录 → 演示世界只读视图；已登录 → 首页 */
+/** 根入口：访客打开公开地图，登录用户恢复最近的世界地图。 */
 function Landing() {
-  if (getToken()) return <Navigate to="/home" replace />
+  if (getToken()) return <AuthenticatedEntry />
   return <DemoLanding />
+}
+
+function AuthenticatedEntry() {
+  const [target, setTarget] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        const resume = await mapApi.recent()
+        if (resume?.worldId) { if (active) setTarget(`/worlds/${encodeURIComponent(resume.worldId)}`); return }
+        const list = await worldsApi.list()
+        if (active) setTarget(list.worlds[0] ? `/worlds/${encodeURIComponent(list.worlds[0].id)}` : '/worlds/new')
+      } catch {
+        if (active) setTarget('/home')
+      }
+    })()
+    return () => { active = false }
+  }, [])
+  return target ? <Navigate to={target} replace /> : <div className="grid h-screen place-items-center bg-paper text-sm text-ink-faint">正在恢复最近的世界…</div>
 }
 
 function Layout() {
@@ -102,6 +122,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Landing />} />
+      <Route path="/worlds/:id" element={<RequireAuth><WorldViewRoute /></RequireAuth>} />
+      <Route path="/worlds/new" element={<RequireAuth><div className="h-full"><WorldCreate /></div></RequireAuth>} />
       <Route
         element={
           <RequireAuth>
@@ -115,8 +137,6 @@ export default function App() {
         <Route path="/people/:id" element={<PersonDetail />} />
         <Route path="/timelines/:id" element={<TimelineView />} />
         <Route path="/worlds" element={<Worlds />} />
-        <Route path="/worlds/new" element={<WorldCreate />} />
-        <Route path="/worlds/:id" element={<WorldViewRoute />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

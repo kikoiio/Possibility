@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { apiFetch, setToken, ApiError } from '../api/client'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { apiFetch, clearGuestToken, demoApi, setToken, ApiError, getGuestToken } from '../api/client'
 
 interface AuthResponse {
   token: string
@@ -14,6 +14,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
+  const [search] = useSearchParams()
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -25,6 +26,17 @@ export default function Login() {
         body: JSON.stringify({ username, password }),
       })
       setToken(res.token)
+      if (search.get('claimDemo') === '1' && getGuestToken()) {
+        try {
+          const claimed = await demoApi.claim()
+          clearGuestToken()
+          navigate(`/worlds/${encodeURIComponent(claimed.worldId)}`, { replace: true })
+          return
+        } catch (claimError) {
+          setError(`已登录，但演示世界暂时无法保存：${claimError instanceof Error ? claimError.message : '请稍后重试'}`)
+          return
+        }
+      }
       navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '网络错误，请重试')
@@ -88,6 +100,13 @@ export default function Login() {
         >
           {mode === 'login' ? '没有账号？注册一个' : '已有账号？去登录'}
         </button>
+
+        <Link
+          to="/"
+          className="mt-3 block w-full text-center text-sm text-ink-faint transition hover:text-ink"
+        >
+          ← 返回演示世界
+        </Link>
       </div>
     </div>
   )

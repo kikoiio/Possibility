@@ -196,6 +196,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                     actorPersonId: ev.actorPersonId,
                     actorName: null,
                     dialogueId: ev.dialogueId,
+                    location: null,
                     dialoguePreview: null,
                   },
                 ],

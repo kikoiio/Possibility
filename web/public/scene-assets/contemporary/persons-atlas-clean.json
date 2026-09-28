@@ -1,0 +1,373 @@
+{
+  "frames": {
+    "person-ada-idle": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-bo-idle": {
+      "frame": {
+        "x": 341,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-cora-idle": {
+      "frame": {
+        "x": 682,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-dan-idle": {
+      "frame": {
+        "x": 1024,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-eli-idle": {
+      "frame": {
+        "x": 1365,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-faye-idle": {
+      "frame": {
+        "x": 1706,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-ada-walk-1": {
+      "frame": {
+        "x": 0,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-bo-walk-1": {
+      "frame": {
+        "x": 341,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-cora-walk-1": {
+      "frame": {
+        "x": 682,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-dan-walk-1": {
+      "frame": {
+        "x": 1024,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-eli-walk-1": {
+      "frame": {
+        "x": 1365,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-faye-walk-1": {
+      "frame": {
+        "x": 1706,
+        "y": 256,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-ada-walk-2": {
+      "frame": {
+        "x": 0,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-bo-walk-2": {
+      "frame": {
+        "x": 341,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-cora-walk-2": {
+      "frame": {
+        "x": 682,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-dan-walk-2": {
+      "frame": {
+        "x": 1024,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-eli-walk-2": {
+      "frame": {
+        "x": 1365,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    },
+    "person-faye-walk-2": {
+      "frame": {
+        "x": 1706,
+        "y": 512,
+        "w": 342,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 342,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 342,
+        "h": 256
+      }
+    }
+  },
+  "meta": {
+    "image": "persons-atlas-clean.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 2048,
+      "h": 768
+    },
+    "scale": "1"
+  }
+}

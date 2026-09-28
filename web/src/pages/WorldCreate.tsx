@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, worldSceneApi, worldsApi } from '../api/client'
-import type { PersonListItem, SceneDraftResponse } from '../api/types'
+import { apiFetch, clearToken, mapApi, worldSceneApi, worldsApi } from '../api/client'
+import type { PersonListItem, SceneDraftResponse, WorldSnapshot } from '../api/types'
 import type { SceneDocument, SceneMode, SceneOperation, ScenePreviewResult } from '@possibility/scene-contract'
 import { applySceneOperations, contemporaryTheme } from '@possibility/scene-contract'
 import { WorldCanvasViewport } from '../components/scene/WorldCanvasViewport'
@@ -12,21 +12,27 @@ import { SceneAssetDrawer } from '../components/scene/SceneAssetDrawer'
 import { SceneObjectInspector } from '../components/scene/SceneObjectInspector'
 import { SceneHistoryControls } from '../components/scene/SceneHistoryControls'
 import { SceneLockControls } from '../components/scene/SceneLockControls'
-import { WorldModeSwitcher } from '../components/scene/WorldModeSwitcher'
+import { buildSceneOverlay } from '../scene/life/overlay'
 
 const blankScene: SceneDocument = { schemaVersion: 1, themeId: contemporaryTheme.id, size: { columns: 24, rows: 18 }, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
 
+/**
+ * 壳层内创建（AC2/E3）：描述 → 真实 AI 预览 → 确认创建 → 原地开始生活。
+ * 整个流程留在同一地图壳层，创建成功后 canvas 节点不被替换。
+ */
 export default function WorldCreate() {
   const navigate = useNavigate()
   const [prompt, setPrompt] = useState(''); const [persons, setPersons] = useState<PersonListItem[]>([]); const [selected, setSelected] = useState<string[]>([])
   const [draft, setDraft] = useState<SceneDraftResponse | null>(null); const [document, setDocument] = useState<SceneDocument>(blankScene)
-  const [mode, setMode] = useState<SceneMode>('create'); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const [mode] = useState<SceneMode>('create'); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   const [instruction, setInstruction] = useState(''); const [preview, setPreview] = useState<{ result: ScenePreviewResult; operations: SceneOperation[]; summary: string; warnings: string[] } | null>(null)
   const [selectedObject, setSelectedObject] = useState<string | null>(null); const [drawer, setDrawer] = useState(false); const [history, setHistory] = useState<SceneDocument[]>([]); const [future, setFuture] = useState<SceneDocument[]>([])
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null)
+  const [live, setLive] = useState<{ worldId: string; snapshot: WorldSnapshot } | null>(null)
   useEffect(() => { apiFetch<{ persons: PersonListItem[] }>('/api/persons').then(result => setPersons(result.persons)).catch(() => setError('暂时无法读取人物列表。')) }, [])
   const selectedIds = useMemo(() => new Set(selected), [selected])
   const pushDoc = (next: SceneDocument) => { setHistory(previous => [...previous, document]); setFuture([]); setDocument(next) }
+  const overlay = useMemo(() => live ? buildSceneOverlay(live.snapshot, live.snapshot.currentTimelineId) : null, [live])
 
   async function generate() {
     if (!prompt.trim() || !selected.length || busy) { setError(!selected.length ? '请先选择至少一位居民。' : '请描述你想创造的地方。'); return }
@@ -70,26 +76,62 @@ export default function WorldCreate() {
     applyOperation({ type: 'paint_cells', category: asset.category as 'terrain' | 'road' | 'water', assetId: asset.id, cells })
   }
   async function startLife() {
-    if (!draft || busy) return
+    if (!draft || busy || live) return
     setBusy(true); setError('')
     try {
       const result = await worldsApi.create({ name: draft.world.name, description: draft.world.description, locations: draft.world.locations, personIds: selected, scene: document, sceneRequestId: crypto.randomUUID() })
-      navigate(`/worlds/${result.id}`)
+      // 原地进入生活：canvas 保持挂载，仅更新地址与叠加层，刷新后落在新世界地图
+      window.history.replaceState(null, '', `/worlds/${encodeURIComponent(result.id)}`)
+      const bootstrap = await mapApi.bootstrap(result.id).catch(() => null)
+      if (bootstrap) setLive({ worldId: result.id, snapshot: bootstrap.world })
+      else {
+        const snapshot = await worldsApi.snapshot(result.id).catch(() => null)
+        if (snapshot) setLive({ worldId: result.id, snapshot })
+        else navigate(`/worlds/${encodeURIComponent(result.id)}`)
+      }
     } catch (e) { setError(e instanceof Error ? e.message : '保存失败；场景仍保留在当前页面。') }
     finally { setBusy(false) }
   }
   function undo() { const previous = history.at(-1); if (!previous) return; setFuture(next => [document, ...next]); setHistory(items => items.slice(0, -1)); setDocument(previous) }
   function redo() { const next = future[0]; if (!next) return; setHistory(items => [...items, document]); setFuture(items => items.slice(1)); setDocument(next) }
 
-  if (!draft) return <main className="min-h-full bg-[#eef0e7] px-4 py-8 sm:px-8"><div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-6xl flex-col justify-center gap-6">
-    <SceneCreationPrompt value={prompt} onChange={setPrompt} onCreate={generate} busy={busy} error={error} />
-    <section className="mx-auto w-full max-w-3xl rounded-3xl border border-[#e2e5dc] bg-white/85 p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-[#354a3e]">谁会在这里生活？</p><p className="mt-1 text-xs text-[#829083]">选择 1–6 位人物，之后仍可调整场景。</p></div><span className="text-xs text-[#839083]">{selected.length}/6</span></div><div className="mt-3 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id])} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-4 py-2 text-sm ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}{!persons.length && <p className="text-sm text-[#7b867c]">你还没有人物；先创建一位人物，再回来为 TA 准备生活的地方。</p>}</div></section>
-  </div></main>
-
-  return <main className="flex min-h-[calc(100vh-7rem)] flex-col gap-3 bg-[#eef0e7] p-3 sm:p-5" data-testid="scene-create-workspace">
-    <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#859184]">{draft.world.name}</p><h1 className="font-story text-xl text-[#2c4435]">继续调整这方天地</h1></div><div className="flex items-center gap-2"><SceneHistoryControls version={document.version} canUndo={history.length > 0} canRedo={future.length > 0} onUndo={undo} onRedo={redo} onHistory={() => setError('创建完成前的操作可逐步撤销与重做。')} /><WorldModeSwitcher mode={mode} onChange={setMode} /></div></header>
-    {error && <p role="alert" className="rounded-xl bg-white px-4 py-2 text-sm text-red-700">{error}</p>}
-    {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onCancel={() => setPreview(null)} onApply={() => { pushDoc(preview.result.document); setPreview(null) }} busy={busy} />}
-    <div className="flex min-h-[480px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3"><WorldCanvasViewport scene={document} mode={mode} preview={preview?.result ?? null} selectedId={selectedObject} activeAssetId={activeAssetId} onSelect={setSelectedObject} onMove={applyOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} /><div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="space-y-2"><SceneObjectInspector scene={document} selectedId={selectedObject} catalog={contemporaryTheme} /><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestPreview} busy={busy} error="" /></div><div className="flex flex-col items-end justify-between gap-3"><SceneLockControls locked={!!selectedObject && document.lockedObjectIds.includes(selectedObject)} onToggle={() => selectedObject && applyOperation({ type: 'lock_object', objectId: selectedObject, locked: !document.lockedObjectIds.includes(selectedObject) })} /><div className="flex gap-2"><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-3 text-sm text-[#42594a]">素材</button><button data-testid="start-life" onClick={startLife} disabled={busy} className="rounded-full bg-[#274739] px-5 py-3 text-sm font-semibold text-white shadow disabled:opacity-45">{busy ? '保存中…' : '让这里开始生活'}</button></div>{activeAssetId && <p className="text-xs text-[#5e7464]">已选素材：{contemporaryTheme.assets.find(asset => asset.id === activeAssetId)?.name} · 点击画布放置<button className="ml-2 underline" onClick={() => setActiveAssetId(null)}>取消</button></p>}</div></div></div>{drawer && <SceneAssetDrawer catalog={contemporaryTheme} onPlace={armAsset} onClose={() => setDrawer(false)} />}</div>
+  const worldName = live?.snapshot.world.name ?? draft?.world.name ?? '新的世界'
+  return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="scene-create-shell">
+    <WorldCanvasViewport scene={document} mode={live ? 'life' : mode} overlay={overlay} preview={!live ? preview?.result ?? null : null} selectedId={selectedObject} activeAssetId={live ? null : activeAssetId} onSelect={setSelectedObject} onMove={live ? undefined : applyOperation} onCanvasClick={position => !live && activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={live ? undefined : paintCells} edgeToEdge />
+    <div className="pointer-events-none absolute inset-0 z-10">
+      <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
+        <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{worldName} · {live ? '正在生活' : draft ? '这方天地正在成形' : '从一句话开始'}</p></div>
+        <div className="flex items-center gap-2">
+          {draft && !live && <SceneHistoryControls version={document.version} canUndo={history.length > 0} canRedo={future.length > 0} onUndo={undo} onRedo={redo} onHistory={() => setError('创建完成前的操作可逐步撤销与重做。')} />}
+          {live && <button data-testid="enter-world-map" onClick={() => navigate(`/worlds/${encodeURIComponent(live.worldId)}`)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">进入世界地图</button>}
+          <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs">退出</button>
+        </div>
+      </header>
+      {error && <p role="alert" className="pointer-events-auto absolute left-1/2 top-20 -translate-x-1/2 rounded-xl bg-white px-4 py-2 text-sm text-red-700 shadow-lg">{error}</p>}
+      {preview && !live && <div className="pointer-events-auto absolute inset-x-3 top-24 sm:inset-x-5"><ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onCancel={() => setPreview(null)} onApply={() => { pushDoc(preview.result.document); setPreview(null) }} busy={busy} /></div>}
+      {!draft && <section className="pointer-events-auto absolute inset-x-3 top-24 mx-auto flex max-w-3xl flex-col gap-4 sm:top-28">
+        <div className="rounded-3xl border border-white/80 bg-[#f8faf6]/95 p-5 shadow-xl backdrop-blur-md"><SceneCreationPrompt value={prompt} onChange={setPrompt} onCreate={generate} busy={busy} error="" /></div>
+        <div className="rounded-3xl border border-white/80 bg-[#f8faf6]/95 p-5 shadow-xl backdrop-blur-md"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-[#354a3e]">谁会在这里生活？</p><p className="mt-1 text-xs text-[#829083]">选择 1–6 位人物，之后仍可调整场景。</p></div><span className="text-xs text-[#839083]">{selected.length}/6</span></div><div className="mt-3 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id])} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-4 py-2 text-sm ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}{!persons.length && <p className="text-sm text-[#7b867c]">你还没有人物；先到「人物」页创建一位，再回来为 TA 准备生活的地方。</p>}</div></div></section>}
+      {draft && !live && <section className="pointer-events-auto absolute right-3 top-24 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5" data-testid="scene-create-workspace">
+        <div className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md">
+          <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">{draft.world.name}</p>
+          <h1 className="mt-0.5 font-story text-lg">继续调整这方天地</h1>
+          <p className="mt-2 text-xs leading-relaxed text-[#68796d]">{draft.explanation}</p>
+          {draft.warnings.length > 0 && <p className="mt-2 text-[10px] text-[#8a7a4a]">{draft.warnings.join('；')}</p>}
+        </div>
+        <div className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md"><SceneObjectInspector scene={document} selectedId={selectedObject} catalog={contemporaryTheme} /></div>
+        <div className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md"><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestPreview} busy={busy} error="" /></div>
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md">
+          <div className="flex items-center gap-2"><SceneLockControls locked={!!selectedObject && document.lockedObjectIds.includes(selectedObject)} onToggle={() => selectedObject && applyOperation({ type: 'lock_object', objectId: selectedObject, locked: !document.lockedObjectIds.includes(selectedObject) })} /><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-xs text-[#42594a]">素材</button>{activeAssetId && <button onClick={() => setActiveAssetId(null)} className="text-[10px] text-[#617766] underline">取消放置</button>}</div>
+          <button data-testid="start-life" onClick={startLife} disabled={busy} className="rounded-full bg-[#274739] px-5 py-2.5 text-xs font-semibold text-white shadow disabled:opacity-45">{busy ? '保存中…' : '让这里开始生活'}</button>
+        </div>
+        {drawer && <div className="max-h-[40vh] overflow-hidden rounded-2xl shadow-xl"><SceneAssetDrawer catalog={contemporaryTheme} onPlace={armAsset} onClose={() => setDrawer(false)} /></div>}
+      </section>}
+      {live && <section className="pointer-events-auto absolute bottom-4 left-3 max-w-[min(26rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:left-5" data-testid="create-live-banner">
+        <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">这里已经开始生活</p>
+        <p className="mt-1 text-xs leading-relaxed text-[#68796d]">居民会按照自己的处境继续生活。你可以直接进入世界地图观察、交谈、改变条件或创建平行宇宙。</p>
+        <p className="mt-2 text-[10px] text-[#849184]">{new Date(live.snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })} · {live.snapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</p>
+      </section>}
+    </div>
   </main>
 }

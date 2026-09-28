@@ -1,15 +1,21 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const apiPort = Number(process.env.PLAYWRIGHT_API_PORT ?? 18787)
+const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 15173)
+
 export default defineConfig({
   testDir: './e2e',
   outputDir: '/tmp/s02-playwright-results',
   fullyParallel: true,
   reporter: 'list',
   retries: 0,
-  use: { baseURL: 'http://127.0.0.1:5173', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: { baseURL: `http://127.0.0.1:${webPort}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop-chromium', testIgnore: /.*mobile\.spec\.ts/, use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--use-gl=swiftshader', '--no-sandbox'] } } },
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'], launchOptions: { args: ['--use-gl=swiftshader', '--no-sandbox'] } }, testMatch: /.*mobile\.spec\.ts/ },
   ],
-  webServer: { command: 'npm run dev -- --host 127.0.0.1', url: 'http://127.0.0.1:5173', reuseExistingServer: !process.env.CI, timeout: 30_000 },
+  webServer: [
+    { command: `npm --prefix ../api run dev:s02-e2e -- /tmp/s02-wrangler-e2e-${process.pid} ${apiPort}`, url: `http://127.0.0.1:${apiPort}/api/health`, reuseExistingServer: false, timeout: 60_000 },
+    { command: `npm run dev -- --host 127.0.0.1 --port ${webPort}`, url: `http://127.0.0.1:${webPort}`, reuseExistingServer: false, timeout: 30_000, env: { VITE_API_PROXY_TARGET: `http://127.0.0.1:${apiPort}` } },
+  ],
 })

@@ -1,9 +1,9 @@
-import { Application, Container } from 'pixi.js'
+import { Application, Container, Sprite } from 'pixi.js'
 import type { SceneDocument, SceneLifeOverlay, SceneMode, ScenePreviewResult, SceneThemeManifest } from '@possibility/scene-contract'
 import { AssetLoader } from './AssetLoader'
 import { createSceneLayers, renderScene, type SceneLayers } from './SceneGraph'
 import { SceneInteraction, type InteractionEvents } from './SceneInteraction'
-import { animateSceneArrival } from './SceneAnimations'
+import { animateSceneArrival, reduceMotionEnabled } from './SceneAnimations'
 
 export interface WorldCanvasEvents extends InteractionEvents {}
 export interface SceneCamera { x: number; y: number; zoom: number }
@@ -24,6 +24,21 @@ export class WorldCanvasRenderer {
   private paintMode = false
   private userInteracted = false
   private cancelArrival = () => {}
+  private readonly animateFrames = () => {
+    if (reduceMotionEnabled()) return
+    const framesByTime = Math.floor(performance.now() / 360)
+    for (const child of this.layers?.people.children ?? []) {
+      if (!(child instanceof Sprite)) continue
+      const sprite = child as Sprite & { animationFrames?: string[] }
+      if (!sprite.animationFrames || sprite.animationFrames.length < 2) continue
+      const texture = this.loader.texture(sprite.animationFrames[framesByTime % sprite.animationFrames.length]!)
+      if (texture) sprite.texture = texture
+    }
+    for (const child of this.layers?.paths.children ?? []) {
+      const shimmer = child as typeof child & { waterShimmer?: boolean }
+      if (shimmer.waterShimmer) shimmer.alpha = .16 + (Math.sin(performance.now() / 480) + 1) * .12
+    }
+  }
   private readonly observer: ResizeObserver | null = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.resize(this.host?.clientWidth ?? 0, this.host?.clientHeight ?? 0))
   private host: HTMLElement | null = null
   constructor(private readonly events: WorldCanvasEvents, private readonly mobile = false) {}
@@ -31,10 +46,11 @@ export class WorldCanvasRenderer {
     this.host = container
     const app = new Application()
     this.app = app
-    await app.init({ background: '#dfe9df', antialias: false, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2), preference: 'webgl', resizeTo: container })
+    await app.init({ background: '#e7eee7', antialias: false, autoDensity: true, resolution: Math.min(window.devicePixelRatio || 1, 2), preference: 'webgl', resizeTo: container })
     this.initialized = true
     if (this.disposed) { app.destroy(true, { children: true }); this.app = null; return }
     this.app.canvas.className = 'world-scene-canvas'; this.app.canvas.setAttribute('aria-label', '可交互的世界场景画布'); container.appendChild(this.app.canvas)
+    this.app.ticker.add(this.animateFrames)
     this.world = new Container(); this.world.sortableChildren = true; this.app.stage.addChild(this.world); this.layers = createSceneLayers(this.world)
     this.observer?.observe(container); this.resize(container.clientWidth, container.clientHeight)
     if (this.catalog) await this.setCatalog(this.catalog)
@@ -71,7 +87,7 @@ export class WorldCanvasRenderer {
     this.disposed = true
     this.cancelArrival()
     this.observer?.disconnect(); this.interaction?.dispose(); this.interaction = null; this.loader.dispose()
-    if (this.initialized) this.app?.destroy(true, { children: true })
+    if (this.initialized) { this.app?.ticker.remove(this.animateFrames); this.app?.destroy(true, { children: true }) }
     this.app = null; this.layers = null; this.host = null
   }
   private connectInteraction(): void {

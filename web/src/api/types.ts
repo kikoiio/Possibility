@@ -190,6 +190,7 @@ export interface WorldEventItem {
   actorPersonId: string | null
   actorName: string | null
   dialogueId: string | null
+  location: string | null
   dialoguePreview: { personName: string; utterance: string }[] | null
 }
 

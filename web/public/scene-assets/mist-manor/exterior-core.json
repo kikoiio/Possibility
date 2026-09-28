@@ -1,0 +1,12 @@
+{
+  "frames": {
+    "manor-main": { "frame": { "x": 14, "y": 155, "w": 582, "h": 484 } },
+    "gatehouse": { "frame": { "x": 598, "y": 282, "w": 277, "h": 322 } },
+    "greenhouse": { "frame": { "x": 889, "y": 277, "w": 350, "h": 332 } },
+    "courtyard-pond": { "frame": { "x": 14, "y": 741, "w": 401, "h": 390 } },
+    "mountain-trail": { "frame": { "x": 426, "y": 695, "w": 286, "h": 437 } },
+    "town-road": { "frame": { "x": 722, "y": 764, "w": 264, "h": 352 } },
+    "garden-lantern-maple": { "frame": { "x": 1006, "y": 841, "w": 232, "h": 260 } }
+  },
+  "meta": { "image": "exterior-core.png", "size": { "w": 1254, "h": 1254 }, "scale": "1" }
+}

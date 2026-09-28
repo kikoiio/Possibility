@@ -8,6 +8,7 @@ interface Props {
   locations: { name: string; description: string }[]
   initialLocation?: string
   onClose: () => void
+  onMilestone?: (milestone: 'enter-location' | 'interact' | 'change-condition') => void
 }
 
 interface Msg {
@@ -72,7 +73,7 @@ function clearPendingIntentProposal(key: string) {
  * 你在世界里：用户以登记过的在场身份来到某地点说话，
  * 在场的人物依次回应。这场相遇会写进世界史（事件流）与每个人的记忆。
  */
-export default function ScenePanel({ worldId, timelineId, locations, initialLocation = '', onClose }: Props) {
+export default function ScenePanel({ worldId, timelineId, locations, initialLocation = '', onClose, onMilestone }: Props) {
   const [persona, setPersona] = useState<Persona | null>(null)
   const [personaLoading, setPersonaLoading] = useState(true)
   const [name, setName] = useState('')
@@ -271,6 +272,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       const state = await worldsApi.state(worldId, timelineId)
       await sceneApi.position(worldId, { timelineId, location, commandId: crypto.randomUUID(), expectedVersion: state.version })
       setPersona({ ...persona, location })
+      onMilestone?.('enter-location')
       setMessages([])
       setDialogueId(null)
     } catch (e) {
@@ -289,6 +291,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       const state = await worldsApi.state(worldId, timelineId)
       const result = await sceneApi.inform(worldId, { timelineId, recipientId: infoRecipient,
         topic: infoTopic.trim(), content: infoContent.trim(), commandId: crypto.randomUUID(), expectedVersion: state.version })
+      onMilestone?.('change-condition')
       setInfoNotice(`对方已听到这条消息（v${result.version}）；它仍是传闻，不会自动变成世界事实。`)
       setInfoContent('')
     } catch (e) { setInfoNotice(e instanceof Error ? e.message : '传递失败') }
@@ -328,6 +331,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       try {
         const prior = await worldsApi.commandStatus(worldId, result.requestId)
         if (prior.timelineId === timelineId && prior.resultVersion === result.expectedVersion + 1) {
+          onMilestone?.(proposal.type === 'move' ? 'enter-location' : 'change-condition')
           if (proposal.type === 'move') {
             setLocation(proposal.to)
             setPersona({ ...persona, location: proposal.to })
@@ -355,6 +359,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       }
       if (proposal.type === 'move') {
         await sceneApi.position(worldId, { timelineId, location: proposal.to, commandId: result.requestId, expectedVersion: result.expectedVersion })
+        onMilestone?.('enter-location')
         setLocation(proposal.to)
         setPersona({ ...persona, location: proposal.to })
         setMessages([])
@@ -363,6 +368,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       } else {
         const committed = await sceneApi.inform(worldId, { timelineId, recipientId: proposal.recipientId,
           topic: proposal.topic, content: proposal.content, commandId: result.requestId, expectedVersion: result.expectedVersion })
+        onMilestone?.('change-condition')
         setIntentNotice(`已确认并告诉${proposal.recipientName}（v${committed.version}）；这仍是一条传闻。`)
       }
       clearPendingIntentProposal(storageKey)
@@ -419,6 +425,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       if (!failed && receivedDone) {
         pendingRef.current = null
         clearPendingSceneRequest(storageKey)
+        onMilestone?.('interact')
       } else {
         const status = await sceneApi.requestStatus(worldId, timelineId, request.id).then(async result => {
           if (result.status === 'pending' && result.recoverable) {
@@ -429,6 +436,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
         if (status === 'completed') {
           pendingRef.current = null
           clearPendingSceneRequest(storageKey)
+          onMilestone?.('interact')
           if (failed || transportError) setError('交谈已提交，连接中断前的记录已从世界恢复。')
         } else if (status === 'failed') {
           const retryRequest = { ...request, id: crypto.randomUUID() }
@@ -458,10 +466,10 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       }).catch(() => {})
       personaApi.messages(worldId, timelineId).then(setNotes).catch(() => {})
     }
-  }, [input, busy, historyLoading, persona, worldId, timelineId, location, dialogueId])
+  }, [input, busy, historyLoading, persona, worldId, timelineId, location, dialogueId, onMilestone])
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4" onClick={handleClose}>
+    <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4" onClick={handleClose}>
       <div
         className="flex h-[80vh] w-full max-w-xl flex-col rounded-2xl border border-ink-line bg-paper shadow-xl"
         onClick={(e) => e.stopPropagation()}

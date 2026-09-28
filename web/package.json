@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "validate:mist-manor": "node scripts/validate-mist-manor-assets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "assets:thumbnails": "node scripts/run-scene-thumbnails.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.21.0",
@@ -23,6 +25,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.5.4",
     "postcss": "^8.5.26",
+    "sharp": "^0.35.2",
     "tailwindcss": "^3.4.19",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",

@@ -1,0 +1,333 @@
+{
+  "frames": {
+    "home-small": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "home-row": {
+      "frame": {
+        "x": 443,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "cafe-corner": {
+      "frame": {
+        "x": 887,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "grocery-small": {
+      "frame": {
+        "x": 1330,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "bookshop-small": {
+      "frame": {
+        "x": 0,
+        "y": 221,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "station-stop": {
+      "frame": {
+        "x": 443,
+        "y": 221,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "park-pavilion": {
+      "frame": {
+        "x": 887,
+        "y": 221,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "clinic-small": {
+      "frame": {
+        "x": 1330,
+        "y": 221,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "tree-round": {
+      "frame": {
+        "x": 0,
+        "y": 443,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "tree-tall": {
+      "frame": {
+        "x": 443,
+        "y": 443,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "shrub": {
+      "frame": {
+        "x": 887,
+        "y": 443,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "flower-bed": {
+      "frame": {
+        "x": 1330,
+        "y": 443,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "wildflower": {
+      "frame": {
+        "x": 0,
+        "y": 665,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "bench": {
+      "frame": {
+        "x": 443,
+        "y": 665,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "street-lamp": {
+      "frame": {
+        "x": 887,
+        "y": 665,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    },
+    "fountain-small": {
+      "frame": {
+        "x": 1330,
+        "y": 665,
+        "w": 444,
+        "h": 222
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 444,
+        "h": 222
+      },
+      "sourceSize": {
+        "w": 444,
+        "h": 222
+      }
+    }
+  },
+  "meta": {
+    "image": "world-atlas-clean.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1774,
+      "h": 887
+    },
+    "scale": "1"
+  }
+}

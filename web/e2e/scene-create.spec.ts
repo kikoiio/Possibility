@@ -18,7 +18,13 @@ test('creates a world from a place description and keeps scene editing available
     if (route.request().method() === 'POST') { createdScene = route.request().postDataJSON().scene; return route.fulfill({ json: { id: 'world-1', timelineId: 'timeline-1' } }) }
     return route.continue()
   })
-  await page.route('**/api/worlds/world-1**', route => route.fulfill({ json: route.request().url().includes('/scene') ? { status: 'ready', document: { ...scene, version: 1 }, version: 1, contentHash: 'abc', createdAt: '2026-09-28T00:00:00.000Z' } : { world: { id: 'world-1', name: '河畔街', description: '河畔的街区', status: 'running', pauseReason: null, isDemo: false, callsToday: 0, locations: [] }, timelines: [{ id: 'timeline-1', parentTimelineId: null, simNow: '2026-09-28T12:00:00.000Z' }], currentTimelineId: 'timeline-1', simNow: '2026-09-28T12:00:00.000Z', stateVersion: 1, worldModelVersion: 1, evidenceStatus: 'structured', evidence: { level: 'complete', reasonCodes: [] }, currentFacts: [], locationBoard: [], events: [] } }))
+  await page.route('**/api/worlds/world-1**', route => {
+    const world = { world: { id: 'world-1', name: '河畔街', description: '河畔的街区', status: 'running', pauseReason: null, isDemo: false, callsToday: 0, locations: [] }, timelines: [{ id: 'timeline-1', parentTimelineId: null, simNow: '2026-09-28T12:00:00.000Z' }], currentTimelineId: 'timeline-1', simNow: '2026-09-28T12:00:00.000Z', stateVersion: 1, worldModelVersion: 1, evidenceStatus: 'structured', evidence: { level: 'complete', reasonCodes: [] }, currentFacts: [], locationBoard: [], events: [] }
+    const url = route.request().url()
+    if (url.includes('/map/bootstrap')) return route.fulfill({ json: { access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false }, world, scene: { status: 'ready', document: { ...scene, version: 1 } }, presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: world.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] }, theme: { id: 'contemporary-daily-life', assetVersion: 'e2e' }, resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: world.simNow } } })
+    if (route.request().method() === 'PUT') return route.fulfill({ json: { ok: true } })
+    return route.fulfill({ json: url.includes('/scene') ? { status: 'ready', document: { ...scene, version: 1 }, version: 1, contentHash: 'abc', createdAt: '2026-09-28T00:00:00.000Z' } : world })
+  })
   await page.goto('/worlds/new')
   await page.getByTestId('scene-prompt').fill('一条河边的街道，街角有咖啡馆、旧车站和居民住宅。')
   await page.getByRole('button', { name: 'Ada' }).click()
