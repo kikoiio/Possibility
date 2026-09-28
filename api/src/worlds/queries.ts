@@ -50,6 +50,7 @@ export interface WorldEventDto {
   actorPersonId: string | null
   actorName: string | null
   dialogueId: string | null
+  location: string | null
   dialoguePreview: { personName: string; utterance: string }[] | null
 }
 
@@ -111,6 +112,10 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
 
   const dialogueIds = [...new Set(eventRows.map((e) => e.dialogueId).filter(Boolean))] as string[]
   const previewMap = new Map<string, { personName: string; utterance: string }[]>()
+  const dialogueRows = dialogueIds.length
+    ? await db.select({ id: dialogues.id, location: dialogues.location }).from(dialogues).where(inArray(dialogues.id, dialogueIds)).all()
+    : []
+  const dialogueLocationMap = new Map(dialogueRows.map((dialogue) => [dialogue.id, dialogue.location]))
   const checkpoint = readForkSnapshot(current)
   for (const did of dialogueIds) {
     const inherited = eventRows.some(event => event.dialogueId === did && event.timelineId !== current.id)
@@ -172,6 +177,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
       actorPersonId: e.actorPersonId,
       actorName: e.actorPersonId ? (nameOf.get(e.actorPersonId) ?? null) : null,
       dialogueId: e.dialogueId,
+      location: e.dialogueId ? (dialogueLocationMap.get(e.dialogueId) ?? null) : null,
       dialoguePreview: e.dialogueId ? (previewMap.get(e.dialogueId) ?? []) : null,
     })),
   }

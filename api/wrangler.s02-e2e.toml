@@ -1,0 +1,14 @@
+name = "possibility-s02-e2e"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+[[d1_databases]]
+binding = "DB"
+database_name = "possibility-s02-e2e"
+database_id = "00000000-0000-0000-0000-000000000002"
+migrations_dir = "drizzle"
+
+[vars]
+ENVIRONMENT = "s02-e2e"
+LLM_BASE_URL = "http://e2e-provider-disabled.invalid/v1"
+LLM_API_KEY = "s02-e2e-fixture"
+LLM_MODEL = "s02-fixture"

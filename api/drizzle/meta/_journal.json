@@ -162,6 +162,27 @@
       "when": 1790534197674,
       "tag": "0022_scene_layout",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1790598838840,
+      "tag": "0023_s03_map_resume",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1790598838841,
+      "tag": "0024_s03_guest_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1790610000000,
+      "tag": "0025_s03_sandbox_purge",
+      "breakpoints": true
     }
   ]
 }

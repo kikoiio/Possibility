@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming'
 import { createDb, type Db } from '../db/client'
 import { timelines, worlds } from '../db/schema'
 import { dialogueDetail, personFocus, worldSnapshot } from '../worlds/queries'
+import { readCurrentScene } from '../scenes/repository'
 import { WorldStateError } from '../world-state/types'
 import { streamWorld } from '../worlds/stream'
 import type { Env } from '../index'
@@ -42,6 +43,19 @@ publicRoutes.get('/worlds/:id', async (c) => {
   }
   if (!snapshot) return c.json({ error: '世界没有时间线' }, 404)
   return c.json(snapshot)
+})
+
+/** Read-only scene for the public demo world. */
+publicRoutes.get('/worlds/:id/scene', async c => {
+  const db = createDb(c.env.DB)
+  const world = await loadDemoWorld(db, c.req.param('id'))
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  try {
+    const scene = await readCurrentScene(db, world.id)
+    return scene ? c.json({ status: 'ready', ...scene }) : c.json({ status: 'missing' })
+  } catch {
+    return c.json({ error: '场景读取失败' }, 500)
+  }
 })
 
 /** 演示世界 SSE（复用 T19 推送逻辑，强制 demo 校验） */

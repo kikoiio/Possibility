@@ -16,6 +16,10 @@ import { publicRoutes } from './public/routes'
 import { lifeRoutes } from './life/routes'
 import { comparisonRoutes } from './life/compare'
 import { scenesRoutes } from './scenes/routes'
+import { mapRoutes } from './map/routes'
+import { demoRoutes } from './demo/routes'
+import { cleanupExpiredGuestData } from './demo/cleanup'
+import { createDb } from './db/client'
 
 export interface Env {
   DB: D1Database
@@ -50,19 +54,26 @@ app.route('/api/dev', devRoutes)
 app.route('/api/persons', personRoutes)
 // Public sub-app has its own 404 fallback; mount before all /api-wide auth middleware.
 app.route('/api/public', publicRoutes)
+app.route('/api/demo', demoRoutes)
 // 注意：chat/timeline 两个子应用挂在 /api 且带全局 authMiddleware，
 // 后续新路由必须注册在它们之前，否则会被拦成 401
 app.route('/api/engine', engineRoutes)
+app.route('/api', mapRoutes)
 app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
+// These routes accept either a login or a tightly scoped guest sandbox token.
+app.route('/api', personaRoutes)
+app.route('/api', sceneRoutes)
 app.route('/api/worlds', worldsRoutes)
 app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
-app.route('/api', personaRoutes) // /worlds/:id/persona（在场身份登记）
-app.route('/api', sceneRoutes) // /worlds/:id/scene（你在世界里：到场交谈）
 app.route('/api', lifeRoutes) // 归来回顾与承诺
 app.route('/api', comparisonRoutes) // 时间线证据对照
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
 app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id
 app.route('/api/home', homeRoutes)
 
-export default app
+export default Object.assign(app, {
+  scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext) {
+    context.waitUntil(cleanupExpiredGuestData(createDb(env.DB)))
+  },
+})

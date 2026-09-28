@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { createDb, type Db } from '../db/client'
 import { events, personaMessages, personStates, persons, timelines, worldPersons, worlds } from '../db/schema'
-import { authMiddleware, type AuthVariables } from '../auth/middleware'
+import type { AuthVariables } from '../auth/middleware'
+import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import type { PersonModel } from '../agent/types'
 import type { Env } from '../index'
 import { gateUniverseWrite } from '../engine/guard'
@@ -11,7 +12,14 @@ type World = typeof worlds.$inferSelect
 type Person = typeof persons.$inferSelect
 
 export const personaRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-personaRoutes.use('*', authMiddleware)
+const personaAccess = scopedUserMiddleware((method, path, worldId) => {
+  const base = `/api/worlds/${encodeURIComponent(worldId)}/persona`
+  return path === base && (method === 'GET' || method === 'POST')
+    || path === `${base}/messages` && method === 'GET'
+    || path === `${base}/messages/read` && method === 'POST'
+})
+personaRoutes.use('/worlds/:id/persona', personaAccess)
+personaRoutes.use('/worlds/:id/persona/*', personaAccess)
 
 /** 用户在场身份的极简人物模型：身份即用户自述，其余留白（由相遇与记忆慢慢长出来） */
 export function buildUserPersonaModel(description: string): PersonModel {

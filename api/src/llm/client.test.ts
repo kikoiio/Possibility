@@ -34,6 +34,40 @@ describe('LLM 流式客户端', () => {
     expect(settle).toHaveBeenCalledWith('receipt-success', 'completed', null)
   })
 
+  it('passes JSON output mode when requested by a structured caller', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      choices: [{ message: { content: '{"ok":true}' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(complete({ baseUrl: 'https://llm.invalid', apiKey: 'x', model: 'x', reserve: async () => {} }, [], {
+      responseFormat: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+    })).resolves.toBe('{"ok":true}')
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+    })
+  })
+
+  it('retries one empty JSON-mode response with a fresh receipt', async () => {
+    const settle = vi.fn(async () => {})
+    let nextReceipt = 0
+    const reserve = Object.assign(vi.fn(async () => `receipt-${++nextReceipt}`), { settle }) as ReceiptReservation
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(completeContract({ baseUrl: 'https://llm.invalid', apiKey: 'x', model: 'x', reserve }, [], {
+      contractVersion: 'scene-draft/v1',
+      responseFormat: { type: 'json_object' },
+      parse: content => JSON.parse(content) as { ok: boolean },
+    })).resolves.toEqual({ ok: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(settle).toHaveBeenNthCalledWith(1, 'receipt-1', 'failed', 'invalid_response')
+    expect(settle).toHaveBeenNthCalledWith(2, 'receipt-2', 'completed', null)
+  })
+
   it('settles invalid JSON as failed and a timed-out stream as cancelled', async () => {
     const failedSettle = vi.fn(async () => {})
     const failedReserve = Object.assign(vi.fn(async () => 'receipt-failed'), { settle: failedSettle }) as ReceiptReservation

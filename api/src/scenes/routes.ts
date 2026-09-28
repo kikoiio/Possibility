@@ -4,6 +4,7 @@ import type { Context } from 'hono'
 import { applySceneOperations, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument, SceneOperation } from '@possibility/scene-contract'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
+import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { createDb } from '../db/client'
 import { persons, worldPersons, worlds } from '../db/schema'
 import { BudgetRefusal, gateUser } from '../engine/guard'
@@ -15,7 +16,19 @@ import { listSceneVersions, readCurrentScene, SceneConflict } from './repository
 import { applyScenePatch, restoreSceneVersion, saveSceneRevision } from './service'
 
 export const scenesRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-scenesRoutes.use('*', authMiddleware)
+scenesRoutes.use('*', async (c, next) => {
+  const path = c.req.path
+  const apiPrefix = path.startsWith('/api/') ? '/api' : ''
+  const sceneRoot = path.match(/^(?:\/api)?\/worlds\/([^/]+)\/scene$/)
+  if (sceneRoot && c.req.method === 'GET') {
+    return scopedUserMiddleware((method, requestPath, scopedId) => method === 'GET' && requestPath === `${apiPrefix}/worlds/${encodeURIComponent(scopedId)}/scene`)(c, next)
+  }
+  const loginOnly = path === '/api/scene-drafts' || path.startsWith('/api/scene-drafts/')
+    || path === '/scene-drafts' || path.startsWith('/scene-drafts/')
+    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:revisions|legacy-preview|edit-preview|legacy-confirm|restore)(?:\/|$)/.test(path)
+  if (loginOnly) return authMiddleware(c, next)
+  await next()
+})
 
 async function ownedWorld(db: ReturnType<typeof createDb>, worldId: string, userId: string) {
   return (await db.select().from(worlds).where(and(eq(worlds.id, worldId), eq(worlds.userId, userId))).get()) ?? null

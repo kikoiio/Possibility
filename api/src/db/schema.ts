@@ -442,3 +442,68 @@ export const worldFacts = sqliteTable('world_facts', {
   visibility: text('visibility').notNull().default('world'),
   supersedesId: text('supersedes_id'),
 }, t => [uniqueIndex('world_facts_timeline_version').on(t.timelineId, t.version)])
+
+/** Last map context per account; it contains navigation state, never world facts. */
+export const userWorldPreferences = sqliteTable('user_world_preferences', {
+  userId: text('user_id').primaryKey().references(() => users.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  spaceId: text('space_id').notNull().default('exterior'),
+  mode: text('mode').notNull().default('life'),
+  updatedAt: text('updated_at').notNull(),
+}, t => [index('user_world_preferences_world').on(t.worldId)])
+
+/** Immutable public demo roots. Only one row may be active at a time. */
+export const demoBaselines = sqliteTable('demo_baselines', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  sceneVersion: integer('scene_version').notNull(),
+  contentHash: text('content_hash').notNull(),
+  status: text('status').notNull().default('active'),
+  createdAt: text('created_at').notNull(),
+  retiredAt: text('retired_at'),
+}, t => [
+  uniqueIndex('demo_baselines_world').on(t.worldId),
+  index('demo_baselines_status').on(t.status),
+])
+
+/** Browser-held guest credentials. The raw token is never persisted. */
+export const guestSessions = sqliteTable('guest_sessions', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull(),
+  ownerUserId: text('owner_user_id').notNull().references(() => users.id),
+  currentSandboxWorldId: text('current_sandbox_world_id').references(() => worlds.id),
+  generation: integer('generation').notNull().default(0),
+  status: text('status').notNull().default('active'),
+  resumeTimelineId: text('resume_timeline_id').references(() => timelines.id),
+  resumeSpaceId: text('resume_space_id').notNull().default('exterior'),
+  resumeMode: text('resume_mode').notNull().default('life'),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('guest_sessions_token_hash').on(t.tokenHash),
+  uniqueIndex('guest_sessions_owner').on(t.ownerUserId),
+  uniqueIndex('guest_sessions_current_sandbox').on(t.currentSandboxWorldId),
+  index('guest_sessions_status_expiry').on(t.status, t.expiresAt),
+])
+
+/** Every reset creates a new generation and preserves an auditable predecessor. */
+export const demoSandboxes = sqliteTable('demo_sandboxes', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => guestSessions.id),
+  baselineId: text('baseline_id').notNull().references(() => demoBaselines.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  generation: integer('generation').notNull(),
+  status: text('status').notNull().default('active'),
+  requestId: text('request_id').notNull(),
+  claimedWorldId: text('claimed_world_id').references(() => worlds.id),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+}, t => [
+  uniqueIndex('demo_sandboxes_world').on(t.worldId),
+  uniqueIndex('demo_sandboxes_generation').on(t.sessionId, t.generation),
+  uniqueIndex('demo_sandboxes_request').on(t.sessionId, t.requestId),
+  index('demo_sandboxes_session_status').on(t.sessionId, t.status),
+  index('demo_sandboxes_status_expiry').on(t.status, t.expiresAt),
+])

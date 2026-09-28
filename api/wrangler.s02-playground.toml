@@ -1,14 +1,11 @@
-name = "possibility-api"
+name = "possibility-s02-playground"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
-[triggers]
-crons = ["17 3 * * *"]
-
 [[d1_databases]]
 binding = "DB"
-database_name = "possibility"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "possibility-s02-e2e"
+database_id = "00000000-0000-0000-0000-000000000002"
 migrations_dir = "drizzle"
 
 [vars]

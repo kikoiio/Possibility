@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { timelines, universeEvidence, worlds } from '../db/schema'
+import { demoBaselines, timelines, universeEvidence, worlds } from '../db/schema'
 import { capWorld, dailyCapHit, reserveWorldCall, reserveUserCall, settleCallReceipt, userCallsToday,
   type BudgetConfig, type CallMeta, type ReceiptDetails, type ReceiptStatus } from './budget'
 import type { CallPurpose } from './steps/types'
@@ -33,6 +33,9 @@ export async function gateWorld(
 ): Promise<{ ok: true; world: World } | GateRefusal> {
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   if (!world) return { ok: false, status: 404, error: '世界不存在' }
+  const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
+    .where(and(eq(demoBaselines.worldId, worldId), eq(demoBaselines.status, 'active'))).get()
+  if (baseline) return { ok: false, status: 409, error: '公共演示基线只读，请先进入访客体验副本' }
   if (world.status !== 'running') {
     return { ok: false, status: 409, error: `世界${STATUS_LABEL[world.status] ?? world.status}，恢复后才能继续` }
   }
@@ -56,6 +59,9 @@ export async function gateUniverseWrite(
   ])
   if (!world) return { ok: false, status: 404, error: '世界不存在' }
   if (!timeline) return { ok: false, status: 404, error: '时间线不存在' }
+  const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
+    .where(and(eq(demoBaselines.worldId, worldId), eq(demoBaselines.status, 'active'))).get()
+  if (baseline) return { ok: false, status: 409, error: '公共演示基线只读，请先进入访客体验副本' }
   if (evidence?.level !== 'complete') {
     return { ok: false, status: 409, error: '该宇宙的历史证据尚不完整，目前仅可读取' }
   }

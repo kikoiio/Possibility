@@ -8,6 +8,39 @@ const migrationDirectory = join(dirname(fileURLToPath(import.meta.url)), '../../
 const time = '2026-09-21T08:00:00.000Z'
 
 describe('s01 migration keeps legacy rows intact', () => {
+  it('adds scene tables to an existing database without changing legacy world or timeline data', () => {
+    const sqlite = new DatabaseSync(':memory:')
+    try {
+      sqlite.exec('PRAGMA foreign_keys = ON')
+      const files = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
+      for (const file of files.filter(name => Number.parseInt(name.slice(0, 4), 10) < 22)) applySqlFile(sqlite, file)
+      sqlite.exec(`
+        INSERT INTO users (id, username, password_hash, created_at) VALUES ('s02-user', 's02-user', 'hash', '${time}');
+        INSERT INTO persons (id, user_id, name, model_json, created_at) VALUES ('s02-person', 's02-user', 'Ada', '{}', '${time}');
+        INSERT INTO worlds (id, user_id, name, description, locations_json, status, created_at)
+          VALUES ('s02-world', 's02-user', '旧街区', '保留这方天地', '[{"name":"街角咖啡馆"}]', 'running', '${time}');
+        INSERT INTO world_persons (world_id, person_id, joined_at) VALUES ('s02-world', 's02-person', '${time}');
+        INSERT INTO timelines (id, world_id, sim_now, created_at, status, ancestor_ids_json)
+          VALUES ('s02-main', 's02-world', '${time}', '${time}', 'active', '[]');
+        INSERT INTO person_states (person_id, timeline_id, sim_time, location, activity, mood, goal, updated_real_at)
+          VALUES ('s02-person', 's02-main', '${time}', '街角咖啡馆', '读书', '平静', '散步', '${time}');
+        INSERT INTO events (id, timeline_id, sim_time, title, description)
+          VALUES ('s02-event', 's02-main', '${time}', '旧日常', '保留已发生的生活');
+      `)
+      const tableNames = ['users', 'persons', 'worlds', 'world_persons', 'timelines', 'person_states', 'events']
+      const before = snapshotRows(sqlite, tableNames)
+      applySqlFile(sqlite, files.find(name => name.startsWith('0022_'))!)
+      expect(snapshotRows(sqlite, tableNames)).toEqual(before)
+      expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('world_scenes','world_scene_revisions') ORDER BY name").all())
+        .toEqual([{ name: 'world_scene_revisions' }, { name: 'world_scenes' }])
+      expect(sqlite.prepare("SELECT name FROM worlds WHERE id='s02-world'").get()?.name).toBe('旧街区')
+      expect(sqlite.prepare("SELECT location, activity FROM person_states WHERE person_id='s02-person'").get())
+        .toEqual({ location: '街角咖啡馆', activity: '读书' })
+    } finally {
+      sqlite.close()
+    }
+  })
+
   it('preserves old world, chat, memory, event, state, and commitment rows when adding world state tables', () => {
     const sqlite = new DatabaseSync(':memory:')
     try {

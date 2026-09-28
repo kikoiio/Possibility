@@ -64,6 +64,8 @@ export interface CallOptions {
   signal?: AbortSignal
   requestId?: string
   contractVersion?: string
+  responseFormat?: { type: 'json_object' }
+  thinking?: { type: 'enabled' | 'disabled' }
 }
 
 export interface ContractCallOptions<T> extends CallOptions {
@@ -219,6 +221,8 @@ async function completeParsed<T>(
         messages,
         stream: false,
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
+        ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
+        ...(opts.thinking ? { thinking: opts.thinking } : {}),
       },
       scope,
       opts,
@@ -271,7 +275,16 @@ export async function completeContract<T>(
   messages: ChatMessage[],
   opts: ContractCallOptions<T>,
 ): Promise<T> {
-  return completeParsed(config, messages, opts, opts.parse)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await completeParsed(config, messages, opts, opts.parse)
+    } catch (error) {
+      const isRetryableEmptyJson = opts.responseFormat?.type === 'json_object'
+        && error instanceof LlmContractError && error.code === 'invalid_response'
+      if (attempt > 0 || !isRetryableEmptyJson) throw error
+    }
+  }
+  throw new Error('unreachable')
 }
 
 /**

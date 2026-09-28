@@ -8,7 +8,8 @@ import { contemporaryTheme, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument } from '@possibility/scene-contract'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
-import { authMiddleware, type AuthVariables } from '../auth/middleware'
+import type { AuthVariables } from '../auth/middleware'
+import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
@@ -25,7 +26,10 @@ import type { Env } from '../index'
 type World = typeof worlds.$inferSelect
 
 export const worldsRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-worldsRoutes.use('*', authMiddleware)
+worldsRoutes.use('*', scopedUserMiddleware((method, path, worldId) => {
+  const base = `/api/worlds/${encodeURIComponent(worldId)}`
+  return method === 'GET' && (path === `${base}/state` || new RegExp(`^${base}/actions/[^/]+$`).test(path))
+}))
 
 async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<World | null> {
   const w = await db

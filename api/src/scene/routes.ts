@@ -5,7 +5,8 @@ import type { SSEStreamingApi } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
 import { memories, personaMessages, personStates, persons, timelines, worlds, worldCommands, worldPersons, dialogues, dialogueTurns, sceneRequests, sceneIntentProposals, universeRevisions } from '../db/schema'
-import { authMiddleware, type AuthVariables } from '../auth/middleware'
+import type { AuthVariables } from '../auth/middleware'
+import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { buildWorldSnapshot, buildEngineContext } from '../agent/engine-context'
 import { buildScenePrompt, type DialogueTurnView } from '../agent/engine-prompt'
 import { containsExplicitInvitationRequest, parseSceneOutput } from './parse'
@@ -28,7 +29,15 @@ type World = typeof worlds.$inferSelect
 type Person = typeof persons.$inferSelect
 
 export const sceneRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-sceneRoutes.use('*', authMiddleware)
+const sceneAccess = scopedUserMiddleware((method, path, worldId) => {
+  const base = `/api/worlds/${encodeURIComponent(worldId)}/scene`
+  if (method === 'GET') return path === `${base}/board` || path === `${base}/history` || new RegExp(`^${base}/requests/[^/]+$`).test(path) || path === `${base}/intent/pending`
+  return path === base || path === `${base}/position` || path === `${base}/inform` || path === `${base}/intent`
+    || new RegExp(`^${base}/requests/[^/]+/(?:recover|cancel)$`).test(path)
+    || new RegExp(`^${base}/intent/[^/]+/cancel$`).test(path)
+})
+sceneRoutes.use('/worlds/:id/scene', sceneAccess)
+sceneRoutes.use('/worlds/:id/scene/*', sceneAccess)
 
 /** 同一地点一场 scene 最多回应的人数（每人一次 LLM 调用） */
 export const MAX_SCENE_RESPONDERS = 3
