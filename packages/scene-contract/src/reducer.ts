@@ -1,7 +1,8 @@
 import { findAsset } from './catalog'
 import { rectWithin } from './coordinates'
 import { validateScene } from './validation'
-import type { GridPoint, SceneChangeSet, SceneDocument, SceneOperation, ScenePreviewResult, SceneThemeManifest } from './types'
+import { normalizeSceneDocument } from './normalize'
+import type { GridPoint, SceneChangeSet, SceneDocument, SceneDocumentV2, SceneOperation, ScenePreviewResult, SceneThemeManifest } from './types'
 
 const cellKey = (p: GridPoint) => `${p.x},${p.y}`
 const lockedAt = (doc: SceneDocument, p: GridPoint) => doc.lockedAreas.some(a => p.x >= a.x && p.y >= a.y && p.x < a.x + a.width && p.y < a.y + a.height)
@@ -61,4 +62,26 @@ export function applySceneOperations(base: SceneDocument, operations: SceneOpera
   const result = validateScene(doc, theme)
   if (!result.ok) throw new Error(result.issues.map(i => `${i.path}: ${i.message}`).join('; '))
   return { document: doc, changes }
+}
+
+/** Apply an operation to one v2 space while preserving every other space verbatim. */
+export function applySceneOperationsInSpace(base: SceneDocumentV2, spaceId: string, operations: SceneOperation[], theme: SceneThemeManifest) {
+  const document = normalizeSceneDocument(base)
+  const space = document.spaces.find(candidate => candidate.id === spaceId)
+  if (!space) throw new Error(`空间不存在：${spaceId}`)
+  const legacy: SceneDocument = {
+    schemaVersion: 1, themeId: document.themeId, size: structuredClone(space.size), version: document.version,
+    terrain: structuredClone(space.surface), paths: structuredClone(space.paths), objects: structuredClone(space.objects),
+    lockedObjectIds: document.lockedObjectIds.filter(id => space.objects.some(object => object.id === id)),
+    lockedAreas: document.lockedAreas.filter(area => area.spaceId === spaceId).map(({ spaceId: _spaceId, ...area }) => area),
+  }
+  const result = applySceneOperations(legacy, operations, theme)
+  const next = structuredClone(document)
+  const target = next.spaces.find(candidate => candidate.id === spaceId)!
+  target.surface = result.document.terrain
+  target.paths = result.document.paths
+  target.objects = result.document.objects
+  next.lockedObjectIds = [...next.lockedObjectIds.filter(id => !space.objects.some(object => object.id === id)), ...result.document.lockedObjectIds]
+  next.lockedAreas = [...next.lockedAreas.filter(area => area.spaceId !== spaceId), ...result.document.lockedAreas.map(area => ({ ...area, spaceId }))]
+  return { document: next, changes: result.changes }
 }
