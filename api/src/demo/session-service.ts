@@ -62,6 +62,8 @@ async function createGeneration(db: Db, input: { sessionId: string; ownerId: str
   }
   await db.batch([
     db.insert(demoSandboxes).values(sandbox),
+    // 克隆会继承基线状态；基线可能已被闲置归档，沙盒有活跃访客，必须恢复为 running 引擎才会推进
+    db.update(worlds).set({ status: 'running', pauseReason: null, lastUserActivityAt: createdAt }).where(eq(worlds.id, cloned.worldId)),
     db.update(guestSessions).set({
       currentSandboxWorldId: cloned.worldId, generation: input.generation, status: 'active',
       resumeTimelineId: cloned.mainTimelineId, resumeSpaceId: 'exterior', resumeMode: 'life', expiresAt, updatedAt: createdAt,
@@ -100,6 +102,10 @@ export async function resumeGuestSession(db: Db, token: string, now = new Date()
   await db.batch([
     db.update(guestSessions).set({ expiresAt, updatedAt: now.toISOString() }).where(eq(guestSessions.id, session.id)),
     db.update(demoSandboxes).set({ expiresAt }).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.status, 'active'))),
+    // 回访即活跃：沙盒若被闲置归档则解冻，并刷新活动时间避免立刻再次归档
+    db.update(worlds).set({ status: 'running', pauseReason: null })
+      .where(and(eq(worlds.id, session.currentSandboxWorldId), eq(worlds.status, 'archived'))),
+    db.update(worlds).set({ lastUserActivityAt: now.toISOString() }).where(eq(worlds.id, session.currentSandboxWorldId)),
   ])
   return sessionResult(db, session.id)
 }
