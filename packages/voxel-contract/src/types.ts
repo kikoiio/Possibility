@@ -104,6 +104,9 @@ export interface EditResult {
 export interface ValidationIssue {
   code: 'out-of-bounds' | 'unknown-block' | 'floating-object'
       | 'object-overlap' | 'location-unbound' | 'locked-violation'
+      // S2b 可行走性（F5）：净高 / 连通 / 照明 / 高差突变 / 地面缺口
+      | 'walk-clearance' | 'walk-connectivity' | 'walk-lighting'
+      | 'walk-stairs' | 'walk-gap'
   message: string
   at?: VoxelCoord
 }
