@@ -155,7 +155,7 @@ it('persists receipts across independent ticks, fails one invalid decision safel
     .where(eq(universeRevisions.timelineId, 'home-main')).get())!.version
   const afterFirst = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
   expect(afterFirst).toEqual([expect.objectContaining({ purpose: 'beat', status: 'completed', errorCode: null,
-    contractVersion: 'beat/v1', contextHash: expect.stringMatching(/^[a-f0-9]{64}$/) })])
+    contractVersion: 'beat/v2', contextHash: expect.stringMatching(/^[a-f0-9]{64}$/) })])
   const firstBeatFacts = (await fixture.db.select().from(worldFacts).all())
     .filter(fact => JSON.parse(fact.valueJson).cause === 'beat').length
   expect(firstBeatFacts).toBe(1)
@@ -172,8 +172,8 @@ it('persists receipts across independent ticks, fails one invalid decision safel
   const afterFailure = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
   expect(afterFailure).toHaveLength(3)
   expect(afterFailure.slice(1)).toEqual([
-    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v1' }),
-    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v1' }),
+    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v2' }),
+    expect.objectContaining({ status: 'failed', errorCode: 'contract_violation', contractVersion: 'beat/v2' }),
   ])
   expect((await fixture.db.select().from(worldFacts).all())
     .filter(fact => JSON.parse(fact.valueJson).cause === 'beat')).toHaveLength(firstBeatFacts)
@@ -187,7 +187,7 @@ it('persists receipts across independent ticks, fails one invalid decision safel
   expect(recoveredRevision).toBeGreaterThan(failedRevision)
   const finalReceipts = await fixture.db.select().from(llmCallLog).where(eq(llmCallLog.worldId, 'home-world')).all()
   expect(finalReceipts).toHaveLength(4)
-  expect(finalReceipts.at(-1)).toMatchObject({ status: 'completed', errorCode: null, contractVersion: 'beat/v1' })
+  expect(finalReceipts.at(-1)).toMatchObject({ status: 'completed', errorCode: null, contractVersion: 'beat/v2' })
   expect(finalReceipts.every(receipt => /^[a-f0-9]{64}$/.test(receipt.contextHash ?? ''))).toBe(true)
   expect((await fixture.db.select().from(worldFacts).all())
     .filter(fact => JSON.parse(fact.valueJson).cause === 'beat')).toHaveLength(firstBeatFacts + 1)

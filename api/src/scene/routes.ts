@@ -701,7 +701,10 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
               { role: 'user', content: prompt.user },
             ], { signal: generation.signal, requestId,
               contractVersion: LLM_CONTRACT_VERSIONS.sceneResponse,
-              parse: raw => parseSceneOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneResponse)) })
+              parse: raw => parseSceneOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneResponse),
+                [...ctx.others.map((o) => ({ id: o.person.id, name: o.person.name })),
+                  { id: persona.id, name: persona.name }],
+                snapshot.locations.map((l) => l.name)) })
           } finally {
             if (activeSceneRequests.get(requestId) === generation) activeSceneRequests.delete(requestId)
           }
@@ -748,6 +751,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
         const relationshipMemory = {
           id: crypto.randomUUID(), personId: responder.id, type: 'relationship' as const,
           content: output.memory.content, importance: clampImportance(output.memory.importance), simTime: simNow, createdAt: now,
+          mentions: output.memory.mentions, location: output.memory.location, topics: output.memory.topics,
         }
         privateEffects.memories.push(relationshipMemory)
         atomicWrites.push(db.insert(memories).values({
@@ -759,6 +763,9 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           simTime: relationshipMemory.simTime,
           createdAt: relationshipMemory.createdAt,
           importance: relationshipMemory.importance,
+          mentionedPersonIdsJson: relationshipMemory.mentions.length ? JSON.stringify(relationshipMemory.mentions) : null,
+          locationName: relationshipMemory.location,
+          topicsJson: relationshipMemory.topics.length ? JSON.stringify(relationshipMemory.topics) : null,
         }))
       }
       // 留言：人物有话托付给来访者——TA 下次进入世界时送达

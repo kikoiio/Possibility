@@ -16,6 +16,7 @@ import {
 } from '../../agent/engine-context'
 import { buildBeatPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
+import { parseMemoryAnnotations, type MemoryAnnotations } from './annotations'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { recordResidentState, recordSimulationCheckpoint, startNpcDialogue } from '../../world-state/system'
 
@@ -37,7 +38,7 @@ export type BeatOutput = { kind: 'encounter' } | { kind: 'solo'; beat: BeatJson 
 export interface BeatJson {
   events: { title: string; description: string; offsetMin: number }[]
   thought: string
-  memory: { content: string; type: string; importance: number } | null
+  memory: ({ content: string; type: string; importance: number } & MemoryAnnotations) | null
   nextLocation: string | null
   nextActivity: string | null
   mood: string | null
@@ -75,6 +76,7 @@ export function normalizeBeatJson(
   locationNames: string[],
   windowMinutes: number,
   version: string = LLM_CONTRACT_VERSIONS.beat,
+  people: { id: string; name: string }[] = [],
 ): BeatJson {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
   const r = raw as Record<string, unknown>
@@ -102,7 +104,8 @@ export function normalizeBeatJson(
     if (m.type !== 'timeline' && m.type !== 'relationship' && m.type !== 'world') {
       return contractViolation(version, 'memory.type 非法')
     }
-    memory = { content, type: m.type, importance: requireNumber(m.importance, 'memory.importance', version, 1, 10) }
+    memory = { content, type: m.type, importance: requireNumber(m.importance, 'memory.importance', version, 1, 10),
+      ...parseMemoryAnnotations(m, people, locationNames) }
   } else if (r.memory !== undefined && r.memory !== null) {
     return contractViolation(version, 'memory 必须是对象或 null')
   }
@@ -144,7 +147,8 @@ export async function applyBeatOutput(
   const memoriesToWrite: Extract<import('../../world-state/types').WorldAction, { type: 'resident_state' }>['memories'] = [
     { type: 'thought', content: beat.thought, importance: 5 },
     ...(beat.memory ? [{ type: beat.memory.type as 'timeline' | 'relationship' | 'world', content: beat.memory.content,
-      importance: clampImportance(beat.memory.importance) }] : []),
+      importance: clampImportance(beat.memory.importance),
+      mentions: beat.memory.mentions, location: beat.memory.location, topics: beat.memory.topics }] : []),
   ]
   await recordResidentState(db, {
     worldId: opts.worldId, timelineId, sourceKey: opts.sourceKey ?? `${cause}:${timelineId}:${personId}:${simNow}`,
@@ -227,6 +231,8 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
           { maxTokens: 8000, contractVersion: LLM_CONTRACT_VERSIONS.beat,
             parse: raw => normalizeBeatJson(
               parseContractObject(raw, LLM_CONTRACT_VERSIONS.beat), locationNames, input.windowMinutes,
+              LLM_CONTRACT_VERSIONS.beat,
+              input.ctx.others.map((o) => ({ id: o.person.id, name: o.person.name })),
             ) },
         )
         return { value: { kind: 'solo', beat }, llmCalls: opts?.reserve?.calls ?? llmCalls }

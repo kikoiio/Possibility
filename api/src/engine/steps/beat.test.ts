@@ -23,7 +23,8 @@ describe('normalizeBeatJson（beat 输出校验）', () => {
     )
     expect(beat.events).toEqual([{ title: '擦器械', description: '把出诊箱擦净', offsetMin: 10 }])
     expect(beat.thought).toBe('心里放不下那桩旧事')
-    expect(beat.memory).toEqual({ content: '怜在查旧报', type: 'relationship', importance: 7 })
+    expect(beat.memory).toEqual({ content: '怜在查旧报', type: 'relationship', importance: 7,
+      mentions: [], location: null, topics: [] })
     expect(beat.nextLocation).toBe('图书室')
     expect(beat.mood).toBe('凝重')
   })
@@ -70,7 +71,8 @@ describe('versioned beat application', () => {
       await fixture.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
         baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
       const beat = { events: [{ title: '读完一页', description: '窗外的雨声渐密。', offsetMin: 0 }],
-        thought: '这里很安静。', memory: { type: 'relationship', content: '来访者提起了旧火车站。', importance: 7 },
+        thought: '这里很安静。', memory: { type: 'relationship', content: '来访者提起了旧火车站。', importance: 7,
+          mentions: [], location: 'Cafe', topics: ['旧火车站'] },
         nextLocation: 'Library', nextActivity: 'Reading', mood: 'Thoughtful', goal: 'Find the old map' }
       const input = { worldId: 'home-world', timelineId: 'home-main', personId: 'resident-a', simNow: WORLD_TIME,
         windowStart: WORLD_TIME, beat, sourceKey: `beat:home-main:resident-a:${WORLD_TIME}` }
@@ -83,7 +85,11 @@ describe('versioned beat application', () => {
       expect(facts[0].factType).toBe('location')
       expect(JSON.parse(facts[0].valueJson)).toMatchObject({ cause: 'beat', before: { location: 'Cafe' }, after: { location: 'Library' } })
       expect(await fixture.db.select().from(events).all()).toHaveLength(2)
-      expect(await fixture.db.select().from(memories).all()).toHaveLength(2)
+      const memRows = await fixture.db.select().from(memories).all()
+      expect(memRows).toHaveLength(2)
+      // S1:情境标注随命令负载透传落库(T9 证据)
+      expect(memRows.find((m) => m.type === 'relationship'))
+        .toMatchObject({ locationName: 'Cafe', topicsJson: '["旧火车站"]', mentionedPersonIdsJson: null })
       expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(1)
     } finally {
       fixture.close()

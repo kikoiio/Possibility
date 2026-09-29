@@ -252,6 +252,9 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           id: `${input.id}:memory:${index}`, personId: plan.statePersonId!, timelineId: timeline.id,
           type: memory.type, content: memory.content, simTime: commitSimTime, createdAt: now,
           importance: memory.importance, summarized: false,
+          mentionedPersonIdsJson: memory.mentions?.length ? JSON.stringify(memory.mentions) : null,
+          locationName: memory.location ?? null,
+          topicsJson: memory.topics?.length ? JSON.stringify(memory.topics) : null,
         })),
         ...finalAtomicWrites,
       ])
@@ -275,7 +278,10 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         type: 'thought', content: action.thought, simTime: timeline.simNow, createdAt: now, importance: 5, summarized: false })
       const memory = action.memory ? [db.insert(memories).values({ id: `${input.id}:memory`, personId: action.speakerId,
         timelineId: timeline.id, type: 'relationship', content: action.memory.content, simTime: timeline.simNow,
-        createdAt: now, importance: action.memory.importance, summarized: false })] : []
+        createdAt: now, importance: action.memory.importance, summarized: false,
+        mentionedPersonIdsJson: action.memory.mentions?.length ? JSON.stringify(action.memory.mentions) : null,
+        locationName: action.memory.location ?? null,
+        topicsJson: action.memory.topics?.length ? JSON.stringify(action.memory.topics) : null })] : []
       await db.batch([
         command, advance, fact,
         db.insert(dialogueTurns).values({ id: `${input.id}:turn`, dialogueId: action.dialogueId,

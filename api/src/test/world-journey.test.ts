@@ -109,7 +109,7 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
     expect(receipts).toHaveLength(modelFetch.mock.calls.length)
     expect(receipts.every(receipt => receipt.status === 'completed'
       && /^[a-f0-9]{64}$/.test(receipt.contextHash ?? '')
-      && (receipt.contractVersion === 'schedule/v1' || receipt.contractVersion === 'beat/v1'))).toBe(true)
+      && (receipt.contractVersion === 'schedule/v1' || receipt.contractVersion === 'beat/v2'))).toBe(true)
   }
 
   const rootFactsAtFork = await f.db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).all()

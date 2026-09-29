@@ -8,6 +8,7 @@ import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
 import { buildDialoguePrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
+import { parseMemoryAnnotations, type MemoryAnnotations } from './annotations'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
 import { recordDialogueTurn } from '../../world-state/system'
 
@@ -30,13 +31,15 @@ export interface DialogueOutput {
   utterance: string
   thought: string
   shouldEnd: boolean
-  memory: { content: string; importance: number } | null
+  memory: ({ content: string; importance: number } & MemoryAnnotations) | null
   failed: boolean
 }
 
 export function normalizeDialogueJson(
   raw: unknown,
   version: string = LLM_CONTRACT_VERSIONS.dialogue,
+  people: { id: string; name: string }[] = [],
+  locationNames: string[] = [],
 ): Omit<DialogueOutput, 'failed'> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return contractViolation(version, '输出必须是对象')
   const r = raw as Record<string, unknown>
@@ -47,7 +50,8 @@ export function normalizeDialogueJson(
     if (Array.isArray(r.memory)) return contractViolation(version, 'memory 必须是对象或 null')
     const m = r.memory as Record<string, unknown>
     memory = { content: requireString(m.content, 'memory.content', version, 2000),
-      importance: requireNumber(m.importance, 'memory.importance', version, 1, 10) }
+      importance: requireNumber(m.importance, 'memory.importance', version, 1, 10),
+      ...parseMemoryAnnotations(m, people, locationNames) }
   } else if (r.memory !== undefined && r.memory !== null) {
     return contractViolation(version, 'memory 必须是对象或 null')
   }
@@ -111,7 +115,10 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
             { role: 'user', content: input.prompt.user },
           ],
           { maxTokens: 4000, contractVersion: LLM_CONTRACT_VERSIONS.dialogue,
-            parse: raw => normalizeDialogueJson(parseContractObject(raw, LLM_CONTRACT_VERSIONS.dialogue)) },
+            parse: raw => normalizeDialogueJson(parseContractObject(raw, LLM_CONTRACT_VERSIONS.dialogue),
+              LLM_CONTRACT_VERSIONS.dialogue,
+              input.ctx.others.map((o) => ({ id: o.person.id, name: o.person.name })),
+              input.snapshot.locations.map((l) => l.name)) },
         )
         return { value: { ...output, failed: false }, llmCalls: opts?.reserve?.calls ?? llmCalls }
       } catch {
@@ -148,7 +155,8 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
       engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN,
       action: { type: 'dialogue_turn', dialogueId: input.dialogue.id, speakerId: input.speakerId,
         turnIndex: input.turnIndex, utterance: output.utterance, thought: output.thought,
-        memory: output.memory ? { content: output.memory.content, importance: clampImportance(output.memory.importance) } : null,
+        memory: output.memory ? { content: output.memory.content, importance: clampImportance(output.memory.importance),
+          mentions: output.memory.mentions, location: output.memory.location, topics: output.memory.topics } : null,
         shouldEnd: output.shouldEnd },
     })
     if (shouldClose) {

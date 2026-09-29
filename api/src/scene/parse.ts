@@ -1,4 +1,5 @@
 import { normalizeDialogueJson } from '../engine/steps/dialogue'
+import type { MemoryAnnotations } from '../engine/steps/annotations'
 import { contractViolation, LLM_CONTRACT_VERSIONS } from '../llm/contracts'
 import { parseInvitation, type Invitation } from '../life/service'
 
@@ -6,7 +7,7 @@ export interface SceneOutput {
   utterance: string
   thought: string
   shouldEnd: boolean
-  memory: { content: string; importance: number } | null
+  memory: ({ content: string; importance: number } & MemoryAnnotations) | null
   /** 想托付给来访者的事（邀约/提醒/口信）；没有则为 null */
   word: string | null
   commitment: Invitation | null
@@ -22,9 +23,9 @@ export function containsExplicitInvitationRequest(text: string): boolean {
 }
 
 /** 解析 scene 回应 JSON（纯函数，供单测）：复用对话格式 + 可选 word 留言字段 */
-export function parseSceneOutput(raw: unknown): SceneOutput {
+export function parseSceneOutput(raw: unknown, people: { id: string; name: string }[] = [], locationNames: string[] = []): SceneOutput {
   const version = LLM_CONTRACT_VERSIONS.sceneResponse
-  const base = normalizeDialogueJson(raw, version)
+  const base = normalizeDialogueJson(raw, version, people, locationNames)
   const record = raw as Record<string, unknown>
   const wordRaw = record.word
   const commitmentRaw = record.commitment

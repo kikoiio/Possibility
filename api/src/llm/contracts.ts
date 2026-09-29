@@ -12,13 +12,13 @@ export type LlmErrorCode =
 
 export const LLM_CONTRACT_VERSIONS = {
   schedule: 'schedule/v1',
-  beat: 'beat/v1',
-  dialogue: 'dialogue/v1',
-  injection: 'injection/v1',
+  beat: 'beat/v2',
+  dialogue: 'dialogue/v2',
+  injection: 'injection/v2',
   summary: 'summary/v1',
   director: 'director/v1',
   sceneIntent: 'scene-intent/v1',
-  sceneResponse: 'scene-response/v1',
+  sceneResponse: 'scene-response/v2',
   chapter: 'chapter/v1',
 } as const
 

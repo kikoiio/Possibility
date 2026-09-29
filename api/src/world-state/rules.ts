@@ -23,7 +23,8 @@ export interface ActionPlan {
   statePersonId?: string
   statePatch?: { location?: string; activity?: string; mood?: string; goal?: string; lastBeatSimTime?: string }
   storyEvents?: { simTime: string; title: string; description: string }[]
-  stateMemories?: { type: 'thought' | 'timeline' | 'relationship' | 'world'; content: string; importance: number }[]
+  stateMemories?: { type: 'thought' | 'timeline' | 'relationship' | 'world'; content: string; importance: number;
+    mentions?: string[]; location?: string | null; topics?: string[] }[]
   resultSimTime?: string
   dialogueTurn?: { dialogueId: string; speakerId: string; turnIndex: number; participantIds: string[]; closes: boolean }
   dialogueStart?: { dialogueId: string; participantIds: string[]; location: string; turnLimit: number }

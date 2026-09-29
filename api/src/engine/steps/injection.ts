@@ -60,6 +60,7 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
             parse: raw => normalizeBeatJson(
               parseContractObject(raw, LLM_CONTRACT_VERSIONS.injection), locationNames, windowMinutes,
               LLM_CONTRACT_VERSIONS.injection,
+              input.ctx.others.map((o) => ({ id: o.person.id, name: o.person.name })),
             ) },
         )
         return { value: { beat }, llmCalls: opts?.reserve?.calls ?? llmCalls }

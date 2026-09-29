@@ -12,14 +12,14 @@ export type WorldAction =
       acceptedCommitments?: { id: string; personId: string; title: string; kind: 'meeting' | 'help'; location: string; dueSim: string }[];
       privateEffects?: {
         memories: { id: string; personId: string; type: 'thought' | 'relationship'; content: string; importance: number;
-          simTime: string; createdAt: string }[]
+          simTime: string; createdAt: string; mentions?: string[]; location?: string | null; topics?: string[] }[]
         messages: { id: string; senderPersonId: string; recipientPersonId: string; content: string; location: string;
           simTime: string; createdAt: string }[]
       } }
   | { type: 'dialogue_start'; dialogueId: string; participantIds: string[]; location: string; turnLimit: number }
   | { type: 'scene_open'; dialogueId: string; visitorId: string; participantIds: string[]; location: string; turnLimit: number }
   | { type: 'dialogue_turn'; dialogueId: string; speakerId: string; turnIndex: number; utterance: string; thought: string;
-      memory: { content: string; importance: number } | null; shouldEnd: boolean }
+      memory: { content: string; importance: number; mentions?: string[]; location?: string | null; topics?: string[] } | null; shouldEnd: boolean }
   | { type: 'clock_advance'; from: string; to: string; observedAt: string }
   | { type: 'simulation_checkpoint'; personId: string; lastBeatSimTime: string }
   | { type: 'dialogue_recovery'; personId: string; dialogueId: string }
@@ -40,7 +40,8 @@ export type WorldAction =
       patch: { location?: string; activity?: string; mood?: string; goal?: string; lastBeatSimTime?: string }
       advanceTo?: string
       events: { simTime: string; title: string; description: string }[]
-      memories: { type: 'thought' | 'timeline' | 'relationship' | 'world'; content: string; importance: number }[]
+      memories: { type: 'thought' | 'timeline' | 'relationship' | 'world'; content: string; importance: number;
+        mentions?: string[]; location?: string | null; topics?: string[] }[]
     }
 
 export interface WorldCommandInput {
