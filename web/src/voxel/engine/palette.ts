@@ -52,6 +52,12 @@ export interface ShadowConfig {
   normalBias: number
   /** PCF 柔和半径 */
   radius: number
+  /**
+   * 阴影开启时环境光系数（0–1）。阴影的明暗差来自直射光占比：环境光打满（=S1 观感）
+   * 时直射只剩削顶余量，阴影不可见；开启阴影时环境光按此系数压低，让直射光扛起
+   * 受光面亮度（受光面≈S1，背光/阴影面变暗），关闭阴影时回到 1（N1 等价观感）。
+   */
+  ambientScale: number
 }
 
 /** 主题调色数据模块出口 */

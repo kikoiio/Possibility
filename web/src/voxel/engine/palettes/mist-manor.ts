@@ -23,7 +23,7 @@ const keyframes: PaletteKeyframe[] = [
     sunLightColor: [1, 0.85, 0.6],
     sunLightIntensity: 0,
     moonLightColor: [0.6, 0.72, 1.0],
-    moonLightIntensity: 0.22,
+    moonLightIntensity: 0.3,
     skyZenith: [0.02, 0.03, 0.09],
     skyHorizon: [0.05, 0.07, 0.16],
     fogColor: [0.05, 0.07, 0.16],
@@ -49,7 +49,7 @@ const keyframes: PaletteKeyframe[] = [
     // 夜半与晨昏交界
     elevation: -0.1,
     sunLightColor: [1, 0.7, 0.45],
-    sunLightIntensity: 0.08,
+    sunLightIntensity: 0.15,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0.12,
     skyZenith: [0.1, 0.09, 0.22],
@@ -77,7 +77,7 @@ const keyframes: PaletteKeyframe[] = [
     // 晨昏金色（旧 DUSK_SKY / DUSK_TINT）
     elevation: 0.15,
     sunLightColor: [1, 0.6, 0.35],
-    sunLightIntensity: 0.4,
+    sunLightIntensity: 0.5,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0.04,
     skyZenith: [0.35, 0.45, 0.7],
@@ -105,7 +105,7 @@ const keyframes: PaletteKeyframe[] = [
     // 日间
     elevation: 0.5,
     sunLightColor: [1, 0.9, 0.75],
-    sunLightIntensity: 0.85,
+    sunLightIntensity: 1.1,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0,
     skyZenith: [0.3, 0.55, 0.85],
@@ -133,7 +133,7 @@ const keyframes: PaletteKeyframe[] = [
     // 正午（旧 DAY_SKY / DAY_TINT / DEFAULT_BAKE_ENV 原值）
     elevation: 1,
     sunLightColor: [1, 0.95, 0.85],
-    sunLightIntensity: 1.0,
+    sunLightIntensity: 1.3,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0,
     skyZenith: [0.25, 0.5, 0.9],
@@ -166,8 +166,12 @@ export const MIST_MANOR_PALETTE: ThemePalette = {
   aoCurve: [0.45, 0.65, 0.85, 1.0],
   fogDensityScale: 0.018,
   weatherGray: [0.541, 0.576, 0.62], // 0x8a939e
-  ambientLift: 3.0, // T7 标定基准：关直射时观感 = S1
-  shadow: { enabled: true, mapSize: 2048, softwareMapSize: 1024, bias: -0.0002, normalBias: 0.6, radius: 4 },
+  ambientLift: Math.PI, // T7 标定:Lambert BRDF 1/π,环境光 π(阴影关闭时)观感 = S1;开启时按 shadow.ambientScale 压低给直射让位
+  shadow: {
+    enabled: true, mapSize: 2048, softwareMapSize: 1024, bias: -0.0002, normalBias: 0.6, radius: 4,
+    // 阴影开启时环境光 ×0.58：受光面由直射光补足到≈S1,阴影面 0.58 → 对比≈40%,清晰可辨
+    ambientScale: 0.58,
+  },
 }
 
 /** 旧 DEFAULT_BAKE_ENV 的等价物：正午档关键帧（mesher 缺省烘焙环境） */

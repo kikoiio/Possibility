@@ -74,7 +74,7 @@ export class VoxelRenderer {
     this.three = new THREE.WebGLRenderer({ canvas, antialias: false })
     this.three.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.three.shadowMap.enabled = true
-    this.three.shadowMap.type = THREE.PCFSoftShadowMap
+    this.three.shadowMap.type = THREE.PCFShadowMap // PCFSoft 已在 r186 移除;radius 柔化由 shadow.radius 承担
     this.resize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height)
     this.sky = new SkyDome()
     this.scene.add(this.sky.mesh)
@@ -171,10 +171,12 @@ export class VoxelRenderer {
   setDirectLight(direct: ResolvedPalette['direct'], shadowCfg: ShadowConfig, ambientLift: number): void {
     if (!this.three || !this.directLight || !this.ambientLight) return
     this.directDir = direct.dir
-    this.ambientLight.intensity = ambientLift
     const light = this.directLight
     light.color.setRGB(direct.color[0], direct.color[1], direct.color[2])
     light.intensity = direct.intensity
+    // 环境光基底：阴影开启时按 ambientScale 压低，给直射光让出明暗差余量（否则阴影被削顶抹平）;
+    // 阴影关闭/直射熄灭时回满 ambientLift → N1「关阴影=S1 观感」
+    this.ambientLight.intensity = ambientLift * (shadowCfg.enabled && direct.intensity > 0.001 ? shadowCfg.ambientScale : 1)
     if (this.three.shadowMap.enabled !== shadowCfg.enabled) {
       this.three.shadowMap.enabled = shadowCfg.enabled
       // 运行时切换阴影管线需要重编译材质

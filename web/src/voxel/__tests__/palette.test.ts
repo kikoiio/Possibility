@@ -57,10 +57,10 @@ describe('samplePalette', () => {
 describe('samplePalette 直射光', () => {
   it('正午直射来自太阳方位,午夜来自月亮方位且偏冷', () => {
     const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
-    expect(noon.direct.intensity).toBeCloseTo(1.0)
+    expect(noon.direct.intensity).toBeCloseTo(1.3)
     expect(noon.direct.dir.y).toBeGreaterThan(0.8) // 太阳高悬
     const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
-    expect(midnight.direct.intensity).toBeCloseTo(0.22)
+    expect(midnight.direct.intensity).toBeCloseTo(0.3)
     expect(midnight.direct.dir.y).toBeGreaterThan(0.8) // 月亮高悬(夜)
     expect(midnight.direct.color[2]).toBeGreaterThan(midnight.direct.color[0]) // 冷色
     // 与天空穹顶天体方位同源

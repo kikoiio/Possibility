@@ -176,8 +176,9 @@ test.describe('S1 T13 视觉走查', () => {
     const fs = await import('node:fs')
     const original = fs.readFileSync(palettePath, 'utf-8')
     // 正午档 skyZenith/skyHorizon/fogColor → 醒目异色（品红）
+    // （S2a 起关键帧在 elevation 与 skyZenith 之间插入了直射光字段，正则容许中间行）
     const modified = original.replace(
-      /(elevation: 1,\n\s+skyZenith: )\[[^\]]+\](,\n\s+skyHorizon: )\[[^\]]+\](,\n\s+fogColor: )\[[^\]]+\]/,
+      /(elevation: 1,(?:\n\s+\w+:[^\n]*)*\n\s+skyZenith: )\[[^\]]+\](,\n\s+skyHorizon: )\[[^\]]+\](,\n\s+fogColor: )\[[^\]]+\]/,
       '$1[0.9, 0.1, 0.8]$2[0.95, 0.3, 0.85]$3[0.95, 0.3, 0.85]',
     )
     expect(modified).not.toBe(original)
