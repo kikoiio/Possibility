@@ -11,6 +11,23 @@ export type Memory = typeof memories.$inferSelect
 export const SUMMARY_THRESHOLD = 40
 export const SUMMARY_BATCH = 30
 
+/**
+ * S2 摘要层级推导（唯一来源，D6）：显式 level 优先；
+ * 迁移前旧行与旧快照冻结证据缺 level 时按「summary 即 L1」推导（N4）。
+ */
+export function summaryLevel(m: { level?: number | null; type: string }): 1 | 2 | null {
+  const level = m.level ?? (m.type === 'summary' ? 1 : null)
+  return level === 1 || level === 2 ? level : null
+}
+
+/** S2 重要性聚合（F4）：round((批次max + 批次mean)/2)，clamp 1-10；纯函数，无 LLM */
+export function aggregateImportance(sources: { importance: number }[]): number {
+  if (!sources.length) return 5
+  const max = Math.max(...sources.map((s) => s.importance))
+  const mean = sources.reduce((acc, s) => acc + s.importance, 0) / sources.length
+  return clampImportance((max + mean) / 2)
+}
+
 export function parseAncestorIds(timeline: Timeline): string[] {
   try {
     const v = JSON.parse(timeline.ancestorIdsJson || '[]') as unknown
@@ -242,6 +259,64 @@ export async function oldestUnsummarized(
         bucketCondition(timeline, main),
         eq(memories.summarized, false),
         ne(memories.type, 'summary'),
+      ),
+    )
+    .orderBy(asc(memories.createdAt))
+    .limit(n)
+    .all()
+}
+
+/**
+ * S2 压缩源层级条件（D1）：0 = 原文（level IS NULL，与既有 ne(type,'summary') 等价），
+ * 1 = 未上卷的 L1（level=1）。L2 封顶，永不为源。
+ */
+function sourceLevelCondition(sourceLevel: 0 | 1) {
+  return sourceLevel === 0 ? isNull(memories.level) : eq(memories.level, sourceLevel)
+}
+
+/** needsSummary 的泛化（S2 F2/F3）：指定源层级的未压缩条目是否超阈值（限量 threshold+1 行，N3） */
+export async function needsCompression(
+  db: Db,
+  personId: string,
+  timeline: Timeline,
+  sourceLevel: 0 | 1,
+  threshold: number,
+): Promise<boolean> {
+  const main = await mainTimelineOf(db, timeline.worldId)
+  const rows = await db
+    .select({ id: memories.id })
+    .from(memories)
+    .where(
+      and(
+        eq(memories.personId, personId),
+        bucketCondition(timeline, main),
+        eq(memories.summarized, false),
+        sourceLevelCondition(sourceLevel),
+      ),
+    )
+    .limit(threshold + 1)
+    .all()
+  return rows.length > threshold
+}
+
+/** oldestUnsummarized 的泛化（S2 F2/F3）：指定源层级最老的 n 条待压缩条目，按写入时间升序 */
+export async function oldestCompressible(
+  db: Db,
+  personId: string,
+  timeline: Timeline,
+  sourceLevel: 0 | 1,
+  n: number,
+): Promise<Memory[]> {
+  const main = await mainTimelineOf(db, timeline.worldId)
+  return db
+    .select()
+    .from(memories)
+    .where(
+      and(
+        eq(memories.personId, personId),
+        bucketCondition(timeline, main),
+        eq(memories.summarized, false),
+        sourceLevelCondition(sourceLevel),
       ),
     )
     .orderBy(asc(memories.createdAt))

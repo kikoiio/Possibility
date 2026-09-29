@@ -26,7 +26,11 @@ export type WorldAction =
   | { type: 'schedule_set'; personId: string; worldDate: string; generatedAt: string;
       items: { start: string; end: string; location: string; activity: string; kind?: 'sleep' }[] }
   | { type: 'memory_summary'; personId: string; sourceMemoryIds: string[]; summaryId: string; content: string; importance: number;
-      simTime: string; createdAt: string }
+      simTime: string; createdAt: string;
+      /** S2：目标层级（缺省 1 = L1；2 = L2 封顶）；旧命令缺省按 L1 语义回放 */
+      level?: 1 | 2;
+      /** S2：act 侧确定性合并的情境标注（mentions 为人物 ID），随命令负载双轨物化 */
+      mentions?: string[]; location?: string | null; topics?: string[] }
   | { type: 'memory_correct'; memoryId: string; personId: string;
       before: { type: string; content: string; importance: number; simTime: string | null; createdAt: string; summarized: boolean };
       after: { content: string; importance: number } }

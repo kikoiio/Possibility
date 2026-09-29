@@ -728,3 +728,78 @@ describe('versioned world command', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('memory_summary S2 分层校验(F6/AC6)', () => {
+  async function seedSources(fixture: Fixture) {
+    await fixture.db.insert(memories).values([
+      { id: 'raw-1', personId: 'a', timelineId: 'home-main', type: 'timeline', content: '原文一',
+        simTime: '2026-09-20T00:00:00Z', createdAt: '2026-09-20T00:00:00Z', importance: 3, summarized: false, level: null },
+      { id: 'raw-2', personId: 'a', timelineId: 'home-main', type: 'timeline', content: '原文二',
+        simTime: '2026-09-20T01:00:00Z', createdAt: '2026-09-20T01:00:00Z', importance: 9, summarized: false, level: null },
+      { id: 'l1-a', personId: 'a', timelineId: 'home-main', type: 'summary', content: 'L1 摘要甲',
+        simTime: '2026-09-20T02:00:00Z', createdAt: '2026-09-20T02:00:00Z', importance: 5, summarized: false, level: 1 },
+      { id: 'l1-b', personId: 'a', timelineId: 'home-main', type: 'summary', content: 'L1 摘要乙',
+        simTime: '2026-09-20T03:00:00Z', createdAt: '2026-09-20T03:00:00Z', importance: 6, summarized: false, level: 1 },
+    ])
+  }
+  const summaryAction = (over: Record<string, unknown> = {}) => ({
+    type: 'memory_summary' as const, personId: 'a', sourceMemoryIds: ['raw-1', 'raw-2'],
+    summaryId: 'summary:test', content: '一段摘要', importance: 6,
+    simTime: '2026-09-20T01:00:00Z', createdAt: '2026-09-20T01:00:00Z', ...over,
+  })
+
+  it('L2 命令落库 level=2 与合并标注,源 L1 标记退出', async () => {
+    const fixture = await setup()
+    await seedSources(fixture)
+    await commitWorldCommand(fixture.db, { ...base, id: 'l2-commit', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ level: 2, sourceMemoryIds: ['l1-a', 'l1-b'], summaryId: 'summary:l2',
+        simTime: '2026-09-20T03:00:00Z', createdAt: '2026-09-20T03:00:00Z',
+        mentions: ['b'], location: 'Cafe', topics: ['葬礼', '伞'] }) })
+    const row = await fixture.db.select().from(memories).where(eq(memories.id, 'summary:l2')).get()
+    expect(row).toMatchObject({ type: 'summary', level: 2, locationName: 'Cafe',
+      mentionedPersonIdsJson: '["b"]', topicsJson: '["葬礼","伞"]' })
+    expect((await fixture.db.select().from(memories).where(eq(memories.id, 'l1-a')).get())?.summarized).toBe(true)
+    expect((await fixture.db.select().from(memories).where(eq(memories.id, 'l1-b')).get())?.summarized).toBe(true)
+  })
+
+  it('缺省 level 按 L1;落库 level=1,无标注时标注列为 NULL', async () => {
+    const fixture = await setup()
+    await seedSources(fixture)
+    await commitWorldCommand(fixture.db, { ...base, id: 'l1-commit', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ summaryId: 'summary:l1' }) })
+    const row = await fixture.db.select().from(memories).where(eq(memories.id, 'summary:l1')).get()
+    expect(row).toMatchObject({ type: 'summary', level: 1, locationName: null,
+      mentionedPersonIdsJson: null, topicsJson: null })
+  })
+
+  it('拒绝:L2 的源含原文;L1 的源含摘要;已上卷的 L1;level=3;非 system 角色', async () => {
+    const fixture = await setup()
+    await seedSources(fixture)
+    const l2 = { level: 2 as const, summaryId: 'summary:bad-l2', simTime: '2026-09-20T01:00:00Z', createdAt: '2026-09-20T01:00:00Z' }
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-1', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ ...l2, sourceMemoryIds: ['raw-1', 'raw-2'] }) })).rejects.toMatchObject({ status: 409 })
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-2', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ sourceMemoryIds: ['raw-1', 'l1-a'], simTime: '2026-09-20T02:00:00Z', createdAt: '2026-09-20T02:00:00Z' }) }))
+      .rejects.toMatchObject({ status: 409 })
+    await fixture.db.update(memories).set({ summarized: true }).where(eq(memories.id, 'l1-a'))
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-3', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ level: 2, sourceMemoryIds: ['l1-a', 'l1-b'], simTime: '2026-09-20T03:00:00Z', createdAt: '2026-09-20T03:00:00Z' }) }))
+      .rejects.toMatchObject({ status: 409 })
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-4', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ level: 3 as never }) })).rejects.toMatchObject({ status: 400 })
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-5', expectedVersion: 0,
+      action: summaryAction() })).rejects.toMatchObject({ status: 403 })
+    expect(await fixture.db.select().from(worldCommands).all()).toEqual([])
+  })
+
+  it('拒绝:跨人物源', async () => {
+    const fixture = await setup()
+    await seedSources(fixture)
+    await fixture.db.insert(memories).values({ id: 'raw-b', personId: 'b', timelineId: 'home-main',
+      type: 'timeline', content: '别人的记忆', simTime: '2026-09-20T01:30:00Z', createdAt: '2026-09-20T01:30:00Z',
+      importance: 5, summarized: false, level: null })
+    await expect(commitWorldCommand(fixture.db, { ...base, id: 'rej-x', actorKind: 'system', expectedVersion: 0,
+      action: summaryAction({ sourceMemoryIds: ['raw-1', 'raw-b'], simTime: '2026-09-20T01:30:00Z', createdAt: '2026-09-20T01:30:00Z' }) }))
+      .rejects.toMatchObject({ status: 409 })
+  })
+})

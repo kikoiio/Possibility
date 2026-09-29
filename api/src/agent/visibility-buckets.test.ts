@@ -17,7 +17,7 @@ function memory(id: string, timelineId: string | null, createdAt: string): Memor
   return {
     id, personId: 'p', timelineId, type: 'timeline', content: id, simTime: null,
     createdAt, importance: 5, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null,
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null,
   }
 }
 

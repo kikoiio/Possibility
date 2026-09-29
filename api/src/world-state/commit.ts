@@ -156,7 +156,9 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         command, advance, fact,
         db.insert(memories).values({ id: summary.summaryId, personId: summary.personId, timelineId: timeline.id,
           type: 'summary', content: summary.content, simTime: summary.simTime, createdAt: summary.createdAt,
-          importance: summary.importance, summarized: false }),
+          importance: summary.importance, summarized: false, level: summary.level,
+          mentionedPersonIdsJson: summary.mentions.length ? JSON.stringify(summary.mentions) : null,
+          locationName: summary.location, topicsJson: summary.topics.length ? JSON.stringify(summary.topics) : null }),
         ...summary.sourceMemoryIds.map(memoryId => db.update(memories).set({ summarized: true }).where(and(
           eq(memories.id, memoryId), eq(memories.personId, summary.personId), eq(memories.summarized, false),
         ))),

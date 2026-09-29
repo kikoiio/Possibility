@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { commitments, dialogueTurns, dialogues, memories, personStates, persons, schedules, timelines, worldFacts, worldPersons, worlds } from '../db/schema'
+import { summaryLevel } from '../agent/memory'
 import type { WorldAction } from './types'
 import { WorldStateError } from './types'
 import { readWorldState } from './query'
@@ -37,7 +38,7 @@ export interface ActionPlan {
   simulationCheckpoint?: { personId: string; lastBeatSimTime: string }
   dialogueRecovery?: { personId: string; dialogueId: string }
   memorySummary?: { personId: string; sourceMemoryIds: string[]; summaryId: string; content: string; importance: number;
-    simTime: string; createdAt: string }
+    simTime: string; createdAt: string; level: 1 | 2; mentions: string[]; location: string | null; topics: string[] }
   memoryMaintenance?: { operation: 'correct' | 'forget'; memoryId: string; personId: string;
     before: { type: string; content: string; importance: number; simTime: string | null; createdAt: string; summarized: boolean };
     after?: { content: string; importance: number } }
@@ -221,11 +222,20 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
 
   if (action.type === 'memory_summary') {
     const sourceIds = action.sourceMemoryIds
+    // S2：目标层缺省 1（旧命令按 L1 语义）；仅允许 1|2，L2 封顶
+    const targetLevel = action.level ?? 1
     if (typeof action.personId !== 'string' || !action.personId || !Array.isArray(sourceIds)
       || sourceIds.length < 1 || sourceIds.length > 30 || sourceIds.some(id => typeof id !== 'string' || !id)
       || new Set(sourceIds).size !== sourceIds.length || typeof action.summaryId !== 'string' || !action.summaryId
       || typeof action.content !== 'string' || !action.content.trim() || action.content.length > 4000
-      || !Number.isFinite(action.importance) || action.importance < 1 || action.importance > 10) {
+      || !Number.isFinite(action.importance) || action.importance < 1 || action.importance > 10
+      || (targetLevel !== 1 && targetLevel !== 2)
+      || (action.mentions !== undefined && (!Array.isArray(action.mentions) || action.mentions.length > 20
+        || action.mentions.some(id => typeof id !== 'string' || !id)))
+      || (action.topics !== undefined && (!Array.isArray(action.topics) || action.topics.length > 3
+        || action.topics.some(t => typeof t !== 'string' || !t || t.length > 50)))
+      || (action.location !== undefined && action.location !== null
+        && (typeof action.location !== 'string' || !action.location || action.location.length > 200))) {
       throw new WorldStateError('记忆摘要参数无效', 400)
     }
     const member = await db.select().from(worldPersons).where(and(
@@ -233,20 +243,27 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     )).get()
     const sourceRows = await db.select().from(memories).where(inArray(memories.id, sourceIds)).all()
     const allowedBucket = (id: string | null) => id === timelineId || (id === null && timeline.parentTimelineId === null)
+    // S2：源恰为目标的下一层——L1 的源是原文（推导层级 null），L2 的源是未上卷的 L1
+    const expectedSourceLevel = targetLevel === 1 ? null : 1
     if (!member || sourceRows.length !== sourceIds.length || sourceRows.some(row => row.personId !== action.personId
-      || row.summarized || row.type === 'summary' || !allowedBucket(row.timelineId))) {
+      || row.summarized || summaryLevel(row) !== expectedSourceLevel || !allowedBucket(row.timelineId))) {
       throw new WorldStateError('待压缩记忆已变化或不属于该宇宙', 409)
     }
     const latest = sourceIds.map(id => sourceRows.find(row => row.id === id)!).at(-1)!
     if (action.createdAt !== latest.createdAt || action.simTime !== (latest.simTime ?? latest.createdAt)) {
       throw new WorldStateError('摘要时间水位与来源记忆不一致', 409)
     }
+    const annotations = {
+      mentions: action.mentions ?? [], location: action.location ?? null, topics: action.topics ?? [],
+    }
     return { factType: 'memory_summary', subjectId: action.personId,
       value: { personId: action.personId, sourceMemoryIds: sourceIds, summaryId: action.summaryId,
-        content: action.content, importance: action.importance, simTime: action.simTime, createdAt: action.createdAt },
+        content: action.content, importance: action.importance, simTime: action.simTime, createdAt: action.createdAt,
+        level: targetLevel, ...annotations },
       visibility: 'private', eventTitle: '居民记忆摘要已更新', eventDescription: '居民的私有记忆已压缩并保留来源。',
       memorySummary: { personId: action.personId, sourceMemoryIds: sourceIds, summaryId: action.summaryId,
-        content: action.content, importance: action.importance, simTime: action.simTime, createdAt: action.createdAt } }
+        content: action.content, importance: action.importance, simTime: action.simTime, createdAt: action.createdAt,
+        level: targetLevel, ...annotations } }
   }
 
   if (action.type === 'memory_correct' || action.type === 'memory_forget') {

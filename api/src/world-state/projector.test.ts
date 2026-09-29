@@ -301,7 +301,7 @@ describe('pure projection reducer skeleton', () => {
     const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [])
     const memory = (id: string, content: string) => ({ id, personId: 'a', timelineId: 'timeline', type: 'thought',
       content, simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 5, summarized: false,
-      mentionedPersonIdsJson: null, locationName: null, topicsJson: null })
+      mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null })
     baseline.rows.memories = [memory('m1', 'First'), memory('m2', 'Second'), memory('m3', 'Editable')]
     const summary = history('memory_summary', { type: 'memory_summary', personId: 'a', sourceMemoryIds: ['m1', 'm2'],
       summaryId: 'summary', content: 'First and second', importance: 7, simTime: WORLD_TIME, createdAt: WORLD_TIME }, 1)

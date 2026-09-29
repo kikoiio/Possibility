@@ -1,5 +1,6 @@
 import type { worldCommands, worldFacts } from '../db/schema'
 import { validateKnowledgeChain } from '../agent/knowledge'
+import { summaryLevel } from '../agent/memory'
 import { PROJECTION_DOMAINS, type ProjectionBaseline, type ProjectionDomain, type ProjectionRows } from './model'
 
 export interface ReplayInput {
@@ -349,7 +350,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         }
         appendMemory({ id: `${command.id}:memory:${memoryIndex}`, personId, timelineId: input.timelineId,
           type: memory.type, content: memory.content, simTime: advanceTo, createdAt: command.createdAt,
-          importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
+          importance: memory.importance, summarized: false, level: null, ...annotationsOf(memory) }, command.id, command.resultVersion)
       })
       continue
     }
@@ -431,14 +432,14 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         utterance, thought, simTime: projection.simTime, createdAt: command.createdAt })
       appendMemory({ id: `${command.id}:thought`, personId: speakerId, timelineId: input.timelineId,
         type: 'thought', content: thought, simTime: projection.simTime, createdAt: command.createdAt,
-        importance: 5, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null },
+        importance: 5, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null },
       command.id, command.resultVersion)
       if (action.memory && typeof action.memory === 'object' && !Array.isArray(action.memory)) {
         const memory = action.memory as Record<string, unknown>
         if (typeof memory.content === 'string' && typeof memory.importance === 'number') {
           appendMemory({ id: `${command.id}:memory`, personId: speakerId, timelineId: input.timelineId,
             type: 'relationship', content: memory.content, simTime: projection.simTime, createdAt: command.createdAt,
-            importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
+            importance: memory.importance, summarized: false, level: null, ...annotationsOf(memory) }, command.id, command.resultVersion)
         }
       }
       const counts = new Map<string, number>()
@@ -512,7 +513,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
           || typeof memory.importance !== 'number') return
         appendMemory({ id: memory.id, personId: memory.personId, timelineId: input.timelineId,
           type: memory.type, content: memory.content, simTime: memory.simTime, createdAt: memory.createdAt,
-          importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
+          importance: memory.importance, summarized: false, level: null, ...annotationsOf(memory) }, command.id, command.resultVersion)
       })
       const effectMessages = Array.isArray(privateEffects?.messages) ? privateEffects!.messages : []
       effectMessages.forEach((item) => {
@@ -606,9 +607,17 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       const importance = typeof action.importance === 'number' ? action.importance : 0
       const simTime = typeof action.simTime === 'string' ? action.simTime : ''
       const createdAt = typeof action.createdAt === 'string' ? action.createdAt : ''
+      // S2：目标层缺省 1（旧命令按 L1 语义回放，N4）；源恰为目标的下一层——
+      // L1 的源推导层级为 null（原文），L2 的源为 L1。旧负载源皆为原文，校验结果与升级前一致。
+      const targetLevel = action.level === 2 ? 2 : 1
+      const summaryAnnotations = annotationsOf(action as Record<string, unknown>)
+      const mentionedPersonIdsJson = summaryAnnotations.mentionedPersonIdsJson
+      const locationName = summaryAnnotations.locationName
+      const topicsJson = summaryAnnotations.topicsJson
       const sources = sourceMemoryIds.map(id => projection.memories.find(memory => memory.id === id))
       if (!personId || !summaryId || !content || !simTime || !createdAt || !sourceMemoryIds.length
-        || sources.some(memory => !memory || memory.personId !== personId || memory.summarized || memory.type === 'summary')) {
+        || sources.some(memory => !memory || memory.personId !== personId || memory.summarized
+          || summaryLevel(memory!) !== (targetLevel === 1 ? null : 1))) {
         report({ kind: sources.some(memory => !memory) ? 'missing' : 'mismatch', domain: 'memories',
           commandId: command.id, recordId: summaryId || undefined, version: command.resultVersion,
           reasonCode: 'memory_summary_source_invalid' })
@@ -616,8 +625,8 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       }
       for (const source of sources) source!.summarized = true
       appendMemory({ id: summaryId, personId, timelineId: input.timelineId, type: 'summary', content,
-        simTime, createdAt, importance, summarized: false,
-        mentionedPersonIdsJson: null, locationName: null, topicsJson: null }, command.id, command.resultVersion)
+        simTime, createdAt, importance, summarized: false, level: targetLevel,
+        mentionedPersonIdsJson, locationName, topicsJson }, command.id, command.resultVersion)
       continue
     }
     if (action.type === 'memory_correct' || action.type === 'memory_forget') {
@@ -809,7 +818,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       } else {
         projection.memories.push({ id: memoryId, personId: item.personId, timelineId: input.timelineId,
           type: 'relationship', content: memoryText, simTime: projection.simTime, createdAt: command.createdAt,
-          importance: 8, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null })
+          importance: 8, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null })
       }
       if (next === 'fulfilled' || next === 'missed') {
         const stateIndexValue = stateIndex(item.personId)

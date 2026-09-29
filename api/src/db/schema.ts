@@ -248,6 +248,8 @@ export const memories = sqliteTable('memories', {
   mentionedPersonIdsJson: text('mentioned_person_ids_json'),
   locationName: text('location_name'),
   topicsJson: text('topics_json'),
+  // S2 摘要层级（NULL = 原文；1 = L1 由原文压出；2 = L2 由 L1 压出，封顶）
+  level: integer('level'),
 }, t => [
   index('memories_person_timeline_created').on(t.personId, t.timelineId, t.createdAt),
   index('memories_person_timeline_importance').on(t.personId, t.timelineId, t.importance, t.createdAt),

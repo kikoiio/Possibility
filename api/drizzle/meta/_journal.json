@@ -190,6 +190,13 @@
       "when": 1790682503343,
       "tag": "0026_sleepy_viper",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1790700000000,
+      "tag": "0027_hierarchical_summary",
+      "breakpoints": true
     }
   ]
 }

@@ -38,10 +38,10 @@ it('replays every normal command category through the real commit path with zero
     lastBeatSimTime: null, updatedRealAt: WORLD_TIME }
   const editableMemory = { id: 'editable-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
     content: 'The old note may be useful.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 4, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null }
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null }
   const forgottenMemory = { id: 'forgotten-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
     content: 'A detail that can be forgotten.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 2, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null }
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null }
   await f.db.insert(persons).values([
     { id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME },
     { id: 'visitor', userId: 'owner', name: 'Visitor', modelJson: '{}', isUser: true, createdAt: WORLD_TIME },
@@ -150,6 +150,12 @@ it('replays every normal command category through the real commit path with zero
     sourceMemoryIds: ['matrix-state:memory:0', 'scene-thought'], summaryId: 'matrix-summary-memory',
     content: 'Ada remembered the rain and the planned meeting.', importance: 7, simTime: AFTER_CLOCK,
     createdAt: WORLD_TIME }, { actorKind: 'system' })
+  // S2：L2 上卷——源为刚压出的 L1，负载带层级与合并标注，双轨物化一致
+  await commit('matrix-summary-l2', { type: 'memory_summary', personId: 'resident',
+    sourceMemoryIds: ['matrix-summary-memory'], summaryId: 'matrix-summary-l2-memory',
+    content: 'A week of rain, warnings and meetings, condensed.', importance: 6, level: 2,
+    mentions: ['newcomer'], location: 'Cafe', topics: ['rain'],
+    simTime: AFTER_CLOCK, createdAt: WORLD_TIME }, { actorKind: 'system' })
   await commit('matrix-memory-correct', { type: 'memory_correct', memoryId: 'editable-memory', personId: 'resident',
     before: { type: 'thought', content: 'The old note may be useful.', importance: 4, simTime: WORLD_TIME,
       createdAt: WORLD_TIME, summarized: false }, after: { content: 'The corrected note is useful.', importance: 6 } })

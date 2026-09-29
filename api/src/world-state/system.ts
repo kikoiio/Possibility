@@ -203,6 +203,11 @@ export async function recordMemorySummary(db: Db, p: {
   importance: number
   simTime: string
   createdAt: string
+  /** S2：目标层级（缺省 1）与 act 侧合并标注 */
+  level?: 1 | 2
+  mentions?: string[]
+  location?: string | null
+  topics?: string[]
   engineTickLeaseToken?: string
 }) {
   const world = await db.select().from(worlds).where(eq(worlds.id, p.worldId)).get()
@@ -213,6 +218,7 @@ export async function recordMemorySummary(db: Db, p: {
   const action: Extract<WorldAction, { type: 'memory_summary' }> = {
     type: 'memory_summary', personId: p.personId, sourceMemoryIds: p.sourceMemoryIds,
     summaryId: `summary:${hash}`, content: p.content, importance: p.importance, simTime: p.simTime, createdAt: p.createdAt,
+    level: p.level, mentions: p.mentions, location: p.location, topics: p.topics,
   }
   const id = `system:memory-summary:${hash}`
   for (let attempt = 0; attempt < 3; attempt++) {
