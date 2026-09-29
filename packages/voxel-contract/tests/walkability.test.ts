@@ -127,6 +127,16 @@ describe('validateWalkability R4 高差突变', () => {
     const issues = validateWalkability(doc, registry)
     expect(issues.filter((i) => i.code === 'walk-stairs')).toEqual([])
   })
+
+  it('主楼屋顶(支撑面是物体占据格)→ 豁免,不报 walk-stairs', () => {
+    // 回归:屋顶是可站立的人工面,但它不是「该走上去的台面」——支撑它的瓦片属物体占据格
+    const placed = applyEdits(flatWorld(40, 40), [
+      { kind: 'place-object', objectType: 'manor-main-house', anchor: at(12, 1, 12), rotation: 0 },
+    ]).document
+    const doc = { ...placed, locations: [{ name: '主楼', objectId: placed.objects[0].id }] }
+    const issues = validateWalkability(doc, registry)
+    expect(issues.filter((i) => i.code === 'walk-stairs')).toEqual([])
+  })
 })
 
 describe('validateWalkability R3 室内照明', () => {

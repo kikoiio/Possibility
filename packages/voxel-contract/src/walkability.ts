@@ -293,9 +293,11 @@ function checkStairs(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
   const { doc } = ctx
   // 人工结构格集:物体占据格 + 水平邻接格(排除自然山体)
   const artificial = new Set<string>()
+  const objectCellExact = new Set<string>() // 物体占据格(精确,用于排除「屋顶」误判)
   for (const entry of doc.objectCells) {
     for (const c of entry.cells) {
       artificial.add(key(c))
+      objectCellExact.add(key(c))
       for (const [dx, dz] of DIRS) artificial.add(key({ x: c.x + dx, y: c.y, z: c.z + dz }))
     }
   }
@@ -315,6 +317,8 @@ function checkStairs(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
         // 台面可经行走到达(台阶在别处)→ 合规;只拦「看得见但走不上」的人工台面
         if (flood.reached.has(hk)) break
         if (!artificial.has(hk) || reported.has(hk)) continue
+        // 支撑面本身是物体占据格(屋顶/墙顶)→ 是建筑封顶而非「该走上去的台面」,豁免
+        if (objectCellExact.has(key({ x: nx, y: ny - 1, z: nz }))) break
         reported.add(hk)
         issues.push({
           code: 'walk-stairs',

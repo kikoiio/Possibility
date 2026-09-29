@@ -49,7 +49,7 @@ function greenhouse(): Array<{ offset: VoxelCoord; block: string }> {
       const edge = x === 0 || x === W - 1 || z === 0 || z === D - 1
       if (!edge) continue
       const corner = (x === 0 || x === W - 1) && (z === 0 || z === D - 1)
-      const isDoor = z === D - 1 && x === Math.floor(W / 2) && y === 1
+      const isDoor = z === D - 1 && x === Math.floor(W / 2) && y <= 2 // S2b:门洞净高 ≥2(可行走性 R1)
       if (isDoor) continue
       cells.push(cell(x, y, z, corner ? 'wood-log' : 'glass'))
     }
