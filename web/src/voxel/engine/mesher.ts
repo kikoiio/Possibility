@@ -213,7 +213,8 @@ export class Mesher {
             const base = target.positions.length / 3
             const swaying = SWAY_BLOCKS.has(blockId)
             const fluid = type.category === 'fluid'
-            const terrainSurface = isTerrainBlock(this.registry, blockId)
+            const terrainSurface = !!this.world.doc.terrain
+              && isTerrainBlock(this.registry, blockId)
               && !isTerrainBlock(this.registry, this.world.getBlock({ x, y: y + 1, z }))
             // 下沉水面（S3a MC 式）：流体顶面角点 y 压到 0.875，与岸边侧面自然衔接
             const sinkTop = fluid && face.dir === 'py'
