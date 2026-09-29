@@ -96,6 +96,36 @@ export function ancestorCutoffs(timeline: Timeline, worldTimelines: Timeline[]):
   return cutoffs
 }
 
+/** SQL 析取桶：timelineId 为 null 表示主线遗留 NULL 桶；createdAtLte 为祖先链 cutoff */
+export interface MemoryBucket {
+  timelineId: string | null
+  createdAtLte?: string
+}
+
+/**
+ * 可见性桶的 SQL 化（S1）：与 selectVisibleMemories 同源同义——
+ * 本线桶(无 cutoff)∪ 祖先链各桶(realTime cutoff)∪ NULL 桶规则
+ * (主线自身查询全可见;分叉仅当主线在祖先链且限 cutoff 前;跨世界复用排除 NULL)。
+ * snapshot 分叉返回 null:冻结证据在应用侧,调用方走「snapshot + 本线 SQL」双源。
+ */
+export function visibilityBuckets(timeline: Timeline, worldTimelines: Timeline[], sharedAcrossWorlds: boolean): MemoryBucket[] | null {
+  if (readForkSnapshot(timeline)) return null
+  const buckets: MemoryBucket[] = [{ timelineId: timeline.id }]
+  const cutoffs = ancestorCutoffs(timeline, worldTimelines)
+  const main = worldTimelines.find((t) => t.worldId === timeline.worldId && !t.parentTimelineId)
+  for (const cutoff of cutoffs) {
+    buckets.push({ timelineId: cutoff.timelineId, createdAtLte: cutoff.realTime })
+  }
+  if (sharedAcrossWorlds) return buckets
+  if (!timeline.parentTimelineId) {
+    buckets.push({ timelineId: null })
+  } else {
+    const mainCutoff = main ? cutoffs.find((c) => c.timelineId === main.id) : undefined
+    if (mainCutoff) buckets.push({ timelineId: null, createdAtLte: mainCutoff.realTime })
+  }
+  return buckets
+}
+
 export function selectVisibleMemories(rows: Memory[], personId: string, timeline: Timeline, worldTimelines: Timeline[]): Memory[] {
   const own = rows.filter((m) => m.personId === personId && (m.timelineId === timeline.id
     || (!timeline.parentTimelineId && m.timelineId === null)))

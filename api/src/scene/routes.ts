@@ -12,6 +12,7 @@ import { buildScenePrompt, type DialogueTurnView } from '../agent/engine-prompt'
 import { containsExplicitInvitationRequest, parseSceneOutput } from './parse'
 import { eligibleAt, eligibleBoard } from './eligible'
 import { clampImportance } from '../agent/memory'
+import { retrievalConfig } from '../agent/retrieval-config'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { completeContract, configFromEnv } from '../llm/client'
@@ -529,7 +530,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
     let currentWorld = gate.world
     await touchWorldActivity(db, world.id)
 
-    const snapshot = await buildWorldSnapshot(db, world.id, tl.id)
+    const snapshot = await buildWorldSnapshot(db, world.id, tl.id, retrievalConfig(c.env))
     if (!snapshot) {
       await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '世界快照不存在' }) })
       return

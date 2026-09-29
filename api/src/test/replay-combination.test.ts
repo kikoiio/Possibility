@@ -37,9 +37,11 @@ it('replays every normal command category through the real commit path with zero
     location: 'Cafe', activity: 'Visiting', mood: 'Curious', goal: 'Talk', currentDialogueId: null,
     lastBeatSimTime: null, updatedRealAt: WORLD_TIME }
   const editableMemory = { id: 'editable-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
-    content: 'The old note may be useful.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 4, summarized: false }
+    content: 'The old note may be useful.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 4, summarized: false,
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null }
   const forgottenMemory = { id: 'forgotten-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
-    content: 'A detail that can be forgotten.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 2, summarized: false }
+    content: 'A detail that can be forgotten.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 2, summarized: false,
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null }
   await f.db.insert(persons).values([
     { id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME },
     { id: 'visitor', userId: 'owner', name: 'Visitor', modelJson: '{}', isUser: true, createdAt: WORLD_TIME },

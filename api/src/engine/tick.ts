@@ -10,6 +10,7 @@ import {
   type WorldSnapshot,
 } from '../agent/engine-context'
 import { needsSummary } from '../agent/memory'
+import { retrievalConfig } from '../agent/retrieval-config'
 import { budgetFromEnv, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
 import { worldReservation, type TickBudget } from './guard'
 import { planTickSteps } from './director'
@@ -143,7 +144,7 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
         worldSpeed: cfg.worldSpeed, maxElapsedSeconds: MAX_REAL_ELAPSED_SEC,
         engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN })
 
-      const snapshot = await buildWorldSnapshot(db, world.id, tl.id)
+      const snapshot = await buildWorldSnapshot(db, world.id, tl.id, retrievalConfig(env))
       if (!snapshot) {
         worldReport.timelines.push({ id: tl.id, simNow, steps: [] })
         continue

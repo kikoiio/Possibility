@@ -244,6 +244,23 @@ export const memories = sqliteTable('memories', {
   importance: integer('importance').notNull().default(5),
   // 已被某条 summary 压缩覆盖（不再进提示词，库中保留可回溯）
   summarized: integer('summarized', { mode: 'boolean' }).notNull().default(false),
+  // S1 情境标注（契约 v2 起随记忆写入；NULL = 旧数据/无标注）
+  mentionedPersonIdsJson: text('mentioned_person_ids_json'),
+  locationName: text('location_name'),
+  topicsJson: text('topics_json'),
+}, t => [
+  index('memories_person_timeline_created').on(t.personId, t.timelineId, t.createdAt),
+  index('memories_person_timeline_importance').on(t.personId, t.timelineId, t.importance, t.createdAt),
+])
+
+// 排练簿记（S1）：非世界状态——memories 行由命令日志投影重建，
+// 非命令派生列会在重建时丢失，故排练元数据独立成表
+export const memoryAccess = sqliteTable('memory_access', {
+  memoryId: text('memory_id')
+    .primaryKey()
+    .references(() => memories.id),
+  lastAccessedSimAt: text('last_accessed_sim_at').notNull(),
+  accessCount: integer('access_count').notNull().default(0),
 })
 
 export const events = sqliteTable('events', {

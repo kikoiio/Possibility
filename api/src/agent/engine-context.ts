@@ -1,7 +1,8 @@
 import { and, eq, gt } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { events, persons, personStates, schedules, timelines, universeRevisions, worldPersons, worlds } from '../db/schema'
-import { retrieveForPrompt, type Memory } from './memory'
+import { dialogues, events, persons, personStates, schedules, timelines, universeRevisions, worldPersons, worlds } from '../db/schema'
+import { nameKeys, retrieveForPrompt, type Memory, type Situation } from './memory'
+import { DEFAULT_RETRIEVAL_CONFIG, type RetrievalConfig } from './retrieval-config'
 import type { PersonModel } from './types'
 import { lifeContext } from '../life/service'
 import { readPinnedWorldModel } from '../world-state/model'
@@ -40,6 +41,7 @@ export interface WorldSnapshot {
   states: Map<string, PersonState> // personId → 该时间线的状态
   schedules: Map<string, Schedule> // personId → 当日日程
   worldDate: string // simNow 的日期部分（YYYY-MM-DD）
+  retrieval?: RetrievalConfig // S1:检索配置(tick 由 env 装配;缺省用默认值)
 }
 
 /** 单个决策点的完整上下文（perceive 的产出） */
@@ -133,7 +135,7 @@ export function isAwake(scheduleItems: ScheduleItem[] | null, simNow: string): b
 }
 
 /** 装载一个（世界 × 时间线）的快照 */
-export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: string): Promise<WorldSnapshot | null> {
+export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: string, retrieval?: RetrievalConfig): Promise<WorldSnapshot | null> {
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   if (!world) return null
   const timeline = await db
@@ -180,10 +182,10 @@ export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: st
 
   return { world: pinned ? { ...world, name: pinned.name, description: pinned.description } : world,
     locations: pinned?.locations ?? parseLocations(world), timeline, stateVersion: revision?.version ?? 0,
-    persons: personList, models, states, schedules: scheduleMap, worldDate }
+    persons: personList, models, states, schedules: scheduleMap, worldDate, retrieval }
 }
 
-/** 为某个决策点装配人物级上下文（M3） */
+/** 为某个决策点装配人物级上下文（M3；S1 起检索带情境） */
 export async function buildEngineContext(db: Db, personId: string, snapshot: WorldSnapshot): Promise<EngineContext | null> {
   const person = snapshot.persons.find((p) => p.id === personId)
   if (!person) return null
@@ -191,25 +193,6 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
   if (!model) return null
   const state = snapshot.states.get(personId)
   if (!state) return null
-
-  const memories = await retrieveForPrompt(db, personId, snapshot.timeline)
-  const others = snapshot.persons
-    .filter((p) => p.id !== personId)
-    .map((p) => {
-      const m = snapshot.models.get(p.id)
-      const publicProfile = (m?.identity ?? [])
-        .filter((i) => i.provenance === 'known')
-        .slice(0, 2)
-        .map((i) => i.text)
-        .join('；')
-      const norm = p.name.replace(/\s+/g, '')
-      const keys = norm.length > 2 ? [norm, norm.slice(0, 2)] : [norm]
-      const relationMemories = memories
-        .filter((mem) => mem.type === 'relationship' && keys.some((k) => mem.content.includes(k)))
-        .slice(-5)
-        .map((mem) => mem.content)
-      return { person: p, publicProfile, relationMemories }
-    })
 
   const lastBeat = state.lastBeatSimTime ?? ''
   const unperceivedEvents = lastBeat
@@ -225,8 +208,6 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
         .all()
 
   const mySchedule = parseScheduleItems(snapshot.schedules.get(personId))
-  const structured = await readWorldState(db, snapshot.world.id, snapshot.timeline.id)
-  const knownFacts = visibleKnowledgeForPerson(structured.current, personId)
   const sameLocationAwake = snapshot.persons.filter((p) => {
     if (p.id === personId) return false
     const s = snapshot.states.get(p.id)
@@ -234,6 +215,68 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
     if (s.currentDialogueId) return false
     return isAwake(parseScheduleItems(snapshot.schedules.get(p.id)), snapshot.timeline.simNow)
   })
+
+  // 情境装配(S1):在场人物 = 同地点清醒者 + 当前对话的其余参与者(含访客)
+  const dialoguePartnerIds: string[] = []
+  if (state.currentDialogueId) {
+    const dialogue = await db.select().from(dialogues).where(eq(dialogues.id, state.currentDialogueId)).get()
+    if (dialogue) {
+      try {
+        const ids = JSON.parse(dialogue.participantIdsJson || '[]') as unknown
+        if (Array.isArray(ids)) dialoguePartnerIds.push(...ids.map(String).filter((id) => id && id !== personId))
+      } catch {
+        // 参与者清单损坏时退化为仅同地点清醒者
+      }
+      if (dialogue.visitorId && dialogue.visitorId !== personId) dialoguePartnerIds.push(dialogue.visitorId)
+    }
+  }
+  const presentPersonIds = [...new Set([...sameLocationAwake.map((p) => p.id), ...dialoguePartnerIds])]
+  const presentPersonNames = presentPersonIds
+    .map((id) => snapshot.persons.find((p) => p.id === id)?.name).filter((n): n is string => !!n)
+  const currentItem = currentScheduleItem(mySchedule, snapshot.timeline.simNow)
+  const situation: Situation = {
+    presentPersonIds,
+    presentPersonNames,
+    locationName: state.location,
+    situationText: [
+      ...unperceivedEvents.map((e) => `${e.title} ${e.description}`),
+      currentItem?.activity ?? '', state.activity, state.goal,
+    ].filter(Boolean).join('\n'),
+  }
+  const memories = await retrieveForPrompt(db, personId, snapshot.timeline, situation,
+    snapshot.retrieval ?? DEFAULT_RETRIEVAL_CONFIG)
+
+  const others = snapshot.persons
+    .filter((p) => p.id !== personId)
+    .map((p) => {
+      const m = snapshot.models.get(p.id)
+      const publicProfile = (m?.identity ?? [])
+        .filter((i) => i.provenance === 'known')
+        .slice(0, 2)
+        .map((i) => i.text)
+        .join('；')
+      // S1:mentions 命中有先;无标注旧记忆回退姓名子串
+      const keys = nameKeys(p.name)
+      const relationMemories = memories
+        .filter((mem) => {
+          if (mem.type !== 'relationship') return false
+          if (mem.mentionedPersonIdsJson != null) {
+            try {
+              const ids = JSON.parse(mem.mentionedPersonIdsJson) as unknown
+              return Array.isArray(ids) && ids.includes(p.id)
+            } catch {
+              return false
+            }
+          }
+          return keys.some((k) => mem.content.includes(k))
+        })
+        .slice(-5)
+        .map((mem) => mem.content)
+      return { person: p, publicProfile, relationMemories }
+    })
+
+  const structured = await readWorldState(db, snapshot.world.id, snapshot.timeline.id)
+  const knownFacts = visibleKnowledgeForPerson(structured.current, personId)
 
   return { snapshot, person, model, state, others, memories, knownFacts, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule, lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
 }

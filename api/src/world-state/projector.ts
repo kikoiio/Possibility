@@ -142,6 +142,22 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
     }
     projection.memories.push(memory)
   }
+  // S1 情境标注：契约 v2 起随记忆负载透传（mentions 为人物 ID）；旧负载缺省 NULL——
+  // 宽松解析，非法即无标注，保证旧命令回放投影不变
+  const annotationsOf = (record: Record<string, unknown>) => {
+    const mentions = Array.isArray(record.mentions)
+      ? record.mentions.filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 20) : []
+    const topics = Array.isArray(record.topics)
+      ? record.topics.filter((x): x is string => typeof x === 'string' && x.length > 0)
+        .map(x => x.slice(0, 50)).slice(0, 3) : []
+    const location = typeof record.location === 'string' && record.location
+      ? record.location.slice(0, 200) : null
+    return {
+      mentionedPersonIdsJson: mentions.length ? JSON.stringify(mentions) : null as string | null,
+      locationName: location,
+      topicsJson: topics.length ? JSON.stringify(topics) : null as string | null,
+    }
+  }
   const locationWrites = new Map<string, { location: string; commandId: string }>()
   const recordLocation = (personId: string, simTime: string, location: string, commandId: string, version: number) => {
     const key = `${personId}\u0000${simTime}`
@@ -333,7 +349,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         }
         appendMemory({ id: `${command.id}:memory:${memoryIndex}`, personId, timelineId: input.timelineId,
           type: memory.type, content: memory.content, simTime: advanceTo, createdAt: command.createdAt,
-          importance: memory.importance, summarized: false }, command.id, command.resultVersion)
+          importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
       })
       continue
     }
@@ -415,13 +431,14 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         utterance, thought, simTime: projection.simTime, createdAt: command.createdAt })
       appendMemory({ id: `${command.id}:thought`, personId: speakerId, timelineId: input.timelineId,
         type: 'thought', content: thought, simTime: projection.simTime, createdAt: command.createdAt,
-        importance: 5, summarized: false }, command.id, command.resultVersion)
+        importance: 5, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null },
+      command.id, command.resultVersion)
       if (action.memory && typeof action.memory === 'object' && !Array.isArray(action.memory)) {
         const memory = action.memory as Record<string, unknown>
         if (typeof memory.content === 'string' && typeof memory.importance === 'number') {
           appendMemory({ id: `${command.id}:memory`, personId: speakerId, timelineId: input.timelineId,
             type: 'relationship', content: memory.content, simTime: projection.simTime, createdAt: command.createdAt,
-            importance: memory.importance, summarized: false }, command.id, command.resultVersion)
+            importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
         }
       }
       const counts = new Map<string, number>()
@@ -495,7 +512,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
           || typeof memory.importance !== 'number') return
         appendMemory({ id: memory.id, personId: memory.personId, timelineId: input.timelineId,
           type: memory.type, content: memory.content, simTime: memory.simTime, createdAt: memory.createdAt,
-          importance: memory.importance, summarized: false }, command.id, command.resultVersion)
+          importance: memory.importance, summarized: false, ...annotationsOf(memory) }, command.id, command.resultVersion)
       })
       const effectMessages = Array.isArray(privateEffects?.messages) ? privateEffects!.messages : []
       effectMessages.forEach((item) => {
@@ -599,7 +616,8 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       }
       for (const source of sources) source!.summarized = true
       appendMemory({ id: summaryId, personId, timelineId: input.timelineId, type: 'summary', content,
-        simTime, createdAt, importance, summarized: false }, command.id, command.resultVersion)
+        simTime, createdAt, importance, summarized: false,
+        mentionedPersonIdsJson: null, locationName: null, topicsJson: null }, command.id, command.resultVersion)
       continue
     }
     if (action.type === 'memory_correct' || action.type === 'memory_forget') {
@@ -791,7 +809,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       } else {
         projection.memories.push({ id: memoryId, personId: item.personId, timelineId: input.timelineId,
           type: 'relationship', content: memoryText, simTime: projection.simTime, createdAt: command.createdAt,
-          importance: 8, summarized: false })
+          importance: 8, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null })
       }
       if (next === 'fulfilled' || next === 'missed') {
         const stateIndexValue = stateIndex(item.personId)

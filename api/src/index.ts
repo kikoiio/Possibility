@@ -40,6 +40,17 @@ export interface Env {
   PREWORLD_DAILY_CAP?: string
   IDLE_ARCHIVE_DAYS?: string
   DIRECTOR_LLM?: string
+  RETRIEVAL_RECENT_FLOOR?: string
+  RETRIEVAL_TOP_K?: string
+  RETRIEVAL_SUMMARY_K?: string
+  RETRIEVAL_W1?: string
+  RETRIEVAL_W2?: string
+  RETRIEVAL_W3?: string
+  RETRIEVAL_HALF_LIFE_HOURS?: string
+  RETRIEVAL_CANDIDATE_RECENT?: string
+  RETRIEVAL_CANDIDATE_IMPORTANT?: string
+  RETRIEVAL_CANDIDATE_MENTIONS?: string
+  RETRIEVAL_CANDIDATE_ANNOTATED?: string
   /** Internal per-invocation fence; set only by runTick, never supplied by deployment config. */
   ENGINE_TICK_LEASE_TOKEN?: string
 }
