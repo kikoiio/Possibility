@@ -94,8 +94,9 @@ varying float vWaterTop;
 varying vec3 vWaterWorld;
 varying vec3 vWaterViewNormal;
 varying vec3 vWaterViewPos;`)
-    .replace('#include <color_fragment>', `#include <color_fragment>
+    .replace('#include <map_fragment>', `#include <map_fragment>
 if (vWater > 0.5) {
+  // 在 color_fragment(烘焙光照)之前替换水色：昼夜明暗/面明暗对白沫与反射同样生效
   // Fresnel 天空反射（风格化指数 2）：平视反射多、俯视水色多
   vec3 waterView = normalize(vWaterViewPos);
   float fresnel = pow(1.0 - max(dot(waterView, normalize(vWaterViewNormal)), 0.0), 2.0);
@@ -104,9 +105,11 @@ if (vWater > 0.5) {
   // 贴图亮度保留为水纹细节，色相由色彩中枢接管
   float texLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
   diffuseColor.rgb = waterFinal * (0.55 + 0.9 * texLum);
-  // 岸边白沫：聚散动画（uMotion=0 时定格中等泡沫），开阔水面 vFoam=0 零影响
-  float foamWave = 0.7 + 0.3 * sin(uTime * 2.0 + vWaterWorld.x * 3.1 + vWaterWorld.z * 2.3) * uMotion;
-  diffuseColor.rgb = mix(diffuseColor.rgb, uFoamColor, foamWave * 0.7 * vFoam);
+  // 岸边白沫：空间斑驳 × 时间聚散（uMotion=0 时定格静态斑驳），开阔水面 vFoam=0 零影响
+  float foamN = 0.5 + 0.5 * sin(vWaterWorld.x * 5.3 + vWaterWorld.z * 4.7);
+  float foamT = 0.5 + 0.5 * sin(uTime * 2.0 * uMotion + vWaterWorld.x * 3.1 + vWaterWorld.z * 2.3);
+  float foamAmt = smoothstep(0.45, 0.85, foamN * 0.5 + foamT * 0.5) * 0.85 * vFoam;
+  diffuseColor.rgb = mix(diffuseColor.rgb, uFoamColor, foamAmt);
 }`)
 }
 
