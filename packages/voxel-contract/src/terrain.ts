@@ -224,7 +224,6 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
   const cells = generateTerrainCellsInternal(size, params)
   const { width, depth } = size
   const seed = params.seed | 0
-  const density = params.vegetation?.density ?? 0
   const plantsOn = (params.vegetation?.flowers ?? true) || (params.vegetation?.bushes ?? true)
   if (density <= 0) return { cells, assetPlacements: [] }
 

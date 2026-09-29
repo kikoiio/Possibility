@@ -43,7 +43,10 @@ export class Assets {
       const items = placements.filter((p) => p.assetId === assetId)
       const prototype = this.prototypes.get(assetId)
       if (!prototype || items.length === 0) continue
-      const source = prototype.children.find((child) => child instanceof THREE.Mesh) as THREE.Mesh | undefined
+      let source: THREE.Mesh | undefined
+      prototype.traverse((child) => {
+        if (!source && child instanceof THREE.Mesh) source = child
+      })
       if (!source || !source.geometry || !source.material) continue
       const mesh = new THREE.InstancedMesh(source.geometry, source.material, items.length)
       mesh.castShadow = true; mesh.receiveShadow = true
