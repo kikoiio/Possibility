@@ -18,6 +18,12 @@ export class Assets {
   private unsubscribe: (() => void) | null = null
   private time = 0
 
+  get instanceCount(): number {
+    let count = 0
+    for (const group of this.groups.values()) count += group.mesh.count
+    return count
+  }
+
   private readonly root = this.object
   constructor(scene: THREE.Scene, private readonly motion: MotionPreference) { scene.add(this.root) }
   async loadManifest(url = '/voxel-assets/mist-manor/vegetation/manifest.json'): Promise<VegetationManifest> {

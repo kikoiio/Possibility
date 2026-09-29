@@ -22,6 +22,8 @@ interface WorldProbe {
   getStyle(): StylePackRef | undefined
   getTerrainParams(): unknown
   getObjectCellCount(): number
+  getAssetPlacements(): unknown[]
+  getAssetInstanceCount(): number
   regen(params: TerrainParams): { ok: boolean; issues: ValidationIssue[] }
   setStyle(style: unknown): { ok: boolean }
 }
@@ -143,6 +145,8 @@ export default function VoxelDevHarness() {
           getStyle: () => engine.getStyle(),
           getTerrainParams: () => engine.world?.doc.terrain?.params ?? null,
           getObjectCellCount: () => engine.world?.doc.objectCells.length ?? 0,
+          getAssetPlacements: () => engine.world?.doc.assetPlacements ?? [],
+          getAssetInstanceCount: () => engine.assets.instanceCount,
           regen: (params) => {
             const outcome = editController.regenerateTerrain(params)
             return { ok: outcome.ok, issues: outcome.issues }
