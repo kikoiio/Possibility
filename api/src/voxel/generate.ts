@@ -1,5 +1,5 @@
 import {
-  applyEdits, createEmptyWorld, deserialize, serialize, validateDocument,
+  applyEdits, createEmptyWorld, deserialize, serialize, validateDocument, validateWalkability,
   type EditOperation, type LocationBinding, type SpaceEntry, type VoxelDocument,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
@@ -92,8 +92,8 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
 }
 
 /**
- * AI 体素世界生成：场景描述 → LLM → VoxelDocument → validateDocument，
- * 失败带 issue 重试，最多 maxAttempts 次（F3, N10）。
+ * AI 体素世界生成：场景描述 → LLM → VoxelDocument → validateDocument(+ 可行走性)，
+ * 失败带 issue 重试，最多 maxAttempts 次（F3, N10;S2b F5: walkability 并入同一循环）。
  */
 export async function generateWorld(
   sceneDescription: string,
@@ -119,6 +119,8 @@ export async function generateWorld(
       continue
     }
     const issues = validateDocument(doc)
+    // 结构校验过了才跑可行走性(世界可行走性是 S2b F5 的生成契约;结构坏了先修结构)
+    if (issues.length === 0) issues.push(...validateWalkability(doc))
     if (issues.length === 0) {
       // 序列化 round-trip 自检（契约闭环：AI 输出即权威格式）
       deserialize(serialize(doc))
