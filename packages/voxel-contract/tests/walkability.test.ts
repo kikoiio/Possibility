@@ -25,6 +25,55 @@ function wallOff(doc: ReturnType<typeof flatWorld>, cx: number, cz: number) {
   }
 }
 
+describe('validateWalkability R1 净高', () => {
+  it('净高 1 格的门洞(紧邻可行走地面)→ 报 walk-clearance 且定位门洞', () => {
+    const doc = flatWorld()
+    // 门洞:通道格 (16,1,10) 可走,但 (16,2,10) 压了过梁 → 净高 1
+    setBlockMut(doc, at(16, 2, 10), 'stone')
+    const issues = validateWalkability(doc, registry)
+    const hit = issues.find((i) => i.code === 'walk-clearance')
+    expect(hit).toBeDefined()
+    expect(hit!.at).toEqual(at(16, 1, 10))
+  })
+
+  it('净高 2 格的通道 → 不报', () => {
+    const doc = flatWorld()
+    setBlockMut(doc, at(16, 3, 10), 'stone') // 净高 2(1、2 层空)
+    const issues = validateWalkability(doc, registry)
+    expect(issues.filter((i) => i.code === 'walk-clearance')).toEqual([])
+  })
+})
+
+describe('validateWalkability R5 地面完整性', () => {
+  /** 挖一圈 1 格宽护城河,把中心 4×4 区域围成孤岛(孤岛不触世界边界) */
+  function digMoat(doc: ReturnType<typeof flatWorld>, cx: number, cz: number) {
+    for (let d = -3; d <= 3; d++) {
+      setBlockMut(doc, at(cx + d, 0, cz - 3), 'air')
+      setBlockMut(doc, at(cx + d, 0, cz + 3), 'air')
+      setBlockMut(doc, at(cx - 3, 0, cz + d), 'air')
+      setBlockMut(doc, at(cx + 3, 0, cz + d), 'air')
+    }
+  }
+
+  it('孤岛仅可跳入(无步行绕行)→ 报 walk-gap,at 为缺口前格', () => {
+    const doc = flatWorld()
+    digMoat(doc, 16, 16)
+    const issues = validateWalkability(doc, registry)
+    const hit = issues.find((i) => i.code === 'walk-gap')
+    expect(hit).toBeDefined()
+    // 缺口前格在护城河外圈(距岛 2 格处)
+    expect(Math.abs(hit!.at!.x - 16) === 2 || Math.abs(hit!.at!.z - 16) === 2).toBe(true)
+  })
+
+  it('护城河上架桥(存在步行绕行)→ 不报', () => {
+    const doc = flatWorld()
+    digMoat(doc, 16, 16)
+    setBlockMut(doc, at(16 - 3, 0, 16), 'wood-plank')
+    const issues = validateWalkability(doc, registry)
+    expect(issues.filter((i) => i.code === 'walk-gap')).toEqual([])
+  })
+})
+
 describe('validateWalkability R2 连通性', () => {
   it('开放世界中绑定物体可达 → 无 walk-connectivity', () => {
     const doc = flatWorld()

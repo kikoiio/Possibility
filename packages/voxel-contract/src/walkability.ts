@@ -97,19 +97,18 @@ function walkNeighbors(ctx: WalkContext, from: VoxelCoord): WalkEdge[] {
   return edges
 }
 
-/** 可达性泛洪结果:可达集 + 「仅经跳隙边到达」的格(R5 用) */
+/** 可达性泛洪结果:可达集(含跳隙)+ 严格可达集(仅平走/台阶,R5 用) */
 interface FloodResult {
   reached: Set<string>
-  gapOnly: Set<string>
+  reachedStrict: Set<string>
 }
 
-/** 世界边缘一圈柱子中的全部可站立格为种子,沿行走图 BFS(R2 的可达集) */
-function floodFromOutside(ctx: WalkContext, maxVisited: number): FloodResult {
+/** 世界边缘一圈柱子中的全部可站立格为种子,沿行走图 BFS;allowGaps=false 时禁用跳隙边 */
+function flood(ctx: WalkContext, maxVisited: number, allowGaps: boolean): Set<string> {
   const { doc } = ctx
   const { width, height, depth } = doc.size
   const queue: VoxelCoord[] = []
   const reached = new Set<string>()
-  const gapOnly = new Set<string>()
   const seed = (at: VoxelCoord) => {
     const k = key(at)
     if (!reached.has(k) && isStandableAt(ctx, at)) {
@@ -124,19 +123,77 @@ function floodFromOutside(ctx: WalkContext, maxVisited: number): FloodResult {
     for (const x of [0, width - 1]) for (let y = 1; y < height; y++) seed({ x, y, z })
   }
   for (let head = 0; head < queue.length && reached.size < maxVisited; head++) {
-    const from = queue[head]
-    for (const edge of walkNeighbors(ctx, from)) {
+    for (const edge of walkNeighbors(ctx, queue[head])) {
+      if (!allowGaps && edge.kind === 'gap') continue
       const k = key(edge.to)
-      if (reached.has(k)) {
-        if (edge.kind !== 'gap') gapOnly.delete(k)
-        continue
-      }
+      if (reached.has(k)) continue
       reached.add(k)
-      if (edge.kind === 'gap') gapOnly.add(k)
       queue.push(edge.to)
     }
   }
-  return { reached, gapOnly }
+  return reached
+}
+
+function floodFromOutside(ctx: WalkContext, maxVisited: number): FloodResult {
+  return {
+    reached: flood(ctx, maxVisited, true),
+    reachedStrict: flood(ctx, maxVisited, false),
+  }
+}
+
+/** R1 净高:可达集旁出现「净高 1 格」的通道格(自身非实心、头顶实心)→ 门洞过矮 */
+function checkClearance(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
+  const { doc, reg } = ctx
+  const { width, height, depth } = doc.size
+  const issues: ValidationIssue[] = []
+  for (let y = 1; y < height - 1; y++) {
+    for (let z = 0; z < depth; z++) {
+      for (let x = 0; x < width; x++) {
+        const at = { x, y, z }
+        if (isStandableAt(ctx, at)) continue                       // 正常通道格不管
+        if (blocksMovement(reg, getBlock(doc, at))) continue       // 实心不是通道
+        if (!blocksMovement(reg, getBlock(doc, { x, y: y + 1, z }))) continue // 净高 ≥2,合规
+        // 脚下须是真实地面,否则只是「某层的空气」,不是走得进去的矮门洞
+        if (!standableSurface(reg, getBlock(doc, { x, y: y - 1, z }))) continue
+        // 净高 1 格的通道格:仅当邻接可达集时才是「走得到的矮门洞」
+        const touchesReached = DIRS.some(([dx, dz]) =>
+          flood.reached.has(key({ x: x + dx, y, z: z + dz }))
+          || flood.reached.has(key({ x: x + dx, y: y - 1, z: z + dz }))
+          || flood.reached.has(key({ x: x + dx, y: y + 1, z: z + dz })))
+        if (!touchesReached) continue
+        issues.push({
+          code: 'walk-clearance',
+          message: `通行格净空不足 2 格(门洞/走廊过矮)`,
+          at,
+        })
+        if (issues.length >= MAX_ISSUES) return issues
+      }
+    }
+  }
+  return issues
+}
+
+/** R5 地面完整性:存在只能经跳隙边到达的区域(reached − reachedStrict 非空)→ 主路径依赖跳跃过缺口 */
+function checkGaps(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  const seen = new Set<string>()
+  for (const k of flood.reachedStrict) {
+    const [x, y, z] = k.split(',').map(Number)
+    const from = { x, y, z }
+    for (const edge of walkNeighbors(ctx, from)) {
+      if (edge.kind !== 'gap') continue
+      const tk = key(edge.to)
+      if (flood.reachedStrict.has(tk) || seen.has(tk)) continue
+      seen.add(tk)
+      issues.push({
+        code: 'walk-gap',
+        message: '区域仅可由跳跃跨过缺口到达,缺少可步行的绕行路径',
+        at: from,   // 缺口前格(跳隙边起点)
+      })
+      if (issues.length >= MAX_ISSUES) return issues
+    }
+  }
+  return issues
 }
 
 /** 绑定人物/地点的物体(locations 表 + 物体自带 binding) */
@@ -189,7 +246,9 @@ export function validateWalkability(
   const flood = floodFromOutside(ctx, options.maxVisited)
   const issues: ValidationIssue[] = [
     ...checkConnectivity(ctx, flood),          // R2
-    // T3: R1 净高 + R5 缺口;T4: R4 高差突变;T5: R3 照明
+    ...checkClearance(ctx, flood),             // R1
+    ...checkGaps(ctx, flood),                  // R5
+    // T4: R4 高差突变;T5: R3 照明
   ]
   return issues.slice(0, MAX_ISSUES)
 }
