@@ -123,7 +123,6 @@ function generateTerrainCellsInternal(size: VoxelSize, params: ResolvedTerrainPa
   const riverWidth = params.river?.width ?? 2
   const lakesOn = params.lakes?.enabled ?? false
   const lakeSize = params.lakes?.size ?? 4
-  const density = params.vegetation?.density ?? 0
 
   // ── 高度场 ──────────────────────────────
   const heightAt = (x: number, z: number): number => {
