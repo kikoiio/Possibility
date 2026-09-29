@@ -19,7 +19,7 @@ export class Assets {
   private time = 0
 
   private readonly root = this.object
-  constructor(private readonly scene: THREE.Scene, private readonly motion: MotionPreference) { scene.add(this.root) }
+  constructor(scene: THREE.Scene, private readonly motion: MotionPreference) { scene.add(this.root) }
   async loadManifest(url = '/voxel-assets/mist-manor/vegetation/manifest.json'): Promise<VegetationManifest> {
     const response = await fetch(url); if (!response.ok) throw new Error(`vegetation manifest failed: ${response.status}`)
     const manifest = await response.json() as VegetationManifest
