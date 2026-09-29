@@ -27,6 +27,26 @@ export interface MeshData {
 /** 参与植被摇摆的方块 */
 const SWAY_BLOCKS = new Set(['leaves', 'flower', 'bush'])
 
+/** Terrain smoothing is registry-driven so structural and decorative blocks stay hard-edged. */
+export function isTerrainBlock(registry: BlockRegistry, blockId: string): boolean {
+  return registry.get(blockId)?.category === 'terrain'
+}
+
+/** Highest non-fluid terrain surface in a global world column, or null for empty/water-only columns. */
+export function sampleTerrainColumnTop(
+  world: WorldModel,
+  registry: BlockRegistry,
+  x: number,
+  z: number,
+): number | null {
+  if (x < 0 || z < 0 || x >= world.doc.size.width || z >= world.doc.size.depth) return null
+  for (let y = world.doc.size.height - 1; y >= 0; y--) {
+    const id = world.getBlock({ x, y, z })
+    if (isTerrainBlock(registry, id)) return y + 1
+  }
+  return null
+}
+
 export interface SectionGeometry {
   key: SectionKey
   opaque: MeshData
@@ -121,6 +141,16 @@ export class Mesher {
     const translucent = new MeshBuilder()
     const aoEnabled = !!ao && ao.strength > 0
 
+    const cornerHeight = (x: number, y: number, z: number): number => {
+      const samples = [
+        sampleTerrainColumnTop(this.world, this.registry, x, z),
+        sampleTerrainColumnTop(this.world, this.registry, x - 1, z),
+        sampleTerrainColumnTop(this.world, this.registry, x, z - 1),
+        sampleTerrainColumnTop(this.world, this.registry, x - 1, z - 1),
+      ].filter((value): value is number => value !== null)
+      return samples.length === 0 ? y : samples.reduce((sum, value) => sum + value, 0) / samples.length
+    }
+
     /** 不透明实体才算遮蔽样本 */
     const occupied = (x: number, y: number, z: number): boolean => {
       const t = this.registry.get(this.world.getBlock({ x, y, z }))
@@ -183,6 +213,8 @@ export class Mesher {
             const base = target.positions.length / 3
             const swaying = SWAY_BLOCKS.has(blockId)
             const fluid = type.category === 'fluid'
+            const terrainSurface = isTerrainBlock(this.registry, blockId)
+              && !isTerrainBlock(this.registry, this.world.getBlock({ x, y: y + 1, z }))
             // 下沉水面（S3a MC 式）：流体顶面角点 y 压到 0.875，与岸边侧面自然衔接
             const sinkTop = fluid && face.dir === 'py'
             // 白沫标记：水格顶面且水平四邻存在非流体格（岸边/桥墩/水缘）；开阔水面天然为 0
@@ -196,7 +228,13 @@ export class Mesher {
             for (let c = 0; c < 4; c++) {
               const corner = face.corners[c]
               const aoF = aoFactors[c]
-              target.positions.push(x + corner[0], y + (sinkTop ? corner[1] * 0.875 : corner[1]), z + corner[2])
+              const smoothTop = terrainSurface && corner[1] === 1
+              const vertexY = sinkTop
+                ? y + corner[1] * 0.875
+                : smoothTop
+                  ? cornerHeight(x + corner[0], y + 1, z + corner[2])
+                  : y + corner[1]
+              target.positions.push(x + corner[0], vertexY, z + corner[2])
               target.normals.push(face.offset[0], face.offset[1], face.offset[2])
               target.uvs.push(
                 FACE_UVS[c][0] === 0 ? uv.u0 : uv.u1,

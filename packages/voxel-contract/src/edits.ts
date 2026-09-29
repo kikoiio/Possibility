@@ -44,6 +44,10 @@ export function applyEdits(doc: VoxelDocument, ops: EditOperation[]): EditResult
     sections: { ...doc.sections },
     objects: [...doc.objects],
     objectCells: [...doc.objectCells],
+    ...(doc.assetPlacements ? { assetPlacements: doc.assetPlacements.map((placement) => ({
+      ...placement,
+      anchor: [...placement.anchor] as [number, number, number],
+    })) } : {}),
     locations: [...doc.locations],
     spaceEntries: [...doc.spaceEntries],
     lockedObjectIds: [...doc.lockedObjectIds],

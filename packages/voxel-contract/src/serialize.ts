@@ -169,7 +169,24 @@ export function deserialize(raw: string): VoxelDocument {
   let assetPlacements: AssetPlacement[] | undefined
   if (doc.assetPlacements !== undefined) {
     assert(Array.isArray(doc.assetPlacements), 'assetPlacements must be an array')
-    assetPlacements = doc.assetPlacements as AssetPlacement[]
+    assetPlacements = (doc.assetPlacements as unknown[]).map((raw, index) => {
+      const placement = raw as Record<string, unknown>
+      assert(typeof placement === 'object' && placement !== null, `assetPlacements[${index}] must be an object`)
+      assert(typeof placement.assetId === 'string' && placement.assetId.length > 0, `assetPlacements[${index}].assetId must be non-empty`)
+      assert(Array.isArray(placement.anchor) && placement.anchor.length === 3
+        && placement.anchor.every((value) => Number.isInteger(value)),
+      `assetPlacements[${index}].anchor must be three integers`)
+      assert(placement.rotation === 0 || placement.rotation === 1 || placement.rotation === 2 || placement.rotation === 3,
+        `assetPlacements[${index}].rotation must be 0..3`)
+      assert(typeof placement.seed === 'number' && Number.isFinite(placement.seed),
+        `assetPlacements[${index}].seed must be finite`)
+      return {
+        assetId: placement.assetId,
+        anchor: [...(placement.anchor as number[])] as [number, number, number],
+        rotation: placement.rotation,
+        seed: placement.seed,
+      } as AssetPlacement
+    })
   }
 
   // S3b 元数据:存在时做形状校验,缺省不产出该键(旧存档无损,N1/N2)

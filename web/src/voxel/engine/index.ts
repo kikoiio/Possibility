@@ -293,6 +293,7 @@ export class VoxelEngine {
   applyEditResult(result: EditResult): void {
     if (!this.world || !this.lighting || !this.mesher) return
     this.world.applyResult(result)
+    if (this.vegetationManifest) this.assets.sync(result.document.assetPlacements ?? [], this.vegetationManifest)
     const t0 = performance.now()
     const rebake = new Set<SectionKey>()
     for (const key of result.changedSections) {
