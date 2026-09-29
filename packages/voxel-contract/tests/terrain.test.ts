@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyEdits, BASE_GROUND_Y, clampTerrainParams, createEmptyWorld, diffTerrainRegen, generateTerrainCells,
+  applyEdits, BASE_GROUND_Y, clampTerrainParams, createEmptyWorld, diffTerrainRegen, generateTerrain, generateTerrainCells,
   getBlock, TERRAIN_QUOTAS, validateDocument, writeTerrainCells,
   type ResolvedTerrainParams, type TerrainCell,
 } from '../src'
@@ -113,18 +113,14 @@ describe('generateTerrainCells', () => {
       river: { enabled: false }, lakes: { enabled: false },
       vegetation: { density: TERRAIN_QUOTAS.densityMax, flowers: false, bushes: false },
     }))
-    const map = cellMap(cells)
-    const logs = cells.filter((c) => c.block === 'wood-log')
-    expect(logs.length).toBeGreaterThan(0)
-    // 每棵树 3 段原木 → 总数是 3 的倍数;每棵树冠层中心正上方有 leaves
-    expect(logs.length % 3).toBe(0)
-    for (const log of logs) {
-      if (log.at.y % 1 !== 0) continue
-      const above2 = map.get(`${log.at.x},${log.at.y + 2},${log.at.z}`)
-      const above3 = map.get(`${log.at.x},${log.at.y + 3},${log.at.z}`)
-      if (above2 === 'wood-log') continue
-      expect(above3 === 'leaves' || above2 === 'leaves').toBe(true)
-    }
+    const generated = generateTerrain(SIZE, fullParams({
+      river: { enabled: false }, lakes: { enabled: false },
+      vegetation: { density: TERRAIN_QUOTAS.densityMax, flowers: false, bushes: false },
+    }))
+    expect(generated.assetPlacements.length).toBeGreaterThan(0)
+    expect(generated.assetPlacements.every((placement) => placement.assetId === 'veg-tree-a')).toBe(true)
+    expect(generated.assetPlacements.every((placement) => Number.isInteger(placement.anchor[0]) && Number.isInteger(placement.anchor[2]))).toBe(true)
+    expect(cells.every((cell) => !['wood-log', 'leaves'].includes(cell.block))).toBe(true)
   })
 
   it('树格不注册 objectCells(物体数不增)', () => {

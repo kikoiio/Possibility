@@ -119,7 +119,7 @@ export class VoxelEngine {
       await this.atlas.load(theme)
     }
     this.renderer.setAtlasTexture()
-    try { this.vegetationManifest = await this.assets.loadManifest() } catch { this.vegetationManifest = null }
+    try { this.vegetationManifest = await this.assets.loadManifest(theme) } catch { this.vegetationManifest = null }
   }
 
   loadDocument(doc: VoxelDocument): void {

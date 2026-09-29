@@ -245,7 +245,7 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
       const tz = z + Math.floor(rng() * 3) - 1
       const y = columns.get(`${tx},${tz}`)
       if (y === undefined || rng() >= density) continue
-      push('veg-tree-a', tx + 0.5, y + 1, tz + 0.5, i++)
+      push('veg-tree-a', tx, y + 1, tz, i++)
       treeCount++
     }
   }
@@ -254,12 +254,12 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
     if (y === undefined || rng() >= density * 0.65) continue
     const flowersOn = params.vegetation?.flowers ?? true
     const assetId = flowersOn && rng() < 0.6 ? 'veg-flower-a' : 'veg-grass-a'
-    push(assetId, x + 0.5, y + 1, z + 0.5, i++)
+    push(assetId, x, y + 1, z, i++)
   }
   if (params.vegetation?.bushes ?? true) for (let z = 2; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z += 5) for (let x = 2; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x += 5) {
     const y = columns.get(`${x},${z}`)
     if (y === undefined || rng() >= density * 0.35) continue
-    push('veg-bush-a', x + 0.5, y + 1, z + 0.5, i++)
+    push('veg-bush-a', x, y + 1, z, i++)
   }
   return { cells, assetPlacements }
 }
