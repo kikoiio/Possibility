@@ -53,3 +53,48 @@ describe('samplePalette', () => {
     expect(() => loadPalette('no-such-theme')).toThrow(/unknown voxel palette theme/)
   })
 })
+
+describe('samplePalette 直射光', () => {
+  it('正午直射来自太阳方位,午夜来自月亮方位且偏冷', () => {
+    const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
+    expect(noon.direct.intensity).toBeCloseTo(1.0)
+    expect(noon.direct.dir.y).toBeGreaterThan(0.8) // 太阳高悬
+    const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
+    expect(midnight.direct.intensity).toBeCloseTo(0.22)
+    expect(midnight.direct.dir.y).toBeGreaterThan(0.8) // 月亮高悬(夜)
+    expect(midnight.direct.color[2]).toBeGreaterThan(midnight.direct.color[0]) // 冷色
+    // 与天空穹顶天体方位同源
+    expect(Math.sign(midnight.direct.dir.z)).toBe(Math.sign(midnight.sky.moonDir.z))
+  })
+
+  it('黄昏直射强度低于正午与午夜(换向低谷)', () => {
+    const dusk = samplePalette(palette, 0.74, { dim: 0, fogBoost: 0 })
+    const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
+    const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
+    expect(dusk.direct.intensity).toBeLessThan(noon.direct.intensity)
+    expect(dusk.direct.intensity).toBeLessThan(midnight.direct.intensity)
+  })
+
+  it('天气 dim 压暗直射', () => {
+    const clear = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
+    const dimmed = samplePalette(palette, 0.5, { dim: 0.6, fogBoost: 0 })
+    expect(dimmed.direct.intensity).toBeLessThan(clear.direct.intensity * 0.6)
+  })
+
+  it('直射强度随时间连续(±0.001 抖动 < 0.05)', () => {
+    for (const t of [0.1, 0.24, 0.3, 0.5, 0.7, 0.76, 0.9]) {
+      const a = samplePalette(palette, t - 0.001, { dim: 0, fogBoost: 0 })
+      const b = samplePalette(palette, t + 0.001, { dim: 0, fogBoost: 0 })
+      expect(Math.abs(a.direct.intensity - b.direct.intensity)).toBeLessThan(0.05)
+    }
+  })
+
+  it('直射方向全程合法(单位向量,无 NaN)', () => {
+    for (let t = 0; t < 1; t += 0.01) {
+      const d = samplePalette(palette, t, { dim: 0, fogBoost: 0 }).direct.dir
+      const len = Math.hypot(d.x, d.y, d.z)
+      expect(Number.isFinite(len)).toBe(true)
+      expect(len).toBeCloseTo(1, 5)
+    }
+  })
+})

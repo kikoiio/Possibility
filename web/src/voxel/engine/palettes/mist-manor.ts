@@ -20,6 +20,10 @@ const keyframes: PaletteKeyframe[] = [
   {
     // 深夜（旧 NIGHT_SKY / NIGHT_TINT；面明暗 ×0.6 压平方向差）
     elevation: -1,
+    sunLightColor: [1, 0.85, 0.6],
+    sunLightIntensity: 0,
+    moonLightColor: [0.6, 0.72, 1.0],
+    moonLightIntensity: 0.22,
     skyZenith: [0.02, 0.03, 0.09],
     skyHorizon: [0.05, 0.07, 0.16],
     fogColor: [0.05, 0.07, 0.16],
@@ -44,6 +48,10 @@ const keyframes: PaletteKeyframe[] = [
   {
     // 夜半与晨昏交界
     elevation: -0.1,
+    sunLightColor: [1, 0.7, 0.45],
+    sunLightIntensity: 0.08,
+    moonLightColor: [0.6, 0.72, 1.0],
+    moonLightIntensity: 0.12,
     skyZenith: [0.1, 0.09, 0.22],
     skyHorizon: [0.45, 0.3, 0.32],
     fogColor: [0.42, 0.3, 0.32],
@@ -68,6 +76,10 @@ const keyframes: PaletteKeyframe[] = [
   {
     // 晨昏金色（旧 DUSK_SKY / DUSK_TINT）
     elevation: 0.15,
+    sunLightColor: [1, 0.6, 0.35],
+    sunLightIntensity: 0.4,
+    moonLightColor: [0.6, 0.72, 1.0],
+    moonLightIntensity: 0.04,
     skyZenith: [0.35, 0.45, 0.7],
     skyHorizon: [0.86, 0.55, 0.36],
     fogColor: [0.82, 0.55, 0.38],
@@ -92,6 +104,10 @@ const keyframes: PaletteKeyframe[] = [
   {
     // 日间
     elevation: 0.5,
+    sunLightColor: [1, 0.9, 0.75],
+    sunLightIntensity: 0.85,
+    moonLightColor: [0.6, 0.72, 1.0],
+    moonLightIntensity: 0,
     skyZenith: [0.3, 0.55, 0.85],
     skyHorizon: [0.62, 0.79, 0.92],
     fogColor: [0.62, 0.79, 0.92],
@@ -116,6 +132,10 @@ const keyframes: PaletteKeyframe[] = [
   {
     // 正午（旧 DAY_SKY / DAY_TINT / DEFAULT_BAKE_ENV 原值）
     elevation: 1,
+    sunLightColor: [1, 0.95, 0.85],
+    sunLightIntensity: 1.0,
+    moonLightColor: [0.6, 0.72, 1.0],
+    moonLightIntensity: 0,
     skyZenith: [0.25, 0.5, 0.9],
     skyHorizon: [0.62, 0.79, 0.92],
     fogColor: [0.62, 0.79, 0.92],
@@ -146,6 +166,8 @@ export const MIST_MANOR_PALETTE: ThemePalette = {
   aoCurve: [0.45, 0.65, 0.85, 1.0],
   fogDensityScale: 0.018,
   weatherGray: [0.541, 0.576, 0.62], // 0x8a939e
+  ambientLift: 3.0, // T7 标定基准：关直射时观感 = S1
+  shadow: { enabled: true, mapSize: 2048, softwareMapSize: 1024, bias: -0.0002, normalBias: 0.6, radius: 4 },
 }
 
 /** 旧 DEFAULT_BAKE_ENV 的等价物：正午档关键帧（mesher 缺省烘焙环境） */

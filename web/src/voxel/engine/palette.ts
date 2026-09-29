@@ -26,6 +26,12 @@ export interface PaletteKeyframe {
   starIntensity: number
   cloudCoverage: number
   cloudTint: RGB
+  /** 日光直射(正午最强,夜间 0) */
+  sunLightColor: RGB
+  sunLightIntensity: number
+  /** 月光直射(夜间弱冷色) */
+  moonLightColor: RGB
+  moonLightIntensity: number
   exposure: number
   bloomStrength: number
   saturation: number
@@ -34,6 +40,18 @@ export interface PaletteKeyframe {
   highTint: RGB
   vignette: number
   grain: number
+}
+
+/** 阴影品质配置（主题级，不进关键帧） */
+export interface ShadowConfig {
+  enabled: boolean
+  mapSize: number
+  /** 软件渲染后端降档 */
+  softwareMapSize: number
+  bias: number
+  normalBias: number
+  /** PCF 柔和半径 */
+  radius: number
 }
 
 /** 主题调色数据模块出口 */
@@ -49,6 +67,9 @@ export interface ThemePalette {
   fogDensityScale: number
   /** 雨天压暗靠拢的灰 */
   weatherGray: RGB
+  /** 环境光强度，标定「无直射=S1 观感」 */
+  ambientLift: number
+  shadow: ShadowConfig
 }
 
 /** samplePalette 的输出：单一调色事实源 */
@@ -69,6 +90,8 @@ export interface ResolvedPalette {
     cloudTint: RGB
   }
   fog: { color: RGB; density: number }
+  /** 直射光（日光/月光混合，已含天气 dim 压暗）；intensity≈0 时引擎关灯 */
+  direct: { dir: Vec3; color: RGB; intensity: number }
   post: {
     exposure: number
     bloomStrength: number
@@ -85,6 +108,11 @@ export interface ResolvedPalette {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
 const lerpRGB = (a: RGB, b: RGB, t: number): RGB => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+
+const smoothstep = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
+}
 
 /** 逐字段线性插值（faceShade 六向逐字段） */
 export function lerpKeyframe(a: PaletteKeyframe, b: PaletteKeyframe, t: number): PaletteKeyframe {
@@ -110,6 +138,10 @@ export function lerpKeyframe(a: PaletteKeyframe, b: PaletteKeyframe, t: number):
     starIntensity: lerp(a.starIntensity, b.starIntensity, t),
     cloudCoverage: lerp(a.cloudCoverage, b.cloudCoverage, t),
     cloudTint: lerpRGB(a.cloudTint, b.cloudTint, t),
+    sunLightColor: lerpRGB(a.sunLightColor, b.sunLightColor, t),
+    sunLightIntensity: lerp(a.sunLightIntensity, b.sunLightIntensity, t),
+    moonLightColor: lerpRGB(a.moonLightColor, b.moonLightColor, t),
+    moonLightIntensity: lerp(a.moonLightIntensity, b.moonLightIntensity, t),
     exposure: lerp(a.exposure, b.exposure, t),
     bloomStrength: lerp(a.bloomStrength, b.bloomStrength, t),
     saturation: lerp(a.saturation, b.saturation, t),
@@ -184,6 +216,21 @@ export function samplePalette(
   )
   const cloudCoverage = Math.min(1, kf.cloudCoverage + dim * 0.35 + fogBoost * 0.25)
 
+  // 直射光：日光/月光按昼夜混合；换向经天顶弧线过渡（bend），避免黄昏影子翻转；
+  // 混合点落在两侧强度低谷；天气 dim 压暗直射
+  const dayFactor = smoothstep(-0.05, 0.15, elevation)
+  const bend = 4 * dayFactor * (1 - dayFactor) * 0.5
+  const directDir = norm3({
+    x: lerp(moonDir.x, sunDir.x, dayFactor),
+    y: lerp(moonDir.y, sunDir.y, dayFactor) + bend,
+    z: lerp(moonDir.z, sunDir.z, dayFactor),
+  })
+  const direct: ResolvedPalette['direct'] = {
+    dir: directDir,
+    color: lerpRGB(kf.moonLightColor, kf.sunLightColor, dayFactor),
+    intensity: lerp(kf.moonLightIntensity, kf.sunLightIntensity, dayFactor) * (1 - dim * 0.8),
+  }
+
   return {
     bakeEnv: { faceShade, skyTint: kf.skyTint, blockTint: kf.blockTint },
     skyLevel: kf.skyLevel,
@@ -200,6 +247,7 @@ export function samplePalette(
       cloudTint: dimColor(kf.cloudTint),
     },
     fog: { color: fogColor, density: (fogBoost + dim * 0.5) * palette.fogDensityScale },
+    direct,
     post: {
       exposure: kf.exposure,
       bloomStrength: kf.bloomStrength,
