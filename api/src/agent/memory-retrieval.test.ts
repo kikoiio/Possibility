@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { memories, memoryAccess, persons, timelines, worldPersons } from '../db/schema'
+import { memories, memoryAccess, personStates, persons, timelines, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
+import { buildEngineContext, buildWorldSnapshot } from './engine-context'
 import { recordAccess, retrieveForPrompt, situationalScore, type Memory, type Situation } from './memory'
 import { DEFAULT_RETRIEVAL_CONFIG, type RetrievalConfig } from './retrieval-config'
 
@@ -145,5 +146,55 @@ describe('situationalScore(F2 legacy 回退)', () => {
     const topical = mem('top', { createdAt: SIM_NOW, topicsJson: '["葬礼"]' })
     const s = situationalScore(topical, situation({ situationText: '村里在办葬礼' }))
     expect(s).toBeCloseTo(0.4)
+  })
+})
+
+describe('snapshot 分叉双源(D6:冻结证据 + 本线 SQL)', () => {
+  it('继承集只来自冻结证据;快照外的主线行不可见,本线新记忆参与打分', async () => {
+    const { db } = await setup()
+    const frozen = mem('snap-keep', { createdAt: '2026-09-01T00:00:00Z', importance: 9,
+      content: '冻结的关键记忆' })
+    const snapshot = {
+      version: 1, sourceTimelineId: 'home-main', sourceSimTime: '2026-09-15T00:00:00Z',
+      capturedAt: '2026-09-15T00:00:00Z', ancestorCutoffs: [],
+      states: [], schedules: [], memories: [frozen], events: [], commitments: [], historyComplete: true,
+    }
+    await db.insert(timelines).values({ id: 'fork-snap', worldId: 'home-world', parentTimelineId: 'home-main',
+      simNow: SIM_NOW, createdAt: '2026-09-15T00:00:00Z', status: 'active',
+      forkSnapshotJson: JSON.stringify(snapshot) })
+    await insertMemories(db, [
+      frozen, // 冻结证据对应的源行(存在于库中,但继承只走快照)
+      mem('main-not-in-snapshot', { createdAt: '2026-09-20T00:00:00Z', importance: 10 }),
+      mem('fork-own', { createdAt: '2026-09-16T00:00:00Z', timelineId: 'fork-snap', importance: 6 }),
+    ])
+    const fork = await db.select().from(timelines).where(eq(timelines.id, 'fork-snap')).get()
+    const selected = await retrieveForPrompt(db, 'ada', fork!, situation(), config({ summaryK: 0 }))
+    const ids = selected.map((m) => m.id)
+    expect(ids).toContain('snap-keep')
+    expect(ids).toContain('fork-own')
+    expect(ids).not.toContain('main-not-in-snapshot')
+  })
+})
+
+describe('relationMemories 双路径(S1:mentions 优先,无标注回退姓名子串)', () => {
+  it('mentions 命中(内容无名字)与 legacy 子串命中都进入关系记忆', async () => {
+    const { db } = await setup()
+    await db.insert(personStates).values([
+      { personId: 'ada', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe',
+        activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME },
+      { personId: 'bo', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Library',
+        activity: 'Reading', mood: 'Calm', goal: 'Read', updatedRealAt: WORLD_TIME },
+    ])
+    await insertMemories(db, [
+      mem('mentions-only', { createdAt: '2026-09-20T00:00:00Z', type: 'relationship',
+        content: '那把伞还在我柜子里', mentionedPersonIdsJson: '["bo"]', importance: 8 }),
+      mem('legacy-name', { createdAt: '2026-09-19T00:00:00Z', type: 'relationship',
+        content: 'Bo 在雨夜借给我半把伞', importance: 8 }),
+    ])
+    const snapshot = await buildWorldSnapshot(db, 'home-world', 'home-main')
+    const ctx = await buildEngineContext(db, 'ada', snapshot!)
+    const bo = ctx?.others.find((o) => o.person.id === 'bo')
+    expect(bo?.relationMemories).toContain('那把伞还在我柜子里')
+    expect(bo?.relationMemories).toContain('Bo 在雨夜借给我半把伞')
   })
 })
