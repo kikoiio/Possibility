@@ -61,6 +61,49 @@ export interface SpaceEntry {       // 多空间（F19）
   at: VoxelCoord                    // 触发位置
 }
 
+// ── 参数化地形与风格包(S3b)────────────────────
+export interface TerrainParams {
+  seed?: number                     // 缺省时由生成方分配并写入 meta
+  elevation?: {
+    amplitude?: number              // 起伏振幅(格),0 = 平地;配额上限见 terrain.ts
+    scale?: number                  // 噪声水平尺度,越大越平缓
+  }
+  river?: { enabled?: boolean; width?: number }
+  lakes?: { enabled?: boolean; size?: number }
+  vegetation?: {
+    density?: number                // 0–1 每柱散布概率基数,配额上限见 terrain.ts
+    trees?: boolean
+    flowers?: boolean
+    bushes?: boolean
+  }
+}
+
+/** 落盘形态:必含 seed */
+export type ResolvedTerrainParams = TerrainParams & { seed: number }
+
+export interface TerrainCell { at: VoxelCoord; block: string }
+
+export interface ClampRecord {
+  field: string                     // 'vegetation.density' | 'style.preset' | ...
+  from: number | string
+  to: number | string
+}
+
+export interface WorldTerrainMeta {
+  params: ResolvedTerrainParams
+  clamps: ClampRecord[]
+}
+
+export interface StylePackRef {
+  preset: string                    // 预设 id;未知 id 夹到默认预设并记录
+  tweaks?: {
+    fogDensity?: number             // 乘性偏移 [-0.5, +0.5]
+    exposure?: number               // 加性偏移 [-0.3, +0.3]
+    saturation?: number             // 加性偏移 [-0.3, +0.3]
+  }
+  clamps?: ClampRecord[]            // style 侧夹取记录(与 terrain 各记各的)
+}
+
 // ── 世界文档（F1）─────────────────────────────
 export interface VoxelDocument {
   version: 1
@@ -73,6 +116,8 @@ export interface VoxelDocument {
   locations: LocationBinding[]
   spaceEntries: SpaceEntry[]
   lockedObjectIds: string[]
+  terrain?: WorldTerrainMeta        // S3b:无此字段 = 非参数化地形世界(旧存档)
+  style?: StylePackRef              // S3b:无此字段 = 默认氛围(旧存档)
 }
 
 // ── 物体模板（仓库条目）───────────────────────
@@ -107,6 +152,8 @@ export interface ValidationIssue {
       // S2b 可行走性（F5）：净高 / 连通 / 照明 / 高差突变 / 地面缺口
       | 'walk-clearance' | 'walk-connectivity' | 'walk-lighting'
       | 'walk-stairs' | 'walk-gap'
+      // S3b 元数据(F6):地形/风格包 meta 形状非法
+      | 'invalid-meta'
   message: string
   at?: VoxelCoord
 }

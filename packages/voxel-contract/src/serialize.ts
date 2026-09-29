@@ -1,6 +1,7 @@
 import { SECTION_VOLUME } from './sections'
 import type {
-  ChunkSection, LocationBinding, SpaceEntry, VoxelDocument, VoxelObject, VoxelObjectCells, VoxelSize,
+  ChunkSection, LocationBinding, SpaceEntry, StylePackRef, VoxelDocument, VoxelObject, VoxelObjectCells,
+  VoxelSize, WorldTerrainMeta,
 } from './types'
 
 export class VoxelDeserializeError extends Error {
@@ -69,6 +70,9 @@ export interface SerializedVoxelDocument {
   locations: LocationBinding[]
   spaceEntries: SpaceEntry[]
   lockedObjectIds: string[]
+  /** S3b:可选元数据,缺省不产出该键(N2) */
+  terrain?: WorldTerrainMeta
+  style?: StylePackRef
 }
 
 /** 服务端/客户端共用的格式探测（与 2D SceneDocument 区分） */
@@ -111,6 +115,8 @@ export function serialize(doc: VoxelDocument): string {
     locations: doc.locations,
     spaceEntries: doc.spaceEntries,
     lockedObjectIds: doc.lockedObjectIds,
+    ...(doc.terrain ? { terrain: doc.terrain } : {}),
+    ...(doc.style ? { style: doc.style } : {}),
   }
   return JSON.stringify(envelope)
 }
@@ -159,6 +165,25 @@ export function deserialize(raw: string): VoxelDocument {
     assert(Array.isArray(doc[field]), `${field} must be an array`)
   }
 
+  // S3b 元数据:存在时做形状校验,缺省不产出该键(旧存档无损,N1/N2)
+  let terrain: WorldTerrainMeta | undefined
+  if (doc.terrain !== undefined) {
+    const t = doc.terrain as Record<string, unknown>
+    assert(typeof t === 'object' && t !== null, 'terrain must be an object')
+    const params = t.params as Record<string, unknown>
+    assert(typeof params === 'object' && params !== null, 'terrain.params must be an object')
+    assert(Number.isInteger(params.seed), 'terrain.params.seed must be an integer')
+    assert(Array.isArray(t.clamps), 'terrain.clamps must be an array')
+    terrain = t as unknown as WorldTerrainMeta
+  }
+  let style: StylePackRef | undefined
+  if (doc.style !== undefined) {
+    const s = doc.style as Record<string, unknown>
+    assert(typeof s === 'object' && s !== null, 'style must be an object')
+    assert(typeof s.preset === 'string' && s.preset.length > 0, 'style.preset must be a non-empty string')
+    style = s as unknown as StylePackRef
+  }
+
   return {
     version: 1,
     id: doc.id,
@@ -170,5 +195,7 @@ export function deserialize(raw: string): VoxelDocument {
     locations: doc.locations as VoxelDocument['locations'],
     spaceEntries: doc.spaceEntries as VoxelDocument['spaceEntries'],
     lockedObjectIds: doc.lockedObjectIds as string[],
+    ...(terrain ? { terrain } : {}),
+    ...(style ? { style } : {}),
   }
 }

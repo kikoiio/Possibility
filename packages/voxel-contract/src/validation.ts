@@ -3,6 +3,7 @@ import { rotatedOffsets } from './edits'
 import { createBlockRegistry } from './registry'
 import { getBlock, inBounds, parseSectionKey } from './sections'
 import { AIR, SECTION_SIZE } from './sections'
+import { STYLE_PRESETS } from './style'
 import type {
   BlockRegistry, EditOperation, ValidationIssue, Validator, VoxelCoord, VoxelDocument,
 } from './types'
@@ -77,6 +78,19 @@ export function validateDocument(doc: VoxelDocument, registry?: BlockRegistry): 
     if (!doc.objects.some((o) => o.id === location.objectId)) {
       issues.push({ code: 'location-unbound', message: `location '${location.name}' binds to missing object '${location.objectId}'` })
     }
+  }
+
+  // S3b 元数据(F6):形状轻校验,违规走既有重试管线
+  if (doc.terrain) {
+    if (!Number.isInteger(doc.terrain.params?.seed)) {
+      issues.push({ code: 'invalid-meta', message: 'terrain.params.seed must be an integer' })
+    }
+    if (!Array.isArray(doc.terrain.clamps)) {
+      issues.push({ code: 'invalid-meta', message: 'terrain.clamps must be an array' })
+    }
+  }
+  if (doc.style && !STYLE_PRESETS.some((p) => p.id === doc.style!.preset)) {
+    issues.push({ code: 'invalid-meta', message: `unknown style preset '${doc.style.preset}'` })
   }
   return issues
 }

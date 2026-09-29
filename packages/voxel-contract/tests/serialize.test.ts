@@ -55,4 +55,41 @@ describe('serialize / deserialize', () => {
     badKey.sections['bogus'] = badKey.sections[Object.keys(parsed.sections)[0]]
     expect(() => deserialize(JSON.stringify(badKey))).toThrow(/malformed section key/)
   })
+
+  it('round-trips terrain/style metadata (S3b, F6)', () => {
+    const doc = {
+      ...sampleWorld(),
+      terrain: {
+        params: { seed: 12345, elevation: { amplitude: 4 }, river: { enabled: true, width: 2 } },
+        clamps: [{ field: 'vegetation.density', from: 0.9, to: 0.1 }],
+      },
+      style: { preset: 'dusk-warm', tweaks: { exposure: 0.1 }, clamps: [{ field: 'style.preset', from: 'x', to: 'default' }] },
+    }
+    const restored = deserialize(serialize(doc))
+    expect(restored.terrain).toEqual(doc.terrain)
+    expect(restored.style).toEqual(doc.style)
+  })
+
+  it('omits metadata keys for legacy documents (N2)', () => {
+    const restored = deserialize(serialize(sampleWorld()))
+    expect('terrain' in restored).toBe(false)
+    expect('style' in restored).toBe(false)
+    expect(restored.terrain).toBeUndefined()
+    expect(restored.style).toBeUndefined()
+  })
+
+  it('rejects malformed metadata shapes', () => {
+    const good = serialize(sampleWorld())
+    const badSeed = JSON.parse(good)
+    badSeed.terrain = { params: { seed: 'abc' }, clamps: [] }
+    expect(() => deserialize(JSON.stringify(badSeed))).toThrow(/seed must be an integer/)
+
+    const badPreset = JSON.parse(good)
+    badPreset.style = { preset: '' }
+    expect(() => deserialize(JSON.stringify(badPreset))).toThrow(/style.preset/)
+
+    const badClamps = JSON.parse(good)
+    badClamps.terrain = { params: { seed: 1 }, clamps: 'no' }
+    expect(() => deserialize(JSON.stringify(badClamps))).toThrow(/terrain.clamps must be an array/)
+  })
 })
