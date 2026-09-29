@@ -1,4 +1,3 @@
-import { getObjectTemplate } from './catalog'
 import { fbm2D, mulberry32 } from './noise'
 import { AIR, getBlock, setBlockMut } from './sections'
 import type {
@@ -125,9 +124,6 @@ function generateTerrainCellsInternal(size: VoxelSize, params: ResolvedTerrainPa
   const lakesOn = params.lakes?.enabled ?? false
   const lakeSize = params.lakes?.size ?? 4
   const density = params.vegetation?.density ?? 0
-  const treesOn = params.vegetation?.trees ?? true
-  const flowersOn = params.vegetation?.flowers ?? true
-  const bushesOn = params.vegetation?.bushes ?? true
 
   // ── 高度场 ──────────────────────────────
   const heightAt = (x: number, z: number): number => {
@@ -197,50 +193,7 @@ function generateTerrainCellsInternal(size: VoxelSize, params: ResolvedTerrainPa
     }
   }
 
-  // ── 植被散布(配额:树 ≤ treeMax,装饰格 ≤ decorMax)──
-  if (density > 0) {
-    const rng = mulberry32((seed ^ 0xf00d) | 0)
-    let decorCount = 0
-    let treeCount = 0
-
-    // 树:4×4 抖动网格,每胞至多一棵,保证间距;烙模板格但不注册 objectCells
-    const treeTemplate = treesOn ? getObjectTemplate('tree') : undefined
-    if (treeTemplate) {
-      const maxOffsetY = Math.max(...treeTemplate.cells.map((c) => c.offset.y))
-      for (let gz = 0; gz * 4 < depth && treeCount < TERRAIN_QUOTAS.treeMax; gz++) {
-        for (let gx = 0; gx * 4 < width && treeCount < TERRAIN_QUOTAS.treeMax; gx++) {
-          const tx = gx * 4 + Math.floor(rng() * 4)
-          const tz = gz * 4 + Math.floor(rng() * 4)
-          if (tx >= width || tz >= depth) continue
-          const col = columns[tz * width + tx]
-          if (col.water || col.bank) continue
-          if (col.h + 1 + maxOffsetY > height - 1) continue // 树冠不出世界顶
-          if (rng() >= density) continue
-          if (decorCount + treeTemplate.cells.length > TERRAIN_QUOTAS.decorMax) continue
-          for (const c of treeTemplate.cells) {
-            push(tx + c.offset.x, col.h + 1 + c.offset.y, tz + c.offset.z, c.block)
-          }
-          decorCount += treeTemplate.cells.length
-          treeCount += 1
-        }
-      }
-    }
-
-    // 花/灌木:逐柱散布
-    for (let z = 0; z < depth && decorCount < TERRAIN_QUOTAS.decorMax; z++) {
-      for (let x = 0; x < width && decorCount < TERRAIN_QUOTAS.decorMax; x++) {
-        const col = columns[z * width + x]
-        if (col.water || col.bank) continue
-        if (rng() >= density) continue
-        const pickFlower = flowersOn && (!bushesOn || rng() < 0.6)
-        if (pickFlower) push(x, col.h + 1, z, 'flower')
-        else if (bushesOn) push(x, col.h + 1, z, 'bush')
-        else continue
-        decorCount += 1
-      }
-    }
-  }
-
+  // Vegetation is emitted as AssetPlacement by generateTerrain(), never as generated blocks.
   return cells
 }
 
@@ -285,23 +238,25 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
     assetPlacements.push({ assetId, anchor: [x, y, z], rotation: Math.floor(rng() * 4) as 0 | 1 | 2 | 3, seed: (seed ^ Math.imul(index + 1, 0x9e3779b1)) | 0 })
   }
   let i = 0
+  let treeCount = 0
   if (params.vegetation?.trees ?? true) {
-    for (let z = 1; z < depth; z += 4) for (let x = 1; x < width; x += 4) {
+    for (let z = 1; z < depth && treeCount < TERRAIN_QUOTAS.treeMax; z += 4) for (let x = 1; x < width && treeCount < TERRAIN_QUOTAS.treeMax; x += 4) {
       const tx = x + Math.floor(rng() * 3) - 1
       const tz = z + Math.floor(rng() * 3) - 1
       const y = columns.get(`${tx},${tz}`)
       if (y === undefined || rng() >= density) continue
       push('veg-tree-a', tx + 0.5, y + 1, tz + 0.5, i++)
+      treeCount++
     }
   }
-  if (plantsOn) for (let z = 0; z < depth; z++) for (let x = 0; x < width; x++) {
+  if (plantsOn) for (let z = 0; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z++) for (let x = 0; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x++) {
     const y = columns.get(`${x},${z}`)
     if (y === undefined || rng() >= density * 0.65) continue
     const flowersOn = params.vegetation?.flowers ?? true
     const assetId = flowersOn && rng() < 0.6 ? 'veg-flower-a' : 'veg-grass-a'
     push(assetId, x + 0.5, y + 1, z + 0.5, i++)
   }
-  if (params.vegetation?.bushes ?? true) for (let z = 2; z < depth; z += 5) for (let x = 2; x < width; x += 5) {
+  if (params.vegetation?.bushes ?? true) for (let z = 2; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z += 5) for (let x = 2; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x += 5) {
     const y = columns.get(`${x},${z}`)
     if (y === undefined || rng() >= density * 0.35) continue
     push('veg-bush-a', x + 0.5, y + 1, z + 0.5, i++)
