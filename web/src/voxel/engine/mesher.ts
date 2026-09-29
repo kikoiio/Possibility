@@ -2,9 +2,12 @@ import {
   parseSectionKey, SECTION_SIZE,
   type BlockRegistry, type SectionKey,
 } from '@possibility/voxel-contract'
+import { DEFAULT_BAKE_ENV } from './palettes/mist-manor'
 import type { TextureAtlas } from './atlas'
 import type { LightingEngine } from './lighting'
 import type { WorldModel } from './world-model'
+
+export { DEFAULT_BAKE_ENV }
 
 export interface MeshData {
   positions: Float32Array
@@ -35,10 +38,10 @@ export interface BakeEnvironment {
   blockTint: [number, number, number]
 }
 
-export const DEFAULT_BAKE_ENV: BakeEnvironment = {
-  faceShade: { px: 0.82, nx: 0.78, py: 1.0, ny: 0.5, pz: 0.86, nz: 0.72 },
-  skyTint: [1, 1, 1],
-  blockTint: [1, 0.82, 0.55],
+/** 逐顶点 AO 参数：4 档遮蔽亮度曲线 + 强度（缺省关闭，行为与旧版一致） */
+export interface AoParams {
+  curve: [number, number, number, number]
+  strength: number
 }
 
 type FaceDir = keyof BakeEnvironment['faceShade']
@@ -54,6 +57,13 @@ const FACES: Array<{ dir: FaceDir; offset: [number, number, number]; corners: Ar
 ]
 
 const FACE_UVS: Array<[number, number]> = [[0, 1], [0, 0], [1, 1], [1, 0]]
+
+/** 每个面的两个切向轴（法向轴之外的两个，按 xyz 顺序），AO 采样用 */
+const FACE_TANGENTS: Array<[number, number]> = FACES.map((face) => {
+  const normalAxis = face.offset.findIndex((v) => v !== 0)
+  const tangents = [0, 1, 2].filter((a) => a !== normalAxis)
+  return [tangents[0], tangents[1]]
+})
 
 function emptyMesh(): MeshData {
   return {
@@ -96,7 +106,7 @@ export class Mesher {
     private lighting: LightingEngine,
   ) {}
 
-  bakeSection(key: SectionKey, env: BakeEnvironment = DEFAULT_BAKE_ENV): SectionGeometry {
+  bakeSection(key: SectionKey, env: BakeEnvironment = DEFAULT_BAKE_ENV, ao?: AoParams): SectionGeometry {
     const section = this.world.doc.sections[key]
     if (!section || section.nonAirCount === 0) return { key, opaque: emptyMesh(), translucent: emptyMesh() }
 
@@ -104,6 +114,13 @@ export class Mesher {
     const bx = cx * SECTION_SIZE, by = cy * SECTION_SIZE, bz = cz * SECTION_SIZE
     const opaque = new MeshBuilder()
     const translucent = new MeshBuilder()
+    const aoEnabled = !!ao && ao.strength > 0
+
+    /** 不透明实体才算遮蔽样本 */
+    const occupied = (x: number, y: number, z: number): boolean => {
+      const t = this.registry.get(this.world.getBlock({ x, y, z }))
+      return !!t && t.solid && !t.translucent
+    }
 
     for (let ly = 0; ly < SECTION_SIZE; ly++) {
       for (let lz = 0; lz < SECTION_SIZE; lz++) {
@@ -114,7 +131,8 @@ export class Mesher {
           const type = this.registry.get(blockId)
           if (!type) continue
 
-          for (const face of FACES) {
+          for (let f = 0; f < FACES.length; f++) {
+            const face = FACES[f]
             const nx = x + face.offset[0], ny = y + face.offset[1], nz = z + face.offset[2]
             const neighborId = this.world.getBlock({ x: nx, y: ny, z: nz })
             const neighbor = this.registry.get(neighborId)
@@ -131,9 +149,29 @@ export class Mesher {
             const sky01 = this.lighting.getSky(lightAt) / 15
             const block01 = this.lighting.getBlockLight(lightAt) / 15
             const shade = env.faceShade[face.dir]
-            const r = shade * Math.min(1, sky01 * env.skyTint[0] + block01 * env.blockTint[0])
-            const g = shade * Math.min(1, sky01 * env.skyTint[1] + block01 * env.blockTint[1])
-            const b = shade * Math.min(1, sky01 * env.skyTint[2] + block01 * env.blockTint[2])
+            const lightR = Math.min(1, sky01 * env.skyTint[0] + block01 * env.blockTint[0])
+            const lightG = Math.min(1, sky01 * env.skyTint[1] + block01 * env.blockTint[1])
+            const lightB = Math.min(1, sky01 * env.skyTint[2] + block01 * env.blockTint[2])
+
+            // 逐顶点 AO：每角在邻居格切平面上取两个邻边 + 一个对角样本（读全局坐标，节边界天然正确）
+            const aoFactors = [1, 1, 1, 1]
+            if (aoEnabled && ao) {
+              const [t1, t2] = FACE_TANGENTS[f]
+              for (let c = 0; c < 4; c++) {
+                const corner = face.corners[c]
+                const s1 = corner[t1] === 1 ? 1 : -1
+                const s2 = corner[t2] === 1 ? 1 : -1
+                const d1: [number, number, number] = [0, 0, 0]
+                const d2: [number, number, number] = [0, 0, 0]
+                d1[t1] = s1
+                d2[t2] = s2
+                const side1 = occupied(nx + d1[0], ny + d1[1], nz + d1[2]) ? 1 : 0
+                const side2 = occupied(nx + d2[0], ny + d2[1], nz + d2[2]) ? 1 : 0
+                const cornerOcc = occupied(nx + d1[0] + d2[0], ny + d1[1] + d2[1], nz + d1[2] + d2[2]) ? 1 : 0
+                const level = side1 && side2 ? 0 : 3 - (side1 + side2 + cornerOcc)
+                aoFactors[c] = 1 + (ao.curve[level] - 1) * ao.strength
+              }
+            }
 
             const target = type.translucent ? translucent : opaque
             const base = target.positions.length / 3
@@ -141,13 +179,14 @@ export class Mesher {
             const fluid = type.category === 'fluid'
             for (let c = 0; c < 4; c++) {
               const corner = face.corners[c]
+              const aoF = aoFactors[c]
               target.positions.push(x + corner[0], y + corner[1], z + corner[2])
               target.normals.push(face.offset[0], face.offset[1], face.offset[2])
               target.uvs.push(
                 FACE_UVS[c][0] === 0 ? uv.u0 : uv.u1,
                 FACE_UVS[c][1] === 0 ? uv.v0 : uv.v1,
               )
-              target.colors.push(r, g, b)
+              target.colors.push(shade * aoF * lightR, shade * aoF * lightG, shade * aoF * lightB)
               target.sway.push(swaying ? corner[1] : 0)
               target.water.push(fluid ? 1 : 0)
             }
@@ -160,7 +199,7 @@ export class Mesher {
     return { key, opaque: opaque.build(), translucent: translucent.build() }
   }
 
-  bakeAll(env: BakeEnvironment = DEFAULT_BAKE_ENV): SectionGeometry[] {
-    return Object.keys(this.world.doc.sections).map((key) => this.bakeSection(key, env))
+  bakeAll(env: BakeEnvironment = DEFAULT_BAKE_ENV, ao?: AoParams): SectionGeometry[] {
+    return Object.keys(this.world.doc.sections).map((key) => this.bakeSection(key, env, ao))
   }
 }
