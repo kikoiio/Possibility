@@ -2,11 +2,12 @@ import * as THREE from 'three'
 import type { SectionKey } from '@possibility/voxel-contract'
 import type { TextureAtlas } from './atlas'
 import type { SectionGeometry } from './mesher'
+import { PostPipeline } from './post'
+import { SkyDome } from './sky'
 
 export interface EnvironmentState {
-  skyColor: THREE.ColorRepresentation
   fogColor: THREE.ColorRepresentation
-  /** 0 = 无雾，1 = 浓雾 */
+  /** 最终雾密度（已含调色数据的 fogDensityScale），0 = 无雾 */
   fogDensity: number
 }
 
@@ -41,7 +42,7 @@ function injectWater(shader: THREE.WebGLProgramParametersWithUniforms, uniforms:
     .replace('#include <uv_vertex>', `#include <uv_vertex>\n#ifdef USE_MAP\n  vMapUv += vec2(sin(uTime * 1.2 + position.x * 1.7 + position.z), cos(uTime * 0.9 + position.z * 1.3)) * 0.015 * aWater * uMotion;\n#endif`)
 }
 
-/** three.js 场景装配：节几何管理、天空、雾、不透明/透明双渲染层 */
+/** three.js 场景装配：节几何管理、天空穹顶、雾、后处理、不透明/透明双渲染层 */
 export class VoxelRenderer {
   readonly scene = new THREE.Scene()
   private three: THREE.WebGLRenderer | null = null
@@ -49,6 +50,9 @@ export class VoxelRenderer {
   private opaqueMaterial: THREE.MeshBasicMaterial
   private translucentMaterial: THREE.MeshBasicMaterial
   readonly shaderUniforms: ShaderUniforms = { uTime: { value: 0 }, uMotion: { value: 1 } }
+  /** 天空穹顶与后处理链（mount 后可用；由引擎门面每帧驱动） */
+  sky: SkyDome | null = null
+  post: PostPipeline | null = null
 
   constructor(private atlas: TextureAtlas) {
     this.opaqueMaterial = new THREE.MeshBasicMaterial({ vertexColors: true })
@@ -60,12 +64,15 @@ export class VoxelRenderer {
     this.scene.fog = new THREE.FogExp2(0x0, 0)
   }
 
-  /** 挂载画布；WebGL2 缺失时抛出明确错误（N9） */
-  mount(canvas: HTMLCanvasElement): void {
+  /** 挂载画布；WebGL2 缺失时抛出明确错误（N9）。抗锯齿由后处理链 RT 的 MSAA 承担 */
+  mount(canvas: HTMLCanvasElement, cameraProvider: () => THREE.Camera): void {
     if (!canvas.getContext('webgl2')) throw new WebGL2UnavailableError()
-    this.three = new THREE.WebGLRenderer({ canvas, antialias: true })
+    this.three = new THREE.WebGLRenderer({ canvas, antialias: false })
     this.three.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.resize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height)
+    this.sky = new SkyDome()
+    this.scene.add(this.sky.mesh)
+    this.post = new PostPipeline(this.three, this.scene, cameraProvider)
     if (this.atlas.texture) this.setAtlasTexture()
   }
 
@@ -78,6 +85,7 @@ export class VoxelRenderer {
 
   resize(width: number, height: number): void {
     this.three?.setSize(width, height, false)
+    this.post?.resize(width, height)
   }
 
   get size(): { width: number; height: number } {
@@ -133,14 +141,18 @@ export class VoxelRenderer {
   }
 
   setEnvironment(env: EnvironmentState): void {
-    this.scene.background = new THREE.Color(env.skyColor)
+    // 雾色兜底：穹顶未覆盖/失败时背景与雾一致，不出现断层
+    this.scene.background = new THREE.Color(env.fogColor)
     const fog = this.scene.fog as THREE.FogExp2
     fog.color = new THREE.Color(env.fogColor)
-    fog.density = env.fogDensity * 0.018
+    fog.density = env.fogDensity
   }
 
-  renderFrame(_dt: number, camera: THREE.Camera): void {
-    this.three?.render(this.scene, camera)
+  renderFrame(dt: number, camera: THREE.Camera): void {
+    if (!this.three) return
+    this.sky?.follow(camera)
+    if (this.post?.enabled) this.post.render(dt)
+    else this.three.render(this.scene, camera)
   }
 
   get canvas(): HTMLCanvasElement | null {
@@ -149,6 +161,13 @@ export class VoxelRenderer {
 
   dispose(): void {
     this.removeSections([...this.sectionMeshes.keys()])
+    if (this.sky) {
+      this.scene.remove(this.sky.mesh)
+      this.sky.dispose()
+      this.sky = null
+    }
+    this.post?.dispose()
+    this.post = null
     this.opaqueMaterial.dispose()
     this.translucentMaterial.dispose()
     this.three?.dispose()

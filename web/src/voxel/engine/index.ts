@@ -9,13 +9,20 @@ import { CameraRig } from './camera'
 import { DayNightCycle } from './day-night'
 import { BuildFeedback } from './feedback'
 import { LightingEngine } from './lighting'
-import { DEFAULT_BAKE_ENV, Mesher, type BakeEnvironment } from './mesher'
+import { DEFAULT_BAKE_ENV, Mesher, type AoParams, type BakeEnvironment } from './mesher'
 import { MotionPreference } from './motion-preference'
+import { loadPalette, samplePalette, type RGB, type ThemePalette } from './palette'
 import { Picker } from './picker'
 import { ResidentRenderer, type ResidentRenderState } from './residents'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
+
+function rgbToHex(c: RGB): number {
+  return (Math.round(Math.min(1, c[0]) * 255) << 16)
+    | (Math.round(Math.min(1, c[1]) * 255) << 8)
+    | Math.round(Math.min(1, c[2]) * 255)
+}
 
 export interface FrameUpdatable { update(dt: number): void }
 
@@ -32,6 +39,7 @@ export class VoxelEngine {
   lighting: LightingEngine | null = null
   mesher: Mesher | null = null
   bakeEnv: BakeEnvironment = { ...DEFAULT_BAKE_ENV, faceShade: { ...DEFAULT_BAKE_ENV.faceShade } }
+  palette: ThemePalette | null = null
   readonly motion = new MotionPreference()
   dayNight: DayNightCycle | null = null
   weather: WeatherSystem | null = null
@@ -41,7 +49,7 @@ export class VoxelEngine {
   feedback: BuildFeedback | null = null
 
   private pendingSkyLevel = 15
-  private baseEnv = { skyColor: 0x9ec8e8 as THREE.ColorRepresentation, fogColor: 0x9ec8e8 as THREE.ColorRepresentation }
+  private currentTimeOfDay = 0.5
   private weatherMod = { fogBoost: 0, dim: 0 }
 
   private canvas: HTMLCanvasElement | null = null
@@ -55,7 +63,7 @@ export class VoxelEngine {
 
   mount(canvas: HTMLCanvasElement): void {
     this.canvas = canvas
-    this.renderer.mount(canvas)
+    this.renderer.mount(canvas, () => this.cameraRig.camera)
     this.cameraRig.attach(canvas)
     this.ambient = new AmbientAnimator(this.renderer.scene, this.renderer.shaderUniforms, this.motion)
     this.dayNight = new DayNightCycle({
@@ -75,9 +83,10 @@ export class VoxelEngine {
     this.cameraRig.setAspect(clientWidth / Math.max(1, clientHeight))
   }
 
-  /** 加载主题方块集与图集；placeholder 供开发期无美术资产时使用 */
+  /** 加载主题方块集、图集与调色数据；placeholder 供开发期无美术资产时使用 */
   async loadAssets(theme: string, opts: { placeholder?: boolean } = {}): Promise<void> {
     this.registry = createBlockRegistry(theme)
+    this.palette = loadPalette(theme)
     if (opts.placeholder) {
       const { canvas, json } = buildPlaceholderAtlas(this.registry)
       const texture = new THREE.CanvasTexture(canvas)
@@ -98,11 +107,11 @@ export class VoxelEngine {
     this.lighting.computeAll()
     this.mesher = new Mesher(this.world, this.registry, this.atlas, this.lighting)
     this.renderer.removeSections([...this.allSectionKeys()])
-    this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv))
+    this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv, this.aoParams))
     this.cameraRig.fitToWorld(doc.size)
     this.weather = new WeatherSystem(
       this.renderer.scene, this.world, this.registry, this.motion,
-      { setWeatherEnv: (mod) => { this.weatherMod = mod; this.composeEnvironment() } },
+      { setWeatherEnv: (mod) => { this.weatherMod = mod; this.applyPalette() } },
       () => { const t = this.cameraRig.state.target; return { x: t.x, y: t.y, z: t.z } },
     )
     this.residents = new ResidentRenderer(this.renderer.scene, this.world, this.registry)
@@ -137,20 +146,29 @@ export class VoxelEngine {
     }
   }
 
-  setBaseEnvironment(env: { skyColor: THREE.ColorRepresentation; fogColor: THREE.ColorRepresentation }): void {
-    this.baseEnv = env
-    this.composeEnvironment()
+  setBaseEnvironment(_env: { skyColor: THREE.ColorRepresentation; fogColor: THREE.ColorRepresentation }): void {
+    // 昼夜 sink 协议保留；天色/雾色现由 applyPalette 每帧从色彩中枢采样
+    this.applyPalette()
   }
 
-  /** 基础环境（昼夜）× 天气修饰（雾加成 / 压暗）合成最终渲染环境 */
-  private composeEnvironment(): void {
-    const sky = new THREE.Color(this.baseEnv.skyColor).multiplyScalar(1 - this.weatherMod.dim)
-    const fog = new THREE.Color(this.baseEnv.fogColor).lerp(new THREE.Color(0x8a939e), this.weatherMod.dim)
-    const env: EnvironmentState = { skyColor: sky, fogColor: fog, fogDensity: this.weatherMod.fogBoost }
+  /** 色彩中枢分发：每帧采样调色（天空/雾/后处理平滑），96 步量化仅控制重烘焙 */
+  private applyPalette(): void {
+    if (!this.palette) return
+    const resolved = samplePalette(this.palette, this.currentTimeOfDay, this.weatherMod)
+    const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density }
     this.renderer.setEnvironment(env)
+    const time = this.renderer.shaderUniforms.uTime.value
+    const motion = this.motion.animationTimeScale()
+    this.renderer.sky?.update(resolved.sky, resolved.fog.color, time, motion)
+    this.renderer.post?.update(resolved.post, { motion, time })
+  }
+
+  private get aoParams(): AoParams | undefined {
+    return this.palette ? { curve: this.palette.aoCurve, strength: this.palette.aoStrength } : undefined
   }
 
   setTimeOfDay(t: number): void {
+    this.currentTimeOfDay = ((t % 1) + 1) % 1
     this.dayNight?.setTimeOfDay(t)
   }
 
@@ -175,7 +193,7 @@ export class VoxelEngine {
       for (const affected of this.lighting.computeSection(key).affectedSections) rebake.add(affected)
     }
     const t1 = performance.now()
-    const baked = [...rebake].map((key) => this.mesher!.bakeSection(key, this.bakeEnv))
+    const baked = [...rebake].map((key) => this.mesher!.bakeSection(key, this.bakeEnv, this.aoParams))
     const t2 = performance.now()
     this.renderer.updateSections(baked)
     const t3 = performance.now()
@@ -191,7 +209,7 @@ export class VoxelEngine {
   rebakeAll(): void {
     if (!this.mesher || !this.lighting) return
     this.lighting.setSkyLevel(this.pendingSkyLevel) // 内部已 computeAll
-    this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv))
+    this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv, this.aoParams))
   }
 
   addUpdatable(u: FrameUpdatable): () => void {
@@ -210,6 +228,7 @@ export class VoxelEngine {
       this.cameraRig.update(dt)
       this.updatablesTick(dt)
       for (const u of this.updatables) u.update(dt)
+      this.applyPalette() // 天空/雾/后处理每帧平滑；重烘焙仍由 96 步量化控制
       this.onFrame?.(dt)
       this.renderer.renderFrame(dt, this.cameraRig.camera)
       this.raf = requestAnimationFrame(tick)
@@ -249,6 +268,9 @@ export * from './camera'
 export * from './day-night'
 export * from './lighting'
 export * from './mesher'
+export * from './palette'
+export * from './sky'
+export * from './post'
 export * from './feedback'
 export * from './motion-preference'
 export * from './pathfinding'
