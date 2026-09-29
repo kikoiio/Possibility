@@ -222,7 +222,11 @@ function bucketCondition(timeline: Timeline, main: Timeline | null) {
  * 1 = 未上卷的 L1（level=1）。L2 封顶，永不为源。
  */
 function sourceLevelCondition(sourceLevel: 0 | 1) {
-  return sourceLevel === 0 ? isNull(memories.level) : eq(memories.level, sourceLevel)
+  // 与 summaryLevel() 推导对齐：原文 = level NULL 且非 summary（迁移前遗留的 level NULL
+  // 摘要不算原文）；L1 源 =「level=1」∪「遗留 level NULL 摘要」
+  return sourceLevel === 0
+    ? and(isNull(memories.level), ne(memories.type, 'summary'))
+    : or(eq(memories.level, 1), and(isNull(memories.level), eq(memories.type, 'summary')))
 }
 
 /** needsSummary 的泛化（S2 F2/F3）：指定源层级的未压缩条目是否超阈值（限量 threshold+1 行，N3） */
