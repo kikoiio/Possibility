@@ -105,7 +105,10 @@ export function getBlock(doc: VoxelDocument, at: VoxelCoord): string {
 /**
  * 世界级写入（就地修改，供 applyEdits 内部使用）。
  * 返回受影响节键集合：目标节本身；若格子在节边界上，
- * 相邻节的面剔除结果可能变化，一并返回（F4）。
+ * 邻接节的面剔除、AO 角点与采样光照可能变化，一并返回（F4）。
+ *
+ * 边界轴按笛卡尔积展开，而不是只返回面邻居：一个节边界角点的
+ * AO 样本可以同时落在相邻 x/y/z 节，因此还需要通知边、角邻居。
  */
 export function setBlockMut(doc: VoxelDocument, at: VoxelCoord, block: string): SectionKey[] {
   if (!inBounds(doc.size, at)) return []
@@ -122,17 +125,23 @@ export function setBlockMut(doc: VoxelDocument, at: VoxelCoord, block: string): 
   const affected = new Set<SectionKey>([key])
   const { cx, cy, cz } = sectionCoordOf(at)
   const local = localCoordOf(at)
-  const neighbor = (dx: number, dy: number, dz: number, cond: boolean) => {
-    if (!cond) return
-    const nx = at.x + dx, ny = at.y + dy, nz = at.z + dz
-    if (nx < 0 || nx >= doc.size.width || ny < 0 || ny >= doc.size.height || nz < 0 || nz >= doc.size.depth) return
-    affected.add(keyOfSection(cx + dx, cy + dy, cz + dz))
+  const axisOffsets = (coordinate: number, size: number): number[] => {
+    if (coordinate === 0) return [-1, 0]
+    if (coordinate === size - 1) return [0, 1]
+    return [0]
   }
-  neighbor(-1, 0, 0, local.x === 0)
-  neighbor(1, 0, 0, local.x === SECTION_SIZE - 1)
-  neighbor(0, -1, 0, local.y === 0)
-  neighbor(0, 1, 0, local.y === SECTION_SIZE - 1)
-  neighbor(0, 0, -1, local.z === 0)
-  neighbor(0, 0, 1, local.z === SECTION_SIZE - 1)
+  const xOffsets = axisOffsets(local.x, SECTION_SIZE)
+  const yOffsets = axisOffsets(local.y, SECTION_SIZE)
+  const zOffsets = axisOffsets(local.z, SECTION_SIZE)
+  for (const dx of xOffsets) {
+    for (const dy of yOffsets) {
+      for (const dz of zOffsets) {
+        if (dx === 0 && dy === 0 && dz === 0) continue
+        const nx = at.x + dx, ny = at.y + dy, nz = at.z + dz
+        if (nx < 0 || nx >= doc.size.width || ny < 0 || ny >= doc.size.height || nz < 0 || nz >= doc.size.depth) continue
+        affected.add(keyOfSection(cx + dx, cy + dy, cz + dz))
+      }
+    }
+  }
   return [...affected]
 }

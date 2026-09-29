@@ -74,15 +74,21 @@ describe('world-level get/set', () => {
     expect(Object.keys(doc.sections)).toHaveLength(0)
   })
 
-  it('border edits report neighbor sections as affected', () => {
+  it('border edits report face, edge, and corner neighbor sections as affected', () => {
     const doc = createEmptyWorld({ width: 64, height: 32, depth: 32 }, 'mist-manor')
-    // 内部格：只影响本節
+    // 内部格：只影响本节
     expect(setBlockMut(doc, at(5, 5, 5), 'grass')).toEqual(['0,0,0'])
     // x 边界格：影响左右两节
-    const keys = setBlockMut(doc, at(16, 5, 5), 'grass')
-    expect(keys.sort()).toEqual(['0,0,0', '1,0,0'])
-    // 角落格：影响三節
-    const corner = setBlockMut(doc, at(0, 0, 16), 'grass')
-    expect(corner.sort()).toEqual(['0,0,0', '0,0,1'])
+    const face = setBlockMut(doc, at(16, 5, 5), 'grass')
+    expect(face.sort()).toEqual(['0,0,0', '1,0,0'])
+    // x/z 边界格：AO 共享角点要求边邻居与对角邻居都重烘焙
+    const edge = setBlockMut(doc, at(16, 5, 16), 'grass')
+    expect(edge.sort()).toEqual(['0,0,0', '0,0,1', '1,0,0', '1,0,1'])
+    // x/y/z 三轴边界格：完整笛卡尔积，覆盖共享角点所在的体节
+    const corner = setBlockMut(doc, at(16, 16, 16), 'grass')
+    expect(corner.sort()).toEqual([
+      '0,0,0', '0,0,1', '0,1,0', '0,1,1',
+      '1,0,0', '1,0,1', '1,1,0', '1,1,1',
+    ])
   })
 })

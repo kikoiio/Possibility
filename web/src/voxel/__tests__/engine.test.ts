@@ -52,10 +52,15 @@ describe('TextureAtlas', () => {
 })
 
 describe('WorldModel', () => {
-  it('setBlock reports affected sections including border neighbors', () => {
+  it('setBlock reports face, diagonal, and corner seam sections', () => {
     const { world } = makeWorld({ width: 64, height: 32, depth: 32 })
     expect(world.setBlock(at(5, 5, 5), 'stone')).toEqual(['0,0,0'])
     expect(world.setBlock(at(16, 5, 5), 'stone').sort()).toEqual(['0,0,0', '1,0,0'])
+    expect(world.setBlock(at(16, 5, 16), 'stone').sort()).toEqual(['0,0,0', '0,0,1', '1,0,0', '1,0,1'])
+    expect(world.setBlock(at(16, 16, 16), 'stone').sort()).toEqual([
+      '0,0,0', '0,0,1', '0,1,0', '0,1,1',
+      '1,0,0', '1,0,1', '1,1,0', '1,1,1',
+    ])
   })
 
   it('tracks dirty sections and notifies subscribers', () => {
