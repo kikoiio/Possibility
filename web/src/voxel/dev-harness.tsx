@@ -117,7 +117,8 @@ export default function VoxelDevHarness() {
         })()
         engine.loadDocument(override ?? fixture ?? buildFixtureWorld())
         engine.start()
-        startFixtureResidents(engine)
+        // 居民点位写死在平地 fixture 坐标;参数化地形世界地面起伏,跳过以免埋进地里
+        if (!fixture) startFixtureResidents(engine)
         // 观察点击 → 产品交互（T28）：居民活动 / 地点详情 / 空间导航
         const router = new InteractionRouter(engine, {
           onPerson: (personId) => record(setInteraction, { kind: 'person', detail: describePerson(personId) }),
