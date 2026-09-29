@@ -6,6 +6,7 @@ import type { EditController } from '../bridge/edit-controller'
 import WarehousePanel from './WarehousePanel'
 import BlockPalette from './BlockPalette'
 import AiEditPanel from './AiEditPanel'
+import WorldPanel from './WorldPanel'
 
 export interface VoxelEditorProps {
   engine: VoxelEngine
@@ -18,7 +19,7 @@ export interface VoxelEditorProps {
   editing?: boolean
 }
 
-type Tool = 'warehouse' | 'block' | 'ai'
+type Tool = 'warehouse' | 'block' | 'ai' | 'world'
 
 const CLICK_SLOP_PX = 6
 
@@ -242,12 +243,16 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
             error={aiError}
           />
         )}
+        {editing && tool === 'world' && (
+          <WorldPanel engine={engine} controller={controller} />
+        )}
       </div>
       {editing && (
         <div className="pointer-events-auto absolute bottom-3 right-3 flex gap-1 text-xs" data-testid="voxel-editor-toolbar">
           {toolButton('warehouse', '物体仓库')}
           {toolButton('block', '方块')}
           {toolButton('ai', 'AI 改造')}
+          {toolButton('world', '世界')}
         </div>
       )}
       {rejection && (

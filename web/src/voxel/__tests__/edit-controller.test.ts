@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createBlockRegistry, createEmptyWorld, applyEdits } from '@possibility/voxel-contract'
+import {
+  applyEdits, clampTerrainParams, createBlockRegistry, createEmptyWorld, generateTerrainCells, getBlock,
+  writeTerrainCells,
+  type VoxelDocument,
+} from '@possibility/voxel-contract'
 import type { AtlasJson } from '../engine/atlas'
 import { VoxelEngine } from '../engine'
 import { EditController } from '../bridge/edit-controller'
@@ -102,6 +106,99 @@ describe('EditController', () => {
     expect(saved).toHaveLength(1)
     controller.flushSave() // 无 pending，不重复保存
     expect(saved).toHaveLength(1)
+    engine.dispose()
+  })
+})
+
+describe('EditController × S3b 地形重生成与风格包', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const TERRAIN_SIZE = { width: 32, height: 16, depth: 32 }
+
+  function terrainEngine() {
+    const engine = headlessEngine()
+    const { params } = clampTerrainParams(
+      { seed: 42, elevation: { amplitude: 4 }, river: { enabled: true }, vegetation: { density: 0.05 } },
+      TERRAIN_SIZE,
+    )
+    const cells = generateTerrainCells(TERRAIN_SIZE, params)
+    const doc = {
+      ...writeTerrainCells(engine.world!.doc, cells).document,
+      terrain: { params, clamps: [] },
+    }
+    engine.loadDocument(doc)
+    return { engine, params }
+  }
+
+  const topY = (doc: VoxelDocument, x: number, z: number) => {
+    for (let y = doc.size.height - 1; y >= 0; y--) {
+      if (getBlock(doc, at(x, y, z)) !== 'air') return y
+    }
+    return 0
+  }
+
+  it('非参数化地形世界 → 拒绝并给 invalid-meta', () => {
+    const engine = headlessEngine()
+    const controller = new EditController({ engine })
+    const outcome = controller.regenerateTerrain({ elevation: { amplitude: 2 } })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.issues[0].code).toBe('invalid-meta')
+    engine.dispose()
+  })
+
+  it('重生成替换地形层但物体格原样保留(F7)', () => {
+    const { engine } = terrainEngine()
+    const doc = engine.world!.doc
+    const anchor = at(10, topY(doc, 10, 10) + 1, 10)
+    const placed = applyEdits(doc, [
+      { kind: 'place-object', objectType: 'stone-lantern', anchor, rotation: 0, objectId: 'lamp' },
+    ]).document
+    engine.loadDocument(placed)
+    const lampCells = placed.objectCells.find((c) => c.objectId === 'lamp')!.cells
+    const before = lampCells.map((c) => getBlock(engine.world!.doc, c))
+
+    const controller = new EditController({ engine })
+    const outcome = controller.regenerateTerrain({ seed: 42, elevation: { amplitude: 4 }, river: { enabled: false }, vegetation: { density: 0.05 } })
+    expect(outcome.ok).toBe(true)
+    expect(Array.isArray(outcome.issues)).toBe(true)
+    // 物体记录与格子内容原样
+    expect(engine.world!.doc.objectCells.find((c) => c.objectId === 'lamp')).toBeDefined()
+    lampCells.forEach((c, i) => expect(getBlock(engine.world!.doc, c)).toBe(before[i]))
+    // 元数据已更新
+    expect(engine.world!.doc.terrain?.params.river?.enabled).toBe(false)
+    engine.dispose()
+  })
+
+  it('手工挖掉的地形格在重生成时被覆盖(F7)', () => {
+    const { engine } = terrainEngine()
+    const doc = engine.world!.doc
+    const victim = at(5, topY(doc, 5, 5), 5)
+    const controller = new EditController({ engine })
+    const dug = controller.applyOps([{ kind: 'set-block', at: victim, block: 'air' }], false)
+    expect(dug.ok).toBe(true)
+    expect(getBlock(engine.world!.doc, victim)).toBe('air')
+    const outcome = controller.regenerateTerrain(engine.world!.doc.terrain!.params)
+    expect(outcome.ok).toBe(true)
+    expect(getBlock(engine.world!.doc, victim)).not.toBe('air')
+    engine.dispose()
+  })
+
+  it('setStyle:夹取落文档、引擎即时生效、未知预设记录(F8/F9)', () => {
+    const { engine } = terrainEngine()
+    const controller = new EditController({ engine })
+    const outcome = controller.setStyle({ preset: 'dusk-warm', tweaks: { exposure: 5 } })
+    expect(outcome.ok).toBe(true)
+    expect(engine.getStyle()?.preset).toBe('dusk-warm')
+    expect(engine.getStyle()?.tweaks?.exposure).toBe(0.3)
+    const docStyle = engine.world!.doc.style
+    expect(docStyle?.preset).toBe('dusk-warm')
+    expect(docStyle?.clamps).toEqual([{ field: 'style.tweaks.exposure', from: 5, to: 0.3 }])
+
+    const unknown = controller.setStyle({ preset: 'cyberpunk' })
+    expect(unknown.ok).toBe(true)
+    expect(engine.world!.doc.style?.preset).toBe('default')
+    expect(engine.world!.doc.style?.clamps).toEqual([{ field: 'style.preset', from: 'cyberpunk', to: 'default' }])
     engine.dispose()
   })
 })

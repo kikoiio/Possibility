@@ -1,5 +1,5 @@
 import {
-  applyEdits, createEmptyWorld,
+  applyEdits, clampTerrainParams, createEmptyWorld, generateTerrainCells, getBlock, writeTerrainCells,
   type EditOperation, type VoxelDocument,
 } from '@possibility/voxel-contract'
 
@@ -41,6 +41,44 @@ export function buildFixtureWorld(): VoxelDocument {
     spaceEntries: [
       { spaceId: 'main-hall', label: '进入主楼 →', at: { x: 23, y: 1, z: 24 } },
     ],
+    lockedObjectIds: ['house'],
+  }
+}
+
+/** 柱顶高度：从世界顶部向下第一个非空格 */
+function columnTop(doc: VoxelDocument, x: number, z: number): number {
+  for (let y = doc.size.height - 1; y >= 0; y--) {
+    if (getBlock(doc, { x, y, z }) !== 'air') return y
+  }
+  return 0
+}
+
+/**
+ * S3b 参数化地形 + 风格包 fixture:起伏 + 河流 + 植被,dusk-warm 风格,
+ * 主楼与石灯笼落在地形之上(e2e 探针与 walkthrough 用)。
+ */
+export function buildTerrainFixtureWorld(): VoxelDocument {
+  const size = { width: 48, height: 24, depth: 48 }
+  const { params, clamps } = clampTerrainParams({
+    seed: 20260929,
+    elevation: { amplitude: 5, scale: 24 },
+    river: { enabled: true, width: 2 },
+    lakes: { enabled: false },
+    vegetation: { density: 0.05, trees: true, flowers: true, bushes: true },
+  }, size)
+  const terrainDoc = writeTerrainCells(
+    createEmptyWorld(size, 'mist-manor', 'fixture-terrain'),
+    generateTerrainCells(size, params),
+  ).document
+  const result = applyEdits(terrainDoc, [
+    { kind: 'place-object', objectType: 'manor-main-house', anchor: { x: 8, y: columnTop(terrainDoc, 8, 8) + 1, z: 8 }, rotation: 0, objectId: 'house', label: '地形主楼' },
+    { kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 16, y: columnTop(terrainDoc, 16, 12) + 1, z: 12 }, rotation: 0, objectId: 'lantern-a' },
+  ])
+  return {
+    ...result.document,
+    terrain: { params, clamps },
+    style: { preset: 'dusk-warm', tweaks: { exposure: 0.05 } },
+    locations: [{ name: '主楼', objectId: 'house' }],
     lockedObjectIds: ['house'],
   }
 }

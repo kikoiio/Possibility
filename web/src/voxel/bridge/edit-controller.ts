@@ -1,10 +1,15 @@
 import {
-  applyEdits, validateEdit,
-  type EditOperation, type EditResult, type ValidationIssue, type VoxelDocument,
+  applyEdits, clampStyleRef, clampTerrainParams, diffTerrainRegen, generateTerrainCells,
+  validateDocument, validateEdit, validateWalkability, writeTerrainCells,
+  type EditOperation, type EditResult, type StylePackRef, type TerrainParams, type ValidationIssue,
+  type VoxelDocument,
 } from '@possibility/voxel-contract'
 import type { VoxelEngine } from '../engine'
 
 export type EditOutcome = { ok: true; result: EditResult } | { ok: false; issues: ValidationIssue[] }
+
+/** S3b 重生成结果:地形层替换后的校验 issue(悬空/连通等),空数组 = 校验通过 */
+export type RegenOutcome = { ok: true; issues: ValidationIssue[] } | { ok: false; issues: ValidationIssue[] }
 
 export interface EditControllerOptions {
   engine: VoxelEngine
@@ -75,6 +80,55 @@ export class EditController {
           break
       }
     }
+  }
+
+  /**
+   * S3b 显式重新生成(F7):重放旧地形 → diff 新地形 → 替换地形层,
+   * 保留地形层以外的方块与全部物体;完成后重跑契约+可行走性校验,
+   * issue 如实返回给调用方呈现,不静默。
+   */
+  regenerateTerrain(rawParams: TerrainParams): RegenOutcome {
+    const doc = this.engine.world?.doc
+    if (!doc) return { ok: false, issues: [{ code: 'locked-violation', message: '世界尚未加载' }] }
+    if (this.opts.canEdit && !this.opts.canEdit()) {
+      const issues: ValidationIssue[] = [{ code: 'locked-violation', message: '当前环境不允许编辑' }]
+      this.opts.onRejected?.(issues)
+      return { ok: false, issues }
+    }
+    if (!doc.terrain) {
+      return { ok: false, issues: [{ code: 'invalid-meta', message: '当前世界不是参数化地形世界,无法重新生成' }] }
+    }
+    const { params, clamps } = clampTerrainParams(rawParams, doc.size, doc.terrain.params.seed)
+    const oldCells = generateTerrainCells(doc.size, doc.terrain.params)
+    const newCells = generateTerrainCells(doc.size, params)
+    const diff = diffTerrainRegen(doc, oldCells, newCells)
+    const written = writeTerrainCells(doc, diff)
+    const next: VoxelDocument = { ...written.document, terrain: { params, clamps } }
+    this.engine.applyEditResult({
+      document: next,
+      changedSections: written.changedSections,
+      affectedObjectIds: [],
+    })
+    this.scheduleSave(next)
+    const issues = [...validateDocument(next), ...validateWalkability(next)]
+    return { ok: true, issues }
+  }
+
+  /** S3b 风格包切换(F8/F9):夹取 → 落文档 → 引擎即时生效 → 保存 */
+  setStyle(raw: unknown): { ok: boolean; style?: StylePackRef; issues: ValidationIssue[] } {
+    const doc = this.engine.world?.doc
+    if (!doc) return { ok: false, issues: [{ code: 'locked-violation', message: '世界尚未加载' }] }
+    if (this.opts.canEdit && !this.opts.canEdit()) {
+      const issues: ValidationIssue[] = [{ code: 'locked-violation', message: '当前环境不允许编辑' }]
+      this.opts.onRejected?.(issues)
+      return { ok: false, issues }
+    }
+    const { style, clamps } = clampStyleRef(raw)
+    const next: VoxelDocument = { ...doc, style: { ...style, ...(clamps.length > 0 ? { clamps } : {}) } }
+    this.engine.setStyle(next.style!)
+    if (this.engine.world) this.engine.world.doc = next
+    this.scheduleSave(next)
+    return { ok: true, style: next.style, issues: [] }
   }
 
   /** 防抖保存：连续编辑合并为一次（N2 不被网络阻塞） */

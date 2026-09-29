@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { applyEdits, deserialize, serialize, type EditOperation } from '@possibility/voxel-contract'
+import { applyEdits, deserialize, serialize, type EditOperation, type StylePackRef, type TerrainParams, type ValidationIssue } from '@possibility/voxel-contract'
 import { VoxelEngine, WebGL2UnavailableError } from './engine'
 import { EditController } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'
 import { PlatformGate } from './bridge/platform-gate'
-import { buildFixtureWorld } from './fixture'
+import { buildFixtureWorld, buildTerrainFixtureWorld } from './fixture'
 import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
 
@@ -16,8 +16,17 @@ interface PerfProbe {
   timedEdit(ops: EditOperation[]): number
   timedEditTraced(ops: EditOperation[]): { contract: number; lighting: number; bake: number; upload: number; sections: number; total: number }
 }
+/** S3b 探针:地形重生成与风格包(走 EditController 真实链路) */
+interface WorldProbe {
+  getBlock(x: number, y: number, z: number): string
+  getStyle(): StylePackRef | undefined
+  getTerrainParams(): unknown
+  getObjectCellCount(): number
+  regen(params: TerrainParams): { ok: boolean; issues: ValidationIssue[] }
+  setStyle(style: unknown): { ok: boolean }
+}
 declare global {
-  interface Window { __voxelInteractions?: InteractionEvent[]; __voxelPerf?: PerfProbe }
+  interface Window { __voxelInteractions?: InteractionEvent[]; __voxelPerf?: PerfProbe; __voxelWorld?: WorldProbe }
 }
 
 /** 开发页 AI 规划器：直连 /api/voxel/edit-plan（e2e 里 stub） */
@@ -95,14 +104,18 @@ export default function VoxelDevHarness() {
           await engine.loadAssets('mist-manor', { placeholder: true })
         }
         if (cancelled) return
-        // T35 验收入口：localStorage['voxel-dev-load'] 有序列化文档则加载之，否则 fixture
+        // T35 验收入口：localStorage['voxel-dev-load'] 有序列化文档则加载之,否则 fixture;
+        // S3b:localStorage['voxel-dev-fixture']='terrain' 加载参数化地形 fixture
         const override = (() => {
           try {
             const raw = localStorage.getItem('voxel-dev-load')
             return raw ? deserialize(raw) : null
           } catch { return null }
         })()
-        engine.loadDocument(override ?? buildFixtureWorld())
+        const fixture = (() => {
+          try { return localStorage.getItem('voxel-dev-fixture') === 'terrain' ? buildTerrainFixtureWorld() : null } catch { return null }
+        })()
+        engine.loadDocument(override ?? fixture ?? buildFixtureWorld())
         engine.start()
         startFixtureResidents(engine)
         // 观察点击 → 产品交互（T28）：居民活动 / 地点详情 / 空间导航
@@ -115,13 +128,26 @@ export default function VoxelDevHarness() {
         })
         interactRef.current = (x, y) => router.handleClick(x, y)
         // 开发页编辑：保存到 localStorage（产品层接服务端）
-        setController(new EditController({
+        const editController = new EditController({
           engine,
           canEdit: gate.canEdit,
           save: (doc) => {
             try { localStorage.setItem('voxel-dev-doc', serialize(doc)) } catch { /* 容量满则忽略 */ }
           },
-        }))
+        })
+        setController(editController)
+        // S3b 探针:全部显式传参(page.evaluate 闭包读不到 Node 侧常量)
+        window.__voxelWorld = {
+          getBlock: (x, y, z) => engine.world?.getBlock({ x, y, z }) ?? 'air',
+          getStyle: () => engine.getStyle(),
+          getTerrainParams: () => engine.world?.doc.terrain?.params ?? null,
+          getObjectCellCount: () => engine.world?.doc.objectCells.length ?? 0,
+          regen: (params) => {
+            const outcome = editController.regenerateTerrain(params)
+            return { ok: outcome.ok, issues: outcome.issues }
+          },
+          setStyle: (style) => ({ ok: editController.setStyle(style).ok }),
+        }
         setReady(true)
       } catch (err) {
         if (!cancelled) {
@@ -137,6 +163,7 @@ export default function VoxelDevHarness() {
       delete (window as unknown as { __voxelEngine?: VoxelEngine }).__voxelEngine
       delete window.__voxelInteractions
       delete window.__voxelPerf
+      delete window.__voxelWorld
     }
   }, [gate])
 
