@@ -1,6 +1,8 @@
 import {
-  applyEdits, createEmptyWorld, deserialize, serialize, validateDocument, validateWalkability,
-  type EditOperation, type LocationBinding, type SpaceEntry, type VoxelDocument,
+  applyEdits, clampStyleRef, clampTerrainParams, createEmptyWorld, deserialize, generateTerrainCells,
+  serialize, validateDocument, validateWalkability, writeTerrainCells,
+  type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
+  type TerrainParams, type VoxelDocument, type WorldTerrainMeta,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { EditPlannerError, parseEditOperations, type CompleteFn } from './edit-planner'
@@ -16,6 +18,8 @@ export class WorldGeneratorError extends Error {
 interface GeneratedWorldPayload {
   size?: { width?: number; height?: number; depth?: number }
   groundBlock?: string
+  terrain?: unknown
+  style?: unknown
   ops?: unknown[]
   placements?: unknown[]
   locations?: unknown[]
@@ -35,7 +39,19 @@ function extractPayload(content: string): GeneratedWorldPayload {
   }
 }
 
-/** 把 LLM 的建造脚本组装成 VoxelDocument（地面 + 操作 + 物体 + 绑定） */
+/** 种子缺省时服务端分配(crypto 随机 31 位正整数;workers/Node 通用) */
+function allocateSeed(): number {
+  const buf = new Uint32Array(1)
+  const cryptoApi = (globalThis as { crypto?: { getRandomValues?: (a: Uint32Array) => void } }).crypto
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    cryptoApi.getRandomValues(buf)
+  } else {
+    buf[0] = Math.floor(Math.random() * 0x7fffffff)
+  }
+  return buf[0] & 0x7fffffff
+}
+
+/** 把 LLM 的建造脚本组装成 VoxelDocument（S3b:地形参数先铺地,再应用建筑 ops） */
 export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id: string): VoxelDocument {
   const size = payload.size
   if (!size || !Number.isInteger(size.width) || !Number.isInteger(size.height) || !Number.isInteger(size.depth)) {
@@ -45,10 +61,25 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
   if (width < 8 || depth < 8 || height < 4 || width > 256 || depth > 256 || height > 64) {
     throw new WorldGeneratorError(`世界尺寸 ${width}×${height}×${depth} 超出允许范围`)
   }
+
+  // S3b:元数据解析(配额夹取放行 + 记录,不拒绝)
+  let terrainMeta: WorldTerrainMeta | undefined
+  if (payload.terrain !== undefined) {
+    const { params, clamps } = clampTerrainParams(payload.terrain as TerrainParams, { width, height, depth }, allocateSeed())
+    terrainMeta = { params, clamps }
+  }
+  let styleRef: StylePackRef | undefined
+  if (payload.style !== undefined) {
+    const { style, clamps } = clampStyleRef(payload.style)
+    styleRef = { ...style, ...(clamps.length > 0 ? { clamps } : {}) }
+  }
+
   const ground = typeof payload.groundBlock === 'string' && payload.groundBlock ? payload.groundBlock : 'grass'
-  const ops: EditOperation[] = [
-    { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: width - 1, y: 0, z: depth - 1 }, block: ground },
-  ]
+  const ops: EditOperation[] = []
+  // 无 terrain 参数时沿用既有 groundBlock 铺地(N1 等价);有 terrain 时由生成器铺地
+  if (!terrainMeta) {
+    ops.push({ kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: width - 1, y: 0, z: depth - 1 }, block: ground })
+  }
   if (Array.isArray(payload.ops)) {
     ops.push(...parseEditOperations(JSON.stringify({ ops: payload.ops })))
   }
@@ -60,10 +91,15 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
 
   let doc = createEmptyWorld({ width, height, depth }, theme, id)
   try {
+    if (terrainMeta) {
+      doc = writeTerrainCells(doc, generateTerrainCells(doc.size, terrainMeta.params)).document
+    }
     doc = applyEdits(doc, ops).document
   } catch (error) {
     throw new WorldGeneratorError(`建造脚本应用失败：${error instanceof Error ? error.message : String(error)}`)
   }
+  if (terrainMeta) doc = { ...doc, terrain: terrainMeta }
+  if (styleRef) doc = { ...doc, style: styleRef }
 
   const objectIds = new Set(doc.objects.map((o) => o.id))
   const locations: LocationBinding[] = []

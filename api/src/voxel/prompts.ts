@@ -1,5 +1,5 @@
 import {
-  createBlockRegistry, listObjectTemplates,
+  createBlockRegistry, listObjectTemplates, STYLE_PRESETS,
   type VoxelDocument,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
@@ -75,13 +75,24 @@ export const WORLD_GEN_SPEC = `返回 JSON 对象：
 {
   "size": {"width":48,"height":24,"depth":48},
   "groundBlock": "grass",
-  "ops": [ ...编辑操作（同编辑规划的操作集，用来铺地形、水面、道路）... ],
+  "terrain": {
+    "seed": 123,                                          // 可选,不填自动分配
+    "elevation": {"amplitude":4,"scale":24},              // 起伏:振幅 0–8 格(0=平地),尺度 8–96(越大越平缓)
+    "river": {"enabled":true,"width":2},                  // 河流:宽 1–3
+    "lakes": {"enabled":true,"size":4},                   // 湖泊/池塘:size 2–8
+    "vegetation": {"density":0.05,"trees":true,"flowers":true,"bushes":true}  // 密度 0–0.1
+  },
+  "style": {
+    "preset": "dusk-warm",                                // 四选一:${STYLE_PRESETS.map((p) => p.id).join(' / ')}
+    "tweaks": {"fogDensity":0,"exposure":0,"saturation":0} // 数值微调,雾密度 ±0.5,曝光/饱和 ±0.3
+  },
+  "ops": [ ...编辑操作（同编辑规划的操作集，只摆建筑、道路与细节）... ],
   "placements": [ {"objectType":"仓库id","anchor":{...},"rotation":0,"objectId":"稳定id","label":"显示名"} ],
   "locations": [ {"name":"地点名","objectId":"placements 中的 objectId"} ],
   "spaceEntries": [ {"spaceId":"空间id","label":"进入主楼 →","at":{...}} ],
   "lockedObjectIds": ["承载地点的建筑 objectId"]
 }
-硬约束：世界尺寸 width/depth ≤ 64、height ≤ 32；地面用 groundBlock 铺 y=0 一整层（一个 fill 操作）；关键地点必须由 place-object 建筑承载并登记 locations；主建筑加锁；所有物体落在地面上（anchor.y = 地面顶面）；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
+硬约束：世界尺寸 width/depth ≤ 64、height ≤ 32；terrain 与 style 整个可选——省略 terrain 时用 groundBlock 铺 y=0 一整层平地（一个 fill 操作），省略 style 时用默认氛围；需要起伏/河流/植被时优先用 terrain 参数表达，不要用大量 fill 硬堆地形；带 terrain 的世界基准地面在 y=3、水面在 y=3；关键地点必须由 place-object 建筑承载并登记 locations；主建筑加锁；所有物体落在地面上（anchor.y = 地面顶面）；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
 
 export function buildWorldGeneratorMessages(sceneDescription: string, theme: string): ChatMessage[] {
   return [

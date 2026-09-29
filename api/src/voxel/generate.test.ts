@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { validateDocument, validateWalkability } from '@possibility/voxel-contract'
+import { getBlock, validateDocument, validateWalkability } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
-import { generateWorld, WorldGeneratorError } from './generate'
+import { assembleWorld, generateWorld, WorldGeneratorError } from './generate'
 import type { CompleteFn } from './edit-planner'
 
 const payload = (ops: unknown[]) => JSON.stringify({
@@ -66,5 +66,74 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
     const issues = (error as WorldGeneratorError).issues
     expect(issues.some((i) => i.code === 'floating-object')).toBe(true)
     expect(issues.some((i) => i.code.startsWith('walk-'))).toBe(false)
+  })
+})
+
+describe('assembleWorld × S3b 地形与风格包', () => {
+  it('带 terrain+style 负载:地形格存在、元数据落盘、建筑落在地形之上', () => {
+    const doc = assembleWorld({
+      size: { width: 24, height: 16, depth: 24 },
+      terrain: {
+        seed: 42,
+        elevation: { amplitude: 4 },
+        river: { enabled: true, width: 2 },
+        vegetation: { density: 0.05, trees: true },
+      },
+      style: { preset: 'dusk-warm', tweaks: { exposure: 0.1 } },
+      ops: [{ kind: 'fill', from: { x: 4, y: 4, z: 4 }, to: { x: 6, y: 5, z: 6 }, block: 'stone' }],
+    }, 'mist-manor', 't1')
+    expect(doc.terrain?.params.seed).toBe(42)
+    expect(doc.style?.preset).toBe('dusk-warm')
+    expect(doc.style?.tweaks).toEqual({ exposure: 0.1 })
+    // 地形存在:非 y=0 平铺(有 dirt/stone 柱与高于 y=0 的 grass)
+    expect(getBlock(doc, { x: 0, y: 2, z: 0 })).not.toBe('air')
+    // 建筑 ops 落在地形之上未被地形覆盖
+    expect(getBlock(doc, { x: 5, y: 5, z: 5 })).toBe('stone')
+    expect(validateDocument(doc)).toEqual([])
+  })
+
+  it('无 terrain 负载:与现状等价(y=0 平铺 + groundBlock),无元数据字段', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      ops: NOOP_OPS,
+    }, 'mist-manor', 't2')
+    expect(doc.terrain).toBeUndefined()
+    expect(doc.style).toBeUndefined()
+    expect(getBlock(doc, { x: 0, y: 0, z: 0 })).toBe('grass')
+    expect(getBlock(doc, { x: 15, y: 0, z: 15 })).toBe('grass')
+    expect(getBlock(doc, { x: 8, y: 1, z: 8 })).toBe('air')
+  })
+
+  it('种子缺省时服务端分配并写入元数据;超限密度夹取有记录', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      terrain: { vegetation: { density: 0.9 } },
+    }, 'mist-manor', 't3')
+    expect(Number.isInteger(doc.terrain?.params.seed)).toBe(true)
+    expect(doc.terrain?.params.vegetation?.density).toBe(0.1)
+    expect(doc.terrain?.clamps).toEqual([{ field: 'vegetation.density', from: 0.9, to: 0.1 }])
+  })
+
+  it('未知风格预设夹到默认并记录', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      style: { preset: 'cyberpunk' },
+    }, 'mist-manor', 't4')
+    expect(doc.style?.preset).toBe('default')
+    expect(doc.style?.clamps).toEqual([{ field: 'style.preset', from: 'cyberpunk', to: 'default' }])
+  })
+
+  it('同种子同参数:两次组装地形逐格一致(AC11 服务端侧)', () => {
+    const payload = {
+      size: { width: 24, height: 16, depth: 24 },
+      terrain: { seed: 7, elevation: { amplitude: 5 }, river: { enabled: true }, vegetation: { density: 0.05 } },
+    }
+    const a = assembleWorld(payload, 'mist-manor', 't5')
+    const b = assembleWorld(payload, 'mist-manor', 't5')
+    for (const probe of [
+      { x: 0, y: 1, z: 0 }, { x: 12, y: 3, z: 12 }, { x: 23, y: 5, z: 7 }, { x: 5, y: 4, z: 20 },
+    ]) {
+      expect(getBlock(a, probe)).toBe(getBlock(b, probe))
+    }
   })
 })
