@@ -74,6 +74,42 @@ describe('validateWalkability R5 地面完整性', () => {
   })
 })
 
+describe('validateWalkability R4 高差突变', () => {
+  /** 2 格高石台(顶面 y=3 可站),台上放石灯笼(人工结构) */
+  function platformWithLantern(doc: ReturnType<typeof flatWorld>, withStep: boolean) {
+    for (const x of [18, 19]) for (const y of [1, 2]) setBlockMut(doc, at(x, y, 16), 'stone')
+    if (withStep) setBlockMut(doc, at(20, 1, 16), 'stone') // 东侧台阶:y1→(20,2)→台面 y3(避开灯笼占位)
+    const placed = applyEdits(doc, [
+      { kind: 'place-object', objectType: 'stone-lantern', anchor: at(18, 3, 16), rotation: 0 },
+    ]).document
+    return { ...placed, locations: [{ name: '庭院', objectId: placed.objects[0].id }] }
+  }
+
+  it('台面缺一级(高差 2,属人工结构)→ 报 walk-stairs,at 为高处面', () => {
+    const doc = platformWithLantern(flatWorld(), false)
+    // 石灯笼在台上,但地面到台面高差 2 → 断级
+    const issues = validateWalkability(doc, registry)
+    const hit = issues.find((i) => i.code === 'walk-stairs')
+    expect(hit).toBeDefined()
+    expect(hit!.at!.y).toBe(3)
+    expect([18, 19]).toContain(hit!.at!.x)
+    expect(hit!.at!.z).toBe(16)
+  })
+
+  it('连续 1 格台阶上台面 → 不报 walk-stairs', () => {
+    const doc = platformWithLantern(flatWorld(), true)
+    const issues = validateWalkability(doc, registry)
+    expect(issues.filter((i) => i.code === 'walk-stairs')).toEqual([])
+  })
+
+  it('远离任何物体的自然 2 格高差 → 不报', () => {
+    const doc = flatWorld()
+    for (const y of [1, 2]) setBlockMut(doc, at(24, y, 24), 'stone') // 荒野石柱
+    const issues = validateWalkability(doc, registry)
+    expect(issues.filter((i) => i.code === 'walk-stairs')).toEqual([])
+  })
+})
+
 describe('validateWalkability R2 连通性', () => {
   it('开放世界中绑定物体可达 → 无 walk-connectivity', () => {
     const doc = flatWorld()

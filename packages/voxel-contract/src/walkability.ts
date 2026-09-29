@@ -196,6 +196,47 @@ function checkGaps(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
   return issues
 }
 
+/** R4 高差突变:可达格邻柱存在高差 ≥2 的可站立面,且该面属人工结构(物体占据格或其水平邻格)→ 断级楼梯/跳不上的台面 */
+function checkStairs(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
+  const { doc } = ctx
+  // 人工结构格集:物体占据格 + 水平邻接格(排除自然山体)
+  const artificial = new Set<string>()
+  for (const entry of doc.objectCells) {
+    for (const c of entry.cells) {
+      artificial.add(key(c))
+      for (const [dx, dz] of DIRS) artificial.add(key({ x: c.x + dx, y: c.y, z: c.z + dz }))
+    }
+  }
+  if (artificial.size === 0) return []
+  const issues: ValidationIssue[] = []
+  const reported = new Set<string>()
+  for (const k of flood.reached) {
+    const [x, y, z] = k.split(',').map(Number)
+    for (const [dx, dz] of DIRS) {
+      const nx = x + dx, nz = z + dz
+      // 邻柱内所有高差 ≥2 的可站立面
+      for (let ny = y + 2; ny < doc.size.height; ny++) {
+        const high = { x: nx, y: ny, z: nz }
+        if (!inBounds(doc.size, high)) break
+        if (!isStandableAt(ctx, high)) continue
+        const hk = key(high)
+        // 台面可经行走到达(台阶在别处)→ 合规;只拦「看得见但走不上」的人工台面
+        if (flood.reached.has(hk)) break
+        if (!artificial.has(hk) || reported.has(hk)) continue
+        reported.add(hk)
+        issues.push({
+          code: 'walk-stairs',
+          message: `人工结构台面高差 ${ny - y} 格(≥2),断级楼梯/跳不上的台面`,
+          at: high,
+        })
+        break // 同一邻柱只报最低一处
+      }
+      if (issues.length >= MAX_ISSUES) return issues
+    }
+  }
+  return issues
+}
+
 /** 绑定人物/地点的物体(locations 表 + 物体自带 binding) */
 function boundObjects(doc: VoxelDocument) {
   const boundIds = new Set(doc.locations.map((l) => l.objectId))
@@ -248,7 +289,8 @@ export function validateWalkability(
     ...checkConnectivity(ctx, flood),          // R2
     ...checkClearance(ctx, flood),             // R1
     ...checkGaps(ctx, flood),                  // R5
-    // T4: R4 高差突变;T5: R3 照明
+    ...checkStairs(ctx, flood),                // R4
+    // T5: R3 照明
   ]
   return issues.slice(0, MAX_ISSUES)
 }
