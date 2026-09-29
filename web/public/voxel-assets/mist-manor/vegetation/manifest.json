@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "assets": {
+    "veg-tree-a": {
+      "url": "/voxel-assets/mist-manor/vegetation/veg-tree-a.glb",
+      "category": "vegetation",
+      "sway": 0.035,
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    "veg-flower-a": {
+      "url": "/voxel-assets/mist-manor/vegetation/veg-flower-a.glb",
+      "category": "vegetation",
+      "sway": 0.08,
+      "footprint": [
+        1,
+        1
+      ]
+    },
+    "veg-grass-a": {
+      "url": "/voxel-assets/mist-manor/vegetation/veg-grass-a.glb",
+      "category": "vegetation",
+      "sway": 0.12,
+      "footprint": [
+        1,
+        1
+      ]
+    },
+    "veg-bush-a": {
+      "url": "/voxel-assets/mist-manor/vegetation/veg-bush-a.glb",
+      "category": "vegetation",
+      "sway": 0.055,
+      "footprint": [
+        2,
+        2
+      ]
+    }
+  }
+}

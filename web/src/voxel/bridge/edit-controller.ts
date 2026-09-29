@@ -1,5 +1,5 @@
 import {
-  applyEdits, clampStyleRef, clampTerrainParams, diffTerrainRegen, generateTerrainCells,
+  applyEdits, clampStyleRef, clampTerrainParams, diffAssetPlacementsRegen, diffTerrainRegen, generateTerrain,
   validateDocument, validateEdit, validateWalkability, writeTerrainCells,
   type EditOperation, type EditResult, type StylePackRef, type TerrainParams, type ValidationIssue,
   type VoxelDocument,
@@ -99,11 +99,16 @@ export class EditController {
       return { ok: false, issues: [{ code: 'invalid-meta', message: '当前世界不是参数化地形世界,无法重新生成' }] }
     }
     const { params, clamps } = clampTerrainParams(rawParams, doc.size, doc.terrain.params.seed)
-    const oldCells = generateTerrainCells(doc.size, doc.terrain.params)
-    const newCells = generateTerrainCells(doc.size, params)
-    const diff = diffTerrainRegen(doc, oldCells, newCells)
+    const oldGenerated = generateTerrain(doc.size, doc.terrain.params)
+    const newGenerated = generateTerrain(doc.size, params)
+    const diff = diffTerrainRegen(doc, oldGenerated.cells, newGenerated.cells)
     const written = writeTerrainCells(doc, diff)
-    const next: VoxelDocument = { ...written.document, terrain: { params, clamps } }
+    const placements = diffAssetPlacementsRegen(doc, oldGenerated.assetPlacements, newGenerated.assetPlacements)
+    const next: VoxelDocument = {
+      ...written.document,
+      ...(placements ? { assetPlacements: placements } : {}),
+      terrain: { params, clamps },
+    }
     this.engine.applyEditResult({
       document: next,
       changedSections: written.changedSections,

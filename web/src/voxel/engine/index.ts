@@ -20,6 +20,7 @@ import {
   isEyeUnderwater, smoothUnderwater, underwaterDepth,
   UNDERWATER_FOG_BASE, UNDERWATER_FOG_DEPTH,
 } from './underwater'
+import { Assets, type VegetationManifest } from './assets'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
@@ -46,6 +47,8 @@ export class VoxelEngine {
   readonly atlas = new TextureAtlas()
   readonly renderer = new VoxelRenderer(this.atlas)
   readonly cameraRig = new CameraRig()
+  readonly motion = new MotionPreference()
+  readonly assets = new Assets(this.renderer.scene, this.motion)
   world: WorldModel | null = null
   lighting: LightingEngine | null = null
   mesher: Mesher | null = null
@@ -53,7 +56,6 @@ export class VoxelEngine {
   palette: ThemePalette | null = null
   /** S3b:当前风格包引用(doc.style),微调在 applyPalette 采样出口叠加 */
   private styleRef: StylePackRef | undefined
-  readonly motion = new MotionPreference()
   dayNight: DayNightCycle | null = null
   weather: WeatherSystem | null = null
   ambient: AmbientAnimator | null = null
@@ -68,6 +70,7 @@ export class VoxelEngine {
   private underwaterStrengthValue = 0
   private tmpDir = new THREE.Vector3()
   private tmpReflect = new THREE.Color()
+  private vegetationManifest: VegetationManifest | null = null
 
   get underwaterStrength(): number {
     return this.underwaterStrengthValue
@@ -116,6 +119,7 @@ export class VoxelEngine {
       await this.atlas.load(theme)
     }
     this.renderer.setAtlasTexture()
+    try { this.vegetationManifest = await this.assets.loadManifest() } catch { this.vegetationManifest = null }
   }
 
   loadDocument(doc: VoxelDocument): void {
@@ -131,6 +135,7 @@ export class VoxelEngine {
     this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
     this.ambient?.setParticleDensity(this.palette.particleDensity ?? 1)
     this.world = new WorldModel(doc)
+    if (this.vegetationManifest) this.assets.sync(doc.assetPlacements ?? [], this.vegetationManifest)
     this.lighting = new LightingEngine(this.world, this.registry)
     this.lighting.computeAll()
     this.mesher = new Mesher(this.world, this.registry, this.atlas, this.lighting)
@@ -328,6 +333,7 @@ export class VoxelEngine {
       this.lastTime = now
       this.cameraRig.update(dt)
       this.updatablesTick(dt)
+      this.assets.update(dt)
       for (const u of this.updatables) u.update(dt)
       this.applyPalette(dt) // 天空/雾/水/后处理/直射光每帧平滑；重烘焙仍由 96 步量化控制
       this.onFrame?.(dt)
@@ -359,12 +365,14 @@ export class VoxelEngine {
     this.residents?.dispose()
     this.feedback?.dispose()
     this.motion.dispose()
+    this.assets.dispose()
     this.renderer.dispose()
     this.canvas = null
   }
 }
 
 export * from './ambient'
+export * from './assets'
 export * from './atlas'
 export * from './camera'
 export * from './camera-walk'

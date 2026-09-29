@@ -50,6 +50,15 @@ export interface VoxelObject {
 // 物体记录占据的格子集合，用于选中/移动/锁定判定
 export interface VoxelObjectCells { objectId: string; cells: VoxelCoord[] }
 
+/** A render-only glTF placement. Missing on legacy documents by design. */
+export interface AssetPlacement {
+  assetId: string
+  anchor: [number, number, number]
+  /** Quarter turns clockwise around the vertical axis. */
+  rotation: 0 | 1 | 2 | 3
+  seed: number
+}
+
 export interface LocationBinding {
   name: string                      // '主楼' | '庭院' | '温室'
   objectId: string                  // 绑到哪个物体
@@ -113,6 +122,8 @@ export interface VoxelDocument {
   sections: Record<SectionKey, ChunkSection>
   objects: VoxelObject[]
   objectCells: VoxelObjectCells[]
+  /** Optional vegetation/decoration instances; old saves omit this field. */
+  assetPlacements?: AssetPlacement[]
   locations: LocationBinding[]
   spaceEntries: SpaceEntry[]
   lockedObjectIds: string[]

@@ -1,6 +1,6 @@
 import { SECTION_VOLUME } from './sections'
 import type {
-  ChunkSection, LocationBinding, SpaceEntry, StylePackRef, VoxelDocument, VoxelObject, VoxelObjectCells,
+  AssetPlacement, ChunkSection, LocationBinding, SpaceEntry, StylePackRef, VoxelDocument, VoxelObject, VoxelObjectCells,
   VoxelSize, WorldTerrainMeta,
 } from './types'
 
@@ -67,6 +67,7 @@ export interface SerializedVoxelDocument {
   sections: Record<string, SerializedSection>
   objects: VoxelObject[]
   objectCells: VoxelObjectCells[]
+  assetPlacements?: AssetPlacement[]
   locations: LocationBinding[]
   spaceEntries: SpaceEntry[]
   lockedObjectIds: string[]
@@ -112,6 +113,7 @@ export function serialize(doc: VoxelDocument): string {
     sections,
     objects: doc.objects,
     objectCells: doc.objectCells,
+    ...(doc.assetPlacements ? { assetPlacements: doc.assetPlacements } : {}),
     locations: doc.locations,
     spaceEntries: doc.spaceEntries,
     lockedObjectIds: doc.lockedObjectIds,
@@ -164,6 +166,11 @@ export function deserialize(raw: string): VoxelDocument {
   for (const field of ['objects', 'objectCells', 'locations', 'spaceEntries', 'lockedObjectIds'] as const) {
     assert(Array.isArray(doc[field]), `${field} must be an array`)
   }
+  let assetPlacements: AssetPlacement[] | undefined
+  if (doc.assetPlacements !== undefined) {
+    assert(Array.isArray(doc.assetPlacements), 'assetPlacements must be an array')
+    assetPlacements = doc.assetPlacements as AssetPlacement[]
+  }
 
   // S3b 元数据:存在时做形状校验,缺省不产出该键(旧存档无损,N1/N2)
   let terrain: WorldTerrainMeta | undefined
@@ -192,6 +199,7 @@ export function deserialize(raw: string): VoxelDocument {
     sections,
     objects: doc.objects as VoxelDocument['objects'],
     objectCells: doc.objectCells as VoxelDocument['objectCells'],
+    ...(assetPlacements ? { assetPlacements } : {}),
     locations: doc.locations as VoxelDocument['locations'],
     spaceEntries: doc.spaceEntries as VoxelDocument['spaceEntries'],
     lockedObjectIds: doc.lockedObjectIds as string[],

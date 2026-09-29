@@ -1,5 +1,5 @@
 import {
-  applyEdits, clampTerrainParams, createEmptyWorld, generateTerrainCells, getBlock, writeTerrainCells,
+  applyEdits, clampTerrainParams, createEmptyWorld, generateTerrain, getBlock, writeTerrainCells,
   type EditOperation, type VoxelDocument,
 } from '@possibility/voxel-contract'
 
@@ -66,10 +66,11 @@ export function buildTerrainFixtureWorld(): VoxelDocument {
     lakes: { enabled: false },
     vegetation: { density: 0.05, trees: true, flowers: true, bushes: true },
   }, size)
-  const terrainDoc = writeTerrainCells(
-    createEmptyWorld(size, 'mist-manor', 'fixture-terrain'),
-    generateTerrainCells(size, params),
-  ).document
+  const generated = generateTerrain(size, params)
+  const terrainDoc = {
+    ...writeTerrainCells(createEmptyWorld(size, 'mist-manor', 'fixture-terrain'), generated.cells).document,
+    ...(generated.assetPlacements.length > 0 ? { assetPlacements: generated.assetPlacements } : {}),
+  }
   const result = applyEdits(terrainDoc, [
     { kind: 'place-object', objectType: 'manor-main-house', anchor: { x: 8, y: columnTop(terrainDoc, 8, 8) + 1, z: 8 }, rotation: 0, objectId: 'house', label: '地形主楼' },
     { kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 16, y: columnTop(terrainDoc, 16, 12) + 1, z: 12 }, rotation: 0, objectId: 'lantern-a' },

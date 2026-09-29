@@ -1,5 +1,5 @@
 import {
-  applyEdits, clampStyleRef, clampTerrainParams, createEmptyWorld, deserialize, generateTerrainCells,
+  applyEdits, clampStyleRef, clampTerrainParams, createEmptyWorld, deserialize, generateTerrain,
   serialize, validateDocument, validateWalkability, writeTerrainCells,
   type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
   type TerrainParams, type VoxelDocument, type WorldTerrainMeta,
@@ -92,7 +92,9 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
   let doc = createEmptyWorld({ width, height, depth }, theme, id)
   try {
     if (terrainMeta) {
-      doc = writeTerrainCells(doc, generateTerrainCells(doc.size, terrainMeta.params)).document
+      const generated = generateTerrain(doc.size, terrainMeta.params)
+      doc = writeTerrainCells(doc, generated.cells).document
+      if (generated.assetPlacements.length > 0) doc = { ...doc, assetPlacements: generated.assetPlacements }
     }
     doc = applyEdits(doc, ops).document
   } catch (error) {
