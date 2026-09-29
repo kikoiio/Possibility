@@ -15,6 +15,8 @@ interface WorldProbe {
   getStyle(): { preset: string; tweaks?: Record<string, number> } | undefined
   getTerrainParams(): { seed: number } | null
   getObjectCellCount(): number
+  getAssetPlacements(): Array<{ assetId: string }>
+  getAssetInstanceCount(): number
   regen(params: unknown): { ok: boolean; issues: Array<{ code: string; message: string }> }
   setStyle(style: unknown): { ok: boolean }
 }
@@ -85,10 +87,12 @@ async function shot(page: Page, name: string) {
 test.describe('S3b 参数化地形 + 风格包', () => {
   test('AC1/AC7 探针:地形能力(河/树/起伏)与风格包生效', async ({ page }) => {
     const errors = await openTerrainWorld(page)
-    // 地形:河流(water)、树(wood-log/leaves)、起伏(非全平 grass 顶)
+    // 地形:河流(water)、参数化植被 placement/实例、起伏(非全平 grass 顶)
     expect(await countBlocks(page, 'water')).toBeGreaterThan(0)
-    expect(await countBlocks(page, 'wood-log')).toBeGreaterThan(0)
-    expect(await countBlocks(page, 'leaves')).toBeGreaterThan(0)
+    const placements = await page.evaluate(() => window.__voxelWorld!.getAssetPlacements())
+    expect(placements.length).toBeGreaterThan(0)
+    expect(placements.some((placement) => placement.assetId === 'veg-tree-a')).toBe(true)
+    expect(await page.evaluate(() => window.__voxelWorld!.getAssetInstanceCount())).toBeGreaterThan(0)
     // 风格包:dusk-warm + 微调
     const style = await page.evaluate(() => window.__voxelWorld!.getStyle())
     expect(style?.preset).toBe('dusk-warm')
