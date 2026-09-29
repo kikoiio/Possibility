@@ -18,6 +18,8 @@ export interface MeshData {
   sway: Float32Array
   /** 流体标记（水面 UV 扰动着色器用） */
   water: Float32Array
+  /** 岸边白沫标记（0/1：仅流体顶面且水平邻接非流体格） */
+  foam: Float32Array
   indices: Uint32Array
   faceCount: number
 }
@@ -69,6 +71,7 @@ function emptyMesh(): MeshData {
   return {
     positions: new Float32Array(0), normals: new Float32Array(0), uvs: new Float32Array(0),
     colors: new Float32Array(0), sway: new Float32Array(0), water: new Float32Array(0),
+    foam: new Float32Array(0),
     indices: new Uint32Array(0), faceCount: 0,
   }
 }
@@ -80,6 +83,7 @@ class MeshBuilder {
   colors: number[] = []
   sway: number[] = []
   water: number[] = []
+  foam: number[] = []
   indices: number[] = []
   faceCount = 0
 
@@ -91,6 +95,7 @@ class MeshBuilder {
       colors: new Float32Array(this.colors),
       sway: new Float32Array(this.sway),
       water: new Float32Array(this.water),
+      foam: new Float32Array(this.foam),
       indices: new Uint32Array(this.indices),
       faceCount: this.faceCount,
     }
@@ -177,10 +182,20 @@ export class Mesher {
             const base = target.positions.length / 3
             const swaying = SWAY_BLOCKS.has(blockId)
             const fluid = type.category === 'fluid'
+            // 下沉水面（S3a MC 式）：流体顶面角点 y 压到 0.875，与岸边侧面自然衔接
+            const sinkTop = fluid && face.dir === 'py'
+            // 白沫标记：水格顶面且水平四邻存在非流体格（岸边/桥墩/水缘）；开阔水面天然为 0
+            let foam = 0
+            if (sinkTop) {
+              for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+                const nb = this.registry.get(this.world.getBlock({ x: x + dx, y, z: z + dz }))
+                if (!nb || nb.category !== 'fluid') { foam = 1; break }
+              }
+            }
             for (let c = 0; c < 4; c++) {
               const corner = face.corners[c]
               const aoF = aoFactors[c]
-              target.positions.push(x + corner[0], y + corner[1], z + corner[2])
+              target.positions.push(x + corner[0], y + (sinkTop ? corner[1] * 0.875 : corner[1]), z + corner[2])
               target.normals.push(face.offset[0], face.offset[1], face.offset[2])
               target.uvs.push(
                 FACE_UVS[c][0] === 0 ? uv.u0 : uv.u1,
@@ -189,6 +204,7 @@ export class Mesher {
               target.colors.push(shade * aoF * lightR, shade * aoF * lightG, shade * aoF * lightB)
               target.sway.push(swaying ? corner[1] : 0)
               target.water.push(fluid ? 1 : 0)
+              target.foam.push(foam)
             }
             target.indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3)
             target.faceCount += 1

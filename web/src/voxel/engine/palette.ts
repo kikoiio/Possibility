@@ -40,6 +40,14 @@ export interface PaletteKeyframe {
   highTint: RGB
   vignette: number
   grain: number
+  /** 浅水/俯视主色（近水面本色） */
+  waterShallow: RGB
+  /** 深水色（掠射角外的基底） */
+  waterDeep: RGB
+  /** 岸边白沫色 */
+  waterFoam: RGB
+  /** 水下雾色 */
+  waterFog: RGB
 }
 
 /** 阴影品质配置（主题级，不进关键帧） */
@@ -96,6 +104,8 @@ export interface ResolvedPalette {
     cloudTint: RGB
   }
   fog: { color: RGB; density: number }
+  /** 水体四色（已含天气 dim 压暗） */
+  water: { shallow: RGB; deep: RGB; foam: RGB; fog: RGB }
   /** 直射光（日光/月光混合，已含天气 dim 压暗）；intensity≈0 时引擎关灯 */
   direct: { dir: Vec3; color: RGB; intensity: number }
   post: {
@@ -155,6 +165,10 @@ export function lerpKeyframe(a: PaletteKeyframe, b: PaletteKeyframe, t: number):
     highTint: lerpRGB(a.highTint, b.highTint, t),
     vignette: lerp(a.vignette, b.vignette, t),
     grain: lerp(a.grain, b.grain, t),
+    waterShallow: lerpRGB(a.waterShallow, b.waterShallow, t),
+    waterDeep: lerpRGB(a.waterDeep, b.waterDeep, t),
+    waterFoam: lerpRGB(a.waterFoam, b.waterFoam, t),
+    waterFog: lerpRGB(a.waterFog, b.waterFog, t),
   }
 }
 
@@ -221,6 +235,12 @@ export function samplePalette(
     dim,
   )
   const cloudCoverage = Math.min(1, kf.cloudCoverage + dim * 0.35 + fogBoost * 0.25)
+  // 水四色：与 fogColor 同路径的天气压暗/趋灰
+  const waterDim = (c: RGB): RGB => lerpRGB(
+    [c[0] * (1 - dim * 0.5), c[1] * (1 - dim * 0.5), c[2] * (1 - dim * 0.5)],
+    palette.weatherGray,
+    dim,
+  )
 
   // 直射光：日光/月光按昼夜混合；换向经天顶弧线过渡（bend），避免黄昏影子翻转；
   // 混合点落在两侧强度低谷；天气 dim 压暗直射
@@ -253,6 +273,12 @@ export function samplePalette(
       cloudTint: dimColor(kf.cloudTint),
     },
     fog: { color: fogColor, density: (fogBoost + dim * 0.5) * palette.fogDensityScale },
+    water: {
+      shallow: waterDim(kf.waterShallow),
+      deep: waterDim(kf.waterDeep),
+      foam: waterDim(kf.waterFoam),
+      fog: waterDim(kf.waterFog),
+    },
     direct,
     post: {
       exposure: kf.exposure,

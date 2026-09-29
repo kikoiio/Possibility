@@ -54,6 +54,42 @@ describe('samplePalette', () => {
   })
 })
 
+describe('samplePalette 水色', () => {
+  it('noon (t=0.5) 水四色命中正午关键帧', () => {
+    const r = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
+    expect(r.water.shallow).toEqual(NOON.waterShallow)
+    expect(r.water.deep).toEqual(NOON.waterDeep)
+    expect(r.water.foam).toEqual(NOON.waterFoam)
+    expect(r.water.fog).toEqual(NOON.waterFog)
+  })
+
+  it('水色 ±0.001 时间抖动连续', () => {
+    for (const t of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const a = samplePalette(palette, t - 0.001, { dim: 0, fogBoost: 0 })
+      const b = samplePalette(palette, t + 0.001, { dim: 0, fogBoost: 0 })
+      expect(dist(a.water.shallow, b.water.shallow)).toBeLessThan(0.01)
+      expect(dist(a.water.deep, b.water.deep)).toBeLessThan(0.01)
+      expect(dist(a.water.foam, b.water.foam)).toBeLessThan(0.01)
+      expect(dist(a.water.fog, b.water.fog)).toBeLessThan(0.01)
+    }
+  })
+
+  it('weather dim 把水四色推向 weatherGray', () => {
+    const clear = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
+    const dimmed = samplePalette(palette, 0.5, { dim: 0.6, fogBoost: 0 })
+    for (const key of ['shallow', 'deep', 'foam', 'fog'] as const) {
+      expect(dist(dimmed.water[key], palette.weatherGray)).toBeLessThan(dist(clear.water[key], palette.weatherGray))
+    }
+  })
+
+  it('时间 wrap:t=0 与 t=1 水色一致', () => {
+    const t0 = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
+    const t1 = samplePalette(palette, 1, { dim: 0, fogBoost: 0 })
+    expect(dist(t0.water.shallow, t1.water.shallow)).toBeLessThan(1e-9)
+    expect(dist(t0.water.fog, t1.water.fog)).toBeLessThan(1e-9)
+  })
+})
+
 describe('samplePalette 直射光', () => {
   it('正午直射来自太阳方位,午夜来自月亮方位且偏冷', () => {
     const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })

@@ -3,7 +3,7 @@ import type { SectionKey } from '@possibility/voxel-contract'
 import type { TextureAtlas } from './atlas'
 import type { SectionGeometry } from './mesher'
 import { isSoftwareGL, PostPipeline } from './post'
-import type { ResolvedPalette, ShadowConfig } from './palette'
+import type { ResolvedPalette, RGB, ShadowConfig } from './palette'
 import { SkyDome } from './sky'
 
 export interface EnvironmentState {
@@ -23,6 +23,14 @@ export class WebGL2UnavailableError extends Error {
 export interface ShaderUniforms {
   uTime: { value: number }
   uMotion: { value: number }
+  /** 浅水/俯视主色（色彩中枢每帧写入） */
+  uWaterShallow: { value: THREE.Color }
+  /** 深水色 */
+  uWaterDeep: { value: THREE.Color }
+  /** 岸边白沫色 */
+  uFoamColor: { value: THREE.Color }
+  /** 天空反射色（每帧由 resolved.sky zenith/horizon 现算） */
+  uSkyReflect: { value: THREE.Color }
 }
 
 /** 植被摇摆：按 aSway 权重在水平面微位移 */
@@ -34,13 +42,72 @@ function injectSway(shader: THREE.WebGLProgramParametersWithUniforms, uniforms: 
     .replace('#include <begin_vertex>', `#include <begin_vertex>\n{\n  float phase = uTime * 1.6 + position.x * 0.8 + position.z * 0.6;\n  transformed.x += sin(phase) * 0.06 * aSway * uMotion;\n  transformed.z += cos(phase * 0.83) * 0.045 * aSway * uMotion;\n}`)
 }
 
-/** 水面 UV 扰动：按 aWater 标记偏移贴图采样 */
+/**
+ * 水面效果（S3a）：UV 扰动（沿用）+ 波纹顶点扰动 + Fresnel 天空反射 + 岸边白沫。
+ * 全部乘 aWater 门控，非水流体（玻璃等）零影响；动画分量乘 uMotion 走降级约定。
+ */
 function injectWater(shader: THREE.WebGLProgramParametersWithUniforms, uniforms: ShaderUniforms): void {
   shader.uniforms.uTime = uniforms.uTime
   shader.uniforms.uMotion = uniforms.uMotion
+  shader.uniforms.uWaterShallow = uniforms.uWaterShallow
+  shader.uniforms.uWaterDeep = uniforms.uWaterDeep
+  shader.uniforms.uFoamColor = uniforms.uFoamColor
+  shader.uniforms.uSkyReflect = uniforms.uSkyReflect
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', `#include <common>\nattribute float aWater;\nuniform float uTime;\nuniform float uMotion;`)
+    .replace('#include <common>', `#include <common>
+attribute float aWater;
+attribute float aFoam;
+uniform float uTime;
+uniform float uMotion;
+varying float vWater;
+varying float vFoam;
+varying float vWaterTop;
+varying vec3 vWaterWorld;
+varying vec3 vWaterViewNormal;
+varying vec3 vWaterViewPos;`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+vWater = aWater;
+vFoam = aFoam;
+vWaterTop = aWater * step(0.5, normal.y);
+vWaterWorld = position;
+{
+  // 波纹起伏：仅水面顶面顶点，克制振幅（风格化）
+  float wave = sin(uTime * 1.4 + position.x * 2.1 + position.z * 1.7);
+  transformed.y += wave * 0.03 * vWaterTop * uMotion;
+}`)
+    .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+vWaterViewNormal = normalize(transformedNormal);`)
+    .replace('#include <project_vertex>', `#include <project_vertex>
+vWaterViewPos = -mvPosition.xyz;`)
     .replace('#include <uv_vertex>', `#include <uv_vertex>\n#ifdef USE_MAP\n  vMapUv += vec2(sin(uTime * 1.2 + position.x * 1.7 + position.z), cos(uTime * 0.9 + position.z * 1.3)) * 0.015 * aWater * uMotion;\n#endif`)
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+uniform float uTime;
+uniform float uMotion;
+uniform vec3 uWaterShallow;
+uniform vec3 uWaterDeep;
+uniform vec3 uFoamColor;
+uniform vec3 uSkyReflect;
+varying float vWater;
+varying float vFoam;
+varying float vWaterTop;
+varying vec3 vWaterWorld;
+varying vec3 vWaterViewNormal;
+varying vec3 vWaterViewPos;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+if (vWater > 0.5) {
+  // Fresnel 天空反射（风格化指数 2）：平视反射多、俯视水色多
+  vec3 waterView = normalize(vWaterViewPos);
+  float fresnel = pow(1.0 - max(dot(waterView, normalize(vWaterViewNormal)), 0.0), 2.0);
+  vec3 waterBase = mix(uWaterDeep, uWaterShallow, vWaterTop);
+  vec3 waterFinal = mix(waterBase, uSkyReflect, fresnel * 0.65);
+  // 贴图亮度保留为水纹细节，色相由色彩中枢接管
+  float texLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+  diffuseColor.rgb = waterFinal * (0.55 + 0.9 * texLum);
+  // 岸边白沫：聚散动画（uMotion=0 时定格中等泡沫），开阔水面 vFoam=0 零影响
+  float foamWave = 0.7 + 0.3 * sin(uTime * 2.0 + vWaterWorld.x * 3.1 + vWaterWorld.z * 2.3) * uMotion;
+  diffuseColor.rgb = mix(diffuseColor.rgb, uFoamColor, foamWave * 0.7 * vFoam);
+}`)
 }
 
 /** three.js 场景装配：节几何管理、天空穹顶、雾、直射光阴影、后处理、不透明/透明双渲染层 */
@@ -50,7 +117,15 @@ export class VoxelRenderer {
   private sectionMeshes = new Map<SectionKey, { opaque: THREE.Mesh | null; translucent: THREE.Mesh | null }>()
   private opaqueMaterial: THREE.MeshLambertMaterial
   private translucentMaterial: THREE.MeshLambertMaterial
-  readonly shaderUniforms: ShaderUniforms = { uTime: { value: 0 }, uMotion: { value: 1 } }
+  readonly shaderUniforms: ShaderUniforms = {
+    uTime: { value: 0 },
+    uMotion: { value: 1 },
+    // 初值黑：每帧由 applyPalette 从色彩中枢写入（N3 零字面量纪律）
+    uWaterShallow: { value: new THREE.Color() },
+    uWaterDeep: { value: new THREE.Color() },
+    uFoamColor: { value: new THREE.Color() },
+    uSkyReflect: { value: new THREE.Color() },
+  }
   /** 天空穹顶与后处理链（mount 后可用；由引擎门面每帧驱动） */
   sky: SkyDome | null = null
   post: PostPipeline | null = null
@@ -115,6 +190,7 @@ export class VoxelRenderer {
     geometry.setAttribute('color', new THREE.BufferAttribute(data.colors, 3))
     geometry.setAttribute('aSway', new THREE.BufferAttribute(data.sway, 1))
     geometry.setAttribute('aWater', new THREE.BufferAttribute(data.water, 1))
+    geometry.setAttribute('aFoam', new THREE.BufferAttribute(data.foam, 1))
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
     const mesh = new THREE.Mesh(geometry, material)
     // 不透明层投影+接收;透明层(水)只接收不投影
@@ -163,6 +239,19 @@ export class VoxelRenderer {
     const fog = this.scene.fog as THREE.FogExp2
     fog.color = new THREE.Color(env.fogColor)
     fog.density = env.fogDensity
+  }
+
+  /** 每帧写水体 uniforms（色彩中枢 → shader；skyReflect 由引擎从 resolved.sky 现算） */
+  setWaterUniforms(water: ResolvedPalette['water'], skyReflect: THREE.Color): void {
+    this.shaderUniforms.uWaterShallow.value.setRGB(...water.shallow)
+    this.shaderUniforms.uWaterDeep.value.setRGB(...water.deep)
+    this.shaderUniforms.uFoamColor.value.setRGB(...water.foam)
+    this.shaderUniforms.uSkyReflect.value.copy(skyReflect)
+  }
+
+  /** 入水时切换雾色/密度（背景同步兜底，天空穹 fog:false 天然不受影响） */
+  setUnderwaterFog(color: RGB, density: number): void {
+    this.setEnvironment({ fogColor: new THREE.Color(...color), fogDensity: density })
   }
 
   private directDir: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 }

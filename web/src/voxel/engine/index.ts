@@ -15,6 +15,10 @@ import { MotionPreference } from './motion-preference'
 import { loadPalette, samplePalette, type RGB, type ThemePalette } from './palette'
 import { Picker } from './picker'
 import { ResidentRenderer, type ResidentRenderState } from './residents'
+import {
+  isEyeUnderwater, smoothUnderwater, underwaterDepth,
+  UNDERWATER_FOG_BASE, UNDERWATER_FOG_DEPTH,
+} from './underwater'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
@@ -24,6 +28,11 @@ function rgbToHex(c: RGB): number {
     | (Math.round(Math.min(1, c[1]) * 255) << 8)
     | Math.round(Math.min(1, c[2]) * 255)
 }
+
+const lerpNum = (a: number, b: number, t: number) => a + (b - a) * t
+const mixRGB = (a: RGB, b: RGB, t: number): RGB => [
+  lerpNum(a[0], b[0], t), lerpNum(a[1], b[1], t), lerpNum(a[2], b[2], t),
+]
 
 export interface FrameUpdatable { update(dt: number): void }
 
@@ -52,6 +61,14 @@ export class VoxelEngine {
   private pendingSkyLevel = 15
   private currentTimeOfDay = 0.5
   private weatherMod = { fogBoost: 0, dim: 0 }
+  /** 入水强度 0~1（平滑后；e2e 探针读此值） */
+  private underwaterStrengthValue = 0
+  private tmpDir = new THREE.Vector3()
+  private tmpReflect = new THREE.Color()
+
+  get underwaterStrength(): number {
+    return this.underwaterStrengthValue
+  }
 
   private canvas: HTMLCanvasElement | null = null
   private running = false
@@ -153,17 +170,47 @@ export class VoxelEngine {
     this.applyPalette()
   }
 
-  /** 色彩中枢分发：每帧采样调色（天空/雾/后处理平滑），96 步量化仅控制重烘焙 */
-  private applyPalette(): void {
+  /** 色彩中枢分发：每帧采样调色（天空/雾/水/后处理平滑），96 步量化仅控制重烘焙 */
+  private applyPalette(dt = 1 / 60): void {
     if (!this.palette) return
     const resolved = samplePalette(this.palette, this.currentTimeOfDay, this.weatherMod)
-    const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density }
-    this.renderer.setEnvironment(env)
+
+    // 入水判定（S3a F5）：眼位没入下沉水面 → 强度平滑收敛；雾色/密度按强度+深度插值
+    let target = 0
+    let depth = 0
+    if (this.world && this.registry) {
+      const eye = this.cameraRig.camera.position
+      target = isEyeUnderwater(this.world, this.registry, eye) ? 1 : 0
+      depth = underwaterDepth(this.world, this.registry, eye)
+    }
+    this.underwaterStrengthValue = smoothUnderwater(this.underwaterStrengthValue, target, dt)
+    const strength = this.underwaterStrengthValue
+    if (strength > 0.001) {
+      this.renderer.setUnderwaterFog(
+        mixRGB(resolved.fog.color, resolved.water.fog, strength),
+        lerpNum(resolved.fog.density, UNDERWATER_FOG_BASE + UNDERWATER_FOG_DEPTH * depth, strength),
+      )
+    } else {
+      const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density }
+      this.renderer.setEnvironment(env)
+    }
+
     this.renderer.setDirectLight(resolved.direct, this.palette.shadow, this.palette.ambientLift)
     const time = this.renderer.shaderUniforms.uTime.value
     const motion = this.motion.animationTimeScale()
     this.renderer.sky?.update(resolved.sky, resolved.fog.color, time, motion)
     this.renderer.post?.update(resolved.post, { motion, time })
+    this.renderer.post?.setUnderwater(strength, resolved.water.fog)
+
+    // 天空反射色：从 resolved.sky 按相机俯仰现算（平视取地平线色、俯视取天顶色），随昼夜天气自动变化
+    this.cameraRig.camera.getWorldDirection(this.tmpDir)
+    const pitch = Math.min(1, Math.max(0, -this.tmpDir.y))
+    this.tmpReflect.setRGB(
+      lerpNum(resolved.sky.horizon[0], resolved.sky.zenith[0], pitch),
+      lerpNum(resolved.sky.horizon[1], resolved.sky.zenith[1], pitch),
+      lerpNum(resolved.sky.horizon[2], resolved.sky.zenith[2], pitch),
+    )
+    this.renderer.setWaterUniforms(resolved.water, this.tmpReflect)
   }
 
   private get aoParams(): AoParams | undefined {
@@ -252,7 +299,7 @@ export class VoxelEngine {
       this.cameraRig.update(dt)
       this.updatablesTick(dt)
       for (const u of this.updatables) u.update(dt)
-      this.applyPalette() // 天空/雾/后处理/直射光每帧平滑；重烘焙仍由 96 步量化控制
+      this.applyPalette(dt) // 天空/雾/水/后处理/直射光每帧平滑；重烘焙仍由 96 步量化控制
       this.onFrame?.(dt)
       const camState = this.cameraRig.state
       this.renderer.renderFrame(dt, this.cameraRig.camera, { target: camState.target, distance: camState.distance })
@@ -297,6 +344,7 @@ export * from './mesher'
 export * from './palette'
 export * from './sky'
 export * from './post'
+export * from './underwater'
 export * from './feedback'
 export * from './motion-preference'
 export * from './pathfinding'

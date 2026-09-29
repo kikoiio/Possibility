@@ -44,6 +44,10 @@ const keyframes: PaletteKeyframe[] = [
     highTint: [1.02, 0.98, 0.92],
     vignette: 0.28,
     grain: 0.014,
+    waterShallow: [0.07, 0.11, 0.22],
+    waterDeep: [0.02, 0.05, 0.13],
+    waterFoam: [0.38, 0.46, 0.62],
+    waterFog: [0.03, 0.07, 0.14],
   },
   {
     // 夜半与晨昏交界
@@ -72,6 +76,10 @@ const keyframes: PaletteKeyframe[] = [
     highTint: [1.04, 0.96, 0.88],
     vignette: 0.28,
     grain: 0.014,
+    waterShallow: [0.15, 0.17, 0.31],
+    waterDeep: [0.07, 0.09, 0.2],
+    waterFoam: [0.56, 0.5, 0.56],
+    waterFog: [0.08, 0.1, 0.21],
   },
   {
     // 晨昏金色（旧 DUSK_SKY / DUSK_TINT）
@@ -100,6 +108,10 @@ const keyframes: PaletteKeyframe[] = [
     highTint: [1.06, 0.98, 0.88],
     vignette: 0.28,
     grain: 0.014,
+    waterShallow: [0.31, 0.42, 0.55],
+    waterDeep: [0.12, 0.22, 0.35],
+    waterFoam: [0.86, 0.8, 0.75],
+    waterFog: [0.12, 0.23, 0.3],
   },
   {
     // 日间
@@ -128,6 +140,10 @@ const keyframes: PaletteKeyframe[] = [
     highTint: [1.06, 1.0, 0.9],
     vignette: 0.28,
     grain: 0.014,
+    waterShallow: [0.25, 0.5, 0.66],
+    waterDeep: [0.1, 0.3, 0.45],
+    waterFoam: [0.9, 0.95, 0.98],
+    waterFog: [0.08, 0.3, 0.4],
   },
   {
     // 正午（旧 DAY_SKY / DAY_TINT / DEFAULT_BAKE_ENV 原值）
@@ -156,6 +172,10 @@ const keyframes: PaletteKeyframe[] = [
     highTint: [1.06, 1.0, 0.9],
     vignette: 0.28,
     grain: 0.014,
+    waterShallow: [0.28, 0.56, 0.72],
+    waterDeep: [0.1, 0.32, 0.5],
+    waterFoam: [0.92, 0.97, 1.0],
+    waterFog: [0.08, 0.32, 0.42],
   },
 ]
 

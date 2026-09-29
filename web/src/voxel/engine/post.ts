@@ -64,6 +64,47 @@ const GradeShader = {
   `,
 }
 
+/**
+ * 水下 pass（S3a F5）：UV 正弦轻扭曲（幅度 × uUnderwater × uMotion，reduced-motion 关闭扭曲）
+ * + 画面整体向水色雾偏移（补充场景雾管不到的色调）。strength=0 时 pass 禁用零开销。
+ */
+const UnderwaterShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    uUnderwater: { value: 0 },
+    uWaterFog: { value: new THREE.Vector3(0, 0, 0) },
+    uTime: { value: 0 },
+    uMotion: { value: 1 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uUnderwater;
+    uniform vec3 uWaterFog;
+    uniform float uTime;
+    uniform float uMotion;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 uv = vUv;
+      float w = uUnderwater * uMotion;
+      uv += vec2(
+        sin(vUv.y * 26.0 + uTime * 2.2),
+        cos(vUv.x * 22.0 + uTime * 1.7)
+      ) * 0.004 * w;
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      c = mix(c, uWaterFog, 0.25 * uUnderwater);
+      gl_FragColor = vec4(c, 1.0);
+    }
+  `,
+}
+
 /** 检测软件渲染后端（SwiftShader / llvmpipe 等），用于后处理与阴影降级 */
 export function isSoftwareGL(renderer: THREE.WebGLRenderer): boolean {
   try {
@@ -77,7 +118,7 @@ export function isSoftwareGL(renderer: THREE.WebGLRenderer): boolean {
 }
 
 /**
- * 后处理链：RenderPass → UnrealBloom → Grade → Output。
+ * 后处理链：RenderPass → UnrealBloom → Grade → Underwater → Output。
  * MSAA 由 composer RenderTarget(samples=4) 承担（WebGL2），HalfFloat 保留超亮源供 bloom。
  * bloom 阈值 0.85：让夜晚灯火（顶点色 ≈1）也能泛光（AC2），而非仅太阳。
  */
@@ -88,6 +129,8 @@ export class PostPipeline {
   private bloom: UnrealBloomPass
   private grade: ShaderPass
   private gradeUniforms: typeof GradeShader.uniforms
+  private underwater: ShaderPass
+  private underwaterUniforms: typeof UnderwaterShader.uniforms
   private softwareBloomScale = 1
 
   constructor(
@@ -114,11 +157,22 @@ export class PostPipeline {
     this.softwareBloomScale = software ? 0.5 : 1
     this.grade = new ShaderPass(GradeShader)
     this.gradeUniforms = this.grade.uniforms as typeof GradeShader.uniforms
+    this.underwater = new ShaderPass(UnderwaterShader)
+    this.underwaterUniforms = this.underwater.uniforms as typeof UnderwaterShader.uniforms
+    this.underwater.enabled = false
 
     this.composer.addPass(this.renderPass)
     this.composer.addPass(this.bloom)
     this.composer.addPass(this.grade)
+    this.composer.addPass(this.underwater)
     this.composer.addPass(new OutputPass())
+  }
+
+  /** 入水强度与水色雾：strength≈0 时禁用 pass（零开销） */
+  setUnderwater(strength: number, fogColor: readonly [number, number, number]): void {
+    this.underwaterUniforms.uUnderwater.value = strength
+    this.underwaterUniforms.uWaterFog.value.set(...fogColor)
+    this.underwater.enabled = strength > 0.001
   }
 
   /** 每帧写调色 uniforms；单项强度归零即等效该效果关闭（N3） */
@@ -133,6 +187,8 @@ export class PostPipeline {
     u.uGrain.value = post.grain
     u.uTime.value = opts.time
     u.uMotion.value = opts.motion
+    this.underwaterUniforms.uTime.value = opts.time
+    this.underwaterUniforms.uMotion.value = opts.motion
   }
 
   resize(width: number, height: number): void {
@@ -151,5 +207,6 @@ export class PostPipeline {
     this.composer.dispose()
     this.bloom.dispose()
     this.grade.dispose()
+    this.underwater.dispose()
   }
 }
