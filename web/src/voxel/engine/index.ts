@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { AmbientAnimator } from './ambient'
 import { buildPlaceholderAtlas, TextureAtlas } from './atlas'
 import { CameraRig } from './camera'
+import { findSpawnNear, WalkCameraStrategy } from './camera-walk'
 import { DayNightCycle } from './day-night'
 import { BuildFeedback } from './feedback'
 import { LightingEngine } from './lighting'
@@ -99,6 +100,7 @@ export class VoxelEngine {
 
   loadDocument(doc: VoxelDocument): void {
     if (!this.registry) throw new Error('loadAssets must be called before loadDocument')
+    this.cameraRig.setMode('orbit') // 文档重载:重置回上帝视角(S2b)
     this.weather?.dispose()
     this.residents?.dispose()
     this.feedback?.dispose()
@@ -166,6 +168,27 @@ export class VoxelEngine {
 
   private get aoParams(): AoParams | undefined {
     return this.palette ? { curve: this.palette.aoCurve, strength: this.palette.aoStrength } : undefined
+  }
+
+  /**
+   * 双视角切换(S2b F1):orbit 上帝视角 ⇄ walk 第一视角。
+   * walk:orbit 注视点投影落点搜索,找不到可站立位置则不切换。
+   */
+  setCameraMode(mode: 'orbit' | 'walk'): { ok: boolean; reason?: string } {
+    if (mode === 'walk') {
+      if (!this.world || !this.registry) return { ok: false, reason: '世界尚未加载,无法进入第一视角' }
+      const target = this.cameraRig.state.target
+      const spawn = findSpawnNear(this.world, this.registry, {
+        x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z),
+      })
+      if (!spawn) return { ok: false, reason: '注视点附近没有可站立的位置' }
+      this.cameraRig.registerWalkStrategy(new WalkCameraStrategy(this.world, this.registry, spawn))
+    }
+    return this.cameraRig.setMode(mode)
+  }
+
+  get cameraMode(): 'orbit' | 'walk' {
+    return this.cameraRig.mode as 'orbit' | 'walk'
   }
 
   setTimeOfDay(t: number): void {
@@ -267,6 +290,7 @@ export class VoxelEngine {
 export * from './ambient'
 export * from './atlas'
 export * from './camera'
+export * from './camera-walk'
 export * from './day-night'
 export * from './lighting'
 export * from './mesher'

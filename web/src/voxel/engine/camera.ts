@@ -1,13 +1,16 @@
 import * as THREE from 'three'
 import type { VoxelSize } from '@possibility/voxel-contract'
 
-/** 相机策略接口：后续第一视角模式 = 新增策略实现（N7） */
+/** 相机策略接口：第一视角模式 = 新增策略实现(S2b) */
 export interface CameraStrategy {
   readonly mode: string
+  readonly camera: THREE.PerspectiveCamera
   attach?(canvas: HTMLCanvasElement): void
   detach?(): void
   update(dt: number): void
   fitToWorld(size: VoxelSize): void
+  /** walk 策略暴露玩家脚底位置(切回 orbit 时交接注视点) */
+  readonly playerPosition?: { x: number; y: number; z: number } | null
 }
 
 const MIN_DISTANCE = 6
@@ -117,47 +120,87 @@ export class OrbitCameraStrategy implements CameraStrategy {
   get state() {
     return { theta: this.theta, phi: this.phi, distance: this.distance, target: this.target.clone() }
   }
+
+  /** walk → orbit 交接:注视点跟随玩家位置(S2b F1) */
+  setTarget(at: { x: number; y: number; z: number }): void {
+    this.target.set(at.x, at.y, at.z)
+  }
 }
 
-/** 相机装配：当前仅 orbit；setMode 为第一视角预留（N7） */
+/** 相机装配:orbit / walk 双策略(S2b F1)。walk 策略由引擎门面按需创建注入 */
 export class CameraRig {
-  private strategy: OrbitCameraStrategy
+  private orbit: OrbitCameraStrategy
+  private walk: CameraStrategy | null = null
+  private active: CameraStrategy
+  private canvas: HTMLCanvasElement | null = null
 
   constructor() {
-    this.strategy = new OrbitCameraStrategy()
+    this.orbit = new OrbitCameraStrategy()
+    this.active = this.orbit
   }
 
   get camera(): THREE.PerspectiveCamera {
-    return this.strategy.camera
+    return this.active.camera
   }
 
-  setMode(mode: 'orbit'): void {
-    if (mode !== 'orbit') throw new Error(`unknown camera mode: ${mode as string}`)
-    // 本周期仅 orbit；第一视角 = 新策略挂到这里
+  get mode(): string {
+    return this.active.mode
+  }
+
+  /** 注入 walk 策略(引擎在 world/registry 就绪后创建) */
+  registerWalkStrategy(strategy: CameraStrategy): void {
+    this.walk = strategy
+  }
+
+  setMode(mode: 'orbit' | 'walk'): { ok: boolean; reason?: string } {
+    if (mode === this.active.mode) return { ok: true }
+    if (mode === 'walk') {
+      if (!this.walk) return { ok: false, reason: '世界未就绪,无法进入第一视角' }
+      // walk → orbit 的注视点交接由引擎在创建策略前完成(落点搜索)
+      if (this.canvas) { this.orbit.detach(); this.walk.attach?.(this.canvas) }
+      this.active = this.walk
+      return { ok: true }
+    }
+    // walk → orbit:注视点跟随玩家位置
+    const playerPos = this.walk?.playerPosition
+    if (playerPos) this.orbit.setTarget(playerPos)
+    if (this.canvas && this.walk) { this.walk.detach?.(); this.orbit.attach(this.canvas) }
+    this.active = this.orbit
+    return { ok: true }
   }
 
   attach(canvas: HTMLCanvasElement): void {
-    this.strategy.attach(canvas)
+    this.canvas = canvas
+    this.active.attach?.(canvas)
   }
 
   fitToWorld(size: VoxelSize): void {
-    this.strategy.fitToWorld(size)
+    this.active.fitToWorld(size)
   }
 
   setAspect(aspect: number): void {
-    this.strategy.setAspect(aspect)
+    this.orbit.setAspect(aspect)
+    const walkCam = this.walk as { camera?: THREE.PerspectiveCamera } | null
+    if (walkCam?.camera) {
+      walkCam.camera.aspect = aspect
+      walkCam.camera.updateProjectionMatrix()
+    }
   }
 
-  /** 相机注视点（天气粒子跟随等） */
+  /** 相机注视点(天气粒子跟随、阴影相机聚焦)。walk 时为玩家位置 */
   get state() {
-    return this.strategy.state
+    if (this.active.mode === 'walk' && this.walk?.playerPosition) {
+      return { target: this.walk.playerPosition, distance: 40 } // distance 40 = 阴影最小覆盖范围
+    }
+    return this.orbit.state
   }
 
   update(dt: number): void {
-    this.strategy.update(dt)
+    this.active.update(dt)
   }
 
   detach(): void {
-    this.strategy.detach()
+    this.active.detach?.()
+    this.canvas = null
   }
 }
