@@ -44,7 +44,7 @@ export function findSpawnNear(
   return null
 }
 
-const DOUBLE_SPACE_MS = 300
+const DOUBLE_SPACE_MS = 500 // 软渲染低帧率下事件派发有延迟,窗口放宽(e2e 实测可达 700ms 级抖动,500 内为连击)
 const LOOK_SPEED = 0.0025
 const MAX_PITCH = Math.PI / 2 - 0.01   // ±89°
 const FIXED_STEP = 1 / 60              // 物理子步(N2:单步位移 < 0.5 格不穿墙)

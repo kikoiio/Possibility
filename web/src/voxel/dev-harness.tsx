@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { applyEdits, deserialize, serialize, type EditOperation } from '@possibility/voxel-contract'
 import { VoxelEngine, WebGL2UnavailableError } from './engine'
 import { EditController } from './bridge/edit-controller'
@@ -6,6 +6,7 @@ import { InteractionRouter } from './bridge/interaction-router'
 import { PlatformGate } from './bridge/platform-gate'
 import { buildFixtureWorld } from './fixture'
 import VoxelEditor from './ui/VoxelEditor'
+import WalkHud from './ui/WalkHud'
 
 /** e2e 探针：最近的产品交互事件（居民 / 地点 / 空间导航） */
 interface InteractionEvent { kind: string; detail: string }
@@ -46,6 +47,9 @@ export default function VoxelDevHarness() {
   const [ready, setReady] = useState(false)
   const [interaction, setInteraction] = useState<InteractionEvent | null>(null)
   const [gate] = useState(() => new PlatformGate())
+  // S2b 双视角(与 VoxelViewport 同一套接线,供 e2e 走查)
+  const [cameraMode, setCameraMode] = useState<'orbit' | 'walk'>('orbit')
+  const [modeNotice, setModeNotice] = useState<string | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -136,6 +140,44 @@ export default function VoxelDevHarness() {
     }
   }, [gate])
 
+  const toggleCameraMode = useCallback(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    const next = cameraMode === 'orbit' ? 'walk' : 'orbit'
+    const result = engine.setCameraMode(next)
+    if (result.ok) {
+      setCameraMode(next)
+      setModeNotice(null)
+    } else {
+      setModeNotice(result.reason ?? '当前无法切换视角')
+      setTimeout(() => setModeNotice(null), 3000)
+    }
+  }, [cameraMode])
+  useEffect(() => {
+    if (!gate.showFirstPerson) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyV' || e.repeat) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      toggleCameraMode()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [gate, toggleCameraMode])
+
+  // 第一视角:点击 = 屏幕中心(准星)射线,只读选中(F4)
+  useEffect(() => {
+    if (!ready || cameraMode !== 'walk') return
+    const canvas = engineRef.current?.renderer.canvas
+    if (!canvas) return
+    const onClick = () => {
+      const rect = canvas.getBoundingClientRect()
+      interactRef.current?.(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    }
+    canvas.addEventListener('click', onClick)
+    return () => canvas.removeEventListener('click', onClick)
+  }, [ready, cameraMode])
+
   if (error) {
     return (
       <div className="grid h-screen place-items-center bg-zinc-900 p-8 text-center text-sm text-zinc-200" data-testid="voxel-error">
@@ -154,10 +196,15 @@ export default function VoxelDevHarness() {
       )}
       <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/55 px-3 py-2 text-xs leading-5 text-zinc-200">
         <div className="font-medium">体素开发页 · 雾影庄 fixture</div>
-        <div className="text-zinc-400">左键拖动旋转 · 右键/Shift 拖动平移 · 滚轮缩放</div>
+        <div className="text-zinc-400">
+          {cameraMode === 'orbit' ? '左键拖动旋转 · 右键/Shift 拖动平移 · 滚轮缩放' : '第一视角游览中(只读)'}
+        </div>
       </div>
+      {ready && gate.showFirstPerson && (
+        <WalkHud mode={cameraMode} onToggle={toggleCameraMode} notice={modeNotice} />
+      )}
       {ready && <DevControls engine={engineRef} />}
-      {ready && controller && (
+      {ready && controller && cameraMode === 'orbit' && (
         <VoxelEditor
           engine={engineRef.current!}
           controller={controller}
