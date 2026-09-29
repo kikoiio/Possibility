@@ -25,6 +25,25 @@ function wallOff(doc: ReturnType<typeof flatWorld>, cx: number, cz: number) {
   }
 }
 
+/** 5×5 结构墙房间(plaster 墙+瓦顶),西墙留 1×2 门洞;withLantern 时屋内放灯笼 */
+function room(withLantern: boolean) {
+  const doc = flatWorld()
+  for (let y = 1; y <= 3; y++) {
+    for (let i = 12; i <= 16; i++) {
+      setBlockMut(doc, at(i, y, 12), 'plaster-wall')
+      setBlockMut(doc, at(i, y, 16), 'plaster-wall')
+      setBlockMut(doc, at(12, y, i), 'plaster-wall')
+      setBlockMut(doc, at(16, y, i), 'plaster-wall')
+    }
+  }
+  for (let x = 12; x <= 16; x++) for (let z = 12; z <= 16; z++) setBlockMut(doc, at(x, 4, z), 'roof-tile')
+  // 门洞:西墙中段 1 宽 2 高
+  setBlockMut(doc, at(12, 1, 14), 'air')
+  setBlockMut(doc, at(12, 2, 14), 'air')
+  if (withLantern) setBlockMut(doc, at(14, 1, 14), 'lantern')
+  return doc
+}
+
 describe('validateWalkability R1 净高', () => {
   it('净高 1 格的门洞(紧邻可行走地面)→ 报 walk-clearance 且定位门洞', () => {
     const doc = flatWorld()
@@ -107,6 +126,49 @@ describe('validateWalkability R4 高差突变', () => {
     for (const y of [1, 2]) setBlockMut(doc, at(24, y, 24), 'stone') // 荒野石柱
     const issues = validateWalkability(doc, registry)
     expect(issues.filter((i) => i.code === 'walk-stairs')).toEqual([])
+  })
+})
+
+describe('validateWalkability R3 室内照明', () => {
+  it('全封闭无灯房间(门可进)→ 报 walk-lighting,at 为最暗格', () => {
+    const issues = validateWalkability(room(false), registry)
+    const hit = issues.find((i) => i.code === 'walk-lighting')
+    expect(hit).toBeDefined()
+    expect(hit!.message).toContain('照明不足')
+    expect(hit!.at!.x).toBeGreaterThanOrEqual(12)
+    expect(hit!.at!.x).toBeLessThanOrEqual(16)
+  })
+
+  it('房间内有灯笼 → 不报', () => {
+    const issues = validateWalkability(room(true), registry)
+    expect(issues.filter((i) => i.code === 'walk-lighting')).toEqual([])
+  })
+
+  it('露天世界与树叶顶棚 → 都不算室内,不报', () => {
+    const open = validateWalkability(flatWorld(), registry)
+    expect(open.filter((i) => i.code === 'walk-lighting')).toEqual([])
+    const doc = flatWorld()
+    setBlockMut(doc, at(16, 3, 16), 'leaves') // 树冠遮顶,非人造屋顶
+    const underTree = validateWalkability(doc, registry)
+    expect(underTree.filter((i) => i.code === 'walk-lighting')).toEqual([])
+  })
+})
+
+describe('validateWalkability 总装(AC5)', () => {
+  it('合规小世界(有门、有灯、绑定物体可达)→ 零 issue', () => {
+    // 带灯房间 + 屋内长凳绑定地点 + 室外石灯笼绑定人物
+    const base = room(true)
+    const placed = applyEdits(base, [
+      { kind: 'place-object', objectType: 'bench', anchor: at(14, 1, 13), rotation: 0 },
+      { kind: 'place-object', objectType: 'stone-lantern', anchor: at(6, 1, 6), rotation: 0 },
+    ]).document
+    const doc = {
+      ...placed,
+      objects: placed.objects.map((o, i) =>
+        i === 1 ? { ...o, binding: { kind: 'person' as const, personId: 'p1' } } : o),
+      locations: [{ name: '内室', objectId: placed.objects[0].id }],
+    }
+    expect(validateWalkability(doc, registry)).toEqual([])
   })
 })
 

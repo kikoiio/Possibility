@@ -196,6 +196,98 @@ function checkGaps(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
   return issues
 }
 
+/** 不透光(阻挡天光与方块光):实心且非半透明(玻璃/水透光) */
+function isOpaque(reg: BlockRegistry, blockId: string): boolean {
+  const b = reg.get(blockId)
+  return !!b?.solid && !b.translucent
+}
+
+/**
+ * 简化光照模型(N6,与引擎泛洪光同语义但独立实现):
+ * 天光 = 每柱自顶向下 15,遇不透光截止;方块光 = emitsLight 源六邻 BFS,每格衰减 1。
+ */
+function approxLighting(ctx: WalkContext) {
+  const { doc, reg } = ctx
+  const { width, height, depth } = doc.size
+  // 每柱最高的不透光格 y(柱内其上方天光 15,下方被遮)
+  const topOpaque = new Int16Array(width * depth).fill(-1)
+  const sources: Array<{ at: VoxelCoord; level: number }> = []
+  for (let z = 0; z < depth; z++) {
+    for (let x = 0; x < width; x++) {
+      for (let y = height - 1; y >= 0; y--) {
+        const block = getBlock(doc, { x, y, z })
+        if (isOpaque(reg, block)) { topOpaque[z * width + x] = y; break }
+      }
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let z = 0; z < depth; z++) {
+      for (let x = 0; x < width; x++) {
+        const emits = reg.get(getBlock(doc, { x, y, z }))?.emitsLight ?? 0
+        if (emits > 0) sources.push({ at: { x, y, z }, level: emits })
+      }
+    }
+  }
+  // 方块光 BFS(光源格本身可不透光,从源向六邻扩散到非透光格)
+  const blockLight = new Map<string, number>()
+  const queue: Array<{ at: VoxelCoord; level: number }> = []
+  for (const s of sources) {
+    blockLight.set(key(s.at), s.level)
+    queue.push(s)
+  }
+  const SIX = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const
+  for (let head = 0; head < queue.length; head++) {
+    const { at, level } = queue[head]
+    if (level <= 1) continue
+    for (const [dx, dy, dz] of SIX) {
+      const n = { x: at.x + dx, y: at.y + dy, z: at.z + dz }
+      if (!inBounds(doc.size, n) || isOpaque(reg, getBlock(doc, n))) continue
+      const nk = key(n)
+      if ((blockLight.get(nk) ?? 0) >= level - 1) continue
+      blockLight.set(nk, level - 1)
+      queue.push({ at: n, level: level - 1 })
+    }
+  }
+  const skyAt = (at: VoxelCoord) => (at.y > topOpaque[at.z * width + at.x] ? 15 : 0)
+  const lightAt = (at: VoxelCoord) => Math.max(skyAt(at), blockLight.get(key(at)) ?? 0)
+  /** 室内判定:自该格向上,首块不透光遮挡为 structural(人造屋顶);树叶/山体不算室内 */
+  const roofedByStructure = (at: VoxelCoord) => {
+    for (let y = at.y + 1; y < height; y++) {
+      const block = getBlock(doc, { x: at.x, y, z: at.z })
+      if (isOpaque(reg, block)) return reg.get(block)?.category === 'structural'
+    }
+    return false
+  }
+  return { lightAt, roofedByStructure }
+}
+
+/** R3 室内照明覆盖:可达的「屋顶之下」可站立格中,光级 ≥ 阈值的占比须达标 */
+function checkLighting(ctx: WalkContext, flood: FloodResult, opts: Required<WalkabilityOptions>): ValidationIssue[] {
+  const { lightAt, roofedByStructure } = approxLighting(ctx)
+  const indoor: VoxelCoord[] = []
+  for (const k of flood.reached) {
+    const [x, y, z] = k.split(',').map(Number)
+    const at = { x, y, z }
+    if (roofedByStructure(at)) indoor.push(at)
+  }
+  if (indoor.length === 0) return []
+  let lit = 0
+  let darkest = indoor[0]
+  let darkestLevel = Infinity
+  for (const at of indoor) {
+    const level = lightAt(at)
+    if (level >= opts.lightThreshold) lit++
+    if (level < darkestLevel) { darkestLevel = level; darkest = at }
+  }
+  const coverage = lit / indoor.length
+  if (coverage >= opts.lightCoverage) return []
+  return [{
+    code: 'walk-lighting',
+    message: `室内可行走区域照明不足:${(coverage * 100).toFixed(0)}% 达标(阈值光级 ${opts.lightThreshold},要求 ${(opts.lightCoverage * 100).toFixed(0)}%)`,
+    at: darkest,
+  }]
+}
+
 /** R4 高差突变:可达格邻柱存在高差 ≥2 的可站立面,且该面属人工结构(物体占据格或其水平邻格)→ 断级楼梯/跳不上的台面 */
 function checkStairs(ctx: WalkContext, flood: FloodResult): ValidationIssue[] {
   const { doc } = ctx
@@ -290,7 +382,7 @@ export function validateWalkability(
     ...checkClearance(ctx, flood),             // R1
     ...checkGaps(ctx, flood),                  // R5
     ...checkStairs(ctx, flood),                // R4
-    // T5: R3 照明
+    ...checkLighting(ctx, flood, options),     // R3
   ]
   return issues.slice(0, MAX_ISSUES)
 }
