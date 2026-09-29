@@ -4,7 +4,7 @@ export interface RetrievalConfig {
   topK: number // RETRIEVAL_TOP_K 缺省 15（打分入选条数）
   summaryK: number // RETRIEVAL_SUMMARY_K 缺省 2（最新摘要保底条数）
   w1: number // RETRIEVAL_W1 缺省 1.0（新近度衰减权重）
-  w2: number // RETRIEVAL_W2 缺省 1.0（重要性权重）
+  w2: number // RETRIEVAL_W2 缺省 2.0（重要性权重;量程 0.2-2.0,须盖过新鲜琐事的衰减分,见 AC6）
   w3: number // RETRIEVAL_W3 缺省 1.0（情境匹配权重）
   halfLifeHours: number // RETRIEVAL_HALF_LIFE_HOURS 缺省 72（新近度半衰期,虚拟小时）
   candidateRecent: number // RETRIEVAL_CANDIDATE_RECENT 缺省 30（新近路候选 LIMIT）
@@ -18,7 +18,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   topK: 15,
   summaryK: 2,
   w1: 1,
-  w2: 1,
+  w2: 2,
   w3: 1,
   halfLifeHours: 72,
   candidateRecent: 30,

@@ -64,8 +64,8 @@ describe('retrieveForPrompt(S1 检索器)', () => {
     ])
     const selected = await retrieveForPrompt(db, 'ada', timeline,
       situation({ presentPersonIds: ['bo'], presentPersonNames: ['Bo'] }),
-      config({ recentFloor: 0 as never, topK: 1, summaryK: 0 }))
-    // recentFloor 计数类最小 1(配置层约束),此处直接验证打分排序取 top-1
+      config({ w2: 1, recentFloor: 0, topK: 1, summaryK: 0 }))
+    // w2=1 时情境分足以翻盘;验证打分排序取 top-1
     expect(selected[selected.length - 1]!.id).toBe('mentions-5')
   })
 
