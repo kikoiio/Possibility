@@ -243,7 +243,7 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
       const tx = x + Math.floor(rng() * 3) - 1
       const tz = z + Math.floor(rng() * 3) - 1
       const y = columns.get(`${tx},${tz}`)
-      if (y === undefined || y + 3 > height - 1 || rng() >= density) continue
+      if (y === undefined || y + 3 > size.height - 1 || rng() >= density) continue
       push('veg-tree-a', tx, y + 1, tz, i++)
       treeCount++
     }
