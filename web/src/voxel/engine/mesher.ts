@@ -151,7 +151,8 @@ export class Mesher {
               : type.textures.side
             const uv = this.atlas.uv(frame)
             const lightAt = { x: nx, y: ny, z: nz }
-            const sky01 = this.lighting.getSky(lightAt) / 15
+            // 界外邻格视为全开天空:世界边缘侧面/顶面不再烤成黑色
+            const sky01 = (this.world.inBounds(lightAt) ? this.lighting.getSky(lightAt) : this.lighting.getSkyLevel()) / 15
             const block01 = this.lighting.getBlockLight(lightAt) / 15
             const shade = env.faceShade[face.dir]
             const lightR = Math.min(1, sky01 * env.skyTint[0] + block01 * env.blockTint[0])

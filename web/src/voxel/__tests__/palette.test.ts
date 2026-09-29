@@ -93,7 +93,7 @@ describe('samplePalette 水色', () => {
 describe('samplePalette 直射光', () => {
   it('正午直射来自太阳方位,午夜来自月亮方位且偏冷', () => {
     const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
-    expect(noon.direct.intensity).toBeCloseTo(2.4)
+    expect(noon.direct.intensity).toBeCloseTo(2.15)
     // S1v2:方位仰角封顶 0.66(CoC 式长影),正午不再是头顶直射
     expect(noon.direct.dir.y).toBeGreaterThan(0.55)
     expect(noon.direct.dir.y).toBeLessThan(0.8)

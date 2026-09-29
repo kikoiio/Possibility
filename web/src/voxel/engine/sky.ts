@@ -60,9 +60,12 @@ void main() {
   vec3 dir = normalize(vDir);
 
   // 天顶-地平线渐变；地平线以下向雾色收敛（与 FogExp2 衔接，无断层）
+  // pow 指数 0.38:天顶色快速抵达,俯视常态视角也能看到竖向渐变
   float h = clamp(dir.y, 0.0, 1.0);
-  vec3 sky = mix(uHorizon, uZenith, pow(h, 0.6));
-  sky = mix(uFogColor, sky, smoothstep(-0.1, 0.03, dir.y));
+  vec3 sky = mix(uHorizon, uZenith, pow(h, 0.38));
+  // 地平线以下不平涂:向画面底部微暗微冷(伪大气纵深),俯视全景不再是一块纯色
+  vec3 belowBand = mix(uFogColor * vec3(0.86, 0.9, 0.97), uFogColor, smoothstep(-0.45, 0.02, dir.y));
+  sky = mix(belowBand, sky, smoothstep(-0.1, 0.03, dir.y));
 
   // 星空：方向网格哈希星点，白昼/地平线淡出，轻微闪烁
   if (uStarIntensity > 0.001) {
@@ -81,7 +84,10 @@ void main() {
   float sd1 = dot(dir, sunDirN);
   float sunDisk = smoothstep(0.9995, 0.99985, sd1);
   float sunHalo = pow(max(sd1, 0.0), 128.0);
+  // 宽幅大气散射:太阳高悬时俯视视角天空也有冷暖朝向(近太阳侧暖亮)
+  float sunScatter = pow(max(sd1, 0.0), 6.0);
   sky += uSunColor * (sunDisk * 2.2 + sunHalo * 0.5) * uSunIntensity * sunVis;
+  sky += uSunColor * sunScatter * 0.1 * uSunIntensity * sunVis;
 
   // 月亮盘 + 柔光晕
   vec3 moonDirN = normalize(uMoonDir);
@@ -97,7 +103,7 @@ void main() {
     cuv = cuv * 1.4 + vec2(0.8, 0.35) * (uTime * uMotion) * 0.012;
     float cl = fbm(cuv);
     float cloud = smoothstep(1.0 - uCloudCoverage, 1.0 - uCloudCoverage + 0.15, cl);
-    cloud *= smoothstep(0.04, 0.25, dir.y); // 地平线淡出
+    cloud *= smoothstep(0.02, 0.12, dir.y); // 地平线淡出(放低让高云在俯视视角可见)
     // 受光侧染色、背光侧压暗
     vec2 sunH = normalize(uSunDir.xz + vec2(0.0001));
     float lit = 0.5 + 0.5 * dot(normalize(dir.xz + vec2(0.0001)), sunH);

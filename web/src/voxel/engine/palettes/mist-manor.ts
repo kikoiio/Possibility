@@ -54,7 +54,7 @@ const keyframes: PaletteKeyframe[] = [
     // 夜半与晨昏交界(S1v2:地平线暖带加强,直射初起)
     elevation: -0.1,
     sunLightColor: [1, 0.7, 0.45],
-    sunLightIntensity: 0.35,
+    sunLightIntensity: 0.5,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0.18,
     skyZenith: [0.1, 0.09, 0.24],
@@ -63,7 +63,7 @@ const keyframes: PaletteKeyframe[] = [
     skyTint: [0.55, 0.48, 0.72],
     blockTint: BLOCK_TINT,
     faceShade: scaleShade(DAY_FACE_SHADE, 0.7),
-    skyLevel: 5,
+    skyLevel: 6,
     sunColor: [1, 0.6, 0.35],
     sunIntensity: 0.4,
     moonIntensity: 0.5,
@@ -115,10 +115,10 @@ const keyframes: PaletteKeyframe[] = [
     waterFog: [0.12, 0.23, 0.3],
   },
   {
-    // 日间(S1v2:直射加强,天青浓郁,曝光回收)
+    // 日间(S1v2 R2:直射略回收防死白,天青浓郁,曝光回收)
     elevation: 0.5,
     sunLightColor: [1, 0.86, 0.66],
-    sunLightIntensity: 2.0,
+    sunLightIntensity: 1.85,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0,
     skyZenith: [0.18, 0.46, 0.9],
@@ -134,11 +134,11 @@ const keyframes: PaletteKeyframe[] = [
     starIntensity: 0,
     cloudCoverage: 0.4,
     cloudTint: [0.98, 0.96, 0.93],
-    exposure: 0.97,
+    exposure: 0.94,
     bloomStrength: 0.3,
     saturation: 1.02,
     shadowTint: [0.64, 0.74, 1.07],
-    highTint: [1.08, 1.0, 0.86],
+    highTint: [1.02, 0.99, 0.9],
     vignette: 0.28,
     grain: 0.014,
     waterShallow: [0.22, 0.48, 0.68],
@@ -147,10 +147,10 @@ const keyframes: PaletteKeyframe[] = [
     waterFog: [0.08, 0.3, 0.4],
   },
   {
-    // 正午(S1v2:强暖直射 + 冷阴影,CoC 式清亮)
+    // 正午(S1v2 R2:强暖直射略收 + 冷阴影,CoC 式清亮不死白)
     elevation: 1,
     sunLightColor: [1, 0.9, 0.7],
-    sunLightIntensity: 2.4,
+    sunLightIntensity: 2.15,
     moonLightColor: [0.6, 0.72, 1.0],
     moonLightIntensity: 0,
     skyZenith: [0.14, 0.4, 0.92],
@@ -166,11 +166,11 @@ const keyframes: PaletteKeyframe[] = [
     starIntensity: 0,
     cloudCoverage: 0.42,
     cloudTint: [1, 0.97, 0.9],
-    exposure: 0.96,
+    exposure: 0.93,
     bloomStrength: 0.25,
     saturation: 1.03,
     shadowTint: [0.62, 0.72, 1.08],
-    highTint: [1.08, 1.0, 0.86],
+    highTint: [1.02, 0.99, 0.9],
     vignette: 0.28,
     grain: 0.014,
     waterShallow: [0.24, 0.54, 0.74],
@@ -190,9 +190,9 @@ export const MIST_MANOR_PALETTE: ThemePalette = {
   ambientLift: Math.PI, // T7 标定:Lambert BRDF 1/π,环境光 π(阴影关闭时)观感 = S1;开启时按 shadow.ambientScale 压低给直射让位
   shadow: {
     enabled: true, mapSize: 2048, softwareMapSize: 1024, bias: -0.0002, normalBias: 0.6, radius: 4,
-    // S1v2:阴影开启时环境光 ×0.36(旧 0.58)——直射全面加强(正午 2.4)+
-    // 方位仰角封顶(长影),阴影面 0.36 → 明暗对比接近 CoC 式 1:3
-    ambientScale: 0.36,
+    // S1v2:阴影开启时环境光 ×0.34(旧 0.58)——直射全面加强(正午 2.15)+
+    // 方位仰角封顶(长影),阴影面 0.34 → 明暗对比接近 CoC 式 1:3
+    ambientScale: 0.34,
   },
 }
 
