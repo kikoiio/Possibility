@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import type { SectionKey } from '@possibility/voxel-contract'
 import type { TextureAtlas } from './atlas'
 import type { SectionGeometry } from './mesher'
-import { PostPipeline } from './post'
+import { isSoftwareGL, PostPipeline } from './post'
+import type { ResolvedPalette, ShadowConfig } from './palette'
 import { SkyDome } from './sky'
 
 export interface EnvironmentState {
@@ -42,22 +43,25 @@ function injectWater(shader: THREE.WebGLProgramParametersWithUniforms, uniforms:
     .replace('#include <uv_vertex>', `#include <uv_vertex>\n#ifdef USE_MAP\n  vMapUv += vec2(sin(uTime * 1.2 + position.x * 1.7 + position.z), cos(uTime * 0.9 + position.z * 1.3)) * 0.015 * aWater * uMotion;\n#endif`)
 }
 
-/** three.js 场景装配：节几何管理、天空穹顶、雾、后处理、不透明/透明双渲染层 */
+/** three.js 场景装配：节几何管理、天空穹顶、雾、直射光阴影、后处理、不透明/透明双渲染层 */
 export class VoxelRenderer {
   readonly scene = new THREE.Scene()
   private three: THREE.WebGLRenderer | null = null
   private sectionMeshes = new Map<SectionKey, { opaque: THREE.Mesh | null; translucent: THREE.Mesh | null }>()
-  private opaqueMaterial: THREE.MeshBasicMaterial
-  private translucentMaterial: THREE.MeshBasicMaterial
+  private opaqueMaterial: THREE.MeshLambertMaterial
+  private translucentMaterial: THREE.MeshLambertMaterial
   readonly shaderUniforms: ShaderUniforms = { uTime: { value: 0 }, uMotion: { value: 1 } }
   /** 天空穹顶与后处理链（mount 后可用；由引擎门面每帧驱动） */
   sky: SkyDome | null = null
   post: PostPipeline | null = null
+  /** 直射光（太阳/月亮,投影）+ 环境光基底（标定「无直射=S1 观感」） */
+  private directLight: THREE.DirectionalLight | null = null
+  private ambientLight: THREE.AmbientLight | null = null
 
   constructor(private atlas: TextureAtlas) {
-    this.opaqueMaterial = new THREE.MeshBasicMaterial({ vertexColors: true })
+    this.opaqueMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
     this.opaqueMaterial.onBeforeCompile = (shader) => injectSway(shader, this.shaderUniforms)
-    this.translucentMaterial = new THREE.MeshBasicMaterial({
+    this.translucentMaterial = new THREE.MeshLambertMaterial({
       vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false,
     })
     this.translucentMaterial.onBeforeCompile = (shader) => injectWater(shader, this.shaderUniforms)
@@ -69,12 +73,21 @@ export class VoxelRenderer {
     if (!canvas.getContext('webgl2')) throw new WebGL2UnavailableError()
     this.three = new THREE.WebGLRenderer({ canvas, antialias: false })
     this.three.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.three.shadowMap.enabled = true
+    this.three.shadowMap.type = THREE.PCFSoftShadowMap
     this.resize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height)
     this.sky = new SkyDome()
     this.scene.add(this.sky.mesh)
     this.post = new PostPipeline(this.three, this.scene, cameraProvider)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 3.0)
+    this.directLight = new THREE.DirectionalLight(0xffffff, 0)
+    this.directLight.castShadow = true
+    this.scene.add(this.ambientLight, this.directLight, this.directLight.target)
+    if (isSoftwareGL(this.three)) this.softwareGL = true
     if (this.atlas.texture) this.setAtlasTexture()
   }
+
+  private softwareGL = false
 
   setAtlasTexture(): void {
     this.opaqueMaterial.map = this.atlas.texture
@@ -103,7 +116,11 @@ export class VoxelRenderer {
     geometry.setAttribute('aSway', new THREE.BufferAttribute(data.sway, 1))
     geometry.setAttribute('aWater', new THREE.BufferAttribute(data.water, 1))
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
-    return new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(geometry, material)
+    // 不透明层投影+接收;透明层(水)只接收不投影
+    mesh.castShadow = material !== this.translucentMaterial
+    mesh.receiveShadow = true
+    return mesh
   }
 
   /** 增删换节几何：只动传入的节，其余不闪动（F4） */
@@ -148,9 +165,56 @@ export class VoxelRenderer {
     fog.density = env.fogDensity
   }
 
-  renderFrame(dt: number, camera: THREE.Camera): void {
+  private directDir: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 }
+
+  /** 每帧直射光分发：光色/强度/方位 + 阴影配置;enabled=false 或强度≈0 → 灯灭关阴影 */
+  setDirectLight(direct: ResolvedPalette['direct'], shadowCfg: ShadowConfig, ambientLift: number): void {
+    if (!this.three || !this.directLight || !this.ambientLight) return
+    this.directDir = direct.dir
+    this.ambientLight.intensity = ambientLift
+    const light = this.directLight
+    light.color.setRGB(direct.color[0], direct.color[1], direct.color[2])
+    light.intensity = direct.intensity
+    if (this.three.shadowMap.enabled !== shadowCfg.enabled) {
+      this.three.shadowMap.enabled = shadowCfg.enabled
+      // 运行时切换阴影管线需要重编译材质
+      this.opaqueMaterial.needsUpdate = true
+      this.translucentMaterial.needsUpdate = true
+    }
+    light.castShadow = shadowCfg.enabled && direct.intensity > 0.001
+    const mapSize = this.softwareGL ? shadowCfg.softwareMapSize : shadowCfg.mapSize
+    if (light.shadow.mapSize.x !== mapSize) {
+      light.shadow.mapSize.set(mapSize, mapSize)
+      light.shadow.map?.dispose()
+      light.shadow.map = null
+    }
+    light.shadow.bias = shadowCfg.bias
+    light.shadow.normalBias = shadowCfg.normalBias
+    light.shadow.radius = shadowCfg.radius
+  }
+
+  /** 阴影正交相机跟随注视点,边长随缩放距离伸缩(单级,spec 明确不做 CSM) */
+  private updateShadowCamera(focus: { target: { x: number; y: number; z: number }; distance: number }): void {
+    const light = this.directLight
+    if (!light || !light.castShadow) return
+    const dir = this.directDir
+    const extent = Math.min(120, Math.max(40, focus.distance))
+    light.position.set(
+      focus.target.x + dir.x * 100,
+      focus.target.y + dir.y * 100,
+      focus.target.z + dir.z * 100,
+    )
+    light.target.position.set(focus.target.x, focus.target.y, focus.target.z)
+    const cam = light.shadow.camera
+    cam.left = -extent; cam.right = extent; cam.top = extent; cam.bottom = -extent
+    cam.near = 1; cam.far = 400
+    cam.updateProjectionMatrix()
+  }
+
+  renderFrame(dt: number, camera: THREE.Camera, focus?: { target: { x: number; y: number; z: number }; distance: number }): void {
     if (!this.three) return
     this.sky?.follow(camera)
+    if (focus) this.updateShadowCamera(focus)
     if (this.post?.enabled) this.post.render(dt)
     else this.three.render(this.scene, camera)
   }
@@ -166,6 +230,9 @@ export class VoxelRenderer {
       this.sky.dispose()
       this.sky = null
     }
+    this.directLight?.shadow.map?.dispose()
+    this.directLight = null
+    this.ambientLight = null
     this.post?.dispose()
     this.post = null
     this.opaqueMaterial.dispose()

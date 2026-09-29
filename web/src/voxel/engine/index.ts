@@ -157,6 +157,7 @@ export class VoxelEngine {
     const resolved = samplePalette(this.palette, this.currentTimeOfDay, this.weatherMod)
     const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density }
     this.renderer.setEnvironment(env)
+    this.renderer.setDirectLight(resolved.direct, this.palette.shadow, this.palette.ambientLift)
     const time = this.renderer.shaderUniforms.uTime.value
     const motion = this.motion.animationTimeScale()
     this.renderer.sky?.update(resolved.sky, resolved.fog.color, time, motion)
@@ -228,9 +229,10 @@ export class VoxelEngine {
       this.cameraRig.update(dt)
       this.updatablesTick(dt)
       for (const u of this.updatables) u.update(dt)
-      this.applyPalette() // 天空/雾/后处理每帧平滑；重烘焙仍由 96 步量化控制
+      this.applyPalette() // 天空/雾/后处理/直射光每帧平滑；重烘焙仍由 96 步量化控制
       this.onFrame?.(dt)
-      this.renderer.renderFrame(dt, this.cameraRig.camera)
+      const camState = this.cameraRig.state
+      this.renderer.renderFrame(dt, this.cameraRig.camera, { target: camState.target, distance: camState.distance })
       this.raf = requestAnimationFrame(tick)
     }
     this.raf = requestAnimationFrame(tick)

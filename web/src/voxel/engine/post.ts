@@ -64,8 +64,8 @@ const GradeShader = {
   `,
 }
 
-/** 检测软件渲染后端（SwiftShader / llvmpipe 等），用于后处理降级 */
-function isSoftwareGL(renderer: THREE.WebGLRenderer): boolean {
+/** 检测软件渲染后端（SwiftShader / llvmpipe 等），用于后处理与阴影降级 */
+export function isSoftwareGL(renderer: THREE.WebGLRenderer): boolean {
   try {
     const gl = renderer.getContext()
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
