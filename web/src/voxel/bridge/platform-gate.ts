@@ -28,4 +28,9 @@ export class PlatformGate {
   get showEditing(): boolean {
     return this.info.canEdit
   }
+
+  /** 第一视角仅桌面端提供(S2b N4):移动端不显示切换入口 */
+  get showFirstPerson(): boolean {
+    return !this.info.isMobile
+  }
 }

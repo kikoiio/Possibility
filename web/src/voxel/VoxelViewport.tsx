@@ -7,6 +7,7 @@ import { InteractionRouter } from './bridge/interaction-router'
 import { OverlayDriver } from './bridge/overlay-driver'
 import { PlatformGate } from './bridge/platform-gate'
 import VoxelEditor from './ui/VoxelEditor'
+import WalkHud from './ui/WalkHud'
 import { useCanvasClick } from './ui/use-canvas-click'
 
 export interface VoxelViewportProps {
@@ -46,6 +47,9 @@ export default function VoxelViewport({
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [gate] = useState(() => new PlatformGate())
+  // S2b 双视角:orbit 上帝(建造)⇄ walk 第一视角(游览验收)
+  const [cameraMode, setCameraMode] = useState<'orbit' | 'walk'>('orbit')
+  const [modeNotice, setModeNotice] = useState<string | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -117,9 +121,48 @@ export default function VoxelViewport({
     if (ready && overlay) driverRef.current?.apply(overlay)
   }, [ready, overlay])
 
-  // 只读（无编辑器）时的观察点击
+  // 只读(无编辑器)时的观察点击
   const handleObserveClick = useCallback((x: number, y: number) => { interactRef.current(x, y) }, [])
-  useCanvasClick(engineRef.current, ready && !controller, handleObserveClick)
+  useCanvasClick(engineRef.current, ready && !controller && cameraMode === 'orbit', handleObserveClick)
+  // 第一视角:点击 = 屏幕中心(准星)射线(F4,只读选中;编辑入口不渲染)
+  const handleWalkClick = useCallback(() => {
+    const canvas = engineRef.current?.renderer.canvas
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    interactRef.current(rect.left + rect.width / 2, rect.top + rect.height / 2)
+  }, [])
+  useCanvasClick(engineRef.current, ready && cameraMode === 'walk', handleWalkClick)
+
+  // 模式切换:按钮 / V 键(F1);失败(落点搜索不到)给出提示不切换
+  const toggleCameraMode = useCallback(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    const next = cameraMode === 'orbit' ? 'walk' : 'orbit'
+    const result = engine.setCameraMode(next)
+    if (result.ok) {
+      setCameraMode(next)
+      setModeNotice(null)
+    } else {
+      setModeNotice(result.reason ?? '当前无法切换视角')
+    }
+  }, [cameraMode])
+  useEffect(() => {
+    if (!gate.showFirstPerson) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyV' || e.repeat) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      toggleCameraMode()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [gate, toggleCameraMode])
+  // 切换失败提示短暂展示
+  useEffect(() => {
+    if (!modeNotice) return
+    const timer = setTimeout(() => setModeNotice(null), 3000)
+    return () => clearTimeout(timer)
+  }, [modeNotice])
 
   return (
     <div className="relative h-full min-h-[430px] w-full overflow-hidden rounded-2xl bg-zinc-950" data-testid="voxel-viewport">
@@ -139,7 +182,10 @@ export default function VoxelViewport({
           {error}
         </div>
       )}
-      {ready && controller && planEdits && (
+      {ready && gate.showFirstPerson && (
+        <WalkHud mode={cameraMode} onToggle={toggleCameraMode} notice={modeNotice} />
+      )}
+      {ready && controller && planEdits && cameraMode === 'orbit' && (
         <VoxelEditor
           engine={engineRef.current!}
           controller={controller}
