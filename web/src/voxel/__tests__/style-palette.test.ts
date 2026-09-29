@@ -29,11 +29,18 @@ describe('resolvePalette(S3b F8/F9)', () => {
 
   it('预设采样输出不同(F9 风格生效探针)', () => {
     const noon = samplePalette(loadPalette('mist-manor'), 0.5, { dim: 0, fogBoost: 0 })
+    const bright = samplePalette(resolvePalette('mist-manor', { preset: 'bright-pastoral' }), 0.5, { dim: 0, fogBoost: 0 })
     const dusk = samplePalette(resolvePalette('mist-manor', { preset: 'dusk-warm' }), 0.5, { dim: 0, fogBoost: 0 })
-    expect(dusk.sky.zenith).not.toEqual(noon.sky.zenith)
     const misty = samplePalette(resolvePalette('mist-manor', { preset: 'misty-vale' }), 0.5, { dim: 0, fogBoost: 1 })
     const foggyNoon = samplePalette(loadPalette('mist-manor'), 0.5, { dim: 0, fogBoost: 1 })
+
+    expect(bright.sky.zenith).not.toEqual(noon.sky.zenith)
+    expect(dusk.sky.zenith).not.toEqual(noon.sky.zenith)
     expect(misty.fog.density).toBeGreaterThan(foggyNoon.fog.density)
+    expect(bright.post.exposure).toBeGreaterThan(noon.post.exposure)
+    expect(bright.post.exposure).toBeLessThan(1.05)
+    expect(dusk.direct.intensity).toBeGreaterThan(noon.direct.intensity * 0.95)
+    expect(misty.direct.intensity).toBeLessThan(noon.direct.intensity)
   })
 })
 

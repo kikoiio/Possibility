@@ -81,15 +81,19 @@ function derivePalette(base: ThemePalette, name: string, tune: PresetTune): Them
 }
 
 export const STYLE_PRESET_DATA: Record<string, ThemePalette> = {
+  // 明亮但不刺眼:保留草地层次,让云和水承担轻快感,避免正午死白。
   'bright-pastoral': derivePalette(MIST_MANOR_PALETTE, 'bright-pastoral', {
-    warmth: 0.15, saturation: 1.25, exposure: 0.06, bloomAdd: 0.1, cloudAdd: 0.1, particleDensity: 1.2,
+    warmth: 0.06, saturation: 1.08, exposure: 0.02, bloomAdd: 0.02, cloudAdd: 0.04,
+    sunScale: 1.02, particleDensity: 1.1,
   }),
+  // 暖调集中在高光与地平线,避免整张地图被染成橙色。
   'dusk-warm': derivePalette(MIST_MANOR_PALETTE, 'dusk-warm', {
-    warmth: 0.55, saturation: 1.05, exposure: -0.02, sunScale: 1.1,
+    warmth: 0.34, saturation: 1.02, exposure: -0.03, bloomAdd: 0.03, sunScale: 1.03, cloudAdd: 0.02,
   }),
+  // 雾谷用低饱和和中等雾量拉开纵深,保留地形与建筑轮廓。
   'misty-vale': derivePalette(MIST_MANOR_PALETTE, 'misty-vale', {
-    warmth: -0.35, saturation: 0.75, fogScale: 1.8, sunScale: 0.7, cloudAdd: 0.3, vignetteAdd: 0.08,
-    exposure: -0.04, particleDensity: 0.9,
+    warmth: -0.18, saturation: 0.86, fogScale: 1.35, sunScale: 0.82, cloudAdd: 0.12, vignetteAdd: 0.04,
+    exposure: -0.01, particleDensity: 0.85,
   }),
 }
 
