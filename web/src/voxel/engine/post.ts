@@ -64,6 +64,18 @@ const GradeShader = {
   `,
 }
 
+/** 检测软件渲染后端（SwiftShader / llvmpipe 等），用于后处理降级 */
+function isSoftwareGL(renderer: THREE.WebGLRenderer): boolean {
+  try {
+    const gl = renderer.getContext()
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    const name = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : ''
+    return /swiftshader|llvmpipe|softpipe|software/i.test(name)
+  } catch {
+    return false
+  }
+}
+
 /**
  * 后处理链：RenderPass → UnrealBloom → Grade → Output。
  * MSAA 由 composer RenderTarget(samples=4) 承担（WebGL2），HalfFloat 保留超亮源供 bloom。
@@ -76,6 +88,7 @@ export class PostPipeline {
   private bloom: UnrealBloomPass
   private grade: ShaderPass
   private gradeUniforms: typeof GradeShader.uniforms
+  private softwareBloomScale = 1
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -84,9 +97,12 @@ export class PostPipeline {
   ) {
     const size = renderer.getSize(new THREE.Vector2())
     const pixelRatio = renderer.getPixelRatio()
+    // 软件渲染（SwiftShader/llvmpipe）降级：关 MSAA、字节 RT、bloom 半分辨率；
+    // 真 GPU 保持 plan 品质档（MSAA4 + HalfFloat HDR + 全分辨率 bloom）
+    const software = isSoftwareGL(renderer)
     const rt = new THREE.WebGLRenderTarget(size.x * pixelRatio, size.y * pixelRatio, {
-      samples: 4,
-      type: THREE.HalfFloatType,
+      samples: software ? 0 : 4,
+      type: software ? THREE.UnsignedByteType : THREE.HalfFloatType,
     })
     this.composer = new EffectComposer(renderer, rt)
     this.composer.setPixelRatio(pixelRatio)
@@ -94,6 +110,8 @@ export class PostPipeline {
 
     this.renderPass = new RenderPass(scene, cameraProvider())
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.3, 0.4, 0.85)
+    if (software) this.bloom.setSize(size.x / 2, size.y / 2)
+    this.softwareBloomScale = software ? 0.5 : 1
     this.grade = new ShaderPass(GradeShader)
     this.gradeUniforms = this.grade.uniforms as typeof GradeShader.uniforms
 
@@ -119,6 +137,9 @@ export class PostPipeline {
 
   resize(width: number, height: number): void {
     this.composer.setSize(width, height)
+    if (this.softwareBloomScale !== 1) {
+      this.bloom.setSize(width * this.softwareBloomScale, height * this.softwareBloomScale)
+    }
   }
 
   render(dt: number): void {

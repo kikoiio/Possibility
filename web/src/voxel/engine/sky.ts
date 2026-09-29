@@ -70,9 +70,9 @@ void main() {
     vec3 id = floor(sp);
     vec3 starPos = hash33(id);
     float sd = length(fract(sp) - starPos);
-    float star = smoothstep(0.08, 0.0, sd);
+    float star = smoothstep(0.12, 0.0, sd);
     float twinkle = 0.7 + 0.3 * sin(uTime * (1.0 + hash13(id) * 3.0) + hash13(id.zyx) * 6.2831);
-    sky += vec3(0.9, 0.95, 1.0) * star * twinkle * uStarIntensity * smoothstep(0.02, 0.2, dir.y);
+    sky += vec3(0.9, 0.95, 1.0) * star * twinkle * 1.25 * uStarIntensity * smoothstep(0.0, 0.12, dir.y);
   }
 
   // 太阳盘 + 指数光晕（超亮喂 bloom）；落到地平线下时淡出
@@ -80,16 +80,16 @@ void main() {
   float sunVis = smoothstep(-0.06, 0.02, uSunDir.y);
   float sd1 = dot(dir, sunDirN);
   float sunDisk = smoothstep(0.9995, 0.99985, sd1);
-  float sunHalo = pow(max(sd1, 0.0), 256.0);
-  sky += uSunColor * (sunDisk * 2.2 + sunHalo * 0.45) * uSunIntensity * sunVis;
+  float sunHalo = pow(max(sd1, 0.0), 128.0);
+  sky += uSunColor * (sunDisk * 2.2 + sunHalo * 0.5) * uSunIntensity * sunVis;
 
   // 月亮盘 + 柔光晕
   vec3 moonDirN = normalize(uMoonDir);
   float moonVis = smoothstep(-0.06, 0.02, uMoonDir.y);
   float md = dot(dir, moonDirN);
   float moonDisk = smoothstep(0.99965, 0.99985, md);
-  float moonHalo = pow(max(md, 0.0), 512.0);
-  sky += vec3(0.86, 0.9, 1.0) * (moonDisk * 0.9 + moonHalo * 0.22) * uMoonIntensity * moonVis;
+  float moonHalo = pow(max(md, 0.0), 384.0);
+  sky += vec3(0.86, 0.9, 1.0) * (moonDisk * 0.9 + moonHalo * 0.3) * uMoonIntensity * moonVis;
 
   // 程序化积云：方向投影到天顶平面，2 层 FBM，coverage 成形，随时间漂移
   if (uCloudCoverage > 0.001) {
