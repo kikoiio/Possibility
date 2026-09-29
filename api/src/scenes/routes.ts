@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { applySceneOperations, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument, SceneOperation } from '@possibility/scene-contract'
+import { isVoxelScenePayload } from './repository'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { createDb } from '../db/client'
@@ -93,6 +94,7 @@ scenesRoutes.post('/worlds/:worldId/scene/edit-preview', async c => {
   try {
     const base = await readCurrentScene(db, world.id); if (!base) return c.json({ error: '世界还没有画布' }, 404)
     if (base.version !== body.expectedVersion) throw new SceneConflict()
+    if (isVoxelScenePayload(base.document)) return c.json({ error: '体素场景请使用体素编辑通道' }, 422)
     const ai = await previewSceneOperations(c.env, db, c.get('user').id, { requestId: body.requestId, instruction: body.instruction, document: base.document })
     const result = applyScenePatch(base.document, ai.operations, true)
     return c.json({ preview: { ...ai, baseVersion: base.version, result: result.document, changes: result.changes } })

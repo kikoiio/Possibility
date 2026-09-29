@@ -1,9 +1,21 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { isSerializedVoxelSpaces } from '@possibility/voxel-contract'
 import type { Db } from '../db/client'
 import { guestSessions, timelines, userWorldPreferences, worlds } from '../db/schema'
-import { readCurrentScene } from '../scenes/repository'
+import { readCurrentScene, type StoredSceneDocument } from '../scenes/repository'
 
 export type MapMode = 'create' | 'life' | 'possibility'
+
+/** 场景文档的空间索引（2D v2 / 体素多空间包）；单空间场景返回 null */
+function sceneSpaceIndex(document: StoredSceneDocument | undefined): { defaultSpaceId: string; spaceIds: string[] } | null {
+  if (!document) return null
+  if (isSerializedVoxelSpaces(document)) return { defaultSpaceId: document.defaultSpaceId, spaceIds: document.spaces.map((space) => space.id) }
+  if ('schemaVersion' in document && document.schemaVersion === 2) {
+    const v2 = document as unknown as import('@possibility/scene-contract').SceneDocumentV2
+    return { defaultSpaceId: v2.defaultSpaceId, spaceIds: v2.spaces.map((space) => space.id) }
+  }
+  return null
+}
 
 export async function readMapResume(db: Db, userId: string, worldId: string) {
   return db.select().from(userWorldPreferences)
@@ -28,10 +40,8 @@ export async function saveMapResume(db: Db, input: { userId: string; worldId: st
   ])
   if (!ownedWorld || !timeline) return false
   const stored = await readCurrentScene(db, input.worldId)
-  if (stored && 'defaultSpaceId' in stored.document) {
-    const scene = stored.document as unknown as import('@possibility/scene-contract').SceneDocumentV2
-    if (!scene.spaces.some(space => space.id === input.spaceId)) return false
-  } else if (input.spaceId !== 'exterior') return false
+  const index = sceneSpaceIndex(stored?.document)
+  if (index ? !index.spaceIds.includes(input.spaceId) : input.spaceId !== 'exterior') return false
   const updatedAt = new Date().toISOString()
   await db.insert(userWorldPreferences).values({ ...input, updatedAt })
     .onConflictDoUpdate({ target: userWorldPreferences.userId, set: { ...input, updatedAt } })
@@ -48,10 +58,9 @@ export async function readGuestMapResume(db: Db, sessionId: string) {
     .where(and(eq(timelines.worldId, session.currentSandboxWorldId), isNull(timelines.parentTimelineId))).get()
   if (!fallback) return null
   const stored = await readCurrentScene(db, session.currentSandboxWorldId)
-  const v2 = stored && stored.document.schemaVersion === 2
-    ? stored.document as unknown as import('@possibility/scene-contract').SceneDocumentV2 : null
-  const defaultSpaceId = v2?.defaultSpaceId ?? 'exterior'
-  const spaceId = v2?.spaces.some(space => space.id === session.resumeSpaceId) ? session.resumeSpaceId : defaultSpaceId
+  const index = sceneSpaceIndex(stored?.document)
+  const defaultSpaceId = index?.defaultSpaceId ?? 'exterior'
+  const spaceId = index?.spaceIds.includes(session.resumeSpaceId ?? '') ? session.resumeSpaceId! : defaultSpaceId
   const mode: MapMode = session.resumeMode === 'create' || session.resumeMode === 'possibility' ? session.resumeMode : 'life'
   return { worldId: session.currentSandboxWorldId, timelineId: fallback.id, spaceId, mode, updatedAt: session.updatedAt }
 }
@@ -63,10 +72,8 @@ export async function saveGuestMapResume(db: Db, input: { sessionId: string; wor
     .where(and(eq(timelines.id, input.timelineId), eq(timelines.worldId, input.worldId))).get()
   if (!timeline) return false
   const stored = await readCurrentScene(db, input.worldId)
-  const v2 = stored && stored.document.schemaVersion === 2
-    ? stored.document as unknown as import('@possibility/scene-contract').SceneDocumentV2 : null
-  if (v2 && !v2.spaces.some(space => space.id === input.spaceId)) return false
-  if (!v2 && input.spaceId !== 'exterior') return false
+  const index = sceneSpaceIndex(stored?.document)
+  if (index ? !index.spaceIds.includes(input.spaceId) : input.spaceId !== 'exterior') return false
   await db.update(guestSessions).set({
     resumeTimelineId: input.timelineId, resumeSpaceId: input.spaceId, resumeMode: input.mode, updatedAt: new Date().toISOString(),
   }).where(eq(guestSessions.id, input.sessionId))

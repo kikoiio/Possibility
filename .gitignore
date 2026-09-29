@@ -6,10 +6,14 @@ api/wrangler.staging-test.toml
 *.local
 .DS_Store
 .playwright-mcp
-/docs/
+/docs/*
+!/docs/README.md
 .agents
 .codex
 .claude
 .git
 spec_docs
 
+
+# LLM 重建产物与本地批处理输出
+out/

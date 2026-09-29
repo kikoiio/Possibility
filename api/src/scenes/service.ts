@@ -1,5 +1,6 @@
 import { applySceneOperations, findAsset, hashScene, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument, SceneOperation } from '@possibility/scene-contract'
+import { isVoxelScenePayload } from './repository'
 import type { Db } from '../db/client'
 import { contemporaryTheme } from '@possibility/scene-contract'
 import { commitScene, readCurrentScene, readSceneRequest, readSceneVersion, SceneConflict } from './repository'
@@ -33,10 +34,13 @@ export function applyScenePatch(document: SceneDocument, operations: SceneOperat
 export async function saveSceneRevision(db: Db, input: { worldId: string; expectedVersion: number; requestId: string; operations: SceneOperation[]; running: boolean; summary?: string; kind?: string }) {
   const prior = await readSceneRequest(db, input.worldId, input.requestId)
   if (prior) {
+    if (isVoxelScenePayload(prior.document)) throw new SceneConflict('体素场景请通过体素保存通道提交')
     const priorRow = await readSceneVersion(db, input.worldId, prior.version)
     const parentVersion = priorRow?.version ? prior.version - 1 : 0
     const parent = parentVersion > 0 ? await readSceneVersion(db, input.worldId, parentVersion) : null
-    const base: SceneDocument = parent?.document ?? { schemaVersion: 1, themeId: contemporaryTheme.id, size: prior.document.size, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
+    const parentDoc = parent?.document ?? null
+    if (parentDoc && isVoxelScenePayload(parentDoc)) throw new SceneConflict('体素场景请通过体素保存通道提交')
+    const base: SceneDocument = parentDoc ?? { schemaVersion: 1, themeId: contemporaryTheme.id, size: prior.document.size, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
     if (input.expectedVersion !== parentVersion) throw new SceneConflict('同一 request ID 不能用于不同的期望版本')
     const replay = applyScenePatch(base, input.operations, input.running)
     if (await hashScene({ ...replay.document, version: prior.version }) !== prior.contentHash) throw new SceneConflict('同一 request ID 不能提交不同场景内容')
@@ -45,7 +49,9 @@ export async function saveSceneRevision(db: Db, input: { worldId: string; expect
   const current = await readCurrentScene(db, input.worldId)
   if (!current && input.expectedVersion !== 0) throw new SceneConflict()
   if (current && current.version !== input.expectedVersion) throw new SceneConflict()
-  const base: SceneDocument = current?.document ?? { schemaVersion: 1, themeId: contemporaryTheme.id, size: { columns: 24, rows: 18 }, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
+  const currentDoc = current?.document ?? null
+  if (currentDoc && isVoxelScenePayload(currentDoc)) throw new Error('体素场景不支持 2D 场景操作')
+  const base: SceneDocument = currentDoc ?? { schemaVersion: 1, themeId: contemporaryTheme.id, size: { columns: 24, rows: 18 }, version: 0, terrain: [], paths: [], objects: [], lockedObjectIds: [], lockedAreas: [] }
   const next = applyScenePatch(base, input.operations, input.running)
   const result = validateScene(next.document, contemporaryTheme)
   if (!result.ok) throw new Error(result.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '))

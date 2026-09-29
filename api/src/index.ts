@@ -18,6 +18,7 @@ import { comparisonRoutes } from './life/compare'
 import { scenesRoutes } from './scenes/routes'
 import { mapRoutes } from './map/routes'
 import { demoRoutes } from './demo/routes'
+import { voxelRoutes } from './voxel/routes'
 import { cleanupExpiredGuestData } from './demo/cleanup'
 import { createDb } from './db/client'
 
@@ -58,6 +59,7 @@ app.route('/api/demo', demoRoutes)
 // 注意：chat/timeline 两个子应用挂在 /api 且带全局 authMiddleware，
 // 后续新路由必须注册在它们之前，否则会被拦成 401
 app.route('/api/engine', engineRoutes)
+app.route('/api', voxelRoutes) // /api/voxel/*：体素 AI 编辑规划
 app.route('/api', mapRoutes)
 app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
 // These routes accept either a login or a tightly scoped guest sandbox token.

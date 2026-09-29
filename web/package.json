@@ -13,15 +13,18 @@
     "assets:thumbnails": "node scripts/run-scene-thumbnails.mjs"
   },
   "dependencies": {
+    "@possibility/voxel-contract": "^0.0.0",
     "pixi.js": "^8.21.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "react-router-dom": "^7.18.2",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.5.4",
     "postcss": "^8.5.26",

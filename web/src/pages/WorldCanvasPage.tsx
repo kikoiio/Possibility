@@ -20,6 +20,8 @@ import { DesktopEditingNotice } from '../components/scene/DesktopEditingNotice'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
+import VoxelViewport from '../voxel/VoxelViewport'
+import { isVoxelEnabled, parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
 import WorldView from './WorldView'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 
@@ -130,6 +132,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
 
   const overlay = useMemo(() => snapshot ? buildSceneOverlay(snapshot, snapshot.currentTimelineId) : null, [snapshot])
   const otherOverlay = useMemo(() => otherSnapshot ? buildSceneOverlay(otherSnapshot, otherSnapshot.currentTimelineId) : null, [otherSnapshot])
+  // 体素特性开关（T30）：服务端返回体素文档时挂载新视口；2D 场景行为不变
+  const voxelDoc = useMemo(() => (isVoxelEnabled() ? parseVoxelDocument(scene) : null), [scene])
+  // 多空间体素包（T32）：走 GuestWorldMap 的体素模式（外景 ↔ 主楼）
+  const voxelSpaces = useMemo(() => (isVoxelEnabled() ? parseVoxelSpaces(multiScene ?? scene) : null), [multiScene, scene])
   async function requestLegacyPreview() {
     setBusy(true); setError('')
     try { setLegacyPreview(await worldSceneApi.legacyPreview(worldId)) }
@@ -219,6 +225,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   if (mapFallback && snapshot) return <div className="flex min-h-full items-center bg-[#eef0e7] p-4"><SceneFallbackView message={error || '地图资源暂时不可用。'} onRetry={() => void read()} onReturn={() => { search.set('view', 'text'); setSearch(search) }} /></div>
   if (error && !snapshot) return <div className="flex min-h-full items-center bg-[#eef0e7] p-4"><SceneFallbackView message={error} onRetry={() => void read()} onReturn={() => { search.set('view', 'text'); setSearch(search) }} /></div>
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
+  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} />
   if (multiScene) return <GuestWorldMap scene={multiScene} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} />
   if (!scene && !legacyPreview) return <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4"><div className="m-auto w-full max-w-xl"><LegacySceneOnboarding busy={busy} error={error} onPreview={requestLegacyPreview} onReturn={() => { search.set('view', 'text'); setSearch(search) }} /></div></div>
   const shown = legacyPreview?.document ?? scene!
@@ -232,7 +239,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const selectedPersonLocation = selectedPersonId ? snapshot.locationBoard.find(row => row.persons.some(person => person.id === selectedPersonId))?.location : null
   const selectedEvents = selectedLocationName ? snapshot.events.filter(event => event.location === selectedLocationName).slice(-3).reverse() : []
   if (readonly) return <main className="relative h-full min-h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
-    <WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} onSelect={setSelected} edgeToEdge />
+    {voxelDoc
+      ? <VoxelViewport document={voxelDoc} overlay={overlay} />
+      : <WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} onSelect={setSelected} edgeToEdge />}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-[#23382f]/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">雾影庄 · 正在生活</p></div>
@@ -265,7 +274,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onApply={applyPreview} onCancel={() => setPreview(null)} busy={busy} />}
     {legacyPreview && <ScenePreviewBar summary={legacyPreview.explanation} warnings={legacyPreview.warnings} onApply={confirmLegacy} onCancel={() => setLegacyPreview(null)} busy={busy} />}
     <div className="flex min-h-[500px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3">
-      {mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
+      {mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : voxelDoc ? <VoxelViewport document={voxelDoc} overlay={overlay} /> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
       {!readonly && mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{new Date(snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })}</span></div>}
       {mode === 'create' && !isSmall && <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="space-y-2"><SceneObjectInspector scene={shown} selectedId={selected} catalog={contemporaryTheme} /><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestEditPreview} busy={busy} error="" /></div><div className="flex items-center gap-2"><SceneLockControls locked={!!selected && shown.lockedObjectIds.includes(selected)} onToggle={toggleLock} /><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-3 text-sm text-[#42594a]">素材</button>{activeAssetId && <button onClick={() => setActiveAssetId(null)} className="text-xs text-[#617766]">取消放置</button>}</div></div>}
       {mode === 'possibility' && <button onClick={() => { search.set('view', 'text'); setSearch(search) }} className="self-start rounded-full border border-[#d6ddd3] bg-white px-4 py-2 text-sm text-[#47604f]">打开发展对照与分叉条件</button>}

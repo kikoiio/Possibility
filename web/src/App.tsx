@@ -12,6 +12,7 @@ import Worlds from './pages/Worlds'
 import WorldCreate from './pages/WorldCreate'
 import WorldCanvasPage from './pages/WorldCanvasPage'
 import DemoLanding from './pages/DemoLanding'
+import VoxelDevHarness from './voxel/dev-harness'
 
 function RequireAuth({ children }: { children: ReactElement }) {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -121,6 +122,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/dev/voxel" element={<VoxelDevHarness />} />
       <Route path="/" element={<Landing />} />
       <Route path="/worlds/:id" element={<RequireAuth><WorldViewRoute /></RequireAuth>} />
       <Route path="/worlds/new" element={<RequireAuth><div className="h-full"><WorldCreate /></div></RequireAuth>} />

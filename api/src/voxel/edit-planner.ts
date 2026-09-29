@@ -1,0 +1,113 @@
+import {
+  validateEdit,
+  type EditOperation, type ValidationIssue, type VoxelCoord, type VoxelDocument,
+} from '@possibility/voxel-contract'
+import type { ChatMessage } from '../llm/client'
+import { buildEditPlannerMessages as defaultBuildMessages } from './prompts'
+
+export class EditPlannerError extends Error {
+  constructor(
+    message: string,
+    public readonly issues: ValidationIssue[] = [],
+  ) {
+    super(message)
+    this.name = 'EditPlannerError'
+  }
+}
+
+export type CompleteFn = (messages: ChatMessage[]) => Promise<string>
+
+// ── LLM 输出解析 ──────────────────────────────
+
+function extractJson(content: string): unknown {
+  const cleaned = content.replace(/```(?:json)?/gi, '').trim()
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start < 0 || end <= start) throw new EditPlannerError('输出中没有 JSON 对象')
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1))
+  } catch {
+    throw new EditPlannerError('JSON 解析失败')
+  }
+}
+
+const isCoord = (v: unknown): v is VoxelCoord => {
+  const c = v as VoxelCoord
+  return !!c && Number.isInteger(c.x) && Number.isInteger(c.y) && Number.isInteger(c.z)
+}
+const isRotation = (v: unknown): v is 0 | 90 | 180 | 270 => v === 0 || v === 90 || v === 180 || v === 270
+
+/** 严格解析编辑操作数组；结构不合法抛 EditPlannerError */
+export function parseEditOperations(content: string): EditOperation[] {
+  const root = extractJson(content) as { ops?: unknown }
+  if (!Array.isArray(root.ops)) throw new EditPlannerError('缺少 ops 数组')
+  if (root.ops.length === 0) throw new EditPlannerError('ops 为空')
+  if (root.ops.length > 64) throw new EditPlannerError('ops 过多（>64）')
+  return root.ops.map((raw, i): EditOperation => {
+    const op = raw as Record<string, unknown>
+    const bad = (why: string): never => { throw new EditPlannerError(`ops[${i}] 不合法：${why}`) }
+    switch (op?.kind) {
+      case 'set-block':
+        if (!isCoord(op.at) || typeof op.block !== 'string' || !op.block) return bad('set-block 需要 at 坐标与 block')
+        return { kind: 'set-block', at: op.at, block: op.block }
+      case 'fill':
+        if (!isCoord(op.from) || !isCoord(op.to) || typeof op.block !== 'string' || !op.block) return bad('fill 需要 from/to 与 block')
+        return { kind: 'fill', from: op.from, to: op.to, block: op.block }
+      case 'place-object':
+        if (typeof op.objectType !== 'string' || !op.objectType || !isCoord(op.anchor) || !isRotation(op.rotation)) return bad('place-object 需要 objectType/anchor/rotation')
+        return {
+          kind: 'place-object', objectType: op.objectType, anchor: op.anchor, rotation: op.rotation,
+          ...(typeof op.objectId === 'string' && op.objectId ? { objectId: op.objectId } : {}),
+          ...(typeof op.label === 'string' && op.label ? { label: op.label } : {}),
+        }
+      case 'move-object':
+        if (typeof op.objectId !== 'string' || !op.objectId || !isCoord(op.anchor)) return bad('move-object 需要 objectId 与 anchor')
+        return { kind: 'move-object', objectId: op.objectId, anchor: op.anchor }
+      case 'remove-object':
+        if (typeof op.objectId !== 'string' || !op.objectId) return bad('remove-object 需要 objectId')
+        return { kind: 'remove-object', objectId: op.objectId }
+      default:
+        return bad(`未知操作 kind=${String(op?.kind)}`)
+    }
+  })
+}
+
+/**
+ * AI 对话式编辑规划：意图 + 当前世界 → EditOperation[]。
+ * 输出先过 validateEdit，失败带 issue 重试，最多 maxAttempts 次（N10）。
+ */
+export async function planEdits(
+  doc: VoxelDocument,
+  intent: string,
+  deps: { complete: CompleteFn; maxAttempts?: number; buildMessages?: (doc: VoxelDocument, intent: string) => ChatMessage[] },
+): Promise<EditOperation[]> {
+  const maxAttempts = deps.maxAttempts ?? 3
+  const buildMessages = deps.buildMessages ?? ((d, i) => defaultBuildMessages(d, i))
+  let messages = buildMessages(doc, intent)
+  let lastIssues: ValidationIssue[] = []
+  let lastError = '未知错误'
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const content = await deps.complete(messages)
+    let ops: EditOperation[]
+    try {
+      ops = parseEditOperations(content)
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      lastIssues = []
+      messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的输出无法解析（${lastError}）。请只返回 {"ops":[...]} JSON。` }]
+      continue
+    }
+    const issues = validateEdit(doc, ops)
+    if (issues.length === 0) return ops
+    lastIssues = issues
+    const detail = issues.slice(0, 5).map((i) => `${i.code}${i.at ? `@(${i.at.x},${i.at.y},${i.at.z})` : ''}: ${i.message}`).join('；')
+    messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的操作未通过世界校验：${detail}。请修正后重新返回完整 {"ops":[...]}。` }]
+  }
+  throw new EditPlannerError(
+    lastIssues.length > 0
+      ? `编辑规划 ${maxAttempts} 次仍未通过校验：${lastIssues[0].message}`
+      : `编辑规划 ${maxAttempts} 次仍无法解析：${lastError}`,
+    lastIssues,
+  )
+}
