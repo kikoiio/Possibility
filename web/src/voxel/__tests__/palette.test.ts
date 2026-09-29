@@ -93,22 +93,25 @@ describe('samplePalette 水色', () => {
 describe('samplePalette 直射光', () => {
   it('正午直射来自太阳方位,午夜来自月亮方位且偏冷', () => {
     const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
-    expect(noon.direct.intensity).toBeCloseTo(1.3)
-    expect(noon.direct.dir.y).toBeGreaterThan(0.8) // 太阳高悬
+    expect(noon.direct.intensity).toBeCloseTo(2.4)
+    // S1v2:方位仰角封顶 0.66(CoC 式长影),正午不再是头顶直射
+    expect(noon.direct.dir.y).toBeGreaterThan(0.55)
+    expect(noon.direct.dir.y).toBeLessThan(0.8)
     const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
-    expect(midnight.direct.intensity).toBeCloseTo(0.3)
+    expect(midnight.direct.intensity).toBeCloseTo(0.38)
     expect(midnight.direct.dir.y).toBeGreaterThan(0.8) // 月亮高悬(夜)
     expect(midnight.direct.color[2]).toBeGreaterThan(midnight.direct.color[0]) // 冷色
     // 与天空穹顶天体方位同源
     expect(Math.sign(midnight.direct.dir.z)).toBe(Math.sign(midnight.sky.moonDir.z))
   })
 
-  it('黄昏直射强度低于正午与午夜(换向低谷)', () => {
+  it('黄昏直射低于正午,且与午夜换向无跳变(S1v2:金色时刻加强后不再要求低于午夜)', () => {
     const dusk = samplePalette(palette, 0.74, { dim: 0, fogBoost: 0 })
     const noon = samplePalette(palette, 0.5, { dim: 0, fogBoost: 0 })
     const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
     expect(dusk.direct.intensity).toBeLessThan(noon.direct.intensity)
-    expect(dusk.direct.intensity).toBeLessThan(midnight.direct.intensity)
+    // 换向连续性:黄昏→午夜单调回落,不出现亮度跳升
+    expect(Math.abs(dusk.direct.intensity - midnight.direct.intensity)).toBeLessThan(0.5)
   })
 
   it('天气 dim 压暗直射', () => {

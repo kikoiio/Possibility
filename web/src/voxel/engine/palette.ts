@@ -203,10 +203,13 @@ export function samplePalette(
     }
   }
 
-  // 太阳 / 月亮方位（沿用旧 day-night 轨迹；天空用真实仰角，可为负）
+  // 太阳 / 月亮方位(沿用旧 day-night 轨迹;S1v2:方位仰角封顶 0.66——
+  // CoC 式长影,正午也保持斜射、影子始终可见。关键帧检索仍用真实仰角,
+  // 天空日盘与光照共用此方位,二者不分离)
   const sunAz = angle
-  const horiz = Math.cos(elevation * 1.2)
-  const sunDir: Vec3 = norm3({ x: Math.cos(sunAz) * horiz, y: elevation, z: Math.sin(sunAz) * horiz })
+  const elevDir = Math.min(elevation, 0.66)
+  const horiz = Math.cos(elevDir * 1.2)
+  const sunDir: Vec3 = norm3({ x: Math.cos(sunAz) * horiz, y: elevDir, z: Math.sin(sunAz) * horiz })
   const moonDir: Vec3 = { x: -sunDir.x, y: -sunDir.y, z: -sunDir.z }
 
   // 面明暗：关键帧基础值 × 轻微方位角调制（保持晨昏东西向差异，投影主导权仍在数据）
