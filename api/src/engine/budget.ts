@@ -10,7 +10,10 @@ export interface BudgetConfig {
   worldSpeed: number // WORLD_SPEED 缺省 6（世界时钟倍速）
   tickCallCap: number // TICK_CALL_CAP 缺省 8（每世界每拍 LLM 调用上限）
   dailyCallCap: number // DAILY_CALL_CAP 缺省 400（每世界每日 LLM 调用上限）
-  summaryThreshold: number // MEMORY_SUMMARY_THRESHOLD 缺省 40（触发记忆压缩的未压缩条数）
+  summaryThreshold: number // MEMORY_SUMMARY_THRESHOLD 缺省 40（触发 L1 压缩的未压缩原文条数，即 S2 的 l1Threshold）
+  l1Batch: number // MEMORY_SUMMARY_L1_BATCH 缺省 30（L1 压缩批次大小，截断 ≤30）
+  l2Threshold: number // MEMORY_SUMMARY_L2_THRESHOLD 缺省 10（触发 L2 上卷的未上卷 L1 条数）
+  l2Batch: number // MEMORY_SUMMARY_L2_BATCH 缺省 8（L2 压缩批次大小，截断 ≤30）
   preworldDailyCap: number // PREWORLD_DAILY_CAP 缺省 40（每用户每日"世界创建前"调用上限：蒸馏/骨架草稿等）
   idleArchiveDays: number // IDLE_ARCHIVE_DAYS 缺省 7（无用户交互 N 天后世界自动归档冻结）
   directorLlm: boolean // DIRECTOR_LLM 缺省 on（注入事件多候选时由 LLM 仲裁反应者）
@@ -21,6 +24,9 @@ export function budgetFromEnv(env: {
   TICK_CALL_CAP?: string
   DAILY_CALL_CAP?: string
   MEMORY_SUMMARY_THRESHOLD?: string
+  MEMORY_SUMMARY_L1_BATCH?: string
+  MEMORY_SUMMARY_L2_THRESHOLD?: string
+  MEMORY_SUMMARY_L2_BATCH?: string
   PREWORLD_DAILY_CAP?: string
   IDLE_ARCHIVE_DAYS?: string
   DIRECTOR_LLM?: string
@@ -29,11 +35,16 @@ export function budgetFromEnv(env: {
     const n = Number(v)
   return Number.isFinite(n) && Math.floor(n) > 0 ? Math.floor(n) : dflt
   }
+  // 批次上限 30 是 rules.ts 命令校验的既有纪律（D8）：配置不能为命令开口子
+  const batch = (v: string | undefined, dflt: number) => Math.min(num(v, dflt), 30)
   return {
     worldSpeed: num(env.WORLD_SPEED, 6),
     tickCallCap: num(env.TICK_CALL_CAP, 8),
     dailyCallCap: num(env.DAILY_CALL_CAP, 400),
     summaryThreshold: num(env.MEMORY_SUMMARY_THRESHOLD, 40),
+    l1Batch: batch(env.MEMORY_SUMMARY_L1_BATCH, 30),
+    l2Threshold: num(env.MEMORY_SUMMARY_L2_THRESHOLD, 10),
+    l2Batch: batch(env.MEMORY_SUMMARY_L2_BATCH, 8),
     preworldDailyCap: num(env.PREWORLD_DAILY_CAP, 40),
     idleArchiveDays: num(env.IDLE_ARCHIVE_DAYS, 7),
     directorLlm: (env.DIRECTOR_LLM ?? '1') !== '0',
@@ -150,7 +161,7 @@ export async function settleCallReceipt(
 /** Compatibility wrapper for older callers. New model paths reserve before fetch. */
 export async function recordCall(db: Db, world: World, meta: CallMeta, n = 1): Promise<World> {
   const cfg: BudgetConfig = { worldSpeed: 6, tickCallCap: 8, dailyCallCap: Number.MAX_SAFE_INTEGER,
-    summaryThreshold: 40, preworldDailyCap: 40, idleArchiveDays: 7, directorLlm: true }
+    summaryThreshold: 40, l1Batch: 30, l2Threshold: 10, l2Batch: 8, preworldDailyCap: 40, idleArchiveDays: 7, directorLlm: true }
   for (let i = 0; i < n; i++) await reserveWorldCall(db, world.id, cfg, meta)
   return (await db.select().from(worlds).where(eq(worlds.id, world.id)).get()) ?? world
 }

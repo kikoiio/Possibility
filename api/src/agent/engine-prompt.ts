@@ -268,17 +268,16 @@ export function buildScenePrompt(
   }
 }
 
-/** summary：把一批老记忆蒸馏为一条摘要 */
+/** summary：把一批老记忆（或老摘要）蒸馏为一条摘要（S2 契约 v2：只产正文，重要性由应用侧聚合） */
 export function buildSummaryPrompt(ctx: EngineContext, batch: Memory[]): PromptPair {
   const list = batch
     .map((m) => `- ${m.simTime ? `[${m.simTime.slice(0, 16).replace('T', ' ')}] ` : ''}${m.content}`)
     .join('\n')
   const instruction = [
     '## 任务：整理记忆',
-    '以下是你过去的一批记忆。把它们蒸馏成一段第三人称摘要：保留关键事实、涉及的人与情感转折，50-150 字。',
+    '以下是你过去的一批记忆或摘要。把它们蒸馏成一段第三人称摘要：保留关键事实、涉及的人与情感转折，50-150 字。',
     '只输出一个 JSON 对象（不要任何其他文字，不要代码块）：',
-    '{"content": "摘要", "importance": 1-10}',
-    'importance 取这批记忆中最重要的那条应有的分值。',
+    '{"content": "摘要"}',
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,

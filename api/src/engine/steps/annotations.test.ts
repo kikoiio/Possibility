@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeBeatJson } from './beat'
 import { normalizeDialogueJson } from './dialogue'
-import { parseMemoryAnnotations } from './annotations'
+import { mergeMemoryAnnotations, parseMemoryAnnotations } from './annotations'
 
 const LOCS = ['Cafe', 'Library']
 const PEOPLE = [{ id: 'bo', name: 'Bo' }, { id: 'ada-lo', name: '张三丰' }]
@@ -61,5 +61,51 @@ describe('标注非法不阻断(AC1)', () => {
         memory: { content: '他提到收成', importance: 6, mentions: [123], topics: null, location: ' nowhere ' } },
       undefined, PEOPLE, LOCS)
     expect(out.memory).toEqual({ content: '他提到收成', importance: 6, mentions: [], location: null, topics: [] })
+  })
+})
+
+describe('mergeMemoryAnnotations(S2 F5 摘要标注确定性合并)', () => {
+  const src = (over: { mentions?: string[]; location?: string | null; topics?: string[] }) => ({
+    mentionedPersonIdsJson: over.mentions?.length ? JSON.stringify(over.mentions) : null,
+    locationName: over.location ?? null,
+    topicsJson: over.topics?.length ? JSON.stringify(over.topics) : null,
+  })
+
+  it('mentions 并集:首现序去重', () => {
+    const merged = mergeMemoryAnnotations([src({ mentions: ['bo', 'ada'] }), src({ mentions: ['ada', 'cy'] }), src({})])
+    expect(merged.mentions).toEqual(['bo', 'ada', 'cy'])
+  })
+
+  it('topics 频次降序(首现序决胜)取前 3', () => {
+    const merged = mergeMemoryAnnotations([
+      src({ topics: ['葬礼', '伞'] }),
+      src({ topics: ['伞', '收成'] }),
+      src({ topics: ['收成', '葬礼', '旧事'] }),
+    ])
+    // 葬礼2 伞2 收成2 → 全部并列,按首现序;旧事1 出局
+    expect(merged.topics).toEqual(['葬礼', '伞', '收成'])
+  })
+
+  it('location 众数;并列取较新源', () => {
+    expect(mergeMemoryAnnotations([
+      src({ location: 'Cafe' }), src({ location: 'Cafe' }), src({ location: 'Library' }),
+    ]).location).toBe('Cafe')
+    expect(mergeMemoryAnnotations([
+      src({ location: 'Cafe' }), src({ location: 'Library' }),
+    ]).location).toBe('Library')
+  })
+
+  it('无标注的源不参与合并;全部源无标注 → 空标注', () => {
+    expect(mergeMemoryAnnotations([src({}), src({}), src({})]))
+      .toEqual({ mentions: [], location: null, topics: [] })
+    const merged = mergeMemoryAnnotations([src({}), src({ mentions: ['bo'] })])
+    expect(merged).toEqual({ mentions: ['bo'], location: null, topics: [] })
+  })
+
+  it('非法 JSON 标注视为无标注', () => {
+    const merged = mergeMemoryAnnotations([
+      { mentionedPersonIdsJson: '{oops', locationName: null, topicsJson: '["葬礼"]' },
+    ])
+    expect(merged).toEqual({ mentions: [], location: null, topics: ['葬礼'] })
   })
 })

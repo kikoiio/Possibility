@@ -10,7 +10,7 @@ const NOW = new Date().toISOString()
 const TODAY = NOW.slice(0, 10)
 const YESTERDAY = new Date(Date.parse(`${TODAY}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10)
 const CFG: BudgetConfig = {
-  worldSpeed: 6, tickCallCap: 8, dailyCallCap: 2, summaryThreshold: 40,
+  worldSpeed: 6, tickCallCap: 8, dailyCallCap: 2, summaryThreshold: 40, l1Batch: 30, l2Threshold: 10, l2Batch: 8,
   preworldDailyCap: 3, idleArchiveDays: 7, directorLlm: true,
 }
 

@@ -7,10 +7,6 @@ import { DEFAULT_RETRIEVAL_CONFIG, type RetrievalConfig } from './retrieval-conf
 type Timeline = typeof timelines.$inferSelect
 export type Memory = typeof memories.$inferSelect
 
-/** 压缩参数（S2 依赖,保持不变） */
-export const SUMMARY_THRESHOLD = 40
-export const SUMMARY_BATCH = 30
-
 /**
  * S2 摘要层级推导（唯一来源，D6）：显式 level 优先；
  * 迁移前旧行与旧快照冻结证据缺 level 时按「summary 即 L1」推导（N4）。
@@ -72,7 +68,7 @@ export async function visibleMemories(db: Db, personId: string, timeline: Timeli
 
 /**
  * 决策点上下文检索（S1，取代 D8 的"近 12 ∪ 重要 8"）：
- * 选中集 = 最近 recentFloor 条(保底) ∪ 打分 top-K ∪ 最新 summaryK 条摘要,
+ * 选中集 = 最近 recentFloor 条(保底) ∪ 打分 top-K ∪ 每层级最新 summaryFloorPerLevel 条摘要(S2 F7),
  * 去重后按虚拟时间升序。打分 = w1·新近度衰减 + w2·重要性 + w3·情境匹配;
  * 候选四路 SQL 限量(新近/重要性/人物提及/带标注),snapshot 分叉走
  * 「冻结证据 + 本线 SQL」双源;选中集顺带写排练簿记(memory_access)。
@@ -181,7 +177,7 @@ export async function retrieveForPrompt(db: Db, personId: string, timeline: Time
     const frozen = snapshot.memories
       .filter((m) => m.personId === personId && !m.summarized && (!sharedAcrossWorlds || m.timelineId !== null))
       .map((m) => ({ ...m, mentionedPersonIdsJson: m.mentionedPersonIdsJson ?? null,
-        locationName: m.locationName ?? null, topicsJson: m.topicsJson ?? null }))
+        locationName: m.locationName ?? null, topicsJson: m.topicsJson ?? null, level: m.level ?? null }))
     const merged = new Map<string, Memory>()
     for (const m of [...frozen, ...own]) merged.set(m.id, m)
     pool = [...merged.values()]
@@ -201,7 +197,10 @@ export async function retrieveForPrompt(db: Db, personId: string, timeline: Time
   const scored = pool.map((m) => ({ m, score: scoreMemory(m, timeline.simNow, access, situation, config) }))
     .sort((a, b) => b.score - a.score || b.m.createdAt.localeCompare(a.m.createdAt))
   for (const { m } of scored.slice(0, config.topK)) picked.set(m.id, m)
-  for (const m of byCreatedDesc.filter((x) => x.type === 'summary').slice(0, config.summaryK)) picked.set(m.id, m)
+  // S2 F7：摘要保底按层级分配——L1/L2 各取最新 floor 条（缺层级按 summaryLevel 推导）
+  for (const level of [1, 2] as const) {
+    for (const m of byCreatedDesc.filter((x) => summaryLevel(x) === level).slice(0, config.summaryFloorPerLevel)) picked.set(m.id, m)
+  }
 
   const simKey = (m: Memory) => m.simTime ?? m.createdAt
   const selected = [...picked.values()].sort((a, b) => simKey(a).localeCompare(simKey(b)))
@@ -216,54 +215,6 @@ function bucketCondition(timeline: Timeline, main: Timeline | null) {
     return or(isNull(memories.timelineId), eq(memories.timelineId, timeline.id))
   }
   return eq(memories.timelineId, timeline.id)
-}
-
-/** 未压缩记忆是否超过阈值（阈值可由调用方按 env 覆盖） */
-export async function needsSummary(
-  db: Db,
-  personId: string,
-  timeline: Timeline,
-  threshold: number = SUMMARY_THRESHOLD,
-): Promise<boolean> {
-  const main = await mainTimelineOf(db, timeline.worldId)
-  const rows = await db
-    .select({ id: memories.id })
-    .from(memories)
-    .where(
-      and(
-        eq(memories.personId, personId),
-        bucketCondition(timeline, main),
-        eq(memories.summarized, false),
-        ne(memories.type, 'summary'),
-      ),
-    )
-    .limit(threshold + 1)
-    .all()
-  return rows.length > threshold
-}
-
-/** 最老的 n 条待压缩记忆（同桶、未压缩、非摘要），按写入时间升序 */
-export async function oldestUnsummarized(
-  db: Db,
-  personId: string,
-  timeline: Timeline,
-  n: number = SUMMARY_BATCH,
-): Promise<Memory[]> {
-  const main = await mainTimelineOf(db, timeline.worldId)
-  return db
-    .select()
-    .from(memories)
-    .where(
-      and(
-        eq(memories.personId, personId),
-        bucketCondition(timeline, main),
-        eq(memories.summarized, false),
-        ne(memories.type, 'summary'),
-      ),
-    )
-    .orderBy(asc(memories.createdAt))
-    .limit(n)
-    .all()
 }
 
 /**

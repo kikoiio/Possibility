@@ -9,7 +9,7 @@ import {
   parseScheduleItems,
   type WorldSnapshot,
 } from '../agent/engine-context'
-import { needsSummary } from '../agent/memory'
+import { needsCompression } from '../agent/memory'
 import { retrievalConfig } from '../agent/retrieval-config'
 import { budgetFromEnv, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
 import { worldReservation, type TickBudget } from './guard'
@@ -266,8 +266,13 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
 
       for (const p of snapshot.persons) {
         if (p.isUser) continue
-        if (await needsSummary(db, p.id, snapshot.timeline, cfg.summaryThreshold)) {
-          steps.push({ kind: 'summary', worldId: world.id, timelineId: tl.id, personId: p.id, priority: 5 })
+        // S2 分层调度（D2）：每人每拍至多一次压缩，L1 优先；L2 源 = 未上卷的 L1
+        if (await needsCompression(db, p.id, snapshot.timeline, 0, cfg.summaryThreshold)) {
+          steps.push({ kind: 'summary', worldId: world.id, timelineId: tl.id, personId: p.id, priority: 5,
+            level: 1, batchSize: cfg.l1Batch })
+        } else if (await needsCompression(db, p.id, snapshot.timeline, 1, cfg.l2Threshold)) {
+          steps.push({ kind: 'summary', worldId: world.id, timelineId: tl.id, personId: p.id, priority: 5,
+            level: 2, batchSize: cfg.l2Batch })
         }
       }
 

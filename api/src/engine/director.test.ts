@@ -7,7 +7,7 @@ const CFG: BudgetConfig = {
   worldSpeed: 6,
   tickCallCap: 8,
   dailyCallCap: 400,
-  summaryThreshold: 40,
+  summaryThreshold: 40, l1Batch: 30, l2Threshold: 10, l2Batch: 8,
   preworldDailyCap: 40,
   idleArchiveDays: 7,
   directorLlm: true,

@@ -11,6 +11,7 @@ import { worldReservation } from '../api/src/engine/guard'
 import { applyBeatOutput, normalizeBeatJson } from '../api/src/engine/steps/beat'
 import { normalizeDialogueJson } from '../api/src/engine/steps/dialogue'
 import { normalizeSummaryJson } from '../api/src/engine/steps/summary'
+import { aggregateImportance } from '../api/src/agent/memory'
 import { complete, completeContract, configFromEnv, type ChatMessage } from '../api/src/llm/client'
 import { LLM_CONTRACT_VERSIONS, llmError, parseContractObject } from '../api/src/llm/contracts'
 import { parseSceneOutput } from '../api/src/scene/parse'
@@ -246,7 +247,7 @@ async function main() {
     const summaryPass = summary.content.includes(marker) && preservesUncertainty(summary.content)
     const latestMemory = summaryBatch.at(-1)!
     await recordMemorySummary(fixture.db, { worldId: WORLD_ID, timelineId: TIMELINE_ID, personId: 'ada',
-      sourceMemoryIds: summaryBatch.map(memory => memory.id), content: summary.content, importance: summary.importance,
+      sourceMemoryIds: summaryBatch.map(memory => memory.id), content: summary.content, importance: aggregateImportance(summaryBatch),
       simTime: latestMemory.simTime ?? latestMemory.createdAt, createdAt: latestMemory.createdAt })
 
     stage = 'call-7:invalid-output'

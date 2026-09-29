@@ -15,7 +15,7 @@ export const LLM_CONTRACT_VERSIONS = {
   beat: 'beat/v2',
   dialogue: 'dialogue/v2',
   injection: 'injection/v2',
-  summary: 'summary/v1',
+  summary: 'summary/v2',
   director: 'director/v1',
   sceneIntent: 'scene-intent/v1',
   sceneResponse: 'scene-response/v2',

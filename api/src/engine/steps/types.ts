@@ -14,6 +14,8 @@ export interface AgentStep {
   priority: number // 小的先执行（P1 对话=1，P2 注入=2，P3 节拍=3，P4 日程=4，P5 摘要=5）
   dialogueId?: string // dialogue_turn 专用
   eventId?: string // injection 专用
+  level?: 1 | 2 // summary 专用：目标层级（缺省 1；2 = L2 封顶）
+  batchSize?: number // summary 专用：批次大小（tick 按 budget 嵌入，perceive 无 env 入口）
   /** Present only when scheduled by a fenced autonomous engine invocation. */
   engineTickLeaseToken?: string
 }

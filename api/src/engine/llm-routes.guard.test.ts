@@ -9,7 +9,7 @@ import { gateUser } from './guard'
 const owner = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
 const other = { Authorization: 'Bearer other-token', 'Content-Type': 'application/json' }
 const personModel = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
-const cfg = { worldSpeed: 6, tickCallCap: 8, dailyCallCap: 1, summaryThreshold: 40, preworldDailyCap: 1, idleArchiveDays: 7, directorLlm: true }
+const cfg = { worldSpeed: 6, tickCallCap: 8, dailyCallCap: 1, summaryThreshold: 40, l1Batch: 30, l2Threshold: 10, l2Batch: 8, preworldDailyCap: 1, idleArchiveDays: 7, directorLlm: true }
 
 async function seedModelRoutes(f: Awaited<ReturnType<typeof createWorldFixture>>) {
   await f.db.insert(persons).values([

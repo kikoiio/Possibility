@@ -37,12 +37,15 @@ export interface Env {
   TICK_CALL_CAP?: string
   DAILY_CALL_CAP?: string
   MEMORY_SUMMARY_THRESHOLD?: string
+  MEMORY_SUMMARY_L1_BATCH?: string
+  MEMORY_SUMMARY_L2_THRESHOLD?: string
+  MEMORY_SUMMARY_L2_BATCH?: string
   PREWORLD_DAILY_CAP?: string
   IDLE_ARCHIVE_DAYS?: string
   DIRECTOR_LLM?: string
   RETRIEVAL_RECENT_FLOOR?: string
   RETRIEVAL_TOP_K?: string
-  RETRIEVAL_SUMMARY_K?: string
+  RETRIEVAL_SUMMARY_FLOOR_PER_LEVEL?: string
   RETRIEVAL_W1?: string
   RETRIEVAL_W2?: string
   RETRIEVAL_W3?: string

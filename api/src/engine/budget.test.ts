@@ -13,6 +13,9 @@ const CFG: BudgetConfig = {
   tickCallCap: 8,
   dailyCallCap: 400,
   summaryThreshold: 40,
+  l1Batch: 30,
+  l2Threshold: 10,
+  l2Batch: 8,
   preworldDailyCap: 40,
   idleArchiveDays: 7,
   directorLlm: true,
@@ -90,6 +93,14 @@ describe('budgetFromEnv（环境变量解析）', () => {
     const cfg = budgetFromEnv({ DAILY_CALL_CAP: '100', PREWORLD_DAILY_CAP: '5' })
     expect(cfg.dailyCallCap).toBe(100)
     expect(cfg.preworldDailyCap).toBe(5)
+  })
+  it('S2 分层压缩配置:缺省/覆盖/非法回退/批次截断 ≤30(N6/D8)', () => {
+    const cfg = budgetFromEnv({ MEMORY_SUMMARY_L1_BATCH: '12', MEMORY_SUMMARY_L2_THRESHOLD: '4', MEMORY_SUMMARY_L2_BATCH: '3' })
+    expect([cfg.l1Batch, cfg.l2Threshold, cfg.l2Batch]).toEqual([12, 4, 3])
+    expect(budgetFromEnv({ MEMORY_SUMMARY_L1_BATCH: '0', MEMORY_SUMMARY_L2_THRESHOLD: 'x' })).toMatchObject(
+      { l1Batch: 30, l2Threshold: 10 })
+    expect(budgetFromEnv({ MEMORY_SUMMARY_L1_BATCH: '99', MEMORY_SUMMARY_L2_BATCH: '99' })).toMatchObject(
+      { l1Batch: 30, l2Batch: 30 })
   })
   it('闲置天数与导演开关可配置', () => {
     const cfg = budgetFromEnv({ IDLE_ARCHIVE_DAYS: '3', DIRECTOR_LLM: '0' })
