@@ -29,9 +29,9 @@ function palette(): ThemePalette {
 }
 
 /** 时间 → 天空光 / 光向 / 色温 / 天色（纯函数薄封装，供单测）。t: 0=午夜 0.25=黎明 0.5=正午 0.75=黄昏 */
-export function mapTimeOfDay(t: number): TimeOfDayMapping {
+export function mapTimeOfDay(t: number, paletteOverride?: ThemePalette): TimeOfDayMapping {
   const clamped = ((t % 1) + 1) % 1
-  const resolved = samplePalette(palette(), clamped, { dim: 0, fogBoost: 0 })
+  const resolved = samplePalette(paletteOverride ?? palette(), clamped, { dim: 0, fogBoost: 0 })
   return {
     skyLevel: Math.round(resolved.skyLevel),
     bakeEnv: resolved.bakeEnv,
@@ -46,15 +46,22 @@ export function mapTimeOfDay(t: number): TimeOfDayMapping {
  */
 export class DayNightCycle {
   private currentStep = -1
+  private paletteOverride: ThemePalette | null = null
 
   constructor(private sink: DayNightSink, private stepsPerDay = 96) {}
+
+  /** S3b 风格包:更换调色数据源并重发当前时间档(步号复位,强制重烘一次) */
+  setPalette(palette: ThemePalette): void {
+    this.paletteOverride = palette
+    this.currentStep = -1
+  }
 
   setTimeOfDay(t: 0 | number): void {
     const clamped = ((t % 1) + 1) % 1
     const step = Math.round(clamped * this.stepsPerDay)
     if (step === this.currentStep) return
     this.currentStep = step
-    const mapped = mapTimeOfDay(clamped)
+    const mapped = mapTimeOfDay(clamped, this.paletteOverride ?? undefined)
     this.sink.setSkyLevel(mapped.skyLevel)
     this.sink.setBakeEnv(mapped.bakeEnv)
     this.sink.setBaseEnvironment({ skyColor: mapped.skyColor, fogColor: mapped.fogColor })

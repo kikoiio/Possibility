@@ -84,6 +84,8 @@ export interface ThemePalette {
   /** 环境光强度，标定「无直射=S1 观感」 */
   ambientLift: number
   shadow: ShadowConfig
+  /** S3b 风格包:粒子密度倍率(默认 1),加载/切换预设时下发 weather/ambient */
+  particleDensity?: number
 }
 
 /** samplePalette 的输出：单一调色事实源 */
@@ -307,4 +309,28 @@ export function loadPalette(theme: string): ThemePalette {
   const palette = PALETTES[theme]
   if (!palette) throw new Error(`unknown voxel palette theme: ${theme}`)
   return palette
+}
+
+/**
+ * S3b 风格包微调:在采样出口叠加,不触碰关键帧数据。
+ * fogDensity 乘性(1+tweak),exposure/saturation 加性;结果夹到合法域。
+ */
+export function applyStyleTweaks(
+  resolved: ResolvedPalette,
+  tweaks?: { fogDensity?: number; exposure?: number; saturation?: number },
+): ResolvedPalette {
+  if (!tweaks) return resolved
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+  return {
+    ...resolved,
+    fog: {
+      ...resolved.fog,
+      density: Math.max(0, resolved.fog.density * (1 + (tweaks.fogDensity ?? 0))),
+    },
+    post: {
+      ...resolved.post,
+      exposure: clamp(resolved.post.exposure + (tweaks.exposure ?? 0), 0.2, 3),
+      saturation: clamp(resolved.post.saturation + (tweaks.saturation ?? 0), 0, 2),
+    },
+  }
 }

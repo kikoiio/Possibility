@@ -1,6 +1,6 @@
 import {
   createBlockRegistry,
-  type BlockRegistry, type EditResult, type SectionKey, type VoxelDocument,
+  type BlockRegistry, type EditResult, type SectionKey, type StylePackRef, type VoxelDocument,
 } from '@possibility/voxel-contract'
 import * as THREE from 'three'
 import { AmbientAnimator } from './ambient'
@@ -12,7 +12,8 @@ import { BuildFeedback } from './feedback'
 import { LightingEngine } from './lighting'
 import { DEFAULT_BAKE_ENV, Mesher, type AoParams, type BakeEnvironment } from './mesher'
 import { MotionPreference } from './motion-preference'
-import { loadPalette, samplePalette, type RGB, type ThemePalette } from './palette'
+import { applyStyleTweaks, loadPalette, samplePalette, type RGB, type ThemePalette } from './palette'
+import { resolvePalette } from './palettes/style-presets'
 import { Picker } from './picker'
 import { ResidentRenderer, type ResidentRenderState } from './residents'
 import {
@@ -50,6 +51,8 @@ export class VoxelEngine {
   mesher: Mesher | null = null
   bakeEnv: BakeEnvironment = { ...DEFAULT_BAKE_ENV, faceShade: { ...DEFAULT_BAKE_ENV.faceShade } }
   palette: ThemePalette | null = null
+  /** S3b:当前风格包引用(doc.style),微调在 applyPalette 采样出口叠加 */
+  private styleRef: StylePackRef | undefined
   readonly motion = new MotionPreference()
   dayNight: DayNightCycle | null = null
   weather: WeatherSystem | null = null
@@ -121,6 +124,12 @@ export class VoxelEngine {
     this.weather?.dispose()
     this.residents?.dispose()
     this.feedback?.dispose()
+    // S3b 风格包:先解析预设/微调并下发昼夜循环,后续初次烘焙即用新 bakeEnv
+    this.styleRef = doc.style
+    this.palette = resolvePalette(doc.theme, doc.style)
+    this.dayNight?.setPalette(this.palette)
+    this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
+    this.ambient?.setParticleDensity(this.palette.particleDensity ?? 1)
     this.world = new WorldModel(doc)
     this.lighting = new LightingEngine(this.world, this.registry)
     this.lighting.computeAll()
@@ -173,7 +182,10 @@ export class VoxelEngine {
   /** 色彩中枢分发：每帧采样调色（天空/雾/水/后处理平滑），96 步量化仅控制重烘焙 */
   private applyPalette(dt = 1 / 60): void {
     if (!this.palette) return
-    const resolved = samplePalette(this.palette, this.currentTimeOfDay, this.weatherMod)
+    const resolved = applyStyleTweaks(
+      samplePalette(this.palette, this.currentTimeOfDay, this.weatherMod),
+      this.styleRef?.tweaks,
+    )
 
     // 入水判定（S3a F5）：眼位没入下沉水面 → 强度平滑收敛；雾色/密度按强度+深度插值
     let target = 0
@@ -241,6 +253,24 @@ export class VoxelEngine {
   setTimeOfDay(t: number): void {
     this.currentTimeOfDay = ((t % 1) + 1) % 1
     this.dayNight?.setTimeOfDay(t)
+  }
+
+  /** S3b 风格包切换(F9/F10):换预设 → 昼夜源更换并重发(全量重烘一次) → 派生层即时生效 */
+  setStyle(style: StylePackRef): void {
+    const theme = this.world?.doc.theme ?? 'mist-manor'
+    this.styleRef = style
+    this.palette = resolvePalette(theme, style)
+    const density = this.palette.particleDensity ?? 1
+    this.weather?.setParticleDensity(density)
+    this.ambient?.setParticleDensity(density)
+    this.dayNight?.setPalette(this.palette)
+    this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
+    this.applyPalette()
+  }
+
+  /** 当前风格包引用(e2e 探针) */
+  getStyle(): StylePackRef | undefined {
+    return this.styleRef
   }
 
   setWeather(state: WeatherState): void {

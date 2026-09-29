@@ -88,6 +88,13 @@ export class WeatherSystem {
 
   private groundCache = new Map<string, number>()
   private unsubscribeWorld: (() => void) | null = null
+  /** S3b 风格包:粒子密度倍率(默认 1),影响雨雪活跃粒子数 */
+  private particleDensity = 1
+
+  /** 风格包预设下发(0–2);reduced-motion 路径在其下游不受影响 */
+  setParticleDensity(mult: number): void {
+    this.particleDensity = Math.min(2, Math.max(0, mult))
+  }
 
   constructor(
     private scene: THREE.Scene,
@@ -232,7 +239,7 @@ export class WeatherSystem {
     this.splashPoints.visible = rainActive
     if (rainActive) {
       const fall = dt * 22
-      const activeDrops = Math.floor(RAIN_MAX * this.current.rain)
+      const activeDrops = Math.floor(RAIN_MAX * this.current.rain * this.particleDensity)
       for (let i = 0; i < activeDrops; i++) {
         const base = i * 6
         this.rainPos[base + 1] -= fall
@@ -271,7 +278,7 @@ export class WeatherSystem {
     this.snowPoints.visible = snowActive
     if (snowActive) {
       const fall = dt * 2.2
-      const active = Math.floor(SNOW_MAX * this.current.snow)
+      const active = Math.floor(SNOW_MAX * this.current.snow * this.particleDensity)
       for (let i = 0; i < active; i++) {
         const base = i * 3
         this.snowPhase[i] += dt

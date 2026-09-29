@@ -34,6 +34,14 @@ export class AmbientAnimator {
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   })
 
+  /** S3b 风格包:粒子密度倍率(默认 1),影响炊烟发射频率 */
+  private particleDensity = 1
+
+  /** 风格包预设下发(0–2);reduced-motion 路径在其下游不受影响 */
+  setParticleDensity(mult: number): void {
+    this.particleDensity = Math.min(2, Math.max(0, mult))
+  }
+
   constructor(
     private scene: THREE.Scene,
     private uniforms: ShaderUniforms,
@@ -107,7 +115,7 @@ export class AmbientAnimator {
         if (emitter.kind !== 'smoke') continue
         emitter.cooldown -= dt
         if (emitter.cooldown <= 0) {
-          emitter.cooldown = 0.35 + Math.random() * 0.3
+          emitter.cooldown = (0.35 + Math.random() * 0.3) / Math.max(0.01, this.particleDensity)
           this.spawnSmoke(emitter.at)
         }
       }
