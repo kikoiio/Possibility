@@ -20,7 +20,8 @@ import {
   isEyeUnderwater, smoothUnderwater, underwaterDepth,
   UNDERWATER_FOG_BASE, UNDERWATER_FOG_DEPTH,
 } from './underwater'
-import { Assets, type VegetationManifest } from './assets'
+import { Assets } from './assets'
+import type { AssetManifest } from '@possibility/voxel-contract'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
@@ -70,7 +71,7 @@ export class VoxelEngine {
   private underwaterStrengthValue = 0
   private tmpDir = new THREE.Vector3()
   private tmpReflect = new THREE.Color()
-  private vegetationManifest: VegetationManifest | null = null
+  private assetManifest: AssetManifest | null = null
 
   get underwaterStrength(): number {
     return this.underwaterStrengthValue
@@ -119,7 +120,7 @@ export class VoxelEngine {
       await this.atlas.load(theme)
     }
     this.renderer.setAtlasTexture()
-    try { this.vegetationManifest = await this.assets.loadManifest(theme) } catch { this.vegetationManifest = null }
+    try { this.assetManifest = await this.assets.loadManifest() } catch { this.assetManifest = null }
   }
 
   loadDocument(doc: VoxelDocument): void {
@@ -135,7 +136,7 @@ export class VoxelEngine {
     this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
     this.ambient?.setParticleDensity(this.palette.particleDensity ?? 1)
     this.world = new WorldModel(doc)
-    if (this.vegetationManifest) this.assets.sync(doc.assetPlacements ?? [], this.vegetationManifest)
+    if (this.assetManifest) this.assets.sync(doc.assetPlacements ?? [], this.assetManifest)
     this.lighting = new LightingEngine(this.world, this.registry)
     this.lighting.computeAll()
     this.mesher = new Mesher(this.world, this.registry, this.atlas, this.lighting)
@@ -303,7 +304,7 @@ export class VoxelEngine {
   applyEditResult(result: EditResult): void {
     if (!this.world || !this.lighting || !this.mesher) return
     this.world.applyResult(result)
-    if (this.vegetationManifest) this.assets.sync(result.document.assetPlacements ?? [], this.vegetationManifest)
+    if (this.assetManifest) this.assets.sync(result.document.assetPlacements ?? [], this.assetManifest)
     const t0 = performance.now()
     const rebake = new Set<SectionKey>()
     for (const key of result.changedSections) {

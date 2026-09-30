@@ -25,7 +25,9 @@
     "verify:s03:migrations": "node --experimental-strip-types scripts/verify-s03-migration.ts",
     "verify:s01:live-journey": "node --import tsx scripts/verify-s01-live-journey.ts",
     "verify:s01:live-closure": "node --import tsx scripts/verify-s01-live-closure.ts",
-    "verify:s02": "npm --workspace @possibility/scene-contract test && npm --workspace @possibility/scene-contract run build && npm --workspace api test && npm --workspace api run build && npm --workspace web test && npm --workspace web run build && npm --workspace web run test:e2e"
+    "verify:s02": "npm --workspace @possibility/scene-contract test && npm --workspace @possibility/scene-contract run build && npm --workspace api test && npm --workspace api run build && npm --workspace web test && npm --workspace web run build && npm --workspace web run test:e2e",
+    "asset:import": "tsx scripts/asset-import.ts",
+    "asset:thumbnail": "node scripts/asset-thumbnail.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
