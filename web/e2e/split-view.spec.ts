@@ -79,6 +79,27 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     expect(errors).toEqual([])
   })
 
+  test('dispose:关闭分屏后引擎注册表回落,重新进入不泄漏', async ({ page }) => {
+    const errors = watchErrors(page)
+    await stubSplitApis(page)
+    await openSplit(page)
+    expect(await page.evaluate(() => Object.keys((window as unknown as ProbeWindow).__voxelEngines ?? {}).sort())).toEqual(['left', 'right'])
+
+    // 关闭分屏:右实例摘除,主实例别名回到 main
+    await page.getByTestId('split-close-right').click()
+    await expect(page.locator('[data-voxel-instance="main"]')).toHaveCount(1, { timeout: 30000 })
+    await expect.poll(() => page.evaluate(() => Object.keys((window as unknown as ProbeWindow).__voxelEngines ?? {}))).toEqual(['main'])
+    expect(await page.evaluate(() => {
+      const w = window as unknown as ProbeWindow
+      return w.__voxelEngine === w.__voxelEngines?.main
+    })).toBe(true)
+
+    // 重新进入分屏:双实例重新注册,无残留
+    await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
+    await expect.poll(() => page.evaluate(() => Object.keys((window as unknown as ProbeWindow).__voxelEngines ?? {}).sort()), { timeout: 30000 }).toEqual(['left', 'right'])
+    expect(errors).toEqual([])
+  })
+
   test('隔离:对照接口 500,左侧视口与标题照常渲染', async ({ page }) => {
     const errors = watchErrors(page)
     await stubSplitApis(page)
@@ -142,6 +163,8 @@ test.describe('S1 对齐时间轴(AC3/AC4/AC5)', () => {
     await expect(page.getByTestId('split-events-left')).not.toContainText(events.left.title)
     await expect(page.getByTestId('split-events-right')).toContainText(events.rightEarly.title)
     await expect(page.getByTestId('split-events-right')).not.toContainText(events.rightLate.title)
+    // 拖档触发带 simTime 的对照重取,对齐 limitations(状态无历史表)原文呈现
+    await expect(page.getByTestId('split-limitations')).toContainText('Person states have no history table', { timeout: 10000 })
     await page.screenshot({ path: `${SHOTS}/02-scrubbed.png` })
 
     // 点击首个分歧标记 → 右侧事件流定位高亮

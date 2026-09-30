@@ -200,8 +200,24 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   // 体素形状的文档没有 2D 回退可渲染，故不受 ?voxel 开关限制；开关只决定 2D 场景是否改用体素视口
   const voxelSpaces = useMemo(() => parseVoxelSpaces(multiScene ?? scene), [multiScene, scene])
   // S1 分屏:轴模型(纯函数) + 拖档截断;拖档只过滤事件流,视口始终渲染当前状态
-  const axis = useMemo(() => comparison ? buildAlignedAxis(comparison) : null, [comparison])
+  // 轴只在分屏(体素)模式构建:2D possibility 的 compare 只供摘要文案,可能不含 left/right 轴所需字段
+  const splitActive = mode === 'possibility' && voxelDoc !== null
+  const axis = useMemo(() => splitActive && comparison ? buildAlignedAxis(comparison) : null, [splitActive, comparison])
   const scrubbed = useMemo(() => axis && scrubAt ? filterAt(axis, scrubAt) : null, [axis, scrubAt])
+  // 拖档对齐:带 simTime 重取对照(防抖),对齐 limitations(状态无历史表等)原文呈现
+  const [alignedComparison, setAlignedComparison] = useState<TimelineComparison | null>(null)
+  useEffect(() => {
+    if (!scrubAt || !snapshot || !otherSnapshot) { setAlignedComparison(null); return }
+    const leftId = snapshot.currentTimelineId
+    const rightId = otherSnapshot.currentTimelineId
+    let active = true
+    const timer = setTimeout(() => {
+      void lifeApi.compare(worldId, leftId, rightId, { simTime: scrubAt })
+        .then((result) => { if (active) setAlignedComparison(result) })
+        .catch(() => { if (active) setAlignedComparison(null) })
+    }, 300)
+    return () => { active = false; clearTimeout(timer) }
+  }, [scrubAt, snapshot, otherSnapshot, worldId])
   const linkActive = cameraLinked && !splitWalk.left && !splitWalk.right
   const fmtSim = (iso: string) => new Date(iso).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   const splitEvents = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
@@ -409,9 +425,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           {(splitWalk.left || splitWalk.right) && <span data-testid="split-walk-notice" className="text-amber-700">第一视角下相机联动已暂停（两线的「我」不在同一位置）</span>}
           <span className="text-[#849184]">联动开启时，一侧的旋转/缩放/平移同步到另一侧</span>
         </div>
-        {comparison && comparison.limitations.length > 0 && (
+        {(alignedComparison ?? comparison) && (alignedComparison ?? comparison)!.limitations.length > 0 && (
           <ul data-testid="split-limitations" className="space-y-0.5 text-[10px] text-[#849184]">
-            {comparison.limitations.map((x, i) => <li key={i}>· {x}</li>)}
+            {(alignedComparison ?? comparison)!.limitations.map((x, i) => <li key={i}>· {x}</li>)}
           </ul>
         )}
       </div>

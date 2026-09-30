@@ -46,13 +46,17 @@ export function snapshotFor(timelineId: string) {
   }
 }
 
-export function comparisonFor(leftId: string, rightId: string) {
+export function comparisonFor(leftId: string, rightId: string, simTime?: string | null) {
+  // simTime 模式:三组事件截到 ≤ T,alignedAt 回显,limitations 追加状态无历史表明示
+  const at = simTime ? new Date(simTime).toISOString() : null
+  const cut = (list: { simTime: string }[]) => at ? list.filter((e) => e.simTime <= at) : list
+  const rightOnly = cut(rightId === 'timeline-fork' ? [events.rightEarly, events.rightLate] : [])
   return {
     worldId: 'world-1',
     interpretation: 'observed_differences_not_causal_claims',
     timeAlignment: 'same_sim_time',
-    alignedAt: null,
-    firstDivergence: rightId === 'timeline-fork' ? { simTime: events.rightEarly.simTime, eventId: events.rightEarly.id, side: 'right' } : null,
+    alignedAt: at,
+    firstDivergence: rightOnly.length ? { simTime: rightOnly[0].simTime, eventId: rightOnly[0].id, side: 'right' } : null,
     left: { id: leftId, simNow: NOW, status: 'active', parentTimelineId: null, historyComplete: true },
     right: { id: rightId, simNow: NOW, status: 'active', parentTimelineId: 'timeline-main', historyComplete: true },
     sharedForkOrigin: { timelineId: 'timeline-main', leftFork: null, rightFork: { forkTimelineId: rightId, sourceSimTime: FORK_AT } },
@@ -61,12 +65,15 @@ export function comparisonFor(leftId: string, rightId: string) {
       facts: [],
       worldModelVersions: { left: 1, right: 1 },
       events: {
-        shared: [events.shared],
-        leftOnly: [events.left],
-        rightOnly: rightId === 'timeline-fork' ? [events.rightEarly, events.rightLate] : [],
+        shared: cut([events.shared]),
+        leftOnly: cut([events.left]),
+        rightOnly,
       },
     },
-    limitations: ['State values are current observations at each timeline’s own simNow; event differences identify records, not causes.'],
+    limitations: [
+      'State values are current observations at each timeline’s own simNow; event differences identify records, not causes.',
+      ...(at ? ['Person states have no history table; state differences above are current values, not values reconstructed at the aligned simTime.'] : []),
+    ],
   }
 }
 
@@ -99,7 +106,7 @@ export function stubSplitApis(page: Page) {
     page.route('**/api/worlds/world-1/return**', (route) => route.fulfill({ json: { timelineId: 'timeline-main', simNow: NOW, firstVisit: false, cursor: 0, events: [], commitments: [], unread: 0 } })),
     page.route('**/api/worlds/world-1/compare?*', (route) => {
       const url = new URL(route.request().url())
-      return route.fulfill({ json: comparisonFor(url.searchParams.get('left') ?? 'timeline-main', url.searchParams.get('right') ?? 'timeline-fork') })
+      return route.fulfill({ json: comparisonFor(url.searchParams.get('left') ?? 'timeline-main', url.searchParams.get('right') ?? 'timeline-fork', url.searchParams.get('simTime')) })
     }),
     page.route('**/api/worlds/world-1?*', (route) => {
       const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
