@@ -28,6 +28,7 @@ import { planEditsViaApi } from '../voxel/plan-edits'
 import AlignedTimeline from '../components/world/AlignedTimeline'
 import { buildAlignedAxis, filterAt, type AxisMarker } from '../world/alignedTimeline'
 import WorldView from './WorldView'
+import ForkCompareHint from '../components/world/ForkCompareHint'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 
 type RevisionPreview = { result: ScenePreviewResult; operations: SceneOperation[]; summary: string; warnings: string[] }
@@ -531,6 +532,15 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#536558]">退出</button>
     </div></header>}
     {error && <p role="status" className="rounded-xl bg-white px-4 py-2 text-sm text-red-700">{error}</p>}
+    {/* S2/F6：人物级分叉跳页落点——forkFrom 触发「并排看看」横幅,关闭后抹参 */}
+    {search.get('forkFrom') && !guest && !readonly && (
+      <ForkCompareHint
+        worldId={worldId}
+        sourceId={search.get('forkFrom')!}
+        newId={timelineId ?? snapshot.currentTimelineId}
+        onDismiss={() => { const params = new URLSearchParams(search); params.delete('forkFrom'); setSearch(params, { replace: true }) }}
+      />
+    )}
     {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onApply={applyPreview} onCancel={() => setPreview(null)} busy={busy} />}
     {legacyPreview && <ScenePreviewBar summary={legacyPreview.explanation} warnings={legacyPreview.warnings} onApply={confirmLegacy} onCancel={() => setLegacyPreview(null)} busy={busy} />}
     <div className="flex min-h-[500px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3">

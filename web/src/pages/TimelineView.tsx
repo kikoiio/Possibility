@@ -95,7 +95,14 @@ export default function TimelineView() {
       setError('推演中断，请重试')
     }
     if (forkIdRef.current) {
-      navigate(`/timelines/${forkIdRef.current}`, { replace: true })
+      // S2/F6 落点统一：跳体素世界页新线 + forkFrom 触发「并排看看」横幅
+      const forkId = forkIdRef.current
+      const worldId = detail.world?.id
+      if (worldId) {
+        navigate(`/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(forkId)}&forkFrom=${encodeURIComponent(detail.timeline.id)}`, { replace: true })
+      } else {
+        navigate(`/timelines/${forkId}`, { replace: true })
+      }
     } else {
       setPhase('view')
     }
