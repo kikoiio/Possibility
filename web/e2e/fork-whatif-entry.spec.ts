@@ -117,3 +117,68 @@ test.describe('S2 一句话分叉入口', () => {
     expect(errors).toEqual([])
   })
 })
+
+test('预览失败:错误文案展示且可重试,无分叉副作用(AC7 前端半)', async ({ page }) => {
+  // 预期的 429 会打一条 "Failed to load resource" console error,本地收集并滤掉
+  const errors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && !msg.text().includes('Failed to load resource')) errors.push(msg.text())
+  })
+  page.on('pageerror', (err) => errors.push(String(err)))
+  await stubSplitApis(page, { timelines: MAIN_AND_FORK })
+  let previewCalls = 0
+  let forkCalled = false
+  await page.route('**/api/worlds/world-1/timelines/*/fork/preview', (route) => {
+    previewCalls += 1
+    if (previewCalls === 1) return route.fulfill({ status: 429, json: { error: '世界调用预算不足，请稍后再试' } })
+    return route.fulfill({ json: SCENARIO })
+  })
+  await page.route('**/api/worlds/world-1/timelines/*/fork', (route) => {
+    forkCalled = true
+    return route.fulfill({ json: { id: 'timeline-fork', simNow: NOW } })
+  })
+  await openForkDialog(page)
+
+  const dialog = page.getByRole('dialog', { name: '创建平行宇宙' })
+  await dialog.locator('textarea').fill(SCENARIO.whatIf)
+  await dialog.getByTestId('fork-preview-submit').click()
+  await expect(dialog.getByRole('alert')).toContainText('世界调用预算不足')
+  expect(forkCalled).toBe(false)
+  // 重试成功 → 进入确认卡
+  await dialog.getByTestId('fork-preview-submit').click()
+  await expect(dialog.getByText('分叉只能从当前时刻开始')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('S2 端到端走查(AC9):一句话 → 微调 → 分叉 → 横幅 → 分屏拖档,截图落盘', async ({ page }) => {
+  const { mkdirSync } = await import('node:fs')
+  const SHOTS = '../docs/spec_docs/fork-compare-upgrade/s02-whatif-entry/walkthrough'
+  mkdirSync(SHOTS, { recursive: true })
+  const errors = watchErrors(page)
+  await stubSplitApis(page, { timelines: MAIN_AND_FORK })
+  await stubForkApis(page)
+  await openForkDialog(page)
+
+  const dialog = page.getByRole('dialog', { name: '创建平行宇宙' })
+  await dialog.locator('textarea').fill(SCENARIO.whatIf)
+  await page.screenshot({ path: `${SHOTS}/01-one-sentence.png` })
+  await dialog.getByTestId('fork-preview-submit').click()
+  await expect(dialog.getByText('分叉只能从当前时刻开始')).toBeVisible()
+  await dialog.locator('input').fill('小夜，阿澄')
+  await page.screenshot({ path: `${SHOTS}/02-confirm-card.png` })
+  await dialog.getByTestId('fork-confirm').click()
+  await expect(page.getByTestId('fork-compare-hint')).toBeVisible()
+  await page.screenshot({ path: `${SHOTS}/03-fork-hint.png` })
+  await page.getByTestId('fork-compare-hint-go').dispatchEvent('click')
+  await expect(page.getByTestId('split-left')).toBeVisible({ timeout: 30000 })
+  await expect(page.getByTestId('split-right')).toBeVisible({ timeout: 30000 })
+  await page.waitForTimeout(600) // 软渲染首帧稳定
+  await page.screenshot({ path: `${SHOTS}/04-split-view.png` })
+  // 对齐轴拖档:拖回分叉原点(共同过去)
+  const scrub = page.getByTestId('aligned-timeline-scrub')
+  await expect(scrub).toBeVisible()
+  await scrub.fill(String(Date.parse('2026-09-19T09:00:00.000Z')))
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: `${SHOTS}/05-axis-scrub.png` })
+  expect(errors).toEqual([])
+})

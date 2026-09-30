@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { count, eq } from 'drizzle-orm'
 import app from '../index'
-import { llmCallLog, persons, personStates, timelines, worldPersons } from '../db/schema'
+import { conversations, llmCallLog, persons, personStates, timelines, universeEvidence, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 
 const owner = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
@@ -163,5 +163,25 @@ describe('世界级 fork 预览（S2/F2）', () => {
       method: 'POST', headers: owner, body: JSON.stringify({ whatIf: 'w' }),
     }, f.env)
     expect(res.status).toBe(502)
+  })
+})
+
+describe('人物级 fork 预览 startTime 纪律（S2/T1）', () => {
+  it('LLM 起草过去时刻时,返回 startTime 仍强制为源线 simNow', async () => {
+    const f = await createWorldFixture()
+    const personModel = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] })
+    await f.db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Resident', modelJson: personModel, createdAt: WORLD_TIME })
+    await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
+    await f.db.insert(personStates).values({ personId: 'resident', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe', activity: 'Waiting', mood: 'Calm', goal: 'Listen', updatedRealAt: WORLD_TIME })
+    await f.db.insert(conversations).values({ id: 'conversation', userId: 'owner', personId: 'resident', timelineId: 'home-main' })
+    stubLlm({ ...scenarioJson, startTime: '2020-01-01T00:00:00.000Z' })
+
+    const res = await app.request('/api/persons/resident/fork/preview', {
+      method: 'POST', headers: owner, body: JSON.stringify({ whatIf: scenarioJson.whatIf }),
+    }, f.env)
+    expect(res.status).toBe(200)
+    const body = await res.json() as Record<string, unknown>
+    expect(body.startTime).toBe(WORLD_TIME)
+    expect(body.changedVariable).toBe('信件是否送达')
   })
 })
