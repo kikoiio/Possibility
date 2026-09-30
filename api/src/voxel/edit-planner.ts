@@ -66,6 +66,28 @@ export function parseEditOperations(content: string): EditOperation[] {
       case 'remove-object':
         if (typeof op.objectId !== 'string' || !op.objectId) return bad('remove-object 需要 objectId')
         return { kind: 'remove-object', objectId: op.objectId }
+      case 'place-asset': {
+        // 注意:资产 op 的 rotation 是 0..3 四分之一圈制,勿复用 isRotation 的角度制
+        const rotation = op.rotation ?? 0
+        if (typeof op.assetId !== 'string' || !op.assetId || !isCoord(op.anchor)) return bad('place-asset 需要 assetId 与 anchor')
+        if (rotation !== 0 && rotation !== 1 && rotation !== 2 && rotation !== 3) return bad('place-asset 的 rotation 需要 0..3')
+        return {
+          kind: 'place-asset', assetId: op.assetId, anchor: op.anchor, rotation,
+          ...(typeof op.placementId === 'string' && op.placementId ? { placementId: op.placementId } : {}),
+          ...(typeof op.seed === 'number' && Number.isFinite(op.seed) ? { seed: op.seed } : {}),
+        }
+      }
+      case 'move-asset': {
+        if (typeof op.placementId !== 'string' || !op.placementId || !isCoord(op.anchor)) return bad('move-asset 需要 placementId 与 anchor')
+        if (op.rotation !== undefined && op.rotation !== 0 && op.rotation !== 1 && op.rotation !== 2 && op.rotation !== 3) return bad('move-asset 的 rotation 需要 0..3')
+        return {
+          kind: 'move-asset', placementId: op.placementId, anchor: op.anchor,
+          ...(op.rotation !== undefined ? { rotation: op.rotation as 0 | 1 | 2 | 3 } : {}),
+        }
+      }
+      case 'remove-asset':
+        if (typeof op.placementId !== 'string' || !op.placementId) return bad('remove-asset 需要 placementId')
+        return { kind: 'remove-asset', placementId: op.placementId }
       default:
         return bad(`未知操作 kind=${String(op?.kind)}`)
     }

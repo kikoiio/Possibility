@@ -53,7 +53,7 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
       // 悬空物体 → validateDocument floating-object;不应出现 walk-* issue
       return JSON.stringify({
         size: { width: 16, height: 16, depth: 16 },
-        placements: [{ objectType: 'stone-lantern', anchor: { x: 8, y: 8, z: 8 }, rotation: 0 }],
+        ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 8, y: 8, z: 8 }, rotation: 0 }],
       })
     }
     let error: unknown
@@ -135,5 +135,64 @@ describe('assembleWorld × S3b 地形与风格包', () => {
     ]) {
       expect(getBlock(a, probe)).toBe(getBlock(b, probe))
     }
+  })
+})
+
+describe('assembleWorld × S2b assetPlacements 契约', () => {
+  it('assetPlacements 产出 GLB 摆放(place-asset),不产 place-object 物体', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [
+        { assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 }, rotation: 1, seed: 7 },
+        { assetId: 'veg-tree-a', anchor: { x: 10, y: 1, z: 10 } },
+      ],
+    }, 'mist-manor', 'ap-1')
+    expect(doc.objects).toHaveLength(0)
+    expect(doc.assetPlacements).toHaveLength(2)
+    expect(doc.assetPlacements![0]).toMatchObject({ assetId: 'bld-hut-a', anchor: [4, 1, 4], rotation: 1, seed: 7 })
+    // 缺省 rotation/seed/id 派生
+    expect(doc.assetPlacements![1].rotation).toBe(0)
+    expect(doc.assetPlacements![1].id).toMatch(/^ast-/)
+    expect(Number.isInteger(doc.assetPlacements![1].seed)).toBe(true)
+  })
+
+  it('旧字段 placements 报明确改名错误(N4)', () => {
+    expect(() => assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      placements: [{ objectType: 'stone-lantern', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 }],
+    }, 'mist-manor', 'ap-2')).toThrow(/已改名为 assetPlacements/)
+  })
+
+  it('assetPlacements 条目形状不合法逐条报错', () => {
+    expect(() => assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4.5, y: 1, z: 4 } }],
+    }, 'mist-manor', 'ap-3')).toThrow(/assetPlacements\[0\]/)
+    expect(() => assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 }, rotation: 90 }],
+    }, 'mist-manor', 'ap-4')).toThrow(/rotation/)
+  })
+
+  it('generateWorld 传清单时摆放参与严格校验,悬空摆放进重试链', async () => {
+    const manifest = {
+      version: 2 as const,
+      assets: {
+        'bld-hut-a': { id: 'bld-hut-a', category: 'building' as const, url: '/x.glb', footprint: [2, 2] as [number, number], height: 2, thumbnail: '/x.png', sway: 0 },
+      },
+    }
+    let call = 0
+    const doc = await generateWorld('小屋', 'mist-manor', {
+      complete: async () => {
+        call += 1
+        return call === 1
+          ? JSON.stringify({ size: { width: 16, height: 16, depth: 16 }, assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 8, z: 4 } }] })
+          : JSON.stringify({ size: { width: 16, height: 16, depth: 16 }, assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 } }] })
+      },
+      id: 'ap-5',
+      assets: manifest,
+    })
+    expect(call).toBe(2)
+    expect(doc.assetPlacements![0].anchor).toEqual([4, 1, 4])
   })
 })

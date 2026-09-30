@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdits, createEmptyWorld, type VoxelDocument } from '@possibility/voxel-contract'
 import { EditPlannerError, parseEditOperations, planEdits } from '../src/voxel/edit-planner'
 import { assembleWorld, generateWorld, WorldGeneratorError } from '../src/voxel/generate'
+import { buildEditPlannerMessages, buildWorldGeneratorMessages, worldSummary } from '../src/voxel/prompts'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })
 
@@ -27,6 +28,23 @@ describe('parseEditOperations', () => {
     expect(() => parseEditOperations('{"ops":[]}')).toThrow(/ops 为空/)
     expect(() => parseEditOperations('{"ops":[{"kind":"set-block","at":{"x":1.5,"y":1,"z":1},"block":"stone"}]}')).toThrow(/ops\[0\]/)
     expect(() => parseEditOperations('{"ops":[{"kind":"teleport"}]}')).toThrow(/未知操作/)
+  })
+
+  it('S2b: parses the three asset op kinds with quarter-turn rotation', () => {
+    const ops = parseEditOperations('{"ops":['
+      + '{"kind":"place-asset","assetId":"bld-hut-a","anchor":{"x":4,"y":1,"z":4},"rotation":1,"seed":7},'
+      + '{"kind":"move-asset","placementId":"ast-a","anchor":{"x":8,"y":1,"z":8},"rotation":3},'
+      + '{"kind":"remove-asset","placementId":"ast-b"}'
+      + ']}')
+    expect(ops).toEqual([
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 1, seed: 7 },
+      { kind: 'move-asset', placementId: 'ast-a', anchor: at(8, 1, 8), rotation: 3 },
+      { kind: 'remove-asset', placementId: 'ast-b' },
+    ])
+    // rotation 角度制(90)必须被拒——资产 op 是 0..3 四分之一圈
+    expect(() => parseEditOperations('{"ops":[{"kind":"place-asset","assetId":"bld-hut-a","anchor":{"x":4,"y":1,"z":4},"rotation":90}]}')).toThrow(/rotation/)
+    expect(() => parseEditOperations('{"ops":[{"kind":"move-asset","placementId":"a"}]}')).toThrow(/anchor/)
+    expect(() => parseEditOperations('{"ops":[{"kind":"remove-asset"}]}')).toThrow(/placementId/)
   })
 })
 
@@ -70,10 +88,10 @@ describe('generateWorld（mock LLM 三态）', () => {
   const validPayload = JSON.stringify({
     size: { width: 32, height: 16, depth: 32 },
     groundBlock: 'grass',
-    ops: [{ kind: 'fill', from: { x: 12, y: 1, z: 12 }, to: { x: 16, y: 1, z: 16 }, block: 'cobble' }],
-    placements: [
-      { objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0, objectId: 'house', label: '主楼' },
-      { objectType: 'manor-greenhouse', anchor: { x: 22, y: 1, z: 6 }, rotation: 0, objectId: 'greenhouse', label: '温室' },
+    ops: [
+      { kind: 'fill', from: { x: 12, y: 1, z: 12 }, to: { x: 16, y: 1, z: 16 }, block: 'cobble' },
+      { kind: 'place-object', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0, objectId: 'house', label: '主楼' },
+      { kind: 'place-object', objectType: 'manor-greenhouse', anchor: { x: 22, y: 1, z: 6 }, rotation: 0, objectId: 'greenhouse', label: '温室' },
     ],
     locations: [{ name: '主楼', objectId: 'house' }, { name: '温室', objectId: 'greenhouse' }],
     spaceEntries: [{ spaceId: 'main-hall', label: '进入主楼 →', at: { x: 7, y: 1, z: 10 } }],
@@ -100,12 +118,12 @@ describe('generateWorld（mock LLM 三态）', () => {
         if (call === 1) {
           return JSON.stringify({
             size: { width: 16, height: 16, depth: 16 },
-            placements: [{ objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
+            ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
           })
         }
         return JSON.stringify({
           size: { width: 16, height: 16, depth: 16 },
-          placements: [{ objectType: 'stone-lantern', anchor: { x: 4, y: 1, z: 4 }, rotation: 0, objectId: 'lamp' }],
+          ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 4, y: 1, z: 4 }, rotation: 0, objectId: 'lamp' }],
         })
       },
       id: 'gen-2',
@@ -118,7 +136,7 @@ describe('generateWorld（mock LLM 三态）', () => {
     await expect(generateWorld('坏世界', 'mist-manor', {
       complete: async () => JSON.stringify({
         size: { width: 16, height: 16, depth: 16 },
-        placements: [{ objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
+        ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
       }),
       id: 'gen-3',
     })).rejects.toMatchObject({ name: 'WorldGeneratorError' })
@@ -129,5 +147,45 @@ describe('generateWorld（mock LLM 三态）', () => {
       size: { width: 16, height: 16, depth: 16 },
       locations: [{ name: '主楼', objectId: 'ghost' }],
     }, 'mist-manor', 'x')).toThrow(/不存在的物体/)
+  })
+})
+
+describe('S2b prompt 契约(F5)', () => {
+  const manifest = {
+    version: 2 as const,
+    assets: {
+      'bld-hut-a': { id: 'bld-hut-a', category: 'building' as const, url: '/x.glb', footprint: [2, 2] as [number, number], height: 2, thumbnail: '/x.png', sway: 0 },
+      'veg-tree-a': { id: 'veg-tree-a', category: 'vegetation' as const, url: '/x.glb', footprint: [1, 1] as [number, number], height: 3, thumbnail: '/x.png', sway: 0.1 },
+    },
+  }
+
+  it('生成 prompt 含 assetPlacements 契约与 placements 优先指引,旧字段名不再出现', () => {
+    const [system] = buildWorldGeneratorMessages('山间小屋', 'mist-manor', manifest)
+    expect(system.content).toContain('"assetPlacements"')
+    expect(system.content).toContain('优先用 assetPlacements 摆放库内资产')
+    expect(system.content).not.toContain('"placements"')
+    // 资产目录注入
+    expect(system.content).toContain('可用资产库')
+    expect(system.content).toContain('bld-hut-a（building，占地 2×2，高 2）')
+    // 无清单时省略资产库行
+    const [noCatalog] = buildWorldGeneratorMessages('山间小屋', 'mist-manor')
+    expect(noCatalog.content).not.toContain('可用资产库')
+  })
+
+  it('编辑规划 prompt 含三个资产 op 与资产库', () => {
+    const [system] = buildEditPlannerMessages(groundedWorld(), '加一棵树', manifest)
+    expect(system.content).toContain('place-asset')
+    expect(system.content).toContain('move-asset')
+    expect(system.content).toContain('remove-asset')
+    expect(system.content).toContain('可用资产库')
+  })
+
+  it('worldSummary 列出既有资产摆放', () => {
+    const doc = applyEdits(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(9, 1, 9), rotation: 2, placementId: 'ast-t', seed: 1 },
+    ]).document
+    const summary = worldSummary(doc)
+    expect(summary).toContain('已有资产摆放')
+    expect(summary).toContain('ast-t: veg-tree-a @ (9,1,9) 旋转180°')
   })
 })

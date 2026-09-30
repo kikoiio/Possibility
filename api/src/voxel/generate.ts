@@ -1,7 +1,7 @@
 import {
   applyEdits, clampStyleRef, clampTerrainParams, createEmptyWorld, deserialize, generateTerrain,
   serialize, validateDocument, validateWalkability, writeTerrainCells,
-  type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
+  type AssetManifest, type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
   type TerrainParams, type VoxelDocument, type WorldTerrainMeta,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
@@ -21,10 +21,37 @@ interface GeneratedWorldPayload {
   terrain?: unknown
   style?: unknown
   ops?: unknown[]
+  /** S2b:GLB 资产摆放(placements 优先);旧字段名 placements 已废弃,见 assembleWorld 报错 */
+  assetPlacements?: unknown[]
   placements?: unknown[]
   locations?: unknown[]
   spaceEntries?: unknown[]
   lockedObjectIds?: unknown[]
+}
+
+const isCoord = (v: unknown): v is { x: number; y: number; z: number } => {
+  const c = v as { x?: unknown; y?: unknown; z?: unknown } | null
+  return !!c && Number.isInteger(c.x) && Number.isInteger(c.y) && Number.isInteger(c.z)
+}
+
+/** S2b:载荷 assetPlacements 逐条转 place-asset op(形状不合法即抛,走重试链) */
+function assetPlacementOps(raw: unknown[]): EditOperation[] {
+  return raw.map((entry, index): EditOperation => {
+    const p = entry as Record<string, unknown>
+    const bad = (why: string): never => { throw new WorldGeneratorError(`assetPlacements[${index}] 不合法：${why}`) }
+    if (typeof p?.assetId !== 'string' || !p.assetId) return bad('需要 assetId')
+    if (!isCoord(p.anchor)) return bad('anchor 需要 {x,y,z} 整数坐标')
+    if (p.rotation !== undefined && p.rotation !== 0 && p.rotation !== 1 && p.rotation !== 2 && p.rotation !== 3) {
+      return bad('rotation 需要 0..3(四分之一圈)')
+    }
+    if (p.seed !== undefined && (typeof p.seed !== 'number' || !Number.isFinite(p.seed))) return bad('seed 需要有限数')
+    return {
+      kind: 'place-asset', assetId: p.assetId, anchor: p.anchor,
+      rotation: (p.rotation ?? 0) as 0 | 1 | 2 | 3,
+      ...(typeof p.placementId === 'string' && p.placementId ? { placementId: p.placementId } : {}),
+      ...(typeof p.seed === 'number' ? { seed: p.seed } : {}),
+    }
+  })
 }
 
 function extractPayload(content: string): GeneratedWorldPayload {
@@ -84,9 +111,10 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
     ops.push(...parseEditOperations(JSON.stringify({ ops: payload.ops })))
   }
   if (Array.isArray(payload.placements)) {
-    ops.push(...parseEditOperations(JSON.stringify({
-      ops: payload.placements.map((p) => ({ ...(p as object), kind: 'place-object' })),
-    })))
+    throw new WorldGeneratorError('字段 placements 已改名为 assetPlacements（GLB 资产摆放，形状 {assetId, anchor, rotation?, seed?}），请用新字段名重新返回')
+  }
+  if (Array.isArray(payload.assetPlacements)) {
+    ops.push(...assetPlacementOps(payload.assetPlacements))
   }
 
   let doc = createEmptyWorld({ width, height, depth }, theme, id)
@@ -136,7 +164,7 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
 export async function generateWorld(
   sceneDescription: string,
   theme: string,
-  deps: { complete: CompleteFn; maxAttempts?: number; id?: string; buildMessages?: (desc: string, theme: string) => ChatMessage[] },
+  deps: { complete: CompleteFn; maxAttempts?: number; id?: string; buildMessages?: (desc: string, theme: string) => ChatMessage[]; assets?: AssetManifest },
 ): Promise<VoxelDocument> {
   const maxAttempts = deps.maxAttempts ?? 3
   const buildMessages = deps.buildMessages ?? buildWorldGeneratorMessages
@@ -156,7 +184,7 @@ export async function generateWorld(
       messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界无法组装（${lastError}）。请修正后重新返回完整世界 JSON。` }]
       continue
     }
-    const issues = validateDocument(doc)
+    const issues = validateDocument(doc, undefined, deps.assets)
     // 结构校验过了才跑可行走性(世界可行走性是 S2b F5 的生成契约;结构坏了先修结构)
     if (issues.length === 0) issues.push(...validateWalkability(doc))
     if (issues.length === 0) {
