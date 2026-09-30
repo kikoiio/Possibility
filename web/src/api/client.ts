@@ -21,6 +21,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** 服务端附带的校验明细（如 422 的 issues 列表），无则 undefined */
+    public issues?: { code: string; message: string }[],
   ) {
     super(message)
   }
@@ -47,8 +49,8 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     throw new ApiError(401, data.error ?? '未登录或会话已过期')
   }
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`)
+    const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: { code: string; message: string }[] }
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues)
   }
   return res.json() as Promise<T>
 }
@@ -144,6 +146,7 @@ import type {
   TimelineComparison,
 } from './types'
 import type { SceneChangeSet, SceneDocument, SceneOperation, SceneDraftResponse, SceneReadResponse } from './types'
+import type { SerializedVoxelDocument } from '@possibility/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
 
@@ -253,6 +256,8 @@ export const worldSceneApi = {
   legacyConfirm: (worldId: string, document: SceneDocument, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/legacy-confirm`, { method: 'POST', body: JSON.stringify({ document, requestId }) }),
   editPreview: (worldId: string, instruction: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; result: SceneDocument; changes: SceneChangeSet } }>(`/api/worlds/${worldId}/scene/edit-preview`, { method: 'POST', body: JSON.stringify({ instruction, expectedVersion, requestId }) }),
   commit: (worldId: string, expectedVersion: number, requestId: string, operations: SceneOperation[], kind = 'edit') => apiFetch<{ document: SceneDocument; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/revisions`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, operations, kind }) }),
+  // S2b:体素整文档保存通道（T10 服务端 voxel-revision 端点）
+  commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument) => apiFetch<{ document: SerializedVoxelDocument; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document }) }),
   history: (worldId: string) => apiFetch<{ revisions: { version: number; parentVersion: number | null; summary: string; kind: string; createdAt: string }[] }>(`/api/worlds/${worldId}/scene/revisions`),
   restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
 }

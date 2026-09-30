@@ -17,7 +17,8 @@ export interface VoxelViewportProps {
   overlay?: SceneLifeOverlay | null
   /** 编辑入口（create 模式）；移动端由 PlatformGate 兜底隐藏 */
   editable?: boolean
-  planEdits?: (intent: string) => Promise<EditOperation[]>
+  /** AI 编辑规划（产品层接 /api/voxel/edit-plan）；视口注入内部引擎，共享 plan-edits.ts 帮助器可直接传入 */
+  planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditOperation[]>
   onSave?: (doc: VoxelDocument) => void
   onEnterSpace?: (spaceId: string) => void
   onSelectPerson?: (personId: string) => void
@@ -247,7 +248,7 @@ export default function VoxelViewport({
         <VoxelEditor
           engine={engineRef.current!}
           controller={controller}
-          planEdits={planEdits}
+          planEdits={(intent) => planEdits(engineRef.current!, intent)}
           interact={(x, y) => interactRef.current(x, y)}
           editing={gate.showEditing}
         />
