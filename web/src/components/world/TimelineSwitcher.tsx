@@ -1,23 +1,30 @@
 import { useState } from 'react'
-import type { ForkScenario, TimelineInfo } from '../../api/types'
+import type { ForkScenario, ForkScenarioInput, TimelineInfo } from '../../api/types'
+import ScenarioCard from '../ScenarioCard'
 
 interface Props {
   timelines: TimelineInfo[]
   currentTimelineId: string
   onSwitch: (timelineId: string) => void
-  onFork: (scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>) => Promise<boolean>
+  onFork: (scenario: ForkScenarioInput) => Promise<boolean>
+  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库 */
+  onPreview: (whatIf: string) => Promise<ForkScenario>
   onArchive: (timelineId: string) => void
   writeLocked?: boolean
   /** S1 分屏入口:活跃线 ≥2 时可点,否则置灰提示先分叉 */
   onSplitView?: () => void
 }
 
-/** 时间线切换器：列表 + Fork 入口（活跃线上限 3）+ 归档 */
-export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onArchive, writeLocked = false, onSplitView }: Props) {
+type ForkStep = 'input' | 'advanced' | 'confirm'
+
+/** 时间线切换器：列表 + Fork 入口（一句话预览 → 确认卡；高级=两字段手写）+ 归档 */
+export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onPreview, onArchive, writeLocked = false, onSplitView }: Props) {
   const [open, setOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
+  const [step, setStep] = useState<ForkStep>('input')
   const [whatIf, setWhatIf] = useState('')
   const [changedVariable, setChangedVariable] = useState('')
+  const [scenario, setScenario] = useState<ForkScenario | null>(null)
   const [forkError, setForkError] = useState('')
   const [forking, setForking] = useState(false)
   const active = timelines.filter((t) => t.status === 'active')
@@ -39,16 +46,57 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   visit(null)
   for (const t of timelines) if (!seen.has(t.id)) ordered.push(t)
 
-  const createFork = async () => {
-    const scenario = { whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
-    if (!scenario.whatIf || !scenario.changedVariable) {
+  const resetFork = () => {
+    setStep('input')
+    setScenario(null)
+    setForkError('')
+  }
+
+  const preview = async () => {
+    const text = whatIf.trim()
+    if (!text) {
+      setForkError('先用一句话说说这条线要探索什么可能。')
+      return
+    }
+    setForkError('')
+    setForking(true)
+    try {
+      setScenario(await onPreview(text))
+      setStep('confirm')
+    } catch (e) {
+      setForkError(e instanceof Error ? e.message : '场景生成失败，请重试')
+    } finally {
+      setForking(false)
+    }
+  }
+
+  const forkDirect = async () => {
+    const input = { whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
+    if (!input.whatIf || !input.changedVariable) {
       setForkError('请说明这条线的假设和唯一改变的条件。')
       return
     }
     setForkError('')
     setForking(true)
     try {
-      if (await onFork(scenario)) setForkOpen(false)
+      if (await onFork(input)) { setForkOpen(false); resetFork() }
+    } finally {
+      setForking(false)
+    }
+  }
+
+  const forkConfirmed = async () => {
+    if (!scenario) return
+    setForkError('')
+    setForking(true)
+    try {
+      const input: ForkScenarioInput = {
+        whatIf: scenario.whatIf.trim(),
+        changedVariable: scenario.changedVariable.trim(),
+        participants: scenario.participants,
+        invariants: scenario.invariants,
+      }
+      if (await onFork(input)) { setForkOpen(false); resetFork() }
     } finally {
       setForking(false)
     }
@@ -121,10 +169,11 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
             <button
               onClick={() => {
                 setOpen(false)
-                setForkError('')
+                resetFork()
                 setForkOpen(true)
               }}
               disabled={writeLocked || active.length >= 3}
+              data-testid="fork-entry"
               className="w-full rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:bg-ink-faint"
             >
               {writeLocked ? '历史证据只读，暂不能分叉' : active.length >= 3 ? '活跃宇宙已满（先归档一条）' : '从当前时刻创造平行宇宙'}
@@ -135,31 +184,99 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
       {forkOpen && (
         <div role="dialog" aria-modal="true" aria-label="创建平行宇宙" className="absolute right-0 top-10 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-ink-line bg-sheet p-4 shadow-xl">
           <h2 className="text-sm font-semibold text-ink">创建平行宇宙</h2>
-          <p className="mt-1 text-xs leading-relaxed text-ink-faint">从当前这个时刻复制世界。现在只记录假设；分叉后你再决定如何改变条件，源宇宙不会被改写。</p>
-          <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-what-if">这条线要探索什么可能？</label>
-          <textarea
-            id="fork-what-if"
-            value={whatIf}
-            onChange={(event) => setWhatIf(event.target.value)}
-            rows={2}
-            maxLength={500}
-            placeholder="例如：如果那封信在暴雨前送达，会发生什么？"
-            className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
-          />
-          <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-changed-variable">准备改变的条件（只写一项）</label>
-          <input
-            id="fork-changed-variable"
-            value={changedVariable}
-            onChange={(event) => setChangedVariable(event.target.value)}
-            maxLength={200}
-            placeholder="例如：匿名信是否送达"
-            className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
-          />
-          {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
-          <div className="mt-3 flex justify-end gap-2">
-            <button type="button" onClick={() => setForkOpen(false)} disabled={forking} className="rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft disabled:opacity-50">取消</button>
-            <button type="button" onClick={() => void createFork()} disabled={forking} className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '创建中…' : '记录条件并分叉'}</button>
-          </div>
+          {step !== 'confirm' && (
+            <p className="mt-1 text-xs leading-relaxed text-ink-faint">从当前这个时刻复制世界。说一个「如果」，我们先起草场景设定，你确认后才分叉，源宇宙不会被改写。</p>
+          )}
+
+          {step === 'input' && (
+            <>
+              <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-what-if">这条线要探索什么可能？</label>
+              <textarea
+                id="fork-what-if"
+                value={whatIf}
+                onChange={(event) => setWhatIf(event.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="例如：如果那封信在暴雨前送达，会发生什么？"
+                className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
+              />
+              {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setForkError(''); setStep('advanced') }}
+                  className="text-xs text-ink-faint underline hover:text-ink-soft"
+                >
+                  高级：手动设定条件
+                </button>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setForkOpen(false)} disabled={forking} className="rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft disabled:opacity-50">取消</button>
+                  <button type="button" onClick={() => void preview()} disabled={forking} data-testid="fork-preview-submit" className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '正在起草场景…' : '生成场景设定'}</button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {step === 'advanced' && (
+            <>
+              <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-what-if-advanced">这条线要探索什么可能？</label>
+              <textarea
+                id="fork-what-if-advanced"
+                value={whatIf}
+                onChange={(event) => setWhatIf(event.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="例如：如果那封信在暴雨前送达，会发生什么？"
+                className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
+              />
+              <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-changed-variable">准备改变的条件（只写一项）</label>
+              <input
+                id="fork-changed-variable"
+                value={changedVariable}
+                onChange={(event) => setChangedVariable(event.target.value)}
+                maxLength={200}
+                placeholder="例如：匿名信是否送达"
+                className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft focus:border-ink-faint focus:outline-none"
+              />
+              {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setForkError(''); setStep('input') }}
+                  className="text-xs text-ink-faint underline hover:text-ink-soft"
+                >
+                  返回一句话模式
+                </button>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setForkOpen(false)} disabled={forking} className="rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft disabled:opacity-50">取消</button>
+                  <button type="button" onClick={() => void forkDirect()} disabled={forking} className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '创建中…' : '记录条件并分叉'}</button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {step === 'confirm' && scenario && (
+            <>
+              <div className="mt-3">
+                <ScenarioCard scenario={scenario} onChange={setScenario} />
+              </div>
+              {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setForkError(''); setScenario(null); setStep('input') }}
+                  disabled={forking}
+                  className="text-xs text-ink-faint underline hover:text-ink-soft disabled:opacity-50"
+                >
+                  返回重写
+                </button>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setForkOpen(false)} disabled={forking} className="rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft disabled:opacity-50">取消</button>
+                  <button type="button" onClick={() => void forkConfirmed()} disabled={forking} data-testid="fork-confirm" className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '创建中…' : '确认，让这条时间线开始'}</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import type {
   DialogueDetail,
   PersonFocus,
   ForkScenario,
+  ForkScenarioInput,
   WorldEventItem,
   WorldSnapshot,
   WorldStreamEvent,
@@ -13,6 +14,7 @@ import LocationPanel from '../components/world/LocationPanel'
 import WorldEventFeed from '../components/world/WorldEventFeed'
 import PersonDrawer from '../components/world/PersonDrawer'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
+import ForkCompareHint from '../components/world/ForkCompareHint'
 import ChapterPanel from '../components/world/ChapterPanel'
 import ScenePanel from '../components/world/ScenePanel'
 import LifePanel from '../components/world/LifePanel'
@@ -83,6 +85,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [focusRefresh, setFocusRefresh] = useState(0)
   const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; timelineId: string; detail: DialogueDetail | null } | null>(null)
   const [actionError, setActionError] = useState('')
+  const [forkHint, setForkHint] = useState<{ sourceId: string; newId: string } | null>(null)
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [sceneOpen, setSceneOpen] = useState(false)
   const [personaUnread, setPersonaUnread] = useState(0)
@@ -325,7 +328,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     }
   }
 
-  const handleFork = async (scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>): Promise<boolean> => {
+  const handleFork = async (scenario: ForkScenarioInput): Promise<boolean> => {
     if (!timelineId) return false
     const sourceTimelineId = timelineId
     setActionError('')
@@ -335,11 +338,18 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
       const fork = await worldsApi.fork(worldId, sourceTimelineId, requestId, scenario)
       forkRequestIdRef.current = null
       if (activeTimelineRef.current === sourceTimelineId) selectTimeline(fork.id)
+      setForkHint({ sourceId: sourceTimelineId, newId: fork.id })
       return true
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Fork 失败')
       return false
     }
+  }
+
+  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库 */
+  const handleForkPreview = async (whatIf: string): Promise<ForkScenario> => {
+    if (!timelineId) throw new Error('尚未选择时间线')
+    return worldsApi.forkPreview(worldId, timelineId, whatIf)
   }
 
   const handleArchive = async (tid: string) => {
@@ -414,6 +424,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   currentTimelineId={timelineId ?? snapshot.currentTimelineId}
                   onSwitch={selectTimeline}
                   onFork={handleFork}
+                  onPreview={handleForkPreview}
                   onArchive={handleArchive}
                   writeLocked={evidenceReadonly}
                   onSplitView={() => navigate(`/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(timelineId ?? snapshot.currentTimelineId)}`)}
@@ -450,6 +461,11 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
           </p>
         )}
         <EvidenceNotice evidence={snapshot.evidence} />
+        {forkHint && (
+          <div className="mt-1.5">
+            <ForkCompareHint worldId={worldId} sourceId={forkHint.sourceId} newId={forkHint.newId} onDismiss={() => setForkHint(null)} />
+          </div>
+        )}
         {actionError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">{actionError}</p>}
       </div>
 
