@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { objectFootprint, type EditOperation, type VoxelCoord } from '@possibility/voxel-contract'
+import type { Assets } from './assets'
 
 interface Effect { update(dt: number): boolean; dispose(): void }
 
@@ -11,6 +12,8 @@ const MAX_FRAGMENTS = 96
 export class BuildFeedback {
   private effects: Effect[] = []
   private ghostGroup: THREE.Group | null = null
+  private assetGhost: THREE.Group | null = null
+  private assetSelection: THREE.Box3Helper | null = null
   private hoverMesh: THREE.Mesh | null = null
   private fragmentPoints: THREE.Points
   private fragmentPos = new Float32Array(MAX_FRAGMENTS * 3)
@@ -18,7 +21,7 @@ export class BuildFeedback {
   private fragmentLife = new Float32Array(MAX_FRAGMENTS)
   private fragmentHead = 0
 
-  constructor(private scene: THREE.Scene) {
+  constructor(private scene: THREE.Scene, private assets?: Assets) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(this.fragmentPos, 3))
     this.fragmentPoints = new THREE.Points(geo, new THREE.PointsMaterial({
@@ -129,6 +132,80 @@ export class BuildFeedback {
     return this.ghostGroup !== null
   }
 
+  /**
+   * S2b 资产放置 ghost(F1):半透明原型克隆 + footprint 占地指示;
+   * 合法青绿/非法红。静态呈现——reduced-motion 下无额外动画(N3)。
+   */
+  showAssetGhost(assetId: string, footprint: [number, number], anchor: VoxelCoord, rotation: 0 | 1 | 2 | 3, valid: boolean): void {
+    this.dismissAssetGhost()
+    const prototype = this.assets?.getPrototype(assetId)
+    if (!prototype) return
+    const tint = valid ? 0x6ee7a0 : 0xef4444
+    const group = new THREE.Group()
+    const clone = prototype.clone(true)
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const material = (Array.isArray(child.material) ? child.material[0] : child.material).clone()
+        material.transparent = true
+        material.opacity = 0.55
+        if (!valid && 'color' in material) (material as THREE.MeshStandardMaterial).color.set(tint)
+        child.material = material
+        child.castShadow = false
+        child.receiveShadow = false
+      }
+    })
+    clone.position.set(anchor.x, anchor.y, anchor.z)
+    clone.rotation.y = rotation * Math.PI / 2
+    group.add(clone)
+    // footprint 占地指示(奇数旋转 w/d 互换,与 assetFootprintCells 同规则)
+    const [w, d] = rotation % 2 === 0 ? footprint : [footprint[1], footprint[0]]
+    const pad = new THREE.Mesh(
+      new THREE.BoxGeometry(w, 0.08, d),
+      new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.35, depthWrite: false }),
+    )
+    pad.position.set(anchor.x + w / 2, anchor.y + 0.04, anchor.z + d / 2)
+    group.add(pad)
+    this.assetGhost = group
+    this.scene.add(group)
+  }
+
+  dismissAssetGhost(): void {
+    if (!this.assetGhost) return
+    this.scene.remove(this.assetGhost)
+    this.assetGhost.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose()
+        ;(Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => m.dispose())
+      }
+    })
+    this.assetGhost = null
+  }
+
+  /** S2b 资产选中高亮(F2):实例包围盒描边;null 清除 */
+  setAssetSelected(placementId: string | null): void {
+    if (this.assetSelection) {
+      this.scene.remove(this.assetSelection)
+      this.assetSelection.dispose()
+      this.assetSelection = null
+    }
+    if (!placementId || !this.assets) return
+    const info = this.assets.instanceInfo(placementId)
+    const matrix = this.assets.instanceMatrixOf(placementId)
+    const prototype = info ? this.assets.getPrototype(info.assetId) : undefined
+    if (!matrix || !prototype) return
+    const box = new THREE.Box3().setFromObject(prototype).applyMatrix4(matrix)
+    this.assetSelection = new THREE.Box3Helper(box, 0xfacc15)
+    this.scene.add(this.assetSelection)
+  }
+
+  /** 资产 ghost / 选中框是否展示中（e2e 探针） */
+  get assetGhostActive(): boolean {
+    return this.assetGhost !== null
+  }
+  get assetSelectionActive(): boolean {
+    return this.assetSelection !== null
+  }
+
   update(dt: number): void {
     this.effects = this.effects.filter((e) => e.update(dt))
     let anyAlive = false
@@ -147,6 +224,8 @@ export class BuildFeedback {
 
   dispose(): void {
     this.dismissGhost()
+    this.dismissAssetGhost()
+    this.setAssetSelected(null)
     if (this.hoverMesh) {
       this.scene.remove(this.hoverMesh)
       this.hoverMesh.geometry.dispose()

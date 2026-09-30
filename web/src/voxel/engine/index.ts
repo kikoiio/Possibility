@@ -1,5 +1,5 @@
 import {
-  createBlockRegistry,
+  createBlockRegistry, ensureAssetPlacementIds,
   type BlockRegistry, type EditResult, type SectionKey, type StylePackRef, type VoxelDocument,
 } from '@possibility/voxel-contract'
 import * as THREE from 'three'
@@ -125,6 +125,8 @@ export class VoxelEngine {
 
   loadDocument(doc: VoxelDocument): void {
     if (!this.registry) throw new Error('loadAssets must be called before loadDocument')
+    // S2b:旧存档摆放无 id,加载边界幂等补齐(ops 按 id 寻址的前置)
+    doc = ensureAssetPlacementIds(doc)
     this.cameraRig.setMode('orbit') // 文档重载:重置回上帝视角(S2b)
     this.weather?.dispose()
     this.residents?.dispose()
@@ -149,8 +151,8 @@ export class VoxelEngine {
       () => { const t = this.cameraRig.state.target; return { x: t.x, y: t.y, z: t.z } },
     )
     this.residents = new ResidentRenderer(this.renderer.scene, this.world, this.registry)
-    this.picker = new Picker(this.world)
-    this.feedback = new BuildFeedback(this.renderer.scene)
+    this.picker = new Picker(this.world, this.assets)
+    this.feedback = new BuildFeedback(this.renderer.scene, this.assets)
     this.registerLightEmitters()
   }
 

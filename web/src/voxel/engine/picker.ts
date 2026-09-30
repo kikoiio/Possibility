@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { Assets } from './assets'
 import type { WorldModel } from './world-model'
 
 export interface VoxelPick { at: VoxelCoord; face: { x: number; y: number; z: number } }
@@ -29,7 +30,22 @@ function rayBoxEntry(ray: THREE.Ray, min: THREE.Vector3, max: THREE.Vector3): nu
 
 /** 射线拾取：体素 DDA（格子 + 面朝向）与物体 id 反查（F15/F16 的地基） */
 export class Picker {
-  constructor(private world: WorldModel) {}
+  private readonly raycaster = new THREE.Raycaster()
+  constructor(private world: WorldModel, private assets?: Assets) {}
+
+  /** S2b GLB 实例拾取(F2):raycast 资产层 InstancedMesh,最近命中反查 placementId */
+  pickAsset(ray: THREE.Ray): string | null {
+    if (!this.assets) return null
+    this.raycaster.ray.copy(ray)
+    const hits = this.raycaster.intersectObject(this.assets.object, true)
+    for (const hit of hits) {
+      if (hit.object instanceof THREE.InstancedMesh && hit.instanceId !== undefined) {
+        const placementId = this.assets.placementIdAt(hit.object, hit.instanceId)
+        if (placementId) return placementId
+      }
+    }
+    return null
+  }
 
   /** Amanatides–Woo DDA：命中第一个非空气格，返回格子与入射面 */
   pickVoxel(ray: THREE.Ray): VoxelPick | null {
