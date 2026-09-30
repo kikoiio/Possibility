@@ -7,6 +7,7 @@ import { PlatformGate } from './bridge/platform-gate'
 import { buildFixtureWorld, buildTerrainFixtureWorld } from './fixture'
 import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
+import { planEditsViaApi as devPlanEdits } from './plan-edits'
 
 /** e2e 探针：最近的产品交互事件（居民 / 地点 / 空间导航） */
 interface InteractionEvent { kind: string; detail: string }
@@ -29,20 +30,6 @@ interface WorldProbe {
 }
 declare global {
   interface Window { __voxelInteractions?: InteractionEvent[]; __voxelPerf?: PerfProbe; __voxelWorld?: WorldProbe }
-}
-
-/** 开发页 AI 规划器：直连 /api/voxel/edit-plan（e2e 里 stub） */
-async function devPlanEdits(engine: VoxelEngine, intent: string): Promise<EditOperation[]> {
-  const doc = engine.world?.doc
-  if (!doc) throw new Error('世界尚未加载')
-  const res = await fetch('/api/voxel/edit-plan', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ requestId: `dev-${Date.now()}`, intent, document: serialize(doc) }),
-  })
-  const body = await res.json().catch(() => ({})) as { ops?: EditOperation[]; error?: string }
-  if (!res.ok || !body.ops) throw new Error(body.error ?? `规划失败（${res.status}）`)
-  return body.ops
 }
 
 /**

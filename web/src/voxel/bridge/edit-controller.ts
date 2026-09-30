@@ -45,7 +45,8 @@ export class EditController {
       this.opts.onRejected?.(issues)
       return { ok: false, issues }
     }
-    const issues = validateEdit(doc, ops)
+    // S2b:清单可用时摆放 op 走严格校验(assetId 存在性/footprint)
+    const issues = validateEdit(doc, ops, undefined, this.engine.assetsManifest ?? undefined)
     if (issues.length > 0) {
       this.opts.onRejected?.(issues)
       return { ok: false, issues }
@@ -78,6 +79,12 @@ export class EditController {
         case 'fill':
           feedback.playPlace(op.from)
           break
+        case 'place-asset':
+        case 'move-asset':
+          feedback.playPlace(op.anchor)
+          break
+        case 'remove-asset':
+          break // 移除由 UI 自身反馈
       }
     }
   }

@@ -73,6 +73,11 @@ export class VoxelEngine {
   private tmpReflect = new THREE.Color()
   private assetManifest: AssetManifest | null = null
 
+  /** S2b:已加载的全局资产清单(编辑面板与摆放校验用);清单不可用时为 null */
+  get assetsManifest(): AssetManifest | null {
+    return this.assetManifest
+  }
+
   get underwaterStrength(): number {
     return this.underwaterStrengthValue
   }
