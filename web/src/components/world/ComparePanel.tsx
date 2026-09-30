@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { lifeApi } from '../../api/client'
 import type { TimelineInfo } from '../../api/types'
 
@@ -24,6 +25,7 @@ interface Comparison {
 }
 
 export default function ComparePanel({ worldId, currentTimelineId, timelines, onClose }: Props) {
+  const navigate = useNavigate()
   const [left, setLeft] = useState(currentTimelineId)
   const currentParentId = timelines.find(t => t.id === currentTimelineId)?.parentTimelineId
   const comparisonTarget = (currentParentId && timelines.some(t => t.id === currentParentId)
@@ -36,7 +38,7 @@ export default function ComparePanel({ worldId, currentTimelineId, timelines, on
   const label = (id: string) => timelines.find(t => t.id === id)?.parentTimelineId ? '分叉' : '主线'
   const fmt = (value: string | null | undefined) => value ? value.slice(0, 16).replace('T', ' ') : '未知'
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4" onClick={onClose}><section className="max-h-[84vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-ink-line bg-paper p-5 shadow-xl" onClick={e => e.stopPropagation()}>
-    <div className="flex items-center justify-between"><div><h2 className="font-story text-lg text-ink">两种人生</h2><p className="mt-1 text-xs text-ink-faint">这里展示记录差异，不把差异冒充成因果证明。</p></div><button onClick={onClose} className="text-xs text-ink-faint">关闭</button></div>
+    <div className="flex items-center justify-between"><div><h2 className="font-story text-lg text-ink">两种人生</h2><p className="mt-1 text-xs text-ink-faint">这里展示记录差异，不把差异冒充成因果证明。</p></div><div className="flex items-center gap-2"><button data-testid="compare-split-entry" disabled={left === right} onClick={() => navigate(`/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`)} className="rounded-full border border-ink-line px-3 py-1 text-xs text-ink-soft hover:bg-paper-deep disabled:text-ink-faint">分屏查看</button><button onClick={onClose} className="text-xs text-ink-faint">关闭</button></div></div>
     <div className="mt-4 grid grid-cols-2 gap-2"><label className="text-xs text-ink-faint">左侧<select value={left} onChange={e => setLeft(e.target.value)} className="mt-1 block w-full rounded-lg border border-ink-line bg-sheet px-2 py-1.5 text-xs text-ink">{timelines.map(t => <option key={t.id} value={t.id}>{label(t.id)} · {t.simNow.slice(0,16).replace('T',' ')}</option>)}</select></label><label className="text-xs text-ink-faint">右侧<select value={right} onChange={e => setRight(e.target.value)} className="mt-1 block w-full rounded-lg border border-ink-line bg-sheet px-2 py-1.5 text-xs text-ink">{timelines.map(t => <option key={t.id} value={t.id}>{label(t.id)} · {t.simNow.slice(0,16).replace('T',' ')}</option>)}</select></label></div>
     {left === right && <p className="py-12 text-center text-sm text-ink-faint">请选择两条不同的时间线。</p>}
     {error && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}

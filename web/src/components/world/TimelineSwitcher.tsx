@@ -8,10 +8,12 @@ interface Props {
   onFork: (scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>) => Promise<boolean>
   onArchive: (timelineId: string) => void
   writeLocked?: boolean
+  /** S1 分屏入口:活跃线 ≥2 时可点,否则置灰提示先分叉 */
+  onSplitView?: () => void
 }
 
 /** 时间线切换器：列表 + Fork 入口（活跃线上限 3）+ 归档 */
-export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onArchive, writeLocked = false }: Props) {
+export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onArchive, writeLocked = false, onSplitView }: Props) {
   const [open, setOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
   const [whatIf, setWhatIf] = useState('')
@@ -101,7 +103,21 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
               </li>
             ))}
           </ul>
-          <div className="mt-2 border-t border-ink-line/60 pt-2">
+          <div className="mt-2 space-y-1 border-t border-ink-line/60 pt-2">
+            {onSplitView && (
+              <button
+                onClick={() => {
+                  if (active.length < 2) return
+                  onSplitView()
+                  setOpen(false)
+                }}
+                disabled={active.length < 2}
+                data-testid="split-view-entry"
+                className="w-full rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep disabled:text-ink-faint disabled:hover:bg-transparent"
+              >
+                {active.length < 2 ? '分屏比较（先创造一条平行宇宙）' : '分屏比较两条时间线'}
+              </button>
+            )}
             <button
               onClick={() => {
                 setOpen(false)

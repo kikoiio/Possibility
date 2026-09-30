@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { publicApi, subscribeWorldStream, worldsApi, personaApi } from '../api/client'
 import type {
   DialogueDetail,
@@ -61,6 +61,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const api = readonly ? publicApi : worldsApi
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const timelineId = searchParams.get('timeline')
   const activeTimelineRef = useRef<string | null>(timelineId)
   const streamGenerationRef = useRef(0)
@@ -415,6 +416,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   onFork={handleFork}
                   onArchive={handleArchive}
                   writeLocked={evidenceReadonly}
+                  onSplitView={() => navigate(`/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(timelineId ?? snapshot.currentTimelineId)}`)}
                 />
                 {(!evidenceReadonly || running) && <button
                   onClick={handlePauseResume}
