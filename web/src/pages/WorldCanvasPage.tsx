@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearToken, lifeApi, mapApi, publicApi, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type { SceneDocument, SceneDocumentV2, SceneMode, SceneOperation, ScenePreviewResult } from '@possibility/scene-contract'
 import type { SceneCamera } from '../scene/renderer/WorldCanvasRenderer'
-import type { WorldSnapshot } from '../api/types'
+import type { TimelineComparison, TimelineInfo, WorldSnapshot } from '../api/types'
 import { applySceneOperations, contemporaryTheme } from '@possibility/scene-contract'
 import { WorldCanvasViewport } from '../components/scene/WorldCanvasViewport'
 import { WorldModeSwitcher } from '../components/scene/WorldModeSwitcher'
@@ -21,7 +21,10 @@ import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
 import VoxelViewport from '../voxel/VoxelViewport'
+import type { OrbitPose } from '../voxel/engine'
 import { isVoxelEnabled, parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
+import AlignedTimeline from '../components/world/AlignedTimeline'
+import { buildAlignedAxis, filterAt, type AxisMarker } from '../world/alignedTimeline'
 import WorldView from './WorldView'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 
@@ -36,7 +39,18 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [otherSnapshot, setOtherSnapshot] = useState<WorldSnapshot | null>(null)
   const [comparisonCamera, setComparisonCamera] = useState<SceneCamera | null>(null)
   const [compareSummary, setCompareSummary] = useState<{ facts: number; states: number; events: number } | null>(null)
-  const [mode, setMode] = useState<SceneMode>('life'); const [selected, setSelected] = useState<string | null>(null); const [drawer, setDrawer] = useState(false)
+  // S1 分屏:右线显式选择(URL ?right= 驱动)、完整对照数据、拖档对齐时刻、相机联动
+  const [rightTimelineId, setRightTimelineId] = useState<string | null>(() => search.get('right'))
+  const [comparison, setComparison] = useState<TimelineComparison | null>(null)
+  const [scrubAt, setScrubAt] = useState<string | null>(null)
+  const [cameraLinked, setCameraLinked] = useState(true)
+  const [sharedPose, setSharedPose] = useState<OrbitPose | null>(null)
+  const [splitWalk, setSplitWalk] = useState<{ left: boolean; right: boolean }>({ left: false, right: false })
+  const [smallSide, setSmallSide] = useState<'left' | 'right'>('left')
+  const [selectedSplitEvent, setSelectedSplitEvent] = useState<string | null>(null)
+  const splitEventEls = useRef(new Map<string, HTMLElement>())
+  const rightScope = useRef<RequestScopeController | null>(null)
+  const [mode, setMode] = useState<SceneMode>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life'); const [selected, setSelected] = useState<string | null>(null); const [drawer, setDrawer] = useState(false)
   const [preview, setPreview] = useState<RevisionPreview | null>(null); const [instruction, setInstruction] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   const [history, setHistory] = useState<SceneDocument[]>([]); const [future, setFuture] = useState<SceneDocument[]>([]); const [editingNotice, setEditingNotice] = useState(false)
   const [revisionList, setRevisionList] = useState<SceneRevisionItem[] | null>(null)
@@ -109,26 +123,67 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }, [snapshot?.currentTimelineId, worldId, timelineId, readonly, guest])
 
   useEffect(() => {
-    if (mode !== 'possibility' || !snapshot) { setOtherSnapshot(null); setCompareSummary(null); return }
+    if (mode !== 'possibility' || !snapshot) {
+      setOtherSnapshot(null); setComparison(null); setCompareSummary(null)
+      setScrubAt(null); setSplitWalk({ left: false, right: false })
+      return
+    }
     const currentId = snapshot.currentTimelineId
-    const target = snapshot.timelines.find(item => item.id !== currentId)
-    if (!target) { setOtherSnapshot(null); setCompareSummary(null); return }
+    const target = snapshot.timelines.find(item => item.id === rightTimelineId && item.id !== currentId)
+      ?? snapshot.timelines.find(item => item.id !== currentId)
+    if (!target) { setOtherSnapshot(null); setComparison(null); setCompareSummary(null); return }
+    if (target.id !== rightTimelineId) setRightTimelineId(target.id) // 缺省回退:第一条其他线
+    // 右侧独立 RequestScopeController:切线/失败不影响左侧通道(F2 隔离)
+    const scopes = rightScope.current ?? (rightScope.current = new RequestScopeController({ worldId, timelineId: target.id, spaceId: 'exterior' }))
+    scopes.update({ worldId, timelineId: target.id, spaceId: 'exterior' })
+    const request = scopes.create()
     let active = true
     void Promise.all([
       worldsApi.snapshot(worldId, target.id),
       lifeApi.compare(worldId, currentId, target.id),
-    ]).then(([other, raw]) => {
-      if (!active || other.currentTimelineId !== target.id) return
+    ]).then(([other, result]) => {
+      if (!active || !scopes.accepts(request.scope) || other.currentTimelineId !== target.id) return
       setOtherSnapshot(other)
-      const comparison = raw as { differences?: { facts?: unknown[]; states?: unknown[]; events?: { shared?: unknown[]; leftOnly?: unknown[]; rightOnly?: unknown[] } } }
+      setComparison(result)
       setCompareSummary({
-        facts: comparison.differences?.facts?.length ?? 0,
-        states: comparison.differences?.states?.length ?? 0,
-        events: (comparison.differences?.events?.leftOnly?.length ?? 0) + (comparison.differences?.events?.rightOnly?.length ?? 0),
+        facts: result.differences.facts.length,
+        states: result.differences.states.length,
+        events: result.differences.events.leftOnly.length + result.differences.events.rightOnly.length,
       })
-    }).catch(e => { if (active) setError(e instanceof Error ? e.message : '时间线对照暂时不可用') })
+    }).catch(e => { if (active && scopes.accepts(request.scope)) setError(e instanceof Error ? e.message : '时间线对照暂时不可用') })
     return () => { active = false }
-  }, [mode, snapshot, worldId])
+  }, [mode, snapshot, worldId, rightTimelineId])
+
+  // 右侧独立 SSE 订阅:右侧事件只驱动右侧 snapshot 刷新(F2 隔离)
+  useEffect(() => {
+    if (mode !== 'possibility' || !otherSnapshot || guest) return
+    const rightId = otherSnapshot.currentTimelineId
+    let active = true
+    let version = otherSnapshot.stateVersion
+    const unsubscribe = subscribeWorldStream(worldId, rightId, event => {
+      if (!active || event.timelineId !== rightId || event.stateVersion <= version) return
+      void worldsApi.snapshot(worldId, rightId).then(next => {
+        if (!active || next.currentTimelineId !== rightId) return
+        version = Math.max(version, next.stateVersion)
+        setOtherSnapshot(current => current?.currentTimelineId === rightId && current.stateVersion < next.stateVersion ? next : current)
+      }).catch(() => {})
+    }, { isPublic: readonly, onError: () => {} })
+    return () => { active = false; unsubscribe() }
+  }, [mode, otherSnapshot?.currentTimelineId, worldId, readonly, guest])
+
+  // URL 驱动:mode/right 状态同步回地址栏(入口深链 ?mode=possibility&right=<id>)
+  useEffect(() => {
+    const params = new URLSearchParams(search)
+    let changed = false
+    if (mode === 'possibility') {
+      if (params.get('mode') !== 'possibility') { params.set('mode', 'possibility'); changed = true }
+      if (rightTimelineId && params.get('right') !== rightTimelineId) { params.set('right', rightTimelineId); changed = true }
+    } else {
+      if (params.has('mode')) { params.delete('mode'); changed = true }
+      if (params.has('right')) { params.delete('right'); changed = true }
+    }
+    if (changed) setSearch(params, { replace: true })
+  }, [mode, rightTimelineId, search, setSearch])
 
   const overlay = useMemo(() => snapshot ? buildSceneOverlay(snapshot, snapshot.currentTimelineId) : null, [snapshot])
   const otherOverlay = useMemo(() => otherSnapshot ? buildSceneOverlay(otherSnapshot, otherSnapshot.currentTimelineId) : null, [otherSnapshot])
@@ -137,6 +192,41 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   // 多空间体素包（T32）：走 GuestWorldMap 的体素模式（外景 ↔ 主楼）
   // 体素形状的文档没有 2D 回退可渲染，故不受 ?voxel 开关限制；开关只决定 2D 场景是否改用体素视口
   const voxelSpaces = useMemo(() => parseVoxelSpaces(multiScene ?? scene), [multiScene, scene])
+  // S1 分屏:轴模型(纯函数) + 拖档截断;拖档只过滤事件流,视口始终渲染当前状态
+  const axis = useMemo(() => comparison ? buildAlignedAxis(comparison) : null, [comparison])
+  const scrubbed = useMemo(() => axis && scrubAt ? filterAt(axis, scrubAt) : null, [axis, scrubAt])
+  const linkActive = cameraLinked && !splitWalk.left && !splitWalk.right
+  const fmtSim = (iso: string) => new Date(iso).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const splitEvents = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
+    if (!snap) return []
+    let list = snap.events
+    if (scrubbed) {
+      const ids = new Set([...scrubbed.shared, ...(side === 'left' ? scrubbed.left : scrubbed.right)].map(m => m.eventId))
+      list = list.filter(event => ids.has(event.id))
+    }
+    return list.slice(-5)
+  }
+  const handleSelectMarker = useCallback((marker: AxisMarker) => {
+    const side = marker.side === 'right' ? 'right' : 'left'
+    const key = `${side}:${marker.eventId}`
+    setSelectedSplitEvent(key)
+    const reduced = typeof window !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    splitEventEls.current.get(key)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+  }, [])
+  const swapSplit = () => {
+    if (!otherSnapshot) return
+    setRightTimelineId(snapshot!.currentTimelineId)
+    const params = new URLSearchParams(search)
+    params.set('timeline', otherSnapshot.currentTimelineId)
+    setSearch(params)
+  }
+  const closeSplit = (side: 'left' | 'right') => {
+    const params = new URLSearchParams(search)
+    if (side === 'left' && otherSnapshot) params.set('timeline', otherSnapshot.currentTimelineId)
+    params.delete('mode'); params.delete('right')
+    setSearch(params)
+    setMode('life')
+  }
   async function requestLegacyPreview() {
     setBusy(true); setError('')
     try { setLegacyPreview(await worldSceneApi.legacyPreview(worldId)) }
@@ -222,6 +312,132 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
   function toggleLock() { if (selected && scene) void submitOperation({ type: 'lock_object', objectId: selected, locked: !scene.lockedObjectIds.includes(selected) }) }
 
+  // S1 分屏渲染(体素):左右各绑一线,标题/时钟/事件流各归各线,相机联动可开关
+  const sideInfo = (snap: WorldSnapshot | null): TimelineInfo | null =>
+    snap ? snap.timelines.find(t => t.id === snap.currentTimelineId) ?? null : null
+  const renderSplitSideHeader = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
+    const info = sideInfo(snap)
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <p className="font-medium text-[#405447]" data-testid={`split-title-${side}`}>
+          {side === 'left' ? '原来的发展' : '另一种发展'} · {info ? (info.parentTimelineId ? '分叉' : '主线') : '…'}
+          {info?.forkScenario?.whatIf ? <span className="ml-1 font-normal text-[#687a6b]">如果{info.forkScenario.whatIf}</span> : null}
+        </p>
+        <div className="flex items-center gap-2">
+          {scrubAt && snap && scrubAt < snap.simNow && (
+            <span data-testid={`split-current-badge-${side}`} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800">视口为当前状态</span>
+          )}
+          <span data-testid={`split-clock-${side}`} className="text-[#849184]">{snap ? fmtSim(snap.simNow) : '读取中…'}</span>
+          <button type="button" data-testid={`split-close-${side}`} onClick={() => closeSplit(side)} className="rounded-full border border-[#d7ded3] bg-white px-2 py-0.5 text-[10px] text-[#536558]">关闭分屏</button>
+        </div>
+      </div>
+    )
+  }
+  const renderSplitEvents = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
+    const items = splitEvents(side, snap)
+    return (
+      <ul data-testid={`split-events-${side}`} className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-white/70 px-3 py-2 text-[11px] text-[#526558]">
+        {items.length === 0 && <li className="text-[#849184]">这段时间没有已记录的事件。</li>}
+        {items.map(event => {
+          const key = `${side}:${event.id}`
+          return (
+            <li key={event.id}
+              ref={(el) => { if (el) splitEventEls.current.set(key, el); else splitEventEls.current.delete(key) }}
+              data-testid="split-event" data-event-id={event.id}
+              className={`rounded px-1 py-0.5 ${selectedSplitEvent === key ? 'bg-amber-100' : ''}`}>
+              <span className="font-medium">{event.title}</span>
+              <span className="ml-1 text-[#849184]">{event.simTime.slice(0, 16).replace('T', ' ')}</span>
+            </li>
+          )
+        })}
+      </ul>
+    )
+  }
+  const renderSplitView = () => {
+    const rightChoices = snapshot!.timelines.filter(t => t.id !== snapshot!.currentTimelineId)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="split-view">
+        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
+          <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-left">
+            {renderSplitSideHeader('left', snapshot)}
+            <div className="min-h-0 flex-1">
+              <VoxelViewport document={voxelDoc!} overlay={overlay} instanceId="left" probePrimary
+                cameraPose={linkActive ? sharedPose : undefined}
+                onCameraChange={setSharedPose}
+                onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, left: m === 'walk' }))} />
+            </div>
+            {renderSplitEvents('left', snapshot)}
+          </section>
+          <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-right">
+            {renderSplitSideHeader('right', otherSnapshot)}
+            <div className="flex items-center gap-2 text-xs">
+              <select aria-label="右侧时间线" data-testid="split-right-selector" value={otherSnapshot?.currentTimelineId ?? rightTimelineId ?? ''}
+                onChange={(e) => setRightTimelineId(e.target.value)}
+                className="max-w-64 rounded-full border border-[#d7ded3] bg-white/90 px-3 py-1.5 text-xs text-[#536558]">
+                {rightChoices.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.parentTimelineId ? '分叉' : '主线'} · {t.simNow.slice(0, 16).replace('T', ' ')}{t.forkScenario?.whatIf ? ` · 如果${t.forkScenario.whatIf}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button type="button" data-testid="split-swap" onClick={swapSplit} disabled={!otherSnapshot} className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558] disabled:opacity-50">⇄ 互换左右</button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {otherSnapshot
+                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} instanceId="right"
+                    cameraPose={linkActive ? sharedPose : undefined}
+                    onCameraChange={setSharedPose}
+                    onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, right: m === 'walk' }))} />
+                : <div className="grid h-full min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+            </div>
+            {renderSplitEvents('right', otherSnapshot)}
+          </section>
+        </div>
+        {axis && <AlignedTimeline axis={axis} at={scrubAt} onScrub={setScrubAt} onSelect={handleSelectMarker} />}
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs text-[#526558]">
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" data-testid="split-camera-link" checked={cameraLinked} onChange={(e) => setCameraLinked(e.target.checked)} />
+            相机联动
+          </label>
+          {(splitWalk.left || splitWalk.right) && <span data-testid="split-walk-notice" className="text-amber-700">第一视角下相机联动已暂停（两线的「我」不在同一位置）</span>}
+          <span className="text-[#849184]">联动开启时，一侧的旋转/缩放/平移同步到另一侧</span>
+        </div>
+        {comparison && comparison.limitations.length > 0 && (
+          <ul data-testid="split-limitations" className="space-y-0.5 text-[10px] text-[#849184]">
+            {comparison.limitations.map((x, i) => <li key={i}>· {x}</li>)}
+          </ul>
+        )}
+      </div>
+    )
+  }
+  // S1 窄屏降级:单视口 + 左右切换,入口提示保留(N4)
+  const renderSmallSplit = () => {
+    const snap = smallSide === 'left' ? snapshot : otherSnapshot
+    const info = sideInfo(snap)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2" data-testid="split-small">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <p className="font-medium text-[#405447]" data-testid="split-small-title">
+            {smallSide === 'left' ? '原来的发展' : '另一种发展'} · {info ? (info.parentTimelineId ? '分叉' : '主线') : '…'}
+            <span className="ml-1 font-normal text-[#849184]">{snap ? fmtSim(snap.simNow) : '读取中…'}</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" data-testid="split-small-toggle" onClick={() => setSmallSide(s => (s === 'left' ? 'right' : 'left'))} disabled={!otherSnapshot}
+              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558] disabled:opacity-50">
+              看{smallSide === 'left' ? '另一种' : '原来的'}发展
+            </button>
+            <button type="button" data-testid="split-close-small" onClick={() => closeSplit(smallSide)} className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558]">关闭分屏</button>
+          </div>
+        </div>
+        {snap
+          ? <VoxelViewport document={voxelDoc!} overlay={smallSide === 'left' ? overlay : otherOverlay}
+              instanceId={smallSide === 'left' ? 'left' : 'right'} probePrimary={smallSide === 'left'} />
+          : <div className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+        <p className="text-[10px] text-[#849184]">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
+      </div>
+    )
+  }
+
   if (search.get('view') === 'text') return <div className="h-full"><button onClick={() => { search.delete('view'); setSearch(search, { replace: true }) }} className="m-3 rounded-full border bg-white px-4 py-2 text-sm">返回世界画布</button><WorldView worldId={worldId} readonly={readonly && !guest} /></div>
   if (mapFallback && snapshot) return <div className="flex min-h-full items-center bg-[#eef0e7] p-4"><SceneFallbackView message={error || '地图资源暂时不可用。'} onRetry={() => void read()} onReturn={() => { search.set('view', 'text'); setSearch(search) }} /></div>
   if (error && !snapshot) return <div className="flex min-h-full items-center bg-[#eef0e7] p-4"><SceneFallbackView message={error} onRetry={() => void read()} onReturn={() => { search.set('view', 'text'); setSearch(search) }} /></div>
@@ -275,7 +491,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onApply={applyPreview} onCancel={() => setPreview(null)} busy={busy} />}
     {legacyPreview && <ScenePreviewBar summary={legacyPreview.explanation} warnings={legacyPreview.warnings} onApply={confirmLegacy} onCancel={() => setLegacyPreview(null)} busy={busy} />}
     <div className="flex min-h-[500px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3">
-      {mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : voxelDoc ? <VoxelViewport document={voxelDoc} overlay={overlay} /> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
+      {mode === 'possibility' && voxelDoc && !isSmall ? renderSplitView() : mode === 'possibility' && voxelDoc ? renderSmallSplit() : mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : voxelDoc ? <VoxelViewport document={voxelDoc} overlay={overlay} /> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
       {!readonly && mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{new Date(snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })}</span></div>}
       {mode === 'create' && !isSmall && <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="space-y-2"><SceneObjectInspector scene={shown} selectedId={selected} catalog={contemporaryTheme} /><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestEditPreview} busy={busy} error="" /></div><div className="flex items-center gap-2"><SceneLockControls locked={!!selected && shown.lockedObjectIds.includes(selected)} onToggle={toggleLock} /><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-3 text-sm text-[#42594a]">素材</button>{activeAssetId && <button onClick={() => setActiveAssetId(null)} className="text-xs text-[#617766]">取消放置</button>}</div></div>}
       {mode === 'possibility' && <button onClick={() => { search.set('view', 'text'); setSearch(search) }} className="self-start rounded-full border border-[#d6ddd3] bg-white px-4 py-2 text-sm text-[#47604f]">打开发展对照与分叉条件</button>}
