@@ -33,10 +33,13 @@ export function buildAlignedAxis(comparison: TimelineComparison): AlignedAxis {
     ? cutoffs.reduce((a, b) => (a <= b ? a : b))
     : null
   const { shared, leftOnly, rightOnly } = comparison.differences.events
+  // 防御:缺 simTime 的事件不上轴(旧数据/异常响应不得拖垮页面)
+  const markerOf = (e: { id: string; simTime?: string; title?: string }, side: AxisMarker['side']): AxisMarker[] =>
+    typeof e.simTime === 'string' && e.simTime ? [{ eventId: e.id, simTime: e.simTime, title: e.title ?? '', side }] : []
   const markers: AxisMarker[] = [
-    ...shared.map((e): AxisMarker => ({ eventId: e.id, simTime: e.simTime, title: e.title, side: 'shared' })),
-    ...leftOnly.map((e): AxisMarker => ({ eventId: e.id, simTime: e.simTime, title: e.title, side: 'left' })),
-    ...rightOnly.map((e): AxisMarker => ({ eventId: e.id, simTime: e.simTime, title: e.title, side: 'right' })),
+    ...shared.flatMap((e) => markerOf(e, 'shared')),
+    ...leftOnly.flatMap((e) => markerOf(e, 'left')),
+    ...rightOnly.flatMap((e) => markerOf(e, 'right')),
   ].sort((a, b) => a.simTime.localeCompare(b.simTime)
     || SIDE_ORDER[a.side] - SIDE_ORDER[b.side]
     || a.eventId.localeCompare(b.eventId))

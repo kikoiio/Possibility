@@ -171,6 +171,13 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     return () => { active = false; unsubscribe() }
   }, [mode, otherSnapshot?.currentTimelineId, worldId, readonly, guest])
 
+  // URL 入口深链(同路由导航不重挂载):mode/right 从地址栏同步进状态
+  useEffect(() => {
+    if (search.get('mode') === 'possibility' && mode !== 'possibility') setMode('possibility')
+    const urlRight = search.get('right')
+    if (urlRight && urlRight !== rightTimelineId) setRightTimelineId(urlRight)
+  }, [search])
+
   // URL 驱动:mode/right 状态同步回地址栏(入口深链 ?mode=possibility&right=<id>)
   useEffect(() => {
     const params = new URLSearchParams(search)
