@@ -123,6 +123,18 @@ describe('generateTerrainCells', () => {
     expect(cells.every((cell) => !['wood-log', 'leaves'].includes(cell.block))).toBe(true)
   })
 
+  it('S2b:生成摆放带确定性 id,且同参数幂等;花/灌木不占树柱', () => {
+    const params = fullParams({ river: { enabled: false }, lakes: { enabled: false } })
+    const a = generateTerrain(SIZE, params)
+    const b = generateTerrain(SIZE, params)
+    expect(a.assetPlacements.length).toBeGreaterThan(0)
+    expect(a.assetPlacements.every((placement) => typeof placement.id === 'string' && placement.id.startsWith('ast-terrain-'))).toBe(true)
+    expect(a.assetPlacements.map((placement) => placement.id)).toEqual(b.assetPlacements.map((placement) => placement.id))
+    // 任何两个摆放不占同一柱(validateDocument 互撞规则的前置保障)
+    const columns = a.assetPlacements.map((placement) => `${placement.anchor[0]},${placement.anchor[2]}`)
+    expect(new Set(columns).size).toBe(columns.length)
+  })
+
   it('树格不注册 objectCells(物体数不增)', () => {
     const cells = generateTerrainCells(SIZE, fullParams())
     const doc = writeTerrainCells(createEmptyWorld(SIZE, 'mist-manor', 't'), cells).document

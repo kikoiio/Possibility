@@ -12,6 +12,16 @@ function newObjectId(): string {
   return `obj-${rand}-${objectCounter}`
 }
 
+/** S2b:place-asset 缺省 placementId/seed 的派生——id 随机唯一,seed 由 anchor 确定性派生 */
+function newPlacementId(): string {
+  return newObjectId().replace(/^obj-/, 'ast-')
+}
+function derivedSeed(anchor: VoxelCoord): number {
+  let x = Math.imul(anchor.x + 0x9e37, 0x45d9f3b) ^ Math.imul(anchor.z + 0x51a7, 0x27d4eb2d) ^ Math.imul(anchor.y + 1, 0x165667b1)
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b)
+  return (x ^ (x >>> 16)) | 0
+}
+
 /** 旋转模板偏移（绕 anchor 水平旋转），并归一化使 x/z 最小偏移为 0 */
 export function rotatedOffsets(offsets: VoxelCoord[], rotation: 0 | 90 | 180 | 270): VoxelCoord[] {
   const rotated = offsets.map(({ x, y, z }) => {
@@ -117,6 +127,31 @@ export function applyEdits(doc: VoxelDocument, ops: EditOperation[]): EditResult
         next.locations = next.locations.filter((l) => l.objectId !== object.id)
         next.lockedObjectIds = next.lockedObjectIds.filter((id) => id !== object.id)
         affectedObjects.add(object.id)
+        break
+      }
+      case 'place-asset': {
+        next.assetPlacements = [...(next.assetPlacements ?? []), {
+          id: op.placementId ?? newPlacementId(),
+          assetId: op.assetId,
+          anchor: [op.anchor.x, op.anchor.y, op.anchor.z],
+          rotation: op.rotation,
+          seed: op.seed ?? derivedSeed(op.anchor),
+        }]
+        break
+      }
+      case 'move-asset': {
+        const placements = next.assetPlacements ?? []
+        const target = placements.find((p) => p.id === op.placementId)
+        if (!target) throw new Error(`asset placement not found: ${op.placementId}`)
+        next.assetPlacements = placements.map((p) => (p.id === op.placementId
+          ? { ...p, anchor: [op.anchor.x, op.anchor.y, op.anchor.z], ...(op.rotation !== undefined ? { rotation: op.rotation } : {}) }
+          : p))
+        break
+      }
+      case 'remove-asset': {
+        const placements = next.assetPlacements ?? []
+        if (!placements.some((p) => p.id === op.placementId)) throw new Error(`asset placement not found: ${op.placementId}`)
+        next.assetPlacements = placements.filter((p) => p.id !== op.placementId)
         break
       }
     }

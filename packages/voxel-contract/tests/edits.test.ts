@@ -81,4 +81,60 @@ describe('applyEdits: objects', () => {
     ])
     expect(result.changedSections.sort()).toEqual(['0,0,0', '1,0,0'])
   })
+
+  it('place-asset appends a placement, deriving id and seed when omitted', () => {
+    const doc = world()
+    const result = applyEdits(doc, [{ kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 1 }])
+    const placement = result.document.assetPlacements![0]
+    expect(placement.assetId).toBe('bld-hut-a')
+    expect(placement.anchor).toEqual([4, 1, 4])
+    expect(placement.rotation).toBe(1)
+    expect(placement.id).toMatch(/^ast-/)
+    expect(Number.isInteger(placement.seed)).toBe(true)
+    // 缺省 seed 由 anchor 确定性派生
+    const again = applyEdits(doc, [{ kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 1 }])
+    expect(again.document.assetPlacements![0].seed).toBe(placement.seed)
+    // 原文档不可变
+    expect(doc.assetPlacements).toBeUndefined()
+  })
+
+  it('place-asset honors explicit placementId and seed', () => {
+    const result = applyEdits(world(), [{ kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(1, 1, 1), rotation: 0, placementId: 'ast-x', seed: 7 }])
+    expect(result.document.assetPlacements![0]).toMatchObject({ id: 'ast-x', seed: 7 })
+  })
+
+  it('move-asset updates anchor and rotation, leaving others untouched', () => {
+    const base = applyEdits(world(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 0, placementId: 'ast-a' },
+      { kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(8, 1, 8), rotation: 2, placementId: 'ast-b' },
+    ]).document
+    const moved = applyEdits(base, [{ kind: 'move-asset', placementId: 'ast-a', anchor: at(10, 1, 10), rotation: 3 }])
+    const a = moved.document.assetPlacements!.find((p) => p.id === 'ast-a')!
+    const b = moved.document.assetPlacements!.find((p) => p.id === 'ast-b')!
+    expect(a.anchor).toEqual([10, 1, 10])
+    expect(a.rotation).toBe(3)
+    expect(b.anchor).toEqual([8, 1, 8])
+    expect(b.rotation).toBe(2)
+    // 原地旋转:同 anchor 只改 rotation
+    const rotated = applyEdits(base, [{ kind: 'move-asset', placementId: 'ast-a', anchor: at(4, 1, 4), rotation: 1 }])
+    expect(rotated.document.assetPlacements!.find((p) => p.id === 'ast-a')!.rotation).toBe(1)
+    // 不带 rotation 时保持原朝向
+    const anchorOnly = applyEdits(base, [{ kind: 'move-asset', placementId: 'ast-a', anchor: at(5, 1, 5) }])
+    expect(anchorOnly.document.assetPlacements!.find((p) => p.id === 'ast-a')!.rotation).toBe(0)
+  })
+
+  it('remove-asset removes by placementId', () => {
+    const base = applyEdits(world(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 0, placementId: 'ast-a' },
+      { kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(8, 1, 8), rotation: 0, placementId: 'ast-b' },
+    ]).document
+    const removed = applyEdits(base, [{ kind: 'remove-asset', placementId: 'ast-a' }])
+    expect(removed.document.assetPlacements!.map((p) => p.id)).toEqual(['ast-b'])
+  })
+
+  it('move-asset / remove-asset throw on unknown placementId', () => {
+    const doc = world()
+    expect(() => applyEdits(doc, [{ kind: 'move-asset', placementId: 'nope', anchor: at(0, 0, 0) }])).toThrow(/not found/)
+    expect(() => applyEdits(doc, [{ kind: 'remove-asset', placementId: 'nope' }])).toThrow(/not found/)
+  })
 })

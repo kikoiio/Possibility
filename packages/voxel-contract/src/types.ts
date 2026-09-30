@@ -52,6 +52,8 @@ export interface VoxelObjectCells { objectId: string; cells: VoxelCoord[] }
 
 /** A render-only glTF placement. Missing on legacy documents by design. */
 export interface AssetPlacement {
+  /** 摆放身份(S2b):place-asset 生成;旧存档缺省,由 ensureAssetPlacementIds 幂等补齐 */
+  id?: string
   assetId: string
   anchor: [number, number, number]
   /** Quarter turns clockwise around the vertical axis. */
@@ -149,6 +151,11 @@ export type EditOperation =
   | { kind: 'place-object'; objectType: string; anchor: VoxelCoord; rotation: 0 | 90 | 180 | 270; objectId?: string; label?: string }
   | { kind: 'move-object'; objectId: string; anchor: VoxelCoord }
   | { kind: 'remove-object'; objectId: string }
+  // S2b 资产摆放(F4):GLB 实例的一等公民 op,与方块/物体共用校验-应用管线;
+  // 旋转沿用 AssetPlacement 的 0|1|2|3 四分之一圈制式(勿与 VoxelObject 的角度制混)
+  | { kind: 'place-asset'; assetId: string; anchor: VoxelCoord; rotation: 0 | 1 | 2 | 3; placementId?: string; seed?: number }
+  | { kind: 'move-asset'; placementId: string; anchor: VoxelCoord; rotation?: 0 | 1 | 2 | 3 }  // 原地旋转 = 同 anchor 的移动
+  | { kind: 'remove-asset'; placementId: string }
 
 export interface EditResult {
   document: VoxelDocument           // 应用后的新文档（不可变更新）
@@ -165,6 +172,8 @@ export interface ValidationIssue {
       | 'walk-stairs' | 'walk-gap'
       // S3b 元数据(F6):地形/风格包 meta 形状非法
       | 'invalid-meta'
+      // S2b 资产摆放(F4):assetId 不在清单 / placementId 不存在;占地冲突或悬空
+      | 'unknown-asset' | 'asset-overlap'
   message: string
   at?: VoxelCoord
 }

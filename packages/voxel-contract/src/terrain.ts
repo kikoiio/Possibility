@@ -233,8 +233,15 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
   }
   const rng = mulberry32((seed ^ 0x51a7) | 0)
   const assetPlacements: AssetPlacement[] = []
+  // S2b:摆放带确定性 id;occupied 记录已被占位(树)的柱,花/灌木避让,
+  // 否则 validateDocument(+清单) 会对生成世界自报 asset-overlap
+  const occupied = new Set<string>()
   const push = (assetId: string, x: number, y: number, z: number, index: number) => {
-    assetPlacements.push({ assetId, anchor: [x, y, z], rotation: Math.floor(rng() * 4) as 0 | 1 | 2 | 3, seed: (seed ^ Math.imul(index + 1, 0x9e3779b1)) | 0 })
+    occupied.add(`${x},${z}`)
+    assetPlacements.push({
+      id: `ast-terrain-${index}-${((seed ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0).toString(36)}`,
+      assetId, anchor: [x, y, z], rotation: Math.floor(rng() * 4) as 0 | 1 | 2 | 3, seed: (seed ^ Math.imul(index + 1, 0x9e3779b1)) | 0,
+    })
   }
   let i = 0
   let treeCount = 0
@@ -250,14 +257,14 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
   }
   if (plantsOn) for (let z = 0; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z++) for (let x = 0; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x++) {
     const y = columns.get(`${x},${z}`)
-    if (y === undefined || rng() >= density * 0.65) continue
+    if (y === undefined || occupied.has(`${x},${z}`) || rng() >= density * 0.65) continue
     const flowersOn = params.vegetation?.flowers ?? true
     const assetId = flowersOn && rng() < 0.6 ? 'veg-flower-a' : 'veg-grass-a'
     push(assetId, x, y + 1, z, i++)
   }
   if (params.vegetation?.bushes ?? true) for (let z = 2; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z += 5) for (let x = 2; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x += 5) {
     const y = columns.get(`${x},${z}`)
-    if (y === undefined || rng() >= density * 0.35) continue
+    if (y === undefined || occupied.has(`${x},${z}`) || rng() >= density * 0.35) continue
     push('veg-bush-a', x, y + 1, z, i++)
   }
   return { cells, assetPlacements }

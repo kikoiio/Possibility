@@ -4,6 +4,8 @@
 // 运行时引擎 fetch、脚本直读文件,格式以此处为准。
 // id 前缀约束(veg-/bld-/dec-)由入库脚本强制,此处只做纯形状校验。
 
+import type { AssetPlacement, VoxelCoord, VoxelDocument } from './types'
+
 export type AssetCategory = 'vegetation' | 'building' | 'decoration'
 
 export const ASSET_CATEGORIES: AssetCategory[] = ['vegetation', 'building', 'decoration']
@@ -97,4 +99,47 @@ export function validateAssetManifest(raw: unknown): AssetManifestValidation {
 
   if (issues.length > 0) return { ok: false, issues }
   return { ok: true, manifest: { version: 2, assets } }
+}
+
+// ── S2b 摆放占地与身份(F4)──────────────────────
+
+/**
+ * 摆放占据的格集合:footprint 按 rotation 旋转(奇数旋转 w/d 互换)后平移到 anchor,
+ * y 取 [anchor.y, anchor.y + ceil(height)) 全柱。校验(validation.ts)与 UI 占地指示共用。
+ */
+export function assetFootprintCells(entry: AssetEntry, anchor: VoxelCoord, rotation: 0 | 1 | 2 | 3): VoxelCoord[] {
+  const [w, d] = rotation % 2 === 0 ? entry.footprint : [entry.footprint[1], entry.footprint[0]]
+  const rows = Math.max(1, Math.ceil(entry.height))
+  const cells: VoxelCoord[] = []
+  for (let dy = 0; dy < rows; dy++) {
+    for (let dz = 0; dz < d; dz++) {
+      for (let dx = 0; dx < w; dx++) {
+        cells.push({ x: anchor.x + dx, y: anchor.y + dy, z: anchor.z + dz })
+      }
+    }
+  }
+  return cells
+}
+
+/** 摆放缺省 id 的确定性派生:同 (assetId, anchor, seed, 序号) 必得同 id */
+function derivedPlacementId(placement: AssetPlacement, index: number): string {
+  let x = (placement.seed | 0) ^ Math.imul(placement.anchor[0] + 0x9e37, 0x45d9f3b)
+    ^ Math.imul(placement.anchor[2] + 0x51a7, 0x45d9f3b) ^ Math.imul(placement.anchor[1] + 1, 0x27d4eb2d)
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b)
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b)
+  return `ast-${index}-${((x ^ (x >>> 16)) >>> 0).toString(36)}`
+}
+
+/**
+ * 幂等补齐摆放 id(S2b):有 id 原样保留,无 id 派生确定性 id;
+ * 无需改动时返回原文档引用。旧存档(地形植被无 id)在加载边界调用,零迁移。
+ */
+export function ensureAssetPlacementIds(doc: VoxelDocument): VoxelDocument {
+  if (!doc.assetPlacements || doc.assetPlacements.every((p) => typeof p.id === 'string' && p.id.length > 0)) return doc
+  return {
+    ...doc,
+    assetPlacements: doc.assetPlacements.map((p, index) => (
+      typeof p.id === 'string' && p.id.length > 0 ? p : { ...p, id: derivedPlacementId(p, index) }
+    )),
+  }
 }

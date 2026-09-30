@@ -173,6 +173,8 @@ export function deserialize(raw: string): VoxelDocument {
       const placement = raw as Record<string, unknown>
       assert(typeof placement === 'object' && placement !== null, `assetPlacements[${index}] must be an object`)
       assert(typeof placement.assetId === 'string' && placement.assetId.length > 0, `assetPlacements[${index}].assetId must be non-empty`)
+      assert(placement.id === undefined || (typeof placement.id === 'string' && placement.id.length > 0),
+        `assetPlacements[${index}].id must be a non-empty string when present`)
       assert(Array.isArray(placement.anchor) && placement.anchor.length === 3
         && placement.anchor.every((value) => Number.isInteger(value)),
       `assetPlacements[${index}].anchor must be three integers`)
@@ -181,6 +183,7 @@ export function deserialize(raw: string): VoxelDocument {
       assert(typeof placement.seed === 'number' && Number.isFinite(placement.seed),
         `assetPlacements[${index}].seed must be finite`)
       return {
+        ...(typeof placement.id === 'string' ? { id: placement.id } : {}),
         assetId: placement.assetId,
         anchor: [...(placement.anchor as number[])] as [number, number, number],
         rotation: placement.rotation,

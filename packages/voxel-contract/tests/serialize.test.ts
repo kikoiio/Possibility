@@ -92,4 +92,23 @@ describe('serialize / deserialize', () => {
     badClamps.terrain = { params: { seed: 1 }, clamps: 'no' }
     expect(() => deserialize(JSON.stringify(badClamps))).toThrow(/terrain.clamps must be an array/)
   })
+
+  it('S2b: round-trips placement ids and accepts id-less legacy saves', () => {
+    const withIds = applyEdits(sampleWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(30, 1, 30), rotation: 1, placementId: 'ast-keep', seed: 9 },
+    ]).document
+    const restored = deserialize(serialize(withIds))
+    expect(restored.assetPlacements![0]).toMatchObject({ id: 'ast-keep', assetId: 'bld-hut-a', anchor: [30, 1, 30], rotation: 1, seed: 9 })
+
+    // 旧存档:无 id 字段正常通过
+    const legacy = JSON.parse(serialize(withIds))
+    delete legacy.assetPlacements[0].id
+    const restoredLegacy = deserialize(JSON.stringify(legacy))
+    expect(restoredLegacy.assetPlacements![0].id).toBeUndefined()
+
+    // 非法 id 拒绝
+    const bad = JSON.parse(serialize(withIds))
+    bad.assetPlacements[0].id = ''
+    expect(() => deserialize(JSON.stringify(bad))).toThrow(/id must be a non-empty string/)
+  })
 })

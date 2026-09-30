@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyEdits, createBlockRegistry, createEmptyWorld, setBlockMut, validateDocument, validateEdit,
+  type AssetManifest,
 } from '../src'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })
@@ -91,5 +92,133 @@ describe('validateEdit', () => {
       { kind: 'set-block', at: at(1, 1, 1), block: 'cobble' },
       { kind: 'place-object', objectType: 'stone-lantern', anchor: at(5, 1, 5), rotation: 0 },
     ], registry)).toEqual([])
+  })
+})
+
+// ── S2b 资产摆放校验(F4)─────────────────────────
+const testManifest: AssetManifest = {
+  version: 2,
+  assets: {
+    'bld-hut-a': { id: 'bld-hut-a', category: 'building', url: '/x.glb', footprint: [2, 2], height: 2, thumbnail: '/x.png', sway: 0 },
+    'veg-tree-a': { id: 'veg-tree-a', category: 'vegetation', url: '/x.glb', footprint: [1, 1], height: 3, thumbnail: '/x.png', sway: 0.1 },
+  },
+}
+
+function worldWithHut(id = 'ast-a') {
+  return applyEdits(groundedWorld(), [
+    { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(10, 1, 10), rotation: 0, placementId: id },
+  ]).document
+}
+
+describe('validateEdit asset placements', () => {
+  it('accepts a legal place-asset', () => {
+    expect(validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 1 },
+    ], registry, testManifest)).toEqual([])
+  })
+
+  it('rejects unknown assetId', () => {
+    const issues = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-nope', anchor: at(4, 1, 4), rotation: 0 },
+    ], registry, testManifest)
+    expect(issues.some((i) => i.code === 'unknown-asset')).toBe(true)
+  })
+
+  it('rejects non-integer anchor and out-of-domain rotation', () => {
+    const bad1 = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4.5, 1, 4), rotation: 0 },
+    ], registry, testManifest)
+    expect(bad1.some((i) => i.code === 'invalid-meta' && i.message.includes('anchor'))).toBe(true)
+    const bad2 = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 1, 4), rotation: 4 as 0 },
+    ], registry, testManifest)
+    expect(bad2.some((i) => i.code === 'invalid-meta' && i.message.includes('rotation'))).toBe(true)
+  })
+
+  it('rejects footprint out of bounds', () => {
+    const issues = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(31, 1, 31), rotation: 0 },
+    ], registry, testManifest)
+    expect(issues.some((i) => i.code === 'out-of-bounds')).toBe(true)
+  })
+
+  it('rejects overlap with another placement and with an object', () => {
+    const doc = worldWithHut()
+    const dup = validateEdit(doc, [
+      { kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(10, 1, 10), rotation: 0 },
+    ], registry, testManifest)
+    expect(dup.some((i) => i.code === 'asset-overlap' && i.message.includes('placement'))).toBe(true)
+
+    const withObject = applyEdits(groundedWorld(), [
+      { kind: 'place-object', objectType: 'stone-lantern', anchor: at(6, 1, 6), rotation: 0, objectId: 'obj-a' },
+    ]).document
+    const onObject = validateEdit(withObject, [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(5, 1, 5), rotation: 0 },
+    ], registry, testManifest)
+    expect(onObject.some((i) => i.code === 'asset-overlap' && i.message.includes('object'))).toBe(true)
+  })
+
+  it('rejects floating placement', () => {
+    const issues = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(4, 8, 4), rotation: 0 },
+    ], registry, testManifest)
+    expect(issues.some((i) => i.code === 'asset-overlap' && i.message.includes('support'))).toBe(true)
+  })
+
+  it('move-asset rejects unknown placementId, exempts self overlap', () => {
+    const doc = worldWithHut()
+    const missing = validateEdit(doc, [{ kind: 'move-asset', placementId: 'nope', anchor: at(1, 1, 1) }], registry, testManifest)
+    expect(missing.some((i) => i.code === 'unknown-asset')).toBe(true)
+    // 原地旋转(同 anchor)不算与自身冲突
+    expect(validateEdit(doc, [{ kind: 'move-asset', placementId: 'ast-a', anchor: at(10, 1, 10), rotation: 2 }], registry, testManifest)).toEqual([])
+    // 合法新位置
+    expect(validateEdit(doc, [{ kind: 'move-asset', placementId: 'ast-a', anchor: at(20, 1, 20) }], registry, testManifest)).toEqual([])
+  })
+
+  it('remove-asset rejects unknown placementId', () => {
+    const issues = validateEdit(worldWithHut(), [{ kind: 'remove-asset', placementId: 'nope' }], registry, testManifest)
+    expect(issues.some((i) => i.code === 'unknown-asset')).toBe(true)
+    expect(validateEdit(worldWithHut(), [{ kind: 'remove-asset', placementId: 'ast-a' }], registry, testManifest)).toEqual([])
+  })
+
+  it('falls back to shape-only checks without a manifest', () => {
+    expect(validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-nope', anchor: at(4, 1, 4), rotation: 0 },
+    ], registry)).toEqual([])
+    const bad = validateEdit(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'x', anchor: at(4.5, 1, 4), rotation: 0 },
+    ], registry)
+    expect(bad.some((i) => i.code === 'invalid-meta')).toBe(true)
+  })
+})
+
+describe('validateDocument asset placements', () => {
+  it('accepts sound placements', () => {
+    expect(validateDocument(worldWithHut(), registry, testManifest)).toEqual([])
+  })
+
+  it('flags overlapping existing placements once', () => {
+    const doc = applyEdits(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-hut-a', anchor: at(10, 1, 10), rotation: 0, placementId: 'ast-a' },
+      { kind: 'place-asset', assetId: 'veg-tree-a', anchor: at(10, 1, 10), rotation: 0, placementId: 'ast-b' },
+    ]).document
+    const issues = validateDocument(doc, registry, testManifest).filter((i) => i.code === 'asset-overlap')
+    expect(issues).toHaveLength(1)
+    expect(issues[0].message).toContain('ast-a')
+  })
+
+  it('flags unknown asset in existing placements', () => {
+    const doc = applyEdits(groundedWorld(), [
+      { kind: 'place-asset', assetId: 'bld-ghost', anchor: at(4, 1, 4), rotation: 0, placementId: 'ast-g' },
+    ]).document
+    const issues = validateDocument(doc, registry, testManifest)
+    expect(issues.some((i) => i.code === 'unknown-asset' && i.message.includes('ast-g'))).toBe(true)
+  })
+
+  it('flags malformed placement shape without a manifest', () => {
+    const doc = worldWithHut()
+    doc.assetPlacements![0].anchor = [1, 1.5, 1]
+    const issues = validateDocument(doc, registry)
+    expect(issues.some((i) => i.code === 'invalid-meta' && i.message.includes('anchor'))).toBe(true)
   })
 })
