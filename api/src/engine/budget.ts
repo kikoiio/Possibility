@@ -222,13 +222,14 @@ export function isIdleActivity(lastActivityIso: string | null, nowMs: number, da
  * 长时间没有任何用户交互的 running 世界冻结为 archived（pauseReason='idle'），
  * 引擎天然排除 archived 世界——零 LLM 费用、数据完整保留，resume 解冻。
  * 只有 lastUserActivityAt 非空的世界会被归档（存量世界未回填，行为不变）。
+ * 演示世界（is_demo）豁免：它是长期门面，成本由每日调用上限兜底。
  */
 export async function archiveIdleWorlds(db: Db, cfg: BudgetConfig, now: Date = new Date()): Promise<void> {
   const cutoff = new Date(now.getTime() - cfg.idleArchiveDays * 24 * 3600 * 1000).toISOString()
   await db
     .update(worlds)
     .set({ status: 'archived', pauseReason: 'idle' })
-    .where(and(eq(worlds.status, 'running'), isNotNull(worlds.lastUserActivityAt), lt(worlds.lastUserActivityAt, cutoff)))
+    .where(and(eq(worlds.status, 'running'), eq(worlds.isDemo, false), isNotNull(worlds.lastUserActivityAt), lt(worlds.lastUserActivityAt, cutoff)))
 }
 
 /** 用户活动痕迹：聊天/注入/章节/创建/恢复等交互点刷新，闲置归档以此为据 */

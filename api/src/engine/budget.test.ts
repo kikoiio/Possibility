@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { budgetFromEnv, bumpCalls, dailyCapHit, isIdleActivity, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
-import type { worlds } from '../db/schema'
+import { archiveIdleWorlds, budgetFromEnv, bumpCalls, dailyCapHit, isIdleActivity, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
+import { users, worlds } from '../db/schema'
+import { createTestDb } from '../test/db'
 
 type World = typeof worlds.$inferSelect
 
@@ -121,5 +122,30 @@ describe('isIdleActivity（闲置判定）', () => {
   it('null 或无法解析 = 不可判定，不归档', () => {
     expect(isIdleActivity(null, now, 7)).toBe(false)
     expect(isIdleActivity('不是时间', now, 7)).toBe(false)
+  })
+})
+
+describe('archiveIdleWorlds（闲置自动归档）', () => {
+  const NOW = new Date('2026-09-30T00:00:00Z')
+  const IDLE = '2026-09-01T00:00:00Z' // 远超缺省 7 天
+  const FRESH = '2026-09-29T00:00:00Z'
+
+  it('归档超期闲置世界，豁免演示世界', async () => {
+    const { db } = createTestDb()
+    await db.insert(users).values({ id: 'u', username: 'u', passwordHash: 'unused', createdAt: FRESH })
+    await db.insert(worlds).values([
+      { id: 'idle-world', userId: 'u', name: 'Idle', description: '', status: 'running', lastUserActivityAt: IDLE },
+      { id: 'fresh-world', userId: 'u', name: 'Fresh', description: '', status: 'running', lastUserActivityAt: FRESH },
+      { id: 'demo-world', userId: 'u', name: 'Demo', description: '', status: 'running', isDemo: true, lastUserActivityAt: IDLE },
+      { id: 'untouched-world', userId: 'u', name: 'Untouched', description: '', status: 'running' },
+    ])
+    await archiveIdleWorlds(db, CFG, NOW)
+    const rows = await db.select({ id: worlds.id, status: worlds.status }).from(worlds)
+    expect(Object.fromEntries(rows.map(r => [r.id, r.status]))).toEqual({
+      'idle-world': 'archived',
+      'fresh-world': 'running',
+      'demo-world': 'running',
+      'untouched-world': 'running',
+    })
   })
 })
