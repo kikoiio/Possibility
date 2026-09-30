@@ -39,6 +39,8 @@ function worldEndpointRequests() {
     () => app.request('/api/conversations/conversation/catchup', { method: 'POST', headers: owner }, current!.env),
     () => app.request('/api/persons/resident/fork/preview', { method: 'POST', headers: owner,
       body: JSON.stringify({ whatIf: '咖啡馆提前开门' }) }, current!.env),
+    () => app.request('/api/worlds/home-world/timelines/home-main/fork/preview', { method: 'POST', headers: owner,
+      body: JSON.stringify({ whatIf: '咖啡馆提前开门' }) }, current!.env),
     () => app.request('/api/persons/resident/fork', { method: 'POST', headers: owner,
       body: JSON.stringify({ scenario: { whatIf: '咖啡馆提前开门', startTime: WORLD_TIME } }) }, current!.env),
     () => app.request('/api/worlds/home-world/chapters', { method: 'POST', headers: owner,
@@ -59,7 +61,7 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
 
     const results = []
     for (const request of worldEndpointRequests()) results.push(await request())
-    expect(results.map(result => result.status)).toEqual([409, 409, 409, 409, 409, 409, 409])
+    expect(results.map(result => result.status)).toEqual([409, 409, 409, 409, 409, 409, 409, 409])
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(await current.db.select().from(llmCallLog)).toHaveLength(1)
     expect(await current.db.select().from(messages)).toHaveLength(0)
@@ -76,7 +78,7 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
 
       const results = []
       for (const request of worldEndpointRequests()) results.push(await request())
-      expect(results.map(result => result.status), status).toEqual([409, 409, 409, 409, 409, 409, 409])
+      expect(results.map(result => result.status), status).toEqual([409, 409, 409, 409, 409, 409, 409, 409])
       expect(fetchSpy, status).not.toHaveBeenCalled()
       expect(await current.db.select().from(llmCallLog), status).toHaveLength(0)
       expect(await current.db.select().from(messages), status).toHaveLength(0)
@@ -97,7 +99,7 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
 
     const results = []
     for (const request of worldEndpointRequests()) results.push(await request())
-    expect(results.map(result => result.status)).toEqual([409, 409, 409, 409, 409, 409, 409])
+    expect(results.map(result => result.status)).toEqual([409, 409, 409, 409, 409, 409, 409, 409])
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(await current.db.select().from(llmCallLog)).toHaveLength(0)
     expect(await current.db.select().from(messages)).toHaveLength(0)
@@ -157,12 +159,14 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
         body: JSON.stringify({ timelineId: 'home-main', content: 'hello' }) }, current.env),
       app.request('/api/persons/resident/fork/preview', { method: 'POST', headers: owner,
         body: JSON.stringify({ whatIf: '咖啡馆提前开门' }) }, current.env),
+      app.request('/api/worlds/home-world/timelines/home-main/fork/preview', { method: 'POST', headers: owner,
+        body: JSON.stringify({ whatIf: '咖啡馆提前开门' }) }, current.env),
       app.request('/api/worlds/home-world/chapters', { method: 'POST', headers: owner,
         body: JSON.stringify({ timelineId: 'home-main' }) }, current.env),
       app.request('/api/worlds/home-world/chapters', { method: 'POST', headers: owner, body: JSON.stringify({}) }, current.env),
     ]
     const results = await Promise.all(requests)
-    expect(results.map(response => response.status)).toEqual([404, 404, 404, 404, 404, 400])
+    expect(results.map(response => response.status)).toEqual([404, 404, 404, 404, 404, 404, 400])
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(await current.db.select().from(llmCallLog)).toHaveLength(0)
     expect(await current.db.select().from(messages)).toHaveLength(0)

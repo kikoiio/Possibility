@@ -446,7 +446,25 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   if (!whatIf || whatIf.length > 500 || !changedVariable || changedVariable.length > 200) {
     return c.json({ error: '请提供有效的假设和唯一改变条件' }, 400)
   }
-  const scenarioDraft: Pick<ForkScenario, 'whatIf' | 'changedVariable'> = { whatIf, changedVariable }
+  // 五字段扩展（S2/F4）：participants/invariants 可选，归一化后缺省回落现状默认
+  const normalizeList = (input: unknown, maxItems: number, maxLen: number): string[] | null => {
+    if (input == null) return []
+    if (!Array.isArray(input)) return null
+    const items = input.map(String).map((s) => s.trim()).filter(Boolean)
+    if (items.length > maxItems || items.some((s) => s.length > maxLen)) return null
+    return items
+  }
+  const participants = normalizeList(record.participants, 20, 100)
+  const invariants = normalizeList(record.invariants, 10, 200)
+  if (!participants || !invariants) {
+    return c.json({ error: '参与人物或不变条件格式无效（人物 ≤20 条每条 ≤100 字；条件 ≤10 条每条 ≤200 字）' }, 400)
+  }
+  const DEFAULT_INVARIANTS = ['分叉前的共同历史与设定版本保持不变']
+  const scenarioDraft: Pick<ForkScenario, 'whatIf' | 'changedVariable'> & { participants: string[]; invariants: string[] } = {
+    whatIf, changedVariable,
+    participants,
+    invariants: invariants.length ? invariants : DEFAULT_INVARIANTS,
+  }
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -457,7 +475,13 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
     if (existing && existing.worldId === world.id && existing.parentTimelineId === c.req.param('tid')) {
       let stored: ForkScenario | null = null
       try { stored = existing.forkScenarioJson ? JSON.parse(existing.forkScenarioJson) as ForkScenario : null } catch { /* incompatible legacy row: do not treat as a match */ }
+      // 幂等比对四项全等；stored 为旧两字段记录时按同样缺省归一化再比
+      const storedParticipants = (stored?.participants ?? []).map(String).map((s) => s.trim()).filter(Boolean)
+      const storedInvariantsRaw = (stored?.invariants ?? []).map(String).map((s) => s.trim()).filter(Boolean)
+      const storedInvariants = storedInvariantsRaw.length ? storedInvariantsRaw : DEFAULT_INVARIANTS
+      const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
       const sameScenario = stored?.whatIf === scenarioDraft.whatIf && stored.changedVariable === scenarioDraft.changedVariable
+        && sameList(storedParticipants, scenarioDraft.participants) && sameList(storedInvariants, scenarioDraft.invariants)
       if (sameScenario) return c.json({ id: existing.id, simNow: existing.simNow })
       return c.json({ error: '分叉请求 ID 已用于不同条件' }, 409)
     }
@@ -474,8 +498,6 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   const scenario: ForkScenario = {
     ...scenarioDraft,
     startTime: source.simNow,
-    participants: [],
-    invariants: ['分叉前的共同历史与设定版本保持不变'],
   }
 
   const activeCount = await db

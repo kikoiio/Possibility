@@ -29,6 +29,80 @@ async function seedResident(f: Awaited<ReturnType<typeof createWorldFixture>>) {
 
 afterEach(() => vi.unstubAllGlobals())
 
+describe('世界级 fork 五字段扩展（S2/F4）', () => {
+  const fork = (env: Awaited<ReturnType<typeof createWorldFixture>>['env'], body: unknown) =>
+    app.request('/api/worlds/home-world/timelines/home-main/fork', {
+      method: 'POST', headers: owner, body: JSON.stringify(body),
+    }, env)
+
+  it('五字段确认后新线 forkScenarioJson 完整保存', async () => {
+    const f = await createWorldFixture()
+    const res = await fork(f.env, {
+      requestId: 'req-five', scenario: {
+        whatIf: '如果信送到了', changedVariable: '信件是否送达',
+        participants: ['Resident', 'Visitor'], invariants: ['共同历史不变', '地理不变'],
+      },
+    }, )
+    expect(res.status).toBe(200)
+    const { id } = await res.json() as { id: string }
+    const row = await f.db.select().from(timelines).where(eq(timelines.id, id)).get()
+    const stored = JSON.parse(row!.forkScenarioJson!) as Record<string, unknown>
+    expect(stored.whatIf).toBe('如果信送到了')
+    expect(stored.changedVariable).toBe('信件是否送达')
+    expect(stored.participants).toEqual(['Resident', 'Visitor'])
+    expect(stored.invariants).toEqual(['共同历史不变', '地理不变'])
+    expect(stored.startTime).toBe(WORLD_TIME)
+  })
+
+  it('仅两字段的旧调用方成功且回落现状默认', async () => {
+    const f = await createWorldFixture()
+    const res = await fork(f.env, { requestId: 'req-two', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    expect(res.status).toBe(200)
+    const { id } = await res.json() as { id: string }
+    const row = await f.db.select().from(timelines).where(eq(timelines.id, id)).get()
+    const stored = JSON.parse(row!.forkScenarioJson!) as Record<string, unknown>
+    expect(stored.participants).toEqual([])
+    expect(stored.invariants).toEqual(['分叉前的共同历史与设定版本保持不变'])
+  })
+
+  it('同 requestId 同五字段重放返回同一时间线；不同 participants → 409', async () => {
+    const f = await createWorldFixture()
+    const scenario = { whatIf: 'w', changedVariable: 'c', participants: ['A'], invariants: ['i'] }
+    const first = await fork(f.env, { requestId: 'req-replay', scenario })
+    expect(first.status).toBe(200)
+    const { id } = await first.json() as { id: string }
+    expect(id).toBe('req-replay')
+    const replay = await fork(f.env, { requestId: 'req-replay', scenario })
+    expect(replay.status).toBe(200)
+    expect(((await replay.json()) as { id: string }).id).toBe(id)
+    const conflict = await fork(f.env, { requestId: 'req-replay', scenario: { ...scenario, participants: ['B'] } })
+    expect(conflict.status).toBe(409)
+  })
+
+  it('两字段重放命中两字段记录；五字段重放同一 requestId → 409', async () => {
+    const f = await createWorldFixture()
+    const first = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    expect(first.status).toBe(200)
+    const replay = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    expect(replay.status).toBe(200)
+    // 显式传入与默认值相同的 invariants 也命中（归一化后四项全等）
+    const explicit = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c', invariants: ['分叉前的共同历史与设定版本保持不变'] } })
+    expect(explicit.status).toBe(200)
+    const conflict = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c', participants: ['A'] } })
+    expect(conflict.status).toBe(409)
+  })
+
+  it('participants/invariants 超限 → 400', async () => {
+    const f = await createWorldFixture()
+    const tooMany = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', participants: Array(21).fill('a') } })
+    expect(tooMany.status).toBe(400)
+    const tooLong = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', invariants: ['x'.repeat(201)] } })
+    expect(tooLong.status).toBe(400)
+    const notArray = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', participants: 'nope' } })
+    expect(notArray.status).toBe(400)
+  })
+})
+
 describe('世界级 fork 预览（S2/F2）', () => {
   it('正路径：返回五字段，startTime 强制为源线 simNow，不落库，记账 fork_preview', async () => {
     const f = await createWorldFixture()
