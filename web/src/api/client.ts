@@ -133,6 +133,7 @@ import type {
   DemoInfo,
   DialogueDetail,
   ForkScenario,
+  ForkScenarioInput,
   PersonFocus,
   Persona,
   PersonaMention,
@@ -209,10 +210,15 @@ export const worldsApi = {
       method: 'POST',
       body: JSON.stringify({ text, timelineId, requestId, expectedVersion }),
     }),
-  fork: (worldId: string, timelineId: string, requestId: string, scenario: Pick<ForkScenario, 'whatIf' | 'changedVariable'>) =>
+  fork: (worldId: string, timelineId: string, requestId: string, scenario: ForkScenarioInput) =>
     apiFetch<{ id: string; simNow: string }>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, {
       method: 'POST',
       body: JSON.stringify({ requestId, scenario }),
+    }),
+  forkPreview: (worldId: string, timelineId: string, whatIf: string) =>
+    apiFetch<ForkScenario>(`/api/worlds/${worldId}/timelines/${timelineId}/fork/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ whatIf }),
     }),
   archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>

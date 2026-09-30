@@ -1,17 +1,5 @@
 import type { ForkScenario } from '../api/types'
 
-function isoToLocalInput(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-function localInputToIso(v: string): string {
-  const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toISOString()
-}
-
 interface ScenarioCardProps {
   scenario: ForkScenario
   onChange?: (s: ForkScenario) => void
@@ -45,16 +33,8 @@ export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, 
 
       <div>
         <label className="mb-1 block text-xs text-woad-deep">起始时间</label>
-        {editable ? (
-          <input
-            type="datetime-local"
-            className="w-full rounded-lg border border-woad/30 bg-sheet px-3 py-2 text-sm outline-none focus:border-woad"
-            value={isoToLocalInput(scenario.startTime)}
-            onChange={(e) => patch({ startTime: localInputToIso(e.target.value) })}
-          />
-        ) : (
-          <p className="text-sm text-ink">{scenario.startTime.slice(0, 16).replace('T', ' ')}</p>
-        )}
+        <p className="text-sm text-ink">{scenario.startTime.slice(0, 16).replace('T', ' ')}</p>
+        <p className="mt-0.5 text-[11px] text-ink-faint">分叉只能从当前时刻开始</p>
       </div>
 
       <div>

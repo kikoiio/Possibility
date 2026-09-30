@@ -45,6 +45,10 @@ export interface ForkScenario {
   invariants: string[]
 }
 
+/** 世界级 fork 提交入参（S2/F4）：两字段必填，participants/invariants 可选 */
+export type ForkScenarioInput = Pick<ForkScenario, 'whatIf' | 'changedVariable'>
+  & Partial<Pick<ForkScenario, 'participants' | 'invariants'>>
+
 export interface TimelineSummary {
   id: string
   parentTimelineId: string | null
