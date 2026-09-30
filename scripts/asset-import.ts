@@ -17,6 +17,8 @@ import { inspectGlb } from './lib/glb-inspect'
 
 const LIBRARY_DIR = resolve('web/public/voxel-assets/library')
 const MANIFEST_PATH = resolve(LIBRARY_DIR, 'manifest.json')
+// S2b:api(workers 无文件系统)经打包副本消费同一清单,入库时同步双写
+const API_MANIFEST_PATH = resolve('api/src/voxel/library-manifest.json')
 const CATEGORY_PREFIX: Record<AssetCategory, string> = { vegetation: 'veg-', building: 'bld-', decoration: 'dec-' }
 const SIZE_TOLERANCE = 0.5
 
@@ -110,6 +112,7 @@ try {
   const validation = validateAssetManifest(manifest)
   if (!validation.ok) throw new Error(`登记后清单终检失败:${validation.issues[0]?.message}`)
   writeFileSync(MANIFEST_PATH, JSON.stringify(validation.manifest, null, 2) + '\n')
+  writeFileSync(API_MANIFEST_PATH, JSON.stringify(validation.manifest, null, 2) + '\n')
   console.log(`[asset-import] 入库完成:${id}(${category}, ${report.triangles} tris, footprint ${footprint.join('x')}, sway ${sway})`)
 } catch (err) {
   rollback()

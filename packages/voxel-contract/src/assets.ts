@@ -138,8 +138,9 @@ export function ensureAssetPlacementIds(doc: VoxelDocument): VoxelDocument {
   if (!doc.assetPlacements || doc.assetPlacements.every((p) => typeof p.id === 'string' && p.id.length > 0)) return doc
   return {
     ...doc,
+    // 键序对齐 deserialize/place-asset 的 id 在前——哈希/contentHash 对键序敏感
     assetPlacements: doc.assetPlacements.map((p, index) => (
-      typeof p.id === 'string' && p.id.length > 0 ? p : { ...p, id: derivedPlacementId(p, index) }
+      typeof p.id === 'string' && p.id.length > 0 ? p : { id: derivedPlacementId(p, index), ...p }
     )),
   }
 }

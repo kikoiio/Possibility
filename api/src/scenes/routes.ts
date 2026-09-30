@@ -3,7 +3,12 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { applySceneOperations, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument, SceneOperation } from '@possibility/scene-contract'
+import {
+  deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
+  type SerializedVoxelDocument,
+} from '@possibility/voxel-contract'
 import { isVoxelScenePayload } from './repository'
+import { libraryManifest } from '../voxel/library-manifest'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { createDb } from '../db/client'
@@ -13,7 +18,7 @@ import { budgetFromEnv } from '../engine/budget'
 import { contemporaryTheme } from '@possibility/scene-contract'
 import type { Env } from '../index'
 import { createSceneDraft, previewSceneOperations } from './ai'
-import { listSceneVersions, readCurrentScene, SceneConflict } from './repository'
+import { commitScene, listSceneVersions, readCurrentScene, SceneConflict } from './repository'
 import { applyScenePatch, restoreSceneVersion, saveSceneRevision } from './service'
 
 export const scenesRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -26,7 +31,7 @@ scenesRoutes.use('*', async (c, next) => {
   }
   const loginOnly = path === '/api/scene-drafts' || path.startsWith('/api/scene-drafts/')
     || path === '/scene-drafts' || path.startsWith('/scene-drafts/')
-    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:revisions|legacy-preview|edit-preview|legacy-confirm|restore)(?:\/|$)/.test(path)
+    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:revisions|voxel-revision|legacy-preview|edit-preview|legacy-confirm|restore)(?:\/|$)/.test(path)
   if (loginOnly) return authMiddleware(c, next)
   await next()
 })
@@ -126,6 +131,30 @@ scenesRoutes.post('/worlds/:worldId/scene/revisions', async c => {
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !Array.isArray(body.operations)) return c.json({ error: '场景提交参数不完整' }, 400)
   try {
     const result = await saveSceneRevision(db, { worldId: world.id, requestId: body.requestId, expectedVersion: body.expectedVersion!, operations: body.operations, running: true, kind: body.kind })
+    return c.json(result)
+  } catch (error) { return err(c, error) }
+})
+
+// S2b 体素编辑通道(F6):体素信封是不可分割的整体,不走 2D 的 operations 增量;
+// 反序列化 → 补摆放 id → 契约+可行走性校验(含资产清单) → commitScene(幂等/期望版本)
+scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
+  const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; document?: unknown }>().catch(() => null)
+  if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !body.document) return c.json({ error: '体素场景提交参数不完整' }, 400)
+  if (!isSerializedVoxelDocument(body.document)) return c.json({ error: '文档不是序列化体素信封' }, 422)
+  try {
+    let doc
+    try {
+      doc = ensureAssetPlacementIds(deserialize(JSON.stringify(body.document)))
+    } catch (error) {
+      return c.json({ error: `体素信封无法解析：${error instanceof Error ? error.message : String(error)}` }, 422)
+    }
+    const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
+    if (issues.length > 0) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 422)
+    // 存储归一化后的信封(摆放 id 随文档持久化)
+    const document = JSON.parse(serialize(doc)) as SerializedVoxelDocument
+    const result = await commitScene(db, { worldId: world.id, expectedVersion: body.expectedVersion!, requestId: body.requestId, document, summary: '体素编辑', kind: 'voxel-edit' })
     return c.json(result)
   } catch (error) { return err(c, error) }
 })

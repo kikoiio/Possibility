@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "assets": {
+    "veg-tree-a": {
+      "id": "veg-tree-a",
+      "category": "vegetation",
+      "url": "/voxel-assets/library/models/veg-tree-a.glb",
+      "footprint": [
+        2,
+        2
+      ],
+      "height": 2,
+      "thumbnail": "/voxel-assets/library/thumbnails/veg-tree-a.png",
+      "sway": 0.035
+    },
+    "veg-flower-a": {
+      "id": "veg-flower-a",
+      "category": "vegetation",
+      "url": "/voxel-assets/library/models/veg-flower-a.glb",
+      "footprint": [
+        1,
+        1
+      ],
+      "height": 1,
+      "thumbnail": "/voxel-assets/library/thumbnails/veg-flower-a.png",
+      "sway": 0.08
+    },
+    "veg-grass-a": {
+      "id": "veg-grass-a",
+      "category": "vegetation",
+      "url": "/voxel-assets/library/models/veg-grass-a.glb",
+      "footprint": [
+        1,
+        1
+      ],
+      "height": 1,
+      "thumbnail": "/voxel-assets/library/thumbnails/veg-grass-a.png",
+      "sway": 0.12
+    },
+    "veg-bush-a": {
+      "id": "veg-bush-a",
+      "category": "vegetation",
+      "url": "/voxel-assets/library/models/veg-bush-a.glb",
+      "footprint": [
+        2,
+        2
+      ],
+      "height": 1,
+      "thumbnail": "/voxel-assets/library/thumbnails/veg-bush-a.png",
+      "sway": 0.055
+    },
+    "bld-hut-a": {
+      "id": "bld-hut-a",
+      "category": "building",
+      "url": "/voxel-assets/library/models/bld-hut-a.glb",
+      "footprint": [
+        2,
+        2
+      ],
+      "height": 2,
+      "thumbnail": "/voxel-assets/library/thumbnails/bld-hut-a.png",
+      "sway": 0
+    },
+    "bld-tower-a": {
+      "id": "bld-tower-a",
+      "category": "building",
+      "url": "/voxel-assets/library/models/bld-tower-a.glb",
+      "footprint": [
+        1,
+        1
+      ],
+      "height": 4,
+      "thumbnail": "/voxel-assets/library/thumbnails/bld-tower-a.png",
+      "sway": 0
+    }
+  }
+}
