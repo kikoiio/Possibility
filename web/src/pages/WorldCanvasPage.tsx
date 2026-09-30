@@ -135,7 +135,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   // 体素特性开关（T30）：服务端返回体素文档时挂载新视口；2D 场景行为不变
   const voxelDoc = useMemo(() => (isVoxelEnabled() ? parseVoxelDocument(scene) : null), [scene])
   // 多空间体素包（T32）：走 GuestWorldMap 的体素模式（外景 ↔ 主楼）
-  const voxelSpaces = useMemo(() => (isVoxelEnabled() ? parseVoxelSpaces(multiScene ?? scene) : null), [multiScene, scene])
+  // 体素形状的文档没有 2D 回退可渲染，故不受 ?voxel 开关限制；开关只决定 2D 场景是否改用体素视口
+  const voxelSpaces = useMemo(() => parseVoxelSpaces(multiScene ?? scene), [multiScene, scene])
   async function requestLegacyPreview() {
     setBusy(true); setError('')
     try { setLegacyPreview(await worldSceneApi.legacyPreview(worldId)) }
