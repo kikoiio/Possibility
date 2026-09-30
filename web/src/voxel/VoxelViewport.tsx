@@ -166,7 +166,8 @@ export default function VoxelViewport({
 
   return (
     <div className="relative h-full min-h-[430px] w-full overflow-hidden rounded-2xl bg-zinc-950" data-testid="voxel-viewport">
-      <canvas ref={canvasRef} className="h-full w-full touch-none" data-testid="voxel-viewport-canvas" />
+      {/* absolute 撑满 relative 容器：h-full 在仅靠 min-height 撑高的容器里会塌成 0，引擎按画布自身尺寸渲染 */}
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" data-testid="voxel-viewport-canvas" />
       {progress && !error && (
         <div className="absolute inset-0 grid place-items-center bg-zinc-950/70 text-sm text-zinc-200" data-testid="voxel-viewport-loading">
           <div className="flex w-60 flex-col items-center gap-3">

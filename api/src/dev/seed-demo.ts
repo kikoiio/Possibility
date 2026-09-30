@@ -3,7 +3,7 @@ import type { Db } from '../db/client'
 import { demoBaselines, persons, personStates, timelines, universeEvidence, users, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
 import type { PersonModel } from '../agent/types'
 import { contemporaryTheme, hashScene, type SceneDocument } from '@possibility/scene-contract'
-import { initialSceneStatements, readCurrentScene } from '../scenes/repository'
+import { initialSceneStatements, isVoxelScenePayload, readCurrentScene } from '../scenes/repository'
 import { createMistManorScene } from '../demo/mist-manor-scene'
 
 /** spec 附录：演示世界「雾影庄」完整设定（D15：手写人物卡，不走蒸馏） */
@@ -60,6 +60,8 @@ async function ensureDemoScene(db: Db, worldId: string) {
     await db.batch(statements)
   }
   const latest = await readCurrentScene(db, worldId)
+  // 体素场景由 rebuild-scenes-voxel + 入库脚本管理，seed 不再用 2D 生成器覆盖
+  if (latest && isVoxelScenePayload(latest.document)) return
   const states = await db.select({ personId: personStates.personId, location: personStates.location }).from(personStates)
     .innerJoin(timelines, eq(personStates.timelineId, timelines.id)).where(eq(timelines.worldId, worldId)).all()
   const locationByPerson = new Map(states.map(row => [row.personId, row.location]))
