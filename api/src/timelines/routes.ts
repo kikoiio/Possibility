@@ -34,7 +34,7 @@ const PREVIEW_SYSTEM = `你是「可能性设定师」。用户要为一个人�
 }
 要求：changedVariable 只改一件事；invariants 2-4 条；startTime 合理解读用户意图（"当时""那时候"指多久以前）；用中文。`
 
-function extractJson(raw: string): unknown {
+export function extractJson(raw: string): unknown {
   const cleaned = raw.replace(/```(?:json)?/g, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
@@ -42,7 +42,7 @@ function extractJson(raw: string): unknown {
   return JSON.parse(cleaned.slice(start, end + 1))
 }
 
-function normalizeScenario(raw: unknown, whatIf: string, fallbackStart: string): ForkScenario {
+export function normalizeScenario(raw: unknown, whatIf: string, fallbackStart: string): ForkScenario {
   const r = (raw ?? {}) as Record<string, unknown>
   const startRaw = String(r.startTime ?? '')
   const startTime = Number.isNaN(Date.parse(startRaw)) ? fallbackStart : new Date(startRaw).toISOString()
@@ -100,7 +100,9 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
         ],
         { maxTokens: 8000 },
       )
-      return c.json(normalizeScenario(extractJson(raw), whatIf, ctx.timeline.simNow))
+      // startTime 纪律：只能以当前时刻分叉——LLM 起草的其余四字段保留，
+      // startTime 强制对齐源线 simNow（不得以今日状态冒充过去）
+      return c.json({ ...normalizeScenario(extractJson(raw), whatIf, ctx.timeline.simNow), startTime: ctx.timeline.simNow })
     } catch (e) {
       if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
       lastError = e

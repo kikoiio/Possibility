@@ -8,6 +8,9 @@ import { contemporaryTheme, validateScene } from '@possibility/scene-contract'
 import type { SceneDocument } from '@possibility/scene-contract'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
+import { buildWorldForkBrief, WORLD_PREVIEW_SYSTEM } from '../life/fork-preview'
+import { complete, configFromEnv } from '../llm/client'
+import { extractJson, normalizeScenario } from '../timelines/routes'
 import type { AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import type { LocationDef } from '../agent/engine-context'
@@ -15,7 +18,7 @@ import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { BudgetRefusal, gateUniverseWrite, gateUser } from '../engine/guard'
+import { BudgetRefusal, gateUniverseWrite, gateUser, gateWorld, worldReservation } from '../engine/guard'
 import { commitWorldCommand } from '../world-state/commit'
 import { createRootProjectionBaseline, ensureUniverseRevision } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
@@ -379,6 +382,54 @@ worldsRoutes.post('/:id/inject', async (c) => {
     if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
     throw error
   }
+})
+
+/** 世界级 Fork 预览（S2/F2）：以世界为上下文 LLM 起草五字段场景；不落库，走护栏记账 */
+worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
+  const body = await c.req.json<{ whatIf?: string }>().catch(() => ({}) as { whatIf?: string })
+  const whatIf = body.whatIf?.trim()
+  if (!whatIf || whatIf.length > 500) return c.json({ error: '请提供有效的 what-if（500 字以内）' }, 400)
+
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const sourceGate = await gateUniverseWrite(db, world.id, c.req.param('tid'))
+  if (!sourceGate.ok) return c.json({ error: sourceGate.error }, sourceGate.status)
+  const source = await db
+    .select()
+    .from(timelines)
+    .where(and(eq(timelines.id, c.req.param('tid')), eq(timelines.worldId, world.id)))
+    .get()
+  if (!source) return c.json({ error: '时间线不存在' }, 404)
+  if (source.status !== 'active') return c.json({ error: '只能分叉活跃时间线' }, 400)
+
+  const cfg = budgetFromEnv(c.env)
+  const gate = await gateWorld(db, world.id, cfg)
+  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
+
+  const brief = await buildWorldForkBrief(db, world, source, whatIf)
+  const config = configFromEnv(c.env, worldReservation(db, world.id, cfg, {
+    timelineId: source.id, personId: null, purpose: 'fork_preview',
+  }))
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const raw = await complete(
+        config,
+        [
+          { role: 'system', content: WORLD_PREVIEW_SYSTEM },
+          { role: 'user', content: brief },
+        ],
+        { maxTokens: 8000 },
+      )
+      // startTime 纪律：只能以当前时刻分叉——强制对齐源线 simNow
+      return c.json({ ...normalizeScenario(extractJson(raw), whatIf, source.simNow), startTime: source.simNow })
+    } catch (e) {
+      if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
+      lastError = e
+    }
+  }
+  return c.json({ error: `场景生成失败：${lastError instanceof Error ? lastError.message : '未知错误'}` }, 502)
 })
 
 /** 世界级 Fork（F9）：复制世界设定与全部人物状态/当日日程到新线；记忆经可见性规则自然继承 */
