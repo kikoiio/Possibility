@@ -25,23 +25,7 @@ async function toScreen(page: Page, at: { x: number; y: number; z: number }) {
 }
 
 test.describe('voxel editing (AC12/AC13/AC14/AC15)', () => {
-  test('block mode: place one block and dig it back out (AC13)', async ({ page }) => {
-    await waitReady(page)
-    const before = await nonAirCount(page)
-    await page.getByTestId('voxel-tool-block').click()
-    await page.getByTestId('voxel-block-stone').click()
-    const target = await toScreen(page, { x: 24, y: 1, z: 42 })
-    await page.mouse.click(target.x, target.y)
-    await expect.poll(() => nonAirCount(page)).toBe(before + 1)
-    // hover 高亮应处于激活（放置模式悬停）
-    await page.mouse.move(target.x + 30, target.y)
-    // 挖掘同一位置
-    await page.getByTestId('voxel-block-tool-dig').click()
-    const placed = await toScreen(page, { x: 24, y: 1, z: 42 })
-    await page.mouse.click(placed.x, placed.y)
-    await expect.poll(() => nonAirCount(page)).toBe(before)
-  })
-
+  // S2b:方块编辑入口已移除(block 工具退役),set-block 底层能力由 AI 编辑用例间接覆盖
   test('warehouse: drag a lantern in, move it, remove it (AC12)', async ({ page }) => {
     await waitReady(page)
     const objectsBefore = (await objectsProbe(page)).length
@@ -108,12 +92,6 @@ test.describe('voxel editing (AC12/AC13/AC14/AC15)', () => {
     await expect(page.getByTestId('voxel-object-actions')).toBeVisible()
     const elsewhere = await toScreen(page, { x: 40, y: 1, z: 42 })
     await page.mouse.click(elsewhere.x, elsewhere.y)
-    await expect(page.getByTestId('voxel-edit-rejected')).toBeVisible()
-    // 锁定建筑上的挖掘也被拒绝
-    await page.getByTestId('voxel-tool-block').click()
-    await page.getByTestId('voxel-block-tool-dig').click()
-    const wall = await toScreen(page, { x: 20, y: 2, z: 19 })
-    await page.mouse.click(wall.x, wall.y)
     await expect(page.getByTestId('voxel-edit-rejected')).toBeVisible()
   })
 })

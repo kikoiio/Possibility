@@ -74,7 +74,7 @@ test.describe('voxel platform gate (AC18)', () => {
     // 全部编辑入口隐藏
     await expect(page.getByTestId('voxel-editor-toolbar')).toBeHidden()
     await expect(page.getByTestId('voxel-tool-warehouse')).toBeHidden()
-    await expect(page.getByTestId('voxel-tool-block')).toBeHidden()
+    await expect(page.getByTestId('voxel-tool-asset')).toBeHidden()
     await expect(page.getByTestId('voxel-tool-ai')).toBeHidden()
     // 观察与点击仍然可用（窄视口下庭院中心才在画面内）
     await expect(async () => {
