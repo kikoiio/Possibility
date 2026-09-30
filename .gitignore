@@ -8,11 +8,11 @@ api/wrangler.staging-test.toml
 .playwright-mcp
 /docs/*
 !/docs/README.md
+!/docs/PRODUCT_VISION.md
 .agents
 .codex
 .claude
 .git
-spec_docs
 
 
 # LLM 重建产物与本地批处理输出
