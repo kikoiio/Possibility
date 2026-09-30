@@ -158,6 +158,79 @@ describe('owner-only, read-only comparison API', () => {
   })
 })
 
+describe('simTime 对齐截断(S1)', () => {
+  it('事件三组按 ≤ T 截断,alignedAt 回显,firstDivergence 取最早独有事件', async () => {
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    // 推进两线时钟:selectVisibleEvents 只披露 ≤ simNow 的自有事件
+    await fixture.db.update(timelines).set({ simNow: '2026-09-19T12:00:00.000Z' }).where(eq(timelines.id, 'main'))
+    await fixture.db.update(timelines).set({ simNow: '2026-09-19T12:00:00.000Z' }).where(eq(timelines.id, fork.id))
+    await fixture.db.insert(events).values([
+      { id: 'main-late', timelineId: 'main', simTime: '2026-09-19T10:00:00.000Z', title: 'Root later', description: '' },
+      { id: 'fork-early', timelineId: fork.id, simTime: '2026-09-19T09:30:00.000Z', title: 'Fork early', description: '' },
+      { id: 'fork-late', timelineId: fork.id, simTime: '2026-09-19T11:00:00.000Z', title: 'Fork late', description: '' },
+    ])
+    const result = await compareTimelines(fixture.db, 'world', 'main', fork.id, '2026-09-19T10:30:00.000Z')
+    expect(result?.alignedAt).toBe('2026-09-19T10:30:00.000Z')
+    expect(result?.differences.events.shared.map((e) => e.id)).toEqual(['original'])
+    expect(result?.differences.events.leftOnly.map((e) => e.id)).toEqual(['main-late'])
+    expect(result?.differences.events.rightOnly.map((e) => e.id)).toEqual(['fork-early'])
+    expect(result?.firstDivergence).toEqual({ simTime: '2026-09-19T09:30:00.000Z', eventId: 'fork-early', side: 'right' })
+    // 无参调用不截断,且响应现状字段逐字段一致(新增 alignedAt=null / firstDivergence 为增量)
+    const unaligned = await compareTimelines(fixture.db, 'world', 'main', fork.id)
+    expect(unaligned?.alignedAt).toBeNull()
+    expect(unaligned?.differences.events.rightOnly.map((e) => e.id)).toEqual(['fork-early', 'fork-late'])
+    expect(unaligned?.firstDivergence).toEqual(result!.firstDivergence)
+    expect(unaligned?.limitations).not.toContain('Person states have no history table; state differences above are current values, not values reconstructed at the aligned simTime.')
+  })
+
+  it('firstDivergence 边界:无分歧为 null、首个即在分叉点、同时刻取左线', async () => {
+    const same = await compareTimelines(fixture.db, 'world', 'main', 'main')
+    expect(same?.firstDivergence).toBeNull()
+
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    await fixture.db.insert(events).values({ id: 'at-fork-point', timelineId: fork.id, simTime: SIM, title: 'Diverge at fork', description: '' })
+    const atPoint = await compareTimelines(fixture.db, 'world', 'main', fork.id)
+    expect(atPoint?.firstDivergence).toEqual({ simTime: SIM, eventId: 'at-fork-point', side: 'right' })
+
+    await fixture.db.insert(events).values({ id: 'same-moment', timelineId: 'main', simTime: SIM, title: 'Same moment', description: '' })
+    const tie = await compareTimelines(fixture.db, 'world', 'main', fork.id)
+    expect(tie?.firstDivergence).toEqual({ simTime: SIM, eventId: 'same-moment', side: 'left' })
+  })
+
+  it('事实按 key 取 ≤ T 的最大 version;状态不截断且 limitations 明示', async () => {
+    await commitWorldCommand(fixture.db, { id: 'weather-v1', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 0,
+      action: { type: 'environment', location: null, condition: 'weather', value: 'sun' } })
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    // 事实行不可变(触发器),v2 的更晚 simTime 通过推进主线时钟获得
+    await fixture.db.update(timelines).set({ simNow: '2026-09-20T00:00:00.000Z' }).where(eq(timelines.id, 'main'))
+    await commitWorldCommand(fixture.db, { id: 'weather-v2', worldId: 'world', timelineId: 'main',
+      userId: 'owner', expectedVersion: 1,
+      action: { type: 'environment', location: null, condition: 'weather', value: 'storm' } })
+    await fixture.db.update(personStates).set({ mood: 'Excited' })
+      .where(and(eq(personStates.timelineId, fork.id), eq(personStates.personId, 'npc')))
+
+    const aligned = await compareTimelines(fixture.db, 'world', 'main', fork.id, '2026-09-19T12:00:00.000Z')
+    // v2(2026-09-20)超出对齐时刻:左右都只见 v1 的 sun,无事实差异
+    expect(aligned?.differences.facts).toEqual([])
+    // 状态无历史表:不截断,仍是当前值,limitations 必须明示
+    expect(aligned?.differences.states).toHaveLength(1)
+    expect(aligned?.limitations).toContain('Person states have no history table; state differences above are current values, not values reconstructed at the aligned simTime.')
+
+    const unaligned = await compareTimelines(fixture.db, 'world', 'main', fork.id)
+    expect(unaligned?.differences.facts.map((f) => f.key)).toEqual(['environment:world:weather'])
+  })
+
+  it('路由:非法 simTime 400,合法值归一化回显', async () => {
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    expect((await request(`/worlds/world/compare?left=main&right=${fork.id}&simTime=not-a-date`)).status).toBe(400)
+    const response = await request(`/worlds/world/compare?left=main&right=${fork.id}&simTime=2026-09-19`)
+    expect(response.status).toBe(200)
+    const body = await response.json() as { alignedAt: string | null }
+    expect(body.alignedAt).toBe('2026-09-19T00:00:00.000Z')
+  })
+})
+
 describe('fork snapshots', () => {
   it('keeps dialogue, event, memory, commitment, and knowledge on one Root→Child→Grandchild checkpoint matrix', async () => {
     await fixture.db.update(worlds).set({ locationsJson: JSON.stringify([{ name: 'Cafe', description: '' }]) })

@@ -199,6 +199,44 @@ export interface LocationBoardEntry {
   persons: { id: string; name: string; activity: string }[]
 }
 
+/** compare API 事件条目(S1 对齐时间轴) */
+export interface ComparisonEvent {
+  id: string
+  simTime: string
+  title: string
+  description: string
+}
+
+export interface ComparisonDivergence {
+  simTime: string
+  eventId: string
+  side: 'left' | 'right'
+}
+
+/** GET /worlds/:id/compare 响应(S1:alignedAt/firstDivergence 为增量,状态/事实细节按需细读) */
+export interface TimelineComparison {
+  worldId: string
+  interpretation: 'observed_differences_not_causal_claims'
+  timeAlignment: 'same_sim_time' | 'different_sim_times'
+  /** simTime 请求参数回显;null = 未对齐(现状行为) */
+  alignedAt: string | null
+  firstDivergence: ComparisonDivergence | null
+  left: { id: string; simNow: string; status: string; parentTimelineId: string | null; historyComplete: boolean }
+  right: { id: string; simNow: string; status: string; parentTimelineId: string | null; historyComplete: boolean }
+  sharedForkOrigin: {
+    timelineId: string
+    leftFork: { forkTimelineId: string; sourceSimTime: string | null } | null
+    rightFork: { forkTimelineId: string; sourceSimTime: string | null } | null
+  } | null
+  differences: {
+    states: unknown[]
+    facts: unknown[]
+    worldModelVersions: { left: number | null; right: number | null }
+    events: { shared: ComparisonEvent[]; leftOnly: ComparisonEvent[]; rightOnly: ComparisonEvent[] }
+  }
+  limitations: string[]
+}
+
 export interface WorldSnapshot {
   world: {
     id: string

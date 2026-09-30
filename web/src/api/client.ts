@@ -141,6 +141,7 @@ import type {
   WorldSummary,
   WorldState,
   ReturnBrief,
+  TimelineComparison,
 } from './types'
 import type { SceneChangeSet, SceneDocument, SceneOperation, SceneDraftResponse, SceneReadResponse } from './types'
 import { createSseParser } from '../lib/sseParser'
@@ -339,7 +340,8 @@ export const lifeApi = {
   returnBrief: (worldId: string, timelineId: string) => apiFetch<ReturnBrief>(`/api/worlds/${worldId}/return?timelineId=${encodeURIComponent(timelineId)}`),
   markSeen: (worldId: string, timelineId: string, cursor: number) => apiFetch<{ok: true}>(`/api/worlds/${worldId}/return/seen`, {method:'POST', body: JSON.stringify({timelineId, cursor})}),
   act: (worldId: string, commitmentId: string, action: string, explanation?: string) => apiFetch<{ok:true;status:string}>(`/api/worlds/${worldId}/commitments/${commitmentId}`, {method:'POST', body: JSON.stringify({action, explanation})}),
-  compare: (worldId: string, left: string, right: string) => apiFetch<unknown>(`/api/worlds/${worldId}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
+  compare: (worldId: string, left: string, right: string, opts: { simTime?: string } = {}) =>
+    apiFetch<TimelineComparison>(`/api/worlds/${worldId}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}${opts.simTime ? `&simTime=${encodeURIComponent(opts.simTime)}` : ''}`),
 }
 
 /**
