@@ -5,7 +5,7 @@ import {
 import * as THREE from 'three'
 import { AmbientAnimator } from './ambient'
 import { buildPlaceholderAtlas, TextureAtlas } from './atlas'
-import { CameraRig } from './camera'
+import { CameraRig, type OrbitPose } from './camera'
 import { findSpawnNear, WalkCameraStrategy } from './camera-walk'
 import { DayNightCycle } from './day-night'
 import { BuildFeedback } from './feedback'
@@ -253,6 +253,16 @@ export class VoxelEngine {
 
   get cameraMode(): 'orbit' | 'walk' {
     return this.cameraRig.mode as 'orbit' | 'walk'
+  }
+
+  /** orbit 位姿读出(S1 分屏相机联动);walk 模式返回 null */
+  getOrbitPose(): OrbitPose | null {
+    return this.cameraRig.getOrbitPose()
+  }
+
+  /** 受控位姿写入(S1 分屏相机联动);walk 模式忽略 */
+  setOrbitPose(pose: OrbitPose): void {
+    this.cameraRig.setOrbitPose(pose)
   }
 
   setTimeOfDay(t: number): void {

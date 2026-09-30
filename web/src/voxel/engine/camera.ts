@@ -18,6 +18,14 @@ const MAX_DISTANCE = 400
 const MIN_PHI = 0.25
 const MAX_PHI = 1.45
 
+/** orbit 相机位姿(S1 分屏联动):整体读出/写入,walk 模式不适用 */
+export interface OrbitPose {
+  theta: number
+  phi: number
+  distance: number
+  target: { x: number; y: number; z: number }
+}
+
 /** 等距 3D 环绕相机：旋转 / 缩放 / 平移，初始构图自动适配世界尺寸 */
 export class OrbitCameraStrategy implements CameraStrategy {
   readonly mode = 'orbit'
@@ -125,6 +133,14 @@ export class OrbitCameraStrategy implements CameraStrategy {
   setTarget(at: { x: number; y: number; z: number }): void {
     this.target.set(at.x, at.y, at.z)
   }
+
+  /** 受控位姿写入(S1 分屏联动):越界值按既有边界收敛 */
+  setPose(pose: OrbitPose): void {
+    this.theta = pose.theta
+    this.phi = THREE.MathUtils.clamp(pose.phi, MIN_PHI, MAX_PHI)
+    this.distance = THREE.MathUtils.clamp(pose.distance, MIN_DISTANCE, MAX_DISTANCE)
+    this.target.set(pose.target.x, pose.target.y, pose.target.z)
+  }
 }
 
 /** 相机装配:orbit / walk 双策略(S2b F1)。walk 策略由引擎门面按需创建注入 */
@@ -193,6 +209,19 @@ export class CameraRig {
       return { target: this.walk.playerPosition, distance: 40 } // distance 40 = 阴影最小覆盖范围
     }
     return this.orbit.state
+  }
+
+  /** orbit 位姿读出(S1 分屏联动);非 orbit 模式返回 null(联动无意义) */
+  getOrbitPose(): OrbitPose | null {
+    if (this.active.mode !== 'orbit') return null
+    const s = this.orbit.state
+    return { theta: s.theta, phi: s.phi, distance: s.distance, target: { x: s.target.x, y: s.target.y, z: s.target.z } }
+  }
+
+  /** 受控位姿写入;非 orbit 模式忽略(walk 下联动失效) */
+  setOrbitPose(pose: OrbitPose): void {
+    if (this.active.mode !== 'orbit') return
+    this.orbit.setPose(pose)
   }
 
   update(dt: number): void {
