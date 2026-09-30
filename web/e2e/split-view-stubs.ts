@@ -16,6 +16,9 @@ const timelines = [
   { id: 'timeline-fork-2', parentTimelineId: 'timeline-main', status: 'active', simNow: NOW, createdAt: '2026-09-18T11:00:00.000Z', forkScenario: { whatIf: '暴雨没有来', changedVariable: '天气' } },
 ]
 
+export type StubTimeline = (typeof timelines)[number]
+export const stubTimelines: StubTimeline[] = timelines
+
 export const events = {
   shared: { id: 'ev-shared-1', simTime: '2026-09-19T08:00:00.000Z', title: '清晨的集市', description: '共同过去' },
   left: { id: 'ev-left-1', simTime: '2026-09-19T10:00:00.000Z', title: '信被退回', description: '主线独有' },
@@ -27,13 +30,13 @@ const worldEvent = (e: { id: string; simTime: string; title: string; description
   ...e, kind: 'action', actorPersonId: null, actorName: null, dialogueId: null, location: null, dialoguePreview: null,
 })
 
-export function snapshotFor(timelineId: string) {
+export function snapshotFor(timelineId: string, timelineList: StubTimeline[] = timelines) {
   const own = timelineId === 'timeline-main' ? [events.left]
     : timelineId === 'timeline-fork' ? [events.rightEarly, events.rightLate]
     : []
   return {
     world: { id: 'world-1', name: '雾影庄', description: '体素世界', status: 'running', pauseReason: null, isDemo: false, callsToday: 0, locations: [{ name: '主楼', description: '庄园主楼' }] },
-    timelines,
+    timelines: timelineList,
     currentTimelineId: timelineId,
     simNow: NOW,
     stateVersion: 1,
@@ -77,7 +80,8 @@ export function comparisonFor(leftId: string, rightId: string, simTime?: string 
   }
 }
 
-export function stubSplitApis(page: Page) {
+export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } = {}) {
+  const timelineList = opts.timelines ?? timelines
   return Promise.all([
     page.addInitScript(() => {
       localStorage.setItem('possibility_token', 'e2e-token')
@@ -87,7 +91,7 @@ export function stubSplitApis(page: Page) {
     page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' })),
     page.route('**/api/worlds/world-1/map/bootstrap**', (route) => {
       const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
-      const snapshot = snapshotFor(id)
+      const snapshot = snapshotFor(id, timelineList)
       return route.fulfill({
         json: {
           access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
@@ -110,7 +114,7 @@ export function stubSplitApis(page: Page) {
     }),
     page.route('**/api/worlds/world-1?*', (route) => {
       const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
-      return route.fulfill({ json: snapshotFor(id) })
+      return route.fulfill({ json: snapshotFor(id, timelineList) })
     }),
     page.route('**/voxel-assets/**', (route) => route.fulfill({ status: 404, body: 'not found' })),
   ])
