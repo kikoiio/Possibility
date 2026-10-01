@@ -131,7 +131,7 @@ export interface HomeData {
     id: string
     name: string
     status: 'running' | 'paused' | 'capped'
-    pauseReason: 'manual' | 'daily_cap' | 'idle' | null
+    pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
     isDemo: boolean
     simNow: string | null
     personCount: number
@@ -162,7 +162,7 @@ export interface WorldSummary {
   name: string
   description: string
   status: 'running' | 'paused' | 'capped' | 'archived'
-  pauseReason: 'manual' | 'daily_cap' | 'idle' | null
+  pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
   isDemo: boolean
   callsToday: number
   personCount: number

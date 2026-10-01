@@ -15,6 +15,8 @@ import WorldEventFeed from '../components/world/WorldEventFeed'
 import PersonDrawer from '../components/world/PersonDrawer'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
 import ForkCompareHint from '../components/world/ForkCompareHint'
+import GlobalCapBanner from '../components/GlobalCapBanner'
+import WorldLlmConfigPanel from '../components/WorldLlmConfigPanel'
 import ChapterPanel from '../components/world/ChapterPanel'
 import ScenePanel from '../components/world/ScenePanel'
 import LifePanel from '../components/world/LifePanel'
@@ -91,6 +93,7 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [personaUnread, setPersonaUnread] = useState(0)
   const [lifeOpen, setLifeOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [llmConfigOpen, setLlmConfigOpen] = useState(false)
   const [mode, setMode] = useState<'observe' | 'presence' | 'construct'>('observe')
   const [stateRefresh, setStateRefresh] = useState(0)
   const forkRequestIdRef = useRef<string | null>(null)
@@ -446,6 +449,12 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   章节
                 </button>
                 <button
+                  onClick={() => setLlmConfigOpen((v) => !v)}
+                  className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
+                >
+                  LLM
+                </button>
+                <button
                   onClick={handleArchiveWorld}
                   className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-faint hover:bg-paper-deep"
                 >
@@ -455,11 +464,15 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
             )}
           </div>
         </div>
-        {capped && (
+        {capped && clock.pauseReason === 'global_daily_cap' && (
+          <div className="mt-1.5"><GlobalCapBanner /></div>
+        )}
+        {capped && clock.pauseReason !== 'global_daily_cap' && (
           <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">
             今日调用已达上限，世界已自动暂停，次日自动恢复运行。
           </p>
         )}
+        {llmConfigOpen && <WorldLlmConfigPanel worldId={worldId} />}
         <EvidenceNotice evidence={snapshot.evidence} />
         {forkHint && (
           <div className="mt-1.5">

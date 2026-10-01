@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 import type { HomeData } from '../api/types'
+import GlobalCapBanner from '../components/GlobalCapBanner'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -28,6 +29,7 @@ export default function Home() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
+      {data.worlds.some((w) => w.status === 'capped' && w.pauseReason === 'global_daily_cap') && <GlobalCapBanner />}
       {data.worlds.length === 0 && (
         <div className="rounded-2xl border border-dashed border-ink-faint bg-sheet p-8 text-center">
           <p className="text-ink-soft">从一个世界开始。</p>

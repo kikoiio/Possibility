@@ -291,6 +291,27 @@ export const chaptersApi = {
   get: (chapterId: string) => apiFetch<Chapter>(`/api/chapters/${chapterId}`),
 }
 
+/** 设置(F5/S3):全局 BYOK 配置与日预算;Key 只写不读,回显仅掩码 */
+export interface LlmSettings { baseUrl: string | null; model: string | null; hasKey: boolean; keyPreview: string | null }
+export interface BudgetSettings { dailyCallCap: number | null; usedToday: number }
+export interface WorldLlmConfig { baseUrl: string | null; model: string | null; hasKey: boolean; keyPreview: string | null }
+
+export const settingsApi = {
+  getLlm: () => apiFetch<LlmSettings>('/api/settings/llm'),
+  putLlm: (patch: { baseUrl?: string | null; apiKey?: string | null; model?: string | null }) =>
+    apiFetch<LlmSettings>('/api/settings/llm', { method: 'PUT', body: JSON.stringify(patch) }),
+  deleteLlm: () => apiFetch<{ ok: true }>('/api/settings/llm', { method: 'DELETE' }),
+  getBudget: () => apiFetch<BudgetSettings>('/api/settings/budget'),
+  putBudget: (dailyCallCap: number | null) =>
+    apiFetch<BudgetSettings>('/api/settings/budget', { method: 'PUT', body: JSON.stringify({ dailyCallCap }) }),
+}
+
+export const worldLlmConfigApi = {
+  get: (worldId: string) => apiFetch<WorldLlmConfig>(`/api/worlds/${worldId}/llm-config`),
+  put: (worldId: string, llmConfig: { baseUrl?: string | null; apiKey?: string | null; model?: string | null } | null) =>
+    apiFetch<WorldLlmConfig>(`/api/worlds/${worldId}`, { method: 'PATCH', body: JSON.stringify({ llmConfig }) }),
+}
+
 /** 记忆可审计：校正 / 删除（人物会立刻忘掉） */
 export const memoriesApi = {
   update: (memoryId: string, patch: { content?: string; importance?: number; personId: string; timelineId: string;

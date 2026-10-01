@@ -9,6 +9,7 @@ import PersonCreate from './pages/PersonCreate'
 import PersonDetail from './pages/PersonDetail'
 import TimelineView from './pages/TimelineView'
 import Worlds from './pages/Worlds'
+import SettingsPage from './pages/SettingsPage'
 import WorldCreate from './pages/WorldCreate'
 import WorldCanvasPage from './pages/WorldCanvasPage'
 import DemoLanding from './pages/DemoLanding'
@@ -78,6 +79,9 @@ function Layout() {
           <NavLink to="/people" className={({ isActive }) => (isActive ? 'font-medium text-ink' : '')}>
             人物
           </NavLink>
+          <NavLink to="/settings" className={({ isActive }) => (isActive ? 'font-medium text-ink' : '')}>
+            设置
+          </NavLink>
         </nav>
         <button onClick={logout} className="text-sm text-ink-faint hover:text-ink">
           退出
@@ -141,6 +145,7 @@ export default function App() {
         <Route path="/people/:id" element={<PersonDetail />} />
         <Route path="/timelines/:id" element={<TimelineView />} />
         <Route path="/worlds" element={<Worlds />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
