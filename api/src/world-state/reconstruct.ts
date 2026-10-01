@@ -3,13 +3,18 @@
  * 全量 reduceProjection 回放。分叉线的继承历史由其不可变分叉快照冻结,免疫 legacy
  * NULL 桶直删;主线存在 NULL 桶则历史分叉整体不可用(旧直删不可追溯,诚实拒绝)。
  */
-import { and, desc, eq, inArray, isNull, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { memories, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import {
+  commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules,
+  timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons,
+} from '../db/schema'
 import { hydrateTimelines } from '../life/snapshot-store'
-import { firstAnchor } from './anchors'
+import { readForkSnapshot } from '../agent/visibility'
+import { hashAnchorCore, latestAnchorAtOrBefore, parseAnchorCore } from './anchors'
+import { applyCoreCommands } from './core-replay'
 import { resolveProjectionBaseline } from './evidence'
-import { PROJECTION_DOMAINS, type ProjectionBaseline } from './model'
+import { PROJECTION_DOMAINS, type ProjectionBaseline, type ProjectionDomain } from './model'
 
 export type HistoryRejectCode =
   | 'future_time' | 'before_history_start' | 'baseline_incomplete'
@@ -74,14 +79,8 @@ export async function versionAtTime(db: Db, timelineId: string, at: string): Pro
 export async function historyRange(db: Db, worldId: string, timelineId: string): Promise<{ earliest: string | null; simNow: string } | null> {
   const ctx = await loadContext(db, worldId, timelineId)
   if (!ctx) return null
-  let earliest: string | null = null
-  if (ctx.rootHasNullBucket) {
-    earliest = null
-  } else if (baselineComplete(ctx.baseline)) {
-    earliest = ctx.baseline.simTime
-  } else {
-    earliest = (await firstAnchor(db, timelineId))?.simTime ?? null
-  }
+  // 锚点只封顶回放成本,不构成完整性证据——无完整基线的线不做历史分叉
+  const earliest = !ctx.rootHasNullBucket && baselineComplete(ctx.baseline) ? ctx.baseline.simTime : null
   return { earliest, simNow: ctx.timeline.simNow }
 }
 
@@ -93,14 +92,188 @@ export async function checkMoment(db: Db, worldId: string, timelineId: string, a
   const simNow = ctx.timeline.simNow
   if (Date.parse(at) > Date.parse(simNow)) return reject('future_time')
   if (Date.parse(at) === Date.parse(simNow)) return { ok: true, effectiveMoment: simNow }
-  const range = await historyRange(db, worldId, timelineId)
-  if (!range?.earliest || Date.parse(at) < Date.parse(range.earliest)) return reject('before_history_start')
+  if (ctx.rootHasNullBucket || !baselineComplete(ctx.baseline)) return reject('baseline_incomplete')
+  const earliest = ctx.baseline.simTime
+  if (Date.parse(at) < Date.parse(earliest)) return reject('before_history_start')
   const located = await versionAtTime(db, timelineId, at)
   if (!located) {
     // 基线时刻本身(分叉线的分叉时刻/主线的创建时刻)
-    return ctx.baseline && Date.parse(at) >= Date.parse(ctx.baseline.simTime)
-      ? { ok: true, effectiveMoment: ctx.baseline.simTime }
-      : reject('before_history_start')
+    return Date.parse(at) >= Date.parse(earliest) ? { ok: true, effectiveMoment: earliest } : reject('before_history_start')
   }
   return { ok: true, effectiveMoment: located.simTime }
+}
+
+/* ---------- T6: 时刻重建 ---------- */
+
+export interface ReconstructionEvidence {
+  source: 'anchor_replay' | 'full_replay'
+  throughVersion: number
+  anchorVersion: number | null
+  completeDomains: ProjectionDomain[]
+  coreHash: string
+  invertedMaintenance: number
+}
+
+export interface ReconstructionRows {
+  states: (typeof personStates.$inferSelect)[]
+  schedules: (typeof schedules.$inferSelect)[]
+  commitments: (typeof commitments.$inferSelect)[]
+  memories: (typeof memories.$inferSelect)[]
+  events: (typeof events.$inferSelect)[]
+  dialogues: (typeof dialogues.$inferSelect)[]
+  dialogueTurns: (typeof dialogueTurns.$inferSelect)[]
+  personaMessages: (typeof personaMessages.$inferSelect)[]
+  worldFacts: (typeof worldFacts.$inferSelect)[]
+}
+
+export interface Reconstruction {
+  ok: true
+  simTime: string
+  rows: ReconstructionRows
+  evidence: ReconstructionEvidence
+}
+export type ReconstructResult = Reconstruction | HistoryReject
+
+type MemoryRow = typeof memories.$inferSelect
+
+/** 逆放 V 之后的记忆维护命令:correct 恢复 before、forget 重新插入 before、summary 复位 summarized。
+ * 按版本倒序(先撤销最新)。任何结构性不符即 integrity_mismatch——不猜、不冒充。 */
+function invertMaintenance(
+  assembled: MemoryRow[], commands: (typeof worldCommands.$inferSelect)[], timelineId: string, simTime: string,
+): { inverted: number } | HistoryReject {
+  let inverted = 0
+  for (const command of [...commands].reverse()) {
+    let action: Record<string, unknown> | null = null
+    try {
+      const parsed = JSON.parse(command.payloadJson) as unknown
+      action = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+    } catch { /* fallthrough: action null → mismatch */ }
+    if (!action) return reject('integrity_mismatch')
+    const before = action.before && typeof action.before === 'object' && !Array.isArray(action.before)
+      ? action.before as Record<string, unknown> : null
+    if (action.type === 'memory_summary') {
+      const sourceIds = Array.isArray(action.sourceMemoryIds)
+        ? action.sourceMemoryIds.filter((id): id is string => typeof id === 'string') : null
+      if (!sourceIds) return reject('integrity_mismatch')
+      for (const id of sourceIds) {
+        const row = assembled.find((memory) => memory.id === id)
+        if (row) row.summarized = false
+      }
+      inverted += 1
+      continue
+    }
+    if (!before || typeof before.id !== 'string') return reject('integrity_mismatch')
+    // 只关心在 T 时刻已存在(或本应存在)的行
+    if (typeof before.simTime === 'string' && Date.parse(before.simTime) > Date.parse(simTime)) continue
+    const index = assembled.findIndex((memory) => memory.id === before.id)
+    if (action.type === 'memory_correct') {
+      const after = action.after && typeof action.after === 'object' && !Array.isArray(action.after)
+        ? action.after as Record<string, unknown> : null
+      if (!after) return reject('integrity_mismatch')
+      if (index < 0) {
+        // 活表水位下该行应可见却缺席 → 历史被非命令路径动过
+        return reject('integrity_mismatch')
+      }
+      const current = assembled[index]
+      if (current.content !== after.content || current.importance !== after.importance) return reject('integrity_mismatch')
+      if (typeof before.content !== 'string' || typeof before.importance !== 'number') return reject('integrity_mismatch')
+      assembled[index] = { ...current, content: before.content, importance: before.importance }
+      inverted += 1
+      continue
+    }
+    if (action.type === 'memory_forget') {
+      if (index >= 0) return reject('integrity_mismatch')
+      if (before.timelineId !== timelineId && before.timelineId !== null) return reject('integrity_mismatch')
+      if (typeof before.personId !== 'string' || typeof before.type !== 'string' || typeof before.content !== 'string'
+        || typeof before.importance !== 'number' || typeof before.createdAt !== 'string') return reject('integrity_mismatch')
+      assembled.push({
+        id: before.id, personId: before.personId, timelineId: before.timelineId === null ? null : timelineId,
+        type: before.type, content: before.content,
+        simTime: typeof before.simTime === 'string' ? before.simTime : null,
+        createdAt: before.createdAt, importance: before.importance,
+        summarized: before.summarized === true,
+        mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null,
+        createdVersion: null,
+      })
+      inverted += 1
+      continue
+    }
+    return reject('integrity_mismatch')
+  }
+  return { inverted }
+}
+
+/** 重建时间线在时刻 at 的完整状态视图 + 证据;证据不足即拒绝,绝不产出残缺状态。 */
+export async function reconstructAt(db: Db, worldId: string, timelineId: string, at: string): Promise<ReconstructResult> {
+  const ctx = await loadContext(db, worldId, timelineId)
+  if (!ctx || ctx.timeline.status !== 'active') return reject('timeline_not_active')
+  if (!Number.isFinite(Date.parse(at))) return reject('before_history_start')
+  if (Date.parse(at) > Date.parse(ctx.timeline.simNow)) return reject('future_time')
+  if (ctx.rootHasNullBucket || !baselineComplete(ctx.baseline)) return reject('baseline_incomplete')
+  const baseline = ctx.baseline
+  if (Date.parse(at) < Date.parse(baseline.simTime)) return reject('before_history_start')
+  const located = await versionAtTime(db, timelineId, at)
+  const throughVersion = located?.version ?? 0
+  const effectiveSimTime = located?.simTime ?? baseline.simTime
+
+  const anchor = await latestAnchorAtOrBefore(db, timelineId, throughVersion)
+  if (anchor) {
+    const payload = parseAnchorCore(anchor.payloadJson)
+    if (!payload) return reject('integrity_mismatch')
+    const commands = await db.select().from(worldCommands).where(and(
+      eq(worldCommands.timelineId, timelineId),
+      gt(worldCommands.resultVersion, anchor.version), lte(worldCommands.resultVersion, throughVersion),
+    )).orderBy(asc(worldCommands.resultVersion))
+    const core = applyCoreCommands(payload, commands, anchor.simTime)
+    // 历史域:分叉线的继承部分冻结在快照;本线部分 = 活表版本水位 ≤V + 逆放。
+    // 用 created_version 而非 simTime:存在倒日期行(居民故事事件/摘要回填源时刻),
+    // simTime 水位会把 V 之后创建的行漏进历史。NULL(部署前旧行)必早于首个锚点,安全纳入。
+    const frozen = ctx.timeline.parentTimelineId ? readForkSnapshot(ctx.timeline) : null
+    const [ownEvents, ownDialogues, ownMessages, ownMemories, ownFacts] = await db.batch([
+      db.select().from(events).where(and(eq(events.timelineId, timelineId),
+        or(isNull(events.createdVersion), lte(events.createdVersion, throughVersion)))),
+      db.select().from(dialogues).where(and(eq(dialogues.timelineId, timelineId),
+        or(isNull(dialogues.createdVersion), lte(dialogues.createdVersion, throughVersion)))),
+      db.select().from(personaMessages).where(and(eq(personaMessages.timelineId, timelineId),
+        or(isNull(personaMessages.createdVersion), lte(personaMessages.createdVersion, throughVersion)))),
+      db.select().from(memories).where(and(eq(memories.timelineId, timelineId),
+        or(isNull(memories.createdVersion), lte(memories.createdVersion, throughVersion)))),
+      db.select().from(worldFacts).where(and(eq(worldFacts.timelineId, timelineId), lte(worldFacts.version, throughVersion))),
+    ])
+    const dialogueIds = new Set(ownDialogues.map((dialogue) => dialogue.id))
+    const ownTurns = dialogueIds.size
+      ? await db.select().from(dialogueTurns).where(and(
+          inArray(dialogueTurns.dialogueId, [...dialogueIds]),
+          or(isNull(dialogueTurns.createdVersion), lte(dialogueTurns.createdVersion, throughVersion))))
+      : []
+    const assembledMemories: MemoryRow[] = [...(frozen?.memories ?? []), ...ownMemories]
+    const maintenance = await db.select().from(worldCommands).where(and(
+      eq(worldCommands.timelineId, timelineId), gt(worldCommands.resultVersion, throughVersion),
+      inArray(worldCommands.type, ['memory_correct', 'memory_forget', 'memory_summary']),
+    )).orderBy(asc(worldCommands.resultVersion))
+    const inverted = invertMaintenance(assembledMemories, maintenance, timelineId, effectiveSimTime)
+    if ('ok' in inverted) return inverted
+    assembledMemories.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    const sortedEvents = [...(frozen?.events ?? []), ...ownEvents]
+      .sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
+    const coreHash = await hashAnchorCore({ version: 1, states: core.states, schedules: core.schedules, commitments: core.commitments })
+    return {
+      ok: true,
+      simTime: effectiveSimTime,
+      rows: {
+        states: core.states, schedules: core.schedules, commitments: core.commitments,
+        memories: assembledMemories, events: sortedEvents,
+        dialogues: [...(frozen?.dialogues ?? []), ...ownDialogues],
+        dialogueTurns: [...(frozen?.dialogueTurns ?? []), ...ownTurns],
+        personaMessages: [...(frozen?.personaMessages ?? []), ...ownMessages],
+        worldFacts: [...(frozen?.worldFacts ?? []), ...ownFacts],
+      },
+      evidence: {
+        source: 'anchor_replay', throughVersion, anchorVersion: anchor.version,
+        completeDomains: [...baseline.completeDomains], coreHash, invertedMaintenance: inverted.inverted,
+      },
+    }
+  }
+  // 无锚点 → 全量回放兜底(T7)
+  return reject('replay_diagnostics')
 }

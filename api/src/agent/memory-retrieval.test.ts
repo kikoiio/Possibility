@@ -29,7 +29,7 @@ function mem(id: string, over: Partial<Memory> & { createdAt: string }): Memory 
   return {
     id, personId: 'ada', timelineId: 'home-main', type: 'timeline', content: id,
     simTime: over.createdAt, importance: 5, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null, ...over,
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null, createdVersion: null, ...over,
   }
 }
 

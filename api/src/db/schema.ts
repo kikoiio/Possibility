@@ -209,6 +209,8 @@ export const schedules = sqliteTable(
     // [{start, end, location, activity, kind?}]
     itemsJson: text('items_json').notNull(),
     generatedAt: text('generated_at').notNull(),
+    // S4 版本水位：写入时的宇宙修订版本；NULL = 部署前旧行
+    createdVersion: integer('created_version'),
   },
   (t) => [primaryKey({ columns: [t.personId, t.timelineId, t.worldDate] })],
 )
@@ -229,6 +231,7 @@ export const dialogues = sqliteTable('dialogues', {
   kind: text('kind').notNull().default('npc'),
   visitorId: text('visitor_id').references(() => persons.id),
   sceneBusyUntil: integer('scene_busy_until'),
+  createdVersion: integer('created_version'),
 }, t => [uniqueIndex('scene_session_scope').on(t.timelineId, t.visitorId, t.location)])
 
 export const sceneRequests = sqliteTable('scene_requests', {
@@ -269,6 +272,7 @@ export const dialogueTurns = sqliteTable('dialogue_turns', {
   thought: text('thought').notNull(),
   simTime: text('sim_time').notNull(),
   createdAt: text('created_at').notNull(),
+  createdVersion: integer('created_version'),
 })
 
 export const memories = sqliteTable('memories', {
@@ -293,6 +297,7 @@ export const memories = sqliteTable('memories', {
   topicsJson: text('topics_json'),
   // S2 摘要层级（NULL = 原文；1 = L1 由原文压出；2 = L2 由 L1 压出，封顶）
   level: integer('level'),
+  createdVersion: integer('created_version'),
 }, t => [
   index('memories_person_timeline_created').on(t.personId, t.timelineId, t.createdAt),
   index('memories_person_timeline_importance').on(t.personId, t.timelineId, t.importance, t.createdAt),
@@ -322,6 +327,7 @@ export const events = sqliteTable('events', {
   actorPersonId: text('actor_person_id'),
   // kind=dialogue 时关联 dialogues.id
   dialogueId: text('dialogue_id'),
+  createdVersion: integer('created_version'),
 })
 
 /** 成本护栏与可观测性：每次 LLM 调用一行；世界创建前的调用（蒸馏/骨架）记 user_id、world_id 为空 */
@@ -430,6 +436,7 @@ export const personaMessages = sqliteTable('persona_messages', {
   simTime: text('sim_time').notNull(),
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
+  createdVersion: integer('created_version'),
 })
 
 /** 可执行的约定。proposed 仅是邀请，用户接受后才构成承诺。 */

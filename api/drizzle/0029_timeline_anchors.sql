@@ -10,3 +10,20 @@ CREATE TABLE `timeline_anchors` (
 	`created_at` text NOT NULL,
 	PRIMARY KEY(`timeline_id`, `sim_day`)
 );
+--> statement-breakpoint
+-- 版本水位列:历史重建以 created_version ≤ V 精确过滤(simTime 存在倒日期行,不足以区分版本前后)
+ALTER TABLE `events` ADD `created_version` integer;
+--> statement-breakpoint
+ALTER TABLE `memories` ADD `created_version` integer;
+--> statement-breakpoint
+ALTER TABLE `dialogues` ADD `created_version` integer;
+--> statement-breakpoint
+ALTER TABLE `dialogue_turns` ADD `created_version` integer;
+--> statement-breakpoint
+ALTER TABLE `persona_messages` ADD `created_version` integer;
+--> statement-breakpoint
+ALTER TABLE `schedules` ADD `created_version` integer;
+--> statement-breakpoint
+CREATE INDEX `events_timeline_created_version` ON `events` (`timeline_id`, `created_version`);
+--> statement-breakpoint
+CREATE INDEX `memories_timeline_created_version` ON `memories` (`timeline_id`, `created_version`);

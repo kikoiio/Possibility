@@ -2,7 +2,7 @@
  * + 命令版本水位 + 规范哈希。锚点只存可变核心;历史正文不可变且可推导,不冻结。
  * 捕获 best-effort:缺锚点只让重建退化为更早锚点或全量回放,正确性不依赖锚点存在。
  */
-import { and, asc, desc, eq, gte, lte } from 'drizzle-orm'
+import { and, desc, eq, gte, lte } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { commitments, personStates, schedules, timelineAnchors, universeRevisions, type timelines } from '../db/schema'
 import { stableValue } from './projector'
@@ -60,13 +60,8 @@ export async function captureDailyAnchor(db: Db, timeline: Timeline, now = new D
 
 /** 重建选锚:版本水位 ≤ 目标版本的最新锚点。 */
 export async function latestAnchorAtOrBefore(db: Db, timelineId: string, version: number): Promise<Anchor | null> {
-  return await db.select().from(timelineAnchors).where(and(
+  const row = await db.select().from(timelineAnchors).where(and(
     eq(timelineAnchors.timelineId, timelineId), lte(timelineAnchors.version, version),
-  )).orderBy(desc(timelineAnchors.version)).limit(1).get() ?? null
-}
-
-/** 范围查询的保守兜底:首锚点(legacy 线最早可回溯时刻)。 */
-export async function firstAnchor(db: Db, timelineId: string): Promise<Anchor | null> {
-  return await db.select().from(timelineAnchors).where(eq(timelineAnchors.timelineId, timelineId))
-    .orderBy(asc(timelineAnchors.simTime)).limit(1).get() ?? null
+  )).orderBy(desc(timelineAnchors.version)).limit(1).get()
+  return row ?? null
 }

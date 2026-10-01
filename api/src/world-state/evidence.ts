@@ -74,11 +74,15 @@ export function resolveProjectionBaseline(
       if (attestedLegacyFork) completeDomains = [...PROJECTION_DOMAINS]
     }
     if (!completeDomains) return null
+    // 继承行对子线而言在 V=0 即存在:与 fork.ts 实况拷贝(createdVersion: 0)对齐;
+    // 部署前的 legacy 行保持 NULL(视为始终存在)
+    const inheritedSchedules = checkpoint.schedules.map(row =>
+      ({ ...row, createdVersion: row.createdVersion == null ? null : 0 }))
     return parseBaseline({
       source: 'fork', version: checkpoint.sourceStateVersion ?? 0, capturedAt: checkpoint.capturedAt,
       simTime: checkpoint.sourceSimTime, completeDomains,
       rows: {
-        states: checkpoint.states, schedules: checkpoint.schedules, events: checkpoint.events,
+        states: checkpoint.states, schedules: inheritedSchedules, events: checkpoint.events,
         commitments: checkpoint.projectedCommitments ?? checkpoint.commitments,
         memories: checkpoint.memories, dialogues: checkpoint.dialogues ?? [],
         dialogueTurns: checkpoint.dialogueTurns ?? [], personaMessages: checkpoint.personaMessages ?? [],

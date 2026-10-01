@@ -593,6 +593,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
     }
     // The request's optimistic base starts after opening/reusing its conversation shell.
     startingRevision = await ensureUniverseRevision(db, world.id, tl.id)
+    const commitVersion = startingRevision.version + 1
     const dialogueId = dialogue.id
     const existingRequest = await db.select().from(sceneRequests).where(eq(sceneRequests.id, requestId)).get()
     if (existingRequest && existingRequest.dialogueId !== dialogueId) {
@@ -657,6 +658,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
       thought: '',
       simTime: simNow,
       createdAt: now,
+      createdVersion: commitVersion,
     }))
     newTurns.push({ id: visitorTurnId, personId: persona.id, utterance: content })
     const markCancelled = async () => {
@@ -732,6 +734,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
         thought: output.thought,
         simTime: simNow,
         createdAt: now,
+        createdVersion: commitVersion,
       }))
       newTurns.push({ id: responseTurnId, personId: responder.id, utterance: output.utterance })
       const thoughtMemory = {
@@ -748,6 +751,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
         simTime: thoughtMemory.simTime,
         createdAt: thoughtMemory.createdAt,
         importance: thoughtMemory.importance,
+        createdVersion: commitVersion,
       }))
       if (output.memory) {
         const relationshipMemory = {
@@ -768,6 +772,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           mentionedPersonIdsJson: relationshipMemory.mentions.length ? JSON.stringify(relationshipMemory.mentions) : null,
           locationName: relationshipMemory.location,
           topicsJson: relationshipMemory.topics.length ? JSON.stringify(relationshipMemory.topics) : null,
+          createdVersion: commitVersion,
         }))
       }
       // 留言：人物有话托付给来访者——TA 下次进入世界时送达
@@ -788,6 +793,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
           simTime: message.simTime,
           read: false,
           createdAt: message.createdAt,
+          createdVersion: commitVersion,
         }))
       }
       if (output.commitment) {

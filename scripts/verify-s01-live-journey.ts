@@ -57,7 +57,7 @@ async function main() {
       { start: '20:00', end: '00:00', location: 'Cafe', activity: 'Resting', kind: 'sleep' },
     ]
     const scheduleRow = { personId: state.personId, timelineId: 'home-main',
-      worldDate: WORLD_TIME.slice(0, 10), itemsJson: JSON.stringify(schedule), generatedAt: WORLD_TIME }
+      worldDate: WORLD_TIME.slice(0, 10), itemsJson: JSON.stringify(schedule), generatedAt: WORLD_TIME, createdVersion: null }
     await fixture.db.insert(schedules).values(scheduleRow)
     const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [state])
     baseline.rows.schedules = [scheduleRow]

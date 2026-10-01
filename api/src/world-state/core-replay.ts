@@ -81,7 +81,8 @@ export function applyCoreCommands(core: AnchorCorePayload, commands: Command[], 
       const items = Array.isArray(action.items) ? action.items : null
       if (!personId || !worldDate || !generatedAt || !items) continue
       if (schedules.some((s) => s.personId === personId && s.worldDate === worldDate)) continue
-      schedules.push({ personId, timelineId: command.timelineId, worldDate, itemsJson: JSON.stringify(items), generatedAt })
+      schedules.push({ personId, timelineId: command.timelineId, worldDate, itemsJson: JSON.stringify(items),
+        generatedAt, createdVersion: command.resultVersion })
       continue
     }
     if (action.type === 'commitment_proposal') {

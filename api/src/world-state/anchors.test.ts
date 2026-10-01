@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createTestDb } from '../test/db'
 import { commitments, persons, personStates, schedules, timelineAnchors, timelines, universeRevisions, users, worlds } from '../db/schema'
-import { captureDailyAnchor, firstAnchor, hashAnchorCore, latestAnchorAtOrBefore, parseAnchorCore } from './anchors'
+import { captureDailyAnchor, hashAnchorCore, latestAnchorAtOrBefore, parseAnchorCore } from './anchors'
 
 const DAY1 = '2026-10-01T08:00:00.000Z'
 const DAY2 = '2026-10-02T00:30:00.000Z'
@@ -82,11 +82,4 @@ describe('锚点查询', () => {
     expect(await latestAnchorAtOrBefore(db, 'nope', 100)).toBeNull()
   })
 
-  it('firstAnchor 返回 simTime 最小行,无锚点返回 null', async () => {
-    const db = fixture.db
-    expect(await firstAnchor(db, 'main')).toBeNull()
-    const timeline = (await db.select().from(timelines).all())[0]
-    await captureDailyAnchor(db, timeline, DAY2)
-    expect((await firstAnchor(db, 'main'))?.simDay).toBe('2026-10-02')
-  })
 })

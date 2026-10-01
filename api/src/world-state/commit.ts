@@ -111,6 +111,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
     actorPersonId: plan.movePersonId ?? plan.enterPersonId ?? plan.statePersonId ?? plan.dialogueTurn?.speakerId
       ?? plan.commitmentProposal?.personId ?? plan.commitment?.visitorId ?? (input.actorKind === 'visitor' ? input.actorPersonId : null),
     dialogueId: plan.dialogueId ?? plan.commitment?.dialogueId ?? null,
+    createdVersion: resultVersion,
   })
   const evidenceAdvance = db.update(universeEvidence).set({ assessedVersion: resultVersion, assessedAt: now }).where(and(
     eq(universeEvidence.timelineId, timeline.id), eq(universeEvidence.level, 'complete'),
@@ -158,7 +159,8 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           type: 'summary', content: summary.content, simTime: summary.simTime, createdAt: summary.createdAt,
           importance: summary.importance, summarized: false, level: summary.level,
           mentionedPersonIdsJson: summary.mentions.length ? JSON.stringify(summary.mentions) : null,
-          locationName: summary.location, topicsJson: summary.topics.length ? JSON.stringify(summary.topics) : null }),
+          locationName: summary.location, topicsJson: summary.topics.length ? JSON.stringify(summary.topics) : null,
+          createdVersion: resultVersion }),
         ...summary.sourceMemoryIds.map(memoryId => db.update(memories).set({ summarized: true }).where(and(
           eq(memories.id, memoryId), eq(memories.personId, summary.personId), eq(memories.summarized, false),
         ))),
@@ -185,13 +187,14 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
       const schedule = plan.scheduleProjection
       await db.batch([command, advance, fact, db.insert(schedules).values({ personId: schedule.personId,
         timelineId: timeline.id, worldDate: schedule.worldDate, itemsJson: JSON.stringify(schedule.items),
-        generatedAt: schedule.generatedAt }), ...finalAtomicWrites])
+        generatedAt: schedule.generatedAt, createdVersion: resultVersion }), ...finalAtomicWrites])
     } else if (plan.sceneOpen) {
       const scene = plan.sceneOpen
       await db.batch([command, advance, fact,
         db.insert(dialogues).values({ id: scene.dialogueId, timelineId: timeline.id, location: scene.location,
           participantIdsJson: JSON.stringify(scene.participantIds), status: 'scene', kind: 'scene',
-          visitorId: scene.visitorId, turnLimit: scene.turnLimit, simStart: timeline.simNow, simEnd: timeline.simNow }),
+          visitorId: scene.visitorId, turnLimit: scene.turnLimit, simStart: timeline.simNow, simEnd: timeline.simNow,
+          createdVersion: resultVersion }),
         ...finalAtomicWrites])
     } else if (plan.commitmentProposal) {
       const item = plan.commitmentProposal
@@ -213,7 +216,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         fact, event.onConflictDoNothing(),
         db.insert(memories).values({ id: `${plan.eventId}:memory`, personId: item.personId, timelineId: timeline.id,
           type: 'relationship', content: item.memoryText, simTime: timeline.simNow, createdAt: now, importance: 8,
-          summarized: false }).onConflictDoNothing(),
+          summarized: false, createdVersion: resultVersion }).onConflictDoNothing(),
         ...(item.mood ? [db.update(personStates).set({ mood: item.mood, updatedRealAt: now }).where(and(
           eq(personStates.personId, item.personId), eq(personStates.timelineId, timeline.id),
         ))] : []),
@@ -249,6 +252,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         ...(plan.storyEvents ?? []).map((story, index) => db.insert(events).values({
           id: `${input.id}:story:${index}`, timelineId: timeline.id, simTime: story.simTime,
           title: story.title, description: story.description, kind: 'action', actorPersonId: plan.statePersonId,
+          createdVersion: resultVersion,
         })),
         ...(plan.stateMemories ?? []).map((memory, index) => db.insert(memories).values({
           id: `${input.id}:memory:${index}`, personId: plan.statePersonId!, timelineId: timeline.id,
@@ -257,6 +261,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
           mentionedPersonIdsJson: memory.mentions?.length ? JSON.stringify(memory.mentions) : null,
           locationName: memory.location ?? null,
           topicsJson: memory.topics?.length ? JSON.stringify(memory.topics) : null,
+          createdVersion: resultVersion,
         })),
         ...finalAtomicWrites,
       ])
@@ -267,7 +272,7 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
         command, advance, fact,
         db.insert(dialogues).values({ id: action.dialogueId, timelineId: timeline.id, location: action.location,
           participantIdsJson: JSON.stringify(action.participantIds), status: 'ongoing', kind: 'npc',
-          turnLimit: action.turnLimit, simStart: timeline.simNow }),
+          turnLimit: action.turnLimit, simStart: timeline.simNow, createdVersion: resultVersion }),
         ...action.participantIds.map(personId => db.update(personStates).set({
           currentDialogueId: action.dialogueId, updatedRealAt: now,
         }).where(and(eq(personStates.timelineId, timeline.id), eq(personStates.personId, personId)))),
@@ -277,18 +282,20 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
       const action = input.action
       if (action.type !== 'dialogue_turn') throw new Error('dialogue turn plan/action mismatch')
       const thought = db.insert(memories).values({ id: `${input.id}:thought`, personId: action.speakerId, timelineId: timeline.id,
-        type: 'thought', content: action.thought, simTime: timeline.simNow, createdAt: now, importance: 5, summarized: false })
+        type: 'thought', content: action.thought, simTime: timeline.simNow, createdAt: now, importance: 5,
+        summarized: false, createdVersion: resultVersion })
       const memory = action.memory ? [db.insert(memories).values({ id: `${input.id}:memory`, personId: action.speakerId,
         timelineId: timeline.id, type: 'relationship', content: action.memory.content, simTime: timeline.simNow,
         createdAt: now, importance: action.memory.importance, summarized: false,
         mentionedPersonIdsJson: action.memory.mentions?.length ? JSON.stringify(action.memory.mentions) : null,
         locationName: action.memory.location ?? null,
-        topicsJson: action.memory.topics?.length ? JSON.stringify(action.memory.topics) : null })] : []
+        topicsJson: action.memory.topics?.length ? JSON.stringify(action.memory.topics) : null,
+        createdVersion: resultVersion })] : []
       await db.batch([
         command, advance, fact,
         db.insert(dialogueTurns).values({ id: `${input.id}:turn`, dialogueId: action.dialogueId,
           turnIndex: action.turnIndex, personId: action.speakerId, utterance: action.utterance, thought: action.thought,
-          simTime: timeline.simNow, createdAt: now }),
+          simTime: timeline.simNow, createdAt: now, createdVersion: resultVersion }),
         thought, ...memory, event,
         ...(plan.dialogueTurn.closes ? [
           db.update(dialogues).set({ status: 'ended', simEnd: timeline.simNow }).where(and(

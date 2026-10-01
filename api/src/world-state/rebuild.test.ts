@@ -98,7 +98,7 @@ it('reports unknown command semantics as unsupported instead of silently skippin
 
 it('compares projection domains independent of array order and storage ownership columns', () => {
   const rows = (timelineId: string) => ({ simTime: WORLD_TIME, states: [],
-    schedules: [{ personId: 'resident', timelineId, worldDate: '2026-09-21', itemsJson: '[]', generatedAt: WORLD_TIME }],
+    schedules: [{ personId: 'resident', timelineId, worldDate: '2026-09-21', itemsJson: '[]', generatedAt: WORLD_TIME, createdVersion: null }],
     events: [], commitments: [], memories: [], dialogues: [], dialogueTurns: [], personaMessages: [], knowledge: [] })
   const expected = rows('root')
   const current = rows('child')
@@ -119,7 +119,7 @@ it('reports missing, extra and mismatched records in every row projection domain
     ? { personId: 'resident', timelineId: 'root', simTime: WORLD_TIME, location: marker, activity: 'Read', mood: 'Calm',
       goal: 'Learn', updatedRealAt: WORLD_TIME, currentDialogueId: null, lastBeatSimTime: null }
     : domain === 'schedules'
-      ? { personId: 'resident', timelineId: 'root', worldDate: '2026-09-21', itemsJson: marker, generatedAt: WORLD_TIME }
+      ? { personId: 'resident', timelineId: 'root', worldDate: '2026-09-21', itemsJson: marker, generatedAt: WORLD_TIME, createdVersion: null }
       : { id: `${domain}-record`, timelineId: 'root', marker }
   const empty = () => ({ simTime: WORLD_TIME, states: [], schedules: [], events: [], commitments: [], memories: [],
     dialogues: [], dialogueTurns: [], personaMessages: [], knowledge: [] })

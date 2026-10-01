@@ -128,21 +128,21 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
     return { ok: false, projection: null, diagnostics }
   }
   const projection = projectionFromBaseline(input)!
-  const appendEvent = (event: RebuiltProjection['events'][number], commandId: string, version: number) => {
+  const appendEvent = (event: Omit<RebuiltProjection['events'][number], 'createdVersion'>, commandId: string, version: number) => {
     if (projection.events.some(existing => existing.id === event.id)) {
       report({ kind: 'extra', domain: 'events', commandId, recordId: event.id, version,
         reasonCode: 'event_id_already_exists' })
       return
     }
-    projection.events.push(event)
+    projection.events.push({ ...event, createdVersion: version })
   }
-  const appendMemory = (memory: RebuiltProjection['memories'][number], commandId: string, version: number) => {
+  const appendMemory = (memory: Omit<RebuiltProjection['memories'][number], 'createdVersion'>, commandId: string, version: number) => {
     if (projection.memories.some(existing => existing.id === memory.id)) {
       report({ kind: 'extra', domain: 'memories', commandId, recordId: memory.id, version,
         reasonCode: 'memory_id_already_exists' })
       return
     }
-    projection.memories.push(memory)
+    projection.memories.push({ ...memory, createdVersion: version })
   }
   // S1 情境标注：契约 v2 起随记忆负载透传（mentions 为人物 ID）；旧负载缺省 NULL——
   // 宽松解析，非法即无标注，保证旧命令回放投影不变
@@ -389,7 +389,8 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       projection.dialogues.push({ id: dialogueId, timelineId: input.timelineId, location,
         participantIdsJson: JSON.stringify(participantIds), status: action.type === 'scene_open' ? 'scene' : 'ongoing',
         turnLimit, simStart: projection.simTime, simEnd: action.type === 'scene_open' ? projection.simTime : null,
-        kind: action.type === 'scene_open' ? 'scene' : 'npc', visitorId, sceneBusyUntil: null })
+        kind: action.type === 'scene_open' ? 'scene' : 'npc', visitorId, sceneBusyUntil: null,
+        createdVersion: command.resultVersion })
       if (action.type === 'dialogue_start') {
         for (const index of participantStates) {
           projection.states[index] = { ...projection.states[index], currentDialogueId: dialogueId,
@@ -430,7 +431,8 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         continue
       }
       projection.dialogueTurns.push({ id: `${command.id}:turn`, dialogueId, turnIndex, personId: speakerId,
-        utterance, thought, simTime: projection.simTime, createdAt: command.createdAt })
+        utterance, thought, simTime: projection.simTime, createdAt: command.createdAt,
+        createdVersion: command.resultVersion })
       appendMemory({ id: `${command.id}:thought`, personId: speakerId, timelineId: input.timelineId,
         type: 'thought', content: thought, simTime: projection.simTime, createdAt: command.createdAt,
         importance: 5, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null },
@@ -502,7 +504,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         const thought = nextThought.get(turn.personId)?.shift()?.content
         projection.dialogueTurns.push({ id: turn.id, dialogueId, turnIndex: startingIndex + offset,
           personId: turn.personId, utterance: turn.utterance, thought: typeof thought === 'string' ? thought : '',
-          simTime: projection.simTime, createdAt: turnCreatedAt })
+          simTime: projection.simTime, createdAt: turnCreatedAt, createdVersion: command.resultVersion })
       })
       const effectMemories = Array.isArray(privateEffects?.memories) ? privateEffects!.memories : []
       effectMemories.forEach((item) => {
@@ -532,7 +534,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
         projection.personaMessages.push({ id: message.id, worldId: input.worldId, timelineId: input.timelineId,
           senderPersonId: message.senderPersonId, recipientPersonId: message.recipientPersonId,
           content: message.content, location: message.location, simTime: message.simTime,
-          read: false, createdAt: message.createdAt })
+          read: false, createdAt: message.createdAt, createdVersion: command.resultVersion })
       })
       const acceptedCommitments = Array.isArray(action.acceptedCommitments) ? action.acceptedCommitments : []
       acceptedCommitments.forEach((item) => {
@@ -583,7 +585,7 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
           recordId: `${personId}:${worldDate}`, version: command.resultVersion, reasonCode: 'schedule_fact_mismatch' })
       }
       projection.schedules.push({ personId, timelineId: input.timelineId, worldDate,
-        itemsJson: JSON.stringify(items), generatedAt })
+        itemsJson: JSON.stringify(items), generatedAt, createdVersion: command.resultVersion })
       continue
     }
     if (action.type === 'dialogue_recovery') {
@@ -819,7 +821,8 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       } else {
         projection.memories.push({ id: memoryId, personId: item.personId, timelineId: input.timelineId,
           type: 'relationship', content: memoryText, simTime: projection.simTime, createdAt: command.createdAt,
-          importance: 8, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null })
+          importance: 8, summarized: false, mentionedPersonIdsJson: null, locationName: null, topicsJson: null,
+          level: null, createdVersion: command.resultVersion })
       }
       if (next === 'fulfilled' || next === 'missed') {
         const stateIndexValue = stateIndex(item.personId)

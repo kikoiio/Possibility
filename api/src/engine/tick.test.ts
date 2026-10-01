@@ -216,7 +216,7 @@ it('advances an accelerated fixed world through a full simulated day and audits 
     { start: '20:00', end: '00:00', location: 'Cafe', activity: 'Resting' },
   ])
   const initialSchedules = ['2026-09-21', '2026-09-22'].map(worldDate => ({
-    personId: 'day-resident', timelineId: 'home-main', worldDate, itemsJson: daySchedule, generatedAt: WORLD_TIME,
+    personId: 'day-resident', timelineId: 'home-main', worldDate, itemsJson: daySchedule, generatedAt: WORLD_TIME, createdVersion: null,
   }))
   await fixture.db.insert(schedules).values(initialSchedules)
   const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [initialState])

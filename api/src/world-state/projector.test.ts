@@ -80,7 +80,7 @@ describe('pure projection reducer skeleton', () => {
     const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [])
     baseline.rows.schedules = [{ personId: 'ada', timelineId: 'source', worldDate: '2026-09-21',
       itemsJson: '[{"start":"08:00","end":"09:00","location":"Cafe","activity":"Reading"}]',
-      generatedAt: WORLD_TIME }]
+      generatedAt: WORLD_TIME, createdVersion: null }]
     const result = reduceProjection(input({ baseline }))
     expect(result).toMatchObject({ ok: true, diagnostics: [] })
     expect(result.projection?.schedules).toEqual([expect.objectContaining({
@@ -186,7 +186,7 @@ describe('pure projection reducer skeleton', () => {
     const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [resident])
     baseline.rows.dialogues = [{ id: 'scene', timelineId: 'timeline', location: 'Cafe',
       participantIdsJson: JSON.stringify(['visitor', 'resident']), status: 'scene', turnLimit: 8,
-      simStart: WORLD_TIME, simEnd: WORLD_TIME, kind: 'scene', visitorId: 'visitor', sceneBusyUntil: null }]
+      simStart: WORLD_TIME, simEnd: WORLD_TIME, kind: 'scene', visitorId: 'visitor', sceneBusyUntil: null, createdVersion: null }]
     const proposal = history('commitment_proposal', { type: 'commitment_proposal', commitmentId: 'promise',
       personId: 'resident', visitorId: 'visitor', sourceDialogueId: 'scene', title: 'Meet again', kind: 'meeting',
       location: 'Cafe', dueSim: '2026-09-21T08:30:00.000Z' }, 1)
@@ -301,7 +301,7 @@ describe('pure projection reducer skeleton', () => {
     const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [])
     const memory = (id: string, content: string) => ({ id, personId: 'a', timelineId: 'timeline', type: 'thought',
       content, simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 5, summarized: false,
-      mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null })
+      mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null, createdVersion: null })
     baseline.rows.memories = [memory('m1', 'First'), memory('m2', 'Second'), memory('m3', 'Editable')]
     const summary = history('memory_summary', { type: 'memory_summary', personId: 'a', sourceMemoryIds: ['m1', 'm2'],
       summaryId: 'summary', content: 'First and second', importance: 7, simTime: WORLD_TIME, createdAt: WORLD_TIME }, 1)

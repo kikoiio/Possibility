@@ -38,10 +38,10 @@ it('replays every normal command category through the real commit path with zero
     lastBeatSimTime: null, updatedRealAt: WORLD_TIME }
   const editableMemory = { id: 'editable-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
     content: 'The old note may be useful.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 4, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null }
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null, createdVersion: null }
   const forgottenMemory = { id: 'forgotten-memory', personId: 'resident', timelineId: 'home-main', type: 'thought',
     content: 'A detail that can be forgotten.', simTime: WORLD_TIME, createdAt: WORLD_TIME, importance: 2, summarized: false,
-    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null }
+    mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null, createdVersion: null }
   await f.db.insert(persons).values([
     { id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME },
     { id: 'visitor', userId: 'owner', name: 'Visitor', modelJson: '{}', isUser: true, createdAt: WORLD_TIME },
@@ -118,15 +118,16 @@ it('replays every normal command category through the real commit path with zero
     actorKind: 'visitor', actorPersonId: 'visitor' }, [
     f.db.insert(dialogueTurns).values([
       { id: 'visitor-turn', dialogueId: 'scene', turnIndex: 0, personId: 'visitor', utterance: 'Can we meet later?',
-        thought: '', simTime: AFTER_CLOCK, createdAt: WORLD_TIME },
+        thought: '', simTime: AFTER_CLOCK, createdAt: WORLD_TIME, createdVersion: version + 1 },
       { id: 'resident-turn', dialogueId: 'scene', turnIndex: 1, personId: 'resident', utterance: 'Yes, at the cafe.',
-        thought: 'Remember the meeting.', simTime: AFTER_CLOCK, createdAt: WORLD_TIME },
+        thought: 'Remember the meeting.', simTime: AFTER_CLOCK, createdAt: WORLD_TIME, createdVersion: version + 1 },
     ]),
     f.db.insert(memories).values({ id: 'scene-thought', personId: 'resident', timelineId: 'home-main', type: 'thought',
-      content: 'Remember the meeting.', importance: 5, simTime: AFTER_CLOCK, createdAt: WORLD_TIME, summarized: false }),
+      content: 'Remember the meeting.', importance: 5, simTime: AFTER_CLOCK, createdAt: WORLD_TIME, summarized: false,
+      createdVersion: version + 1 }),
     f.db.insert(personaMessages).values({ id: 'scene-message', worldId: 'home-world', timelineId: 'home-main',
       senderPersonId: 'resident', recipientPersonId: 'visitor', content: 'See you later.', location: 'Cafe',
-      simTime: AFTER_CLOCK, read: false, createdAt: WORLD_TIME }),
+      simTime: AFTER_CLOCK, read: false, createdAt: WORLD_TIME, createdVersion: version + 1 }),
   ])
   expect(conversationResult.version).toBe(++version)
   committedTypes.add('conversation')
@@ -175,7 +176,7 @@ it('replays the stale dialogue recovery path from an immutable inconsistent base
     lastBeatSimTime: null, updatedRealAt: WORLD_TIME }
   const staleDialogue = { id: 'stale-dialogue', timelineId: 'home-main', location: 'Cafe',
     participantIdsJson: JSON.stringify(['resident', 'other-resident']), status: 'ended', turnLimit: 2,
-    simStart: WORLD_TIME, simEnd: WORLD_TIME, kind: 'npc', visitorId: null, sceneBusyUntil: null }
+    simStart: WORLD_TIME, simEnd: WORLD_TIME, kind: 'npc', visitorId: null, sceneBusyUntil: null, createdVersion: null }
   await f.db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME })
   await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
   await f.db.insert(personStates).values(state)

@@ -59,7 +59,7 @@ describe('historyRange', () => {
     expect(range?.earliest).toBeNull()
   })
 
-  it('基线不完整且无锚点:earliest = null;有锚点 → 首锚点时刻', async () => {
+  it('基线不完整:earliest = null(锚点只封顶成本,不构成完整性证据)', async () => {
     fixture = await createWorldFixture()
     const db = fixture.db
     await db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, createdAt: WORLD_TIME,
@@ -68,7 +68,7 @@ describe('historyRange', () => {
     expect((await historyRange(db, 'home-world', 'home-main'))?.earliest).toBeNull()
     const timeline = (await db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
     await captureDailyAnchor(db, timeline, WORLD_TIME)
-    expect((await historyRange(db, 'home-world', 'home-main'))?.earliest).toBe(WORLD_TIME)
+    expect((await historyRange(db, 'home-world', 'home-main'))?.earliest).toBeNull()
   })
 
   it('时间线不存在返回 null', async () => {
@@ -113,10 +113,10 @@ describe('checkMoment', () => {
       .toMatchObject({ ok: false, reasonCode: 'timeline_not_active' })
   })
 
-  it('NULL 桶主线:历史时刻拒绝,当前时刻仍可', async () => {
+  it('NULL 桶主线:历史时刻拒绝(baseline_incomplete),当前时刻仍可', async () => {
     await setupCompleteWorld(true)
     expect(await checkMoment(fixture!.db, 'home-world', 'home-main', T1))
-      .toMatchObject({ ok: false, reasonCode: 'before_history_start' })
+      .toMatchObject({ ok: false, reasonCode: 'baseline_incomplete' })
     expect(await checkMoment(fixture!.db, 'home-world', 'home-main', T3)).toEqual({ ok: true, effectiveMoment: T3 })
   })
 })

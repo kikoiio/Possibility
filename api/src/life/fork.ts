@@ -172,7 +172,8 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     ...states.map((s) => db.insert(personStates).values({
       ...s, timelineId: forkId, currentDialogueId: null, updatedRealAt: now,
     })),
-    ...copiedSchedules.map((s) => db.insert(schedules).values({ ...s, timelineId: forkId })),
+    // 继承日程对子线而言在 V=0(分叉点)即存在——版本水位 0
+    ...copiedSchedules.map((s) => db.insert(schedules).values({ ...s, timelineId: forkId, createdVersion: 0 })),
     ...copiedCommitments.map((commitment) => db.insert(commitments).values(commitment)),
   ]) } catch (error) {
     const committed = await replay()
