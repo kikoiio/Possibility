@@ -10,7 +10,7 @@ import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { buildWorldForkBrief, WORLD_PREVIEW_SYSTEM } from '../life/fork-preview'
 import { complete } from '../llm/client'
-import { resolveLlmConfig } from '../llm/resolve'
+import { byokFailureHint, resolveLlmConfig } from '../llm/resolve'
 import { extractJson, normalizeScenario } from '../timelines/routes'
 import type { AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
@@ -452,7 +452,7 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
 
   const brief = await buildWorldForkBrief(db, world, source, whatIf)
-  const { config } = await resolveLlmConfig(db, c.env, { userId: world.userId, worldId: world.id },
+  const { config, source: llmSource } = await resolveLlmConfig(db, c.env, { userId: world.userId, worldId: world.id },
     worldReservation(db, world.id, cfg, { timelineId: source.id, personId: null, purpose: 'fork_preview' }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -472,7 +472,9 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
       lastError = e
     }
   }
-  return c.json({ error: `场景生成失败：${lastError instanceof Error ? lastError.message : '未知错误'}` }, 502)
+  // F8:用户/世界来源失败不回落 env,文案指向设置页
+  const hint = byokFailureHint(llmSource)
+  return c.json({ error: `场景生成失败：${lastError instanceof Error ? lastError.message : '未知错误'}${hint ? `;${hint}` : ''}` }, 502)
 })
 
 /** 世界级 Fork（F9）：复制世界设定与全部人物状态/当日日程到新线；记忆经可见性规则自然继承 */

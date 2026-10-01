@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { count, eq } from 'drizzle-orm'
 import app from '../index'
-import { conversations, llmCallLog, persons, personStates, timelines, universeEvidence, worldPersons } from '../db/schema'
+import { conversations, llmCallLog, persons, personStates, timelines, universeEvidence, userLlmConfigs, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 
 const owner = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
@@ -163,6 +163,27 @@ describe('世界级 fork 预览（S2/F2）', () => {
       method: 'POST', headers: owner, body: JSON.stringify({ whatIf: 'w' }),
     }, f.env)
     expect(res.status).toBe(502)
+  })
+
+  it('用户 Key 401:502 文案含设置页提示,平台 env 端点零请求(AC7/F8)', async () => {
+    const f = await createWorldFixture()
+    await f.db.insert(userLlmConfigs).values({
+      userId: 'owner', baseUrl: 'https://user-llm.invalid', apiKey: 'user-key', model: null, updatedAt: WORLD_TIME,
+    })
+    const urls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input))
+      return new Response('unauthorized', { status: 401 })
+    }))
+    const res = await app.request('/api/worlds/home-world/timelines/home-main/fork/preview', {
+      method: 'POST', headers: owner, body: JSON.stringify({ whatIf: 'w' }),
+    }, f.env)
+    expect(res.status).toBe(502)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('设置页')
+    expect(urls.length).toBeGreaterThan(0)
+    expect(urls.every((u) => u.startsWith('https://user-llm.invalid'))).toBe(true) // 平台 https://llm.invalid 零请求
+    expect(JSON.stringify(body)).not.toContain('user-key') // N4:错误不回显 Key
   })
 })
 

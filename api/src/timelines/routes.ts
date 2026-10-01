@@ -10,7 +10,7 @@ import { hydrateTimelines } from '../life/snapshot-store'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { runAgentTurn } from '../agent/loop'
 import { complete } from '../llm/client'
-import { resolveLlmConfig } from '../llm/resolve'
+import { byokFailureHint, resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { WorldStateError } from '../world-state/types'
@@ -88,7 +88,7 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
     `用户的 what-if：「${whatIf}」`,
   ].join('\n')
 
-  const { config } = await resolveLlmConfig(db, c.env, { userId: ctx.world.userId, worldId: ctx.world.id },
+  const { config, source } = await resolveLlmConfig(db, c.env, { userId: ctx.world.userId, worldId: ctx.world.id },
     worldReservation(db, ctx.world.id, cfg, { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview' }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -109,7 +109,9 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
       lastError = e
     }
   }
-  return c.json({ error: `场景生成失败：${lastError instanceof Error ? lastError.message : '未知错误'}` }, 502)
+  // F8:用户/世界来源失败不回落 env,文案指向设置页
+  const hint = byokFailureHint(source)
+  return c.json({ error: `场景生成失败：${lastError instanceof Error ? lastError.message : '未知错误'}${hint ? `;${hint}` : ''}` }, 502)
 })
 
 /** Fork 确认：建时间线 → 拷贝主线状态 → simulate 推演，事件逐条流出 */
