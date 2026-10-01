@@ -1,13 +1,14 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { events } from '../../db/schema'
-import { configFromEnv, completeContract } from '../../llm/client'
+import { completeContract } from '../../llm/client'
 import { LLM_CONTRACT_VERSIONS, parseContractObject } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
 import { buildInjectionPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { applyBeatOutput, normalizeBeatJson, type BeatJson } from './beat'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { llmConfigFor } from './types'
 
 type Event = typeof events.$inferSelect
 
@@ -40,8 +41,8 @@ export const injectionExecutor: StepExecutor<InjectionInput, InjectionOutput> = 
     return { step, snapshot, ctx, event, prompt: buildInjectionPrompt(ctx, event.description || event.title) }
   },
 
-  async decide(env: Env, input: InjectionInput, opts?: DecideOpts): Promise<DecideResult<InjectionOutput>> {
-    const config = configFromEnv(env, opts?.reserve)
+  async decide(env: Env, input: InjectionInput, opts: DecideOpts): Promise<DecideResult<InjectionOutput>> {
+    const config = llmConfigFor(env, opts.llm, opts.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     // 反应窗口 = 注入事件时刻 → 当前 simNow；offsetMin 钳制在窗口内（同 beat）
     const windowMinutes = Math.max(0, Math.round((Date.parse(input.snapshot.timeline.simNow) - Date.parse(input.event.simTime)) / 60_000))

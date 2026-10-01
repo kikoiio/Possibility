@@ -1,10 +1,11 @@
 import type { Db } from '../../db/client'
-import { configFromEnv, completeContract } from '../../llm/client'
+import { completeContract } from '../../llm/client'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type ScheduleItem, type WorldSnapshot } from '../../agent/engine-context'
 import { buildSchedulePrompt, type PromptPair } from '../../agent/engine-prompt'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { llmConfigFor } from './types'
 import { ensureUniverseRevision } from '../../world-state/model'
 import { commitWorldCommand } from '../../world-state/commit'
 
@@ -73,8 +74,8 @@ export const scheduleExecutor: StepExecutor<ScheduleInput, ScheduleOutput> = {
     return { step, snapshot, ctx, prompt: buildSchedulePrompt(ctx) }
   },
 
-  async decide(env: Env, input: ScheduleInput, opts?: DecideOpts): Promise<DecideResult<ScheduleOutput>> {
-    const config = configFromEnv(env, opts?.reserve)
+  async decide(env: Env, input: ScheduleInput, opts: DecideOpts): Promise<DecideResult<ScheduleOutput>> {
+    const config = llmConfigFor(env, opts.llm, opts.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     const fallback = locationNames[0] ?? '大厅'
     let llmCalls = 0

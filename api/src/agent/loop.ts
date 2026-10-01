@@ -1,5 +1,6 @@
 import type { Db } from '../db/client'
-import { configFromEnv, streamChat, type ChatMessage } from '../llm/client'
+import { streamChat, type ChatMessage } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
 import { worldReservation } from '../engine/guard'
 import type { Env } from '../index'
@@ -37,7 +38,7 @@ export async function* runAgentTurn(
   const reserve = worldReservation(db, ctx.world.id, budgetFromEnv(env), {
     timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: ctx.mode === 'simulate' ? 'fork_simulate' : 'chat',
   })
-  const config = configFromEnv(env, reserve)
+  const { config } = await resolveLlmConfig(db, env, { userId: ctx.world.userId, worldId: ctx.world.id }, reserve)
   const tools = toolsFor(ctx.mode)
   const maxActs = opts.maxActs ?? (ctx.mode === 'chat' ? 5 : 15)
   const maxIterations = opts.maxIterations ?? (ctx.mode === 'chat' ? 6 : 25)

@@ -1,4 +1,5 @@
-import { complete, configFromEnv } from '../llm/client'
+import { complete } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, userReservation } from '../engine/guard'
 import type { Db } from '../db/client'
@@ -44,7 +45,7 @@ function normalizeDraft(raw: unknown): WorldDraft {
 
 /** Quick World 骨架生成（不落库）；解析失败重试一次；调用记入用户桶 */
 export async function draftWorld(env: Env, db: Db, userId: string, prompt: string): Promise<WorldDraft> {
-  const config = configFromEnv(env, userReservation(db, userId, budgetFromEnv(env), 'world_draft'))
+  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'world_draft'))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

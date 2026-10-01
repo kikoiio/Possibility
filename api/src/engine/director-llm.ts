@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { events } from '../db/schema'
-import { completeContract, configFromEnv } from '../llm/client'
+import { completeContract } from '../llm/client'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject } from '../llm/contracts'
 import type { Env } from '../index'
 import type { WorldSnapshot } from '../agent/engine-context'
 import { MAX_REACTORS_PER_EVENT } from './director'
 import type { AgentStep, DecideOpts } from './steps/types'
+import { llmConfigFor } from './steps/types'
 
 type Event = typeof events.$inferSelect
 
@@ -66,9 +67,9 @@ export async function callDirector(
   env: Env,
   event: { title: string; description: string },
   candidates: DirectorCandidateView[],
-  opts: DecideOpts = {},
+  opts: DecideOpts,
 ): Promise<{ order: string[] | null; llmCalls: number }> {
-  const config = configFromEnv(env, opts.reserve)
+  const config = llmConfigFor(env, opts.llm, opts.reserve)
   const { system, user } = buildDirectorPrompt(event, candidates)
   let llmCalls = 0
   for (let attempt = 0; attempt < Math.max(0, Math.min(2, opts.maxCalls ?? MAX_DIRECTOR_CALLS_PER_TICK)); attempt++) {
@@ -101,7 +102,7 @@ export async function arbitrateInjections(
   db: Db,
   snapshot: WorldSnapshot,
   steps: AgentStep[],
-  opts: DecideOpts = {},
+  opts: DecideOpts,
 ): Promise<{ steps: AgentStep[]; llmCalls: number }> {
   const injectionSteps = steps.filter((s) => s.kind === 'injection' && s.eventId)
   if (!injectionSteps.length) return { steps, llmCalls: 0 }

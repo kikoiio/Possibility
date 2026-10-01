@@ -1,5 +1,6 @@
 import type { Db } from '../../db/client'
 import type { Env } from '../../index'
+import type { LlmConfig, ReceiptReservation } from '../../llm/client'
 import type { WorldSnapshot } from '../../agent/engine-context'
 import type { Reservation } from '../guard'
 
@@ -30,6 +31,21 @@ export interface DecideResult<T> {
 export interface DecideOpts {
   maxCalls?: number
   reserve?: Reservation
+  /** F5/S3:tick 统一经 resolveLlmConfig 解析后下发;decide 不再自读 env 配置。 */
+  llm: ResolvedLlmFields
+}
+
+/** BYOK 解析结果的可序列化形态(reserve/provider 由调用点各自挂载)。 */
+export interface ResolvedLlmFields {
+  baseUrl: string
+  apiKey: string
+  model: string
+  source: 'world' | 'user' | 'env'
+}
+
+/** 解析字段 + 调用点各自的 reserve/provider 组装 LlmConfig(provider 是绑定,不开放用户配置)。 */
+export function llmConfigFor(env: Env, fields: ResolvedLlmFields, reserve?: ReceiptReservation): LlmConfig {
+  return { baseUrl: fields.baseUrl, apiKey: fields.apiKey, model: fields.model, provider: env.LLM_PROVIDER, reserve }
 }
 
 /**
@@ -40,7 +56,7 @@ export interface DecideOpts {
  */
 export interface StepExecutor<I, O> {
   perceive(db: Db, step: AgentStep, snapshot: WorldSnapshot): Promise<I | null>
-  decide(env: Env, input: I, opts?: DecideOpts): Promise<DecideResult<O>>
+  decide(env: Env, input: I, opts: DecideOpts): Promise<DecideResult<O>>
   act(db: Db, env: Env, input: I, output: O): Promise<string> // 返回本步摘要（给 tick 报告）
 }
 

@@ -1,7 +1,8 @@
 import type { SceneDocument, SceneOperation } from '@possibility/scene-contract'
 import { compactCatalogForPrompt, validateScene, contemporaryTheme } from '@possibility/scene-contract'
 import { and, eq, inArray } from 'drizzle-orm'
-import { completeContract, configFromEnv } from '../llm/client'
+import { completeContract } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { parseContractObject, requireString } from '../llm/contracts'
 import { budgetFromEnv } from '../engine/budget'
 import { userReservation } from '../engine/guard'
@@ -97,7 +98,7 @@ export async function createSceneDraft(env: Env, db: Db, userId: string, request
   if (selected.length < 1 || selected.length > 6) throw new Error('需要选择 1-6 位居民')
   const owned = await db.select({ id: persons.id, name: persons.name }).from(persons).where(and(eq(persons.userId, userId), inArray(persons.id, selected))).all()
   if (owned.length !== selected.length) throw new Error('包含不属于你的居民')
-  const config = configFromEnv(env, userReservation(db, userId, budgetFromEnv(env), 'scene'))
+  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'scene'))
   if (env.ENVIRONMENT === 's02-e2e') config.provider = { fetch: s02SceneFixture }
   return completeContract(config, [
     { role: 'system', content: SYSTEM },
@@ -108,7 +109,7 @@ export async function createSceneDraft(env: Env, db: Db, userId: string, request
 }
 
 export async function previewSceneOperations(env: Env, db: Db, userId: string, request: { requestId: string; instruction: string; document: SceneDocument; selectedPersonIds?: string[] }) {
-  const config = configFromEnv(env, userReservation(db, userId, budgetFromEnv(env), 'scene'))
+  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'scene'))
   const system = `你是场景编辑助手。只返回 JSON：{"summary":"...","operations":[...],"warnings":[]}。只能从资产目录选 ID，只输出 SceneOperation。当前场景、资产和约束：\n${compactCatalogForPrompt(contemporaryTheme)}\n${JSON.stringify(request.document)}\n${request.selectedPersonIds ? `允许人物绑定：${request.selectedPersonIds.join(',')}` : '这是已运行世界，只能调整视觉布局/装饰，不能增删模拟地点或居民。'}`
   return completeContract(config, [
     { role: 'system', content: system }, { role: 'user', content: JSON.stringify({ requestId: request.requestId, instruction: request.instruction }) },

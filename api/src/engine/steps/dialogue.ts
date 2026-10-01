@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { dialogues, dialogueTurns } from '../../db/schema'
-import { configFromEnv, completeContract } from '../../llm/client'
+import { completeContract } from '../../llm/client'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireBoolean, requireNumber,
   requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
@@ -10,6 +10,7 @@ import { buildDialoguePrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import { parseMemoryAnnotations, type MemoryAnnotations } from './annotations'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { llmConfigFor } from './types'
 import { recordDialogueTurn } from '../../world-state/system'
 
 type Dialogue = typeof dialogues.$inferSelect
@@ -101,8 +102,8 @@ export const dialogueExecutor: StepExecutor<DialogueInput, DialogueOutput> = {
     return { step, snapshot, ctx, dialogue, turns, speakerId, turnIndex, isLastTurn, prompt }
   },
 
-  async decide(env: Env, input: DialogueInput, opts?: DecideOpts): Promise<DecideResult<DialogueOutput>> {
-    const config = configFromEnv(env, opts?.reserve)
+  async decide(env: Env, input: DialogueInput, opts: DecideOpts): Promise<DecideResult<DialogueOutput>> {
+    const config = llmConfigFor(env, opts.llm, opts.reserve)
     let llmCalls = 0
     const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

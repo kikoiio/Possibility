@@ -15,6 +15,7 @@ import { budgetFromEnv, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfi
 import { worldReservation, type TickBudget } from './guard'
 import { planTickSteps } from './director'
 import { arbitrateInjections } from './director-llm'
+import { byokFailureHint, resolveLlmConfig } from '../llm/resolve'
 import { beatExecutor } from './steps/beat'
 import { dialogueExecutor } from './steps/dialogue'
 import { injectionExecutor } from './steps/injection'
@@ -135,6 +136,11 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
       .innerJoin(universeEvidence, eq(universeEvidence.timelineId, timelines.id))
       .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active'), eq(universeEvidence.level, 'complete')))
       .all()).map(row => row.timeline)
+
+    // F5/S3:BYOK 逐字段解析(世界覆盖 > 用户全局 > env),本世界全部 decide/导演共用
+    const llmResolution = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id })
+    const llmFields = { baseUrl: llmResolution.config.baseUrl, apiKey: llmResolution.config.apiKey,
+      model: llmResolution.config.model, source: llmResolution.source }
 
     for (const tl of activeTimelines) {
       await assertLease()
@@ -280,7 +286,7 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
       // 失败回退 v1 机械排序）；调用计入本拍预算与日限额，无旁路。
       if (cfg.directorLlm && tickCalls < cfg.tickCallCap) {
         const directorReserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: null, purpose: 'director' }, tickBudget)
-        const arb = await arbitrateInjections(env, db, snapshot, steps, { maxCalls: 1, reserve: directorReserve })
+        const arb = await arbitrateInjections(env, db, snapshot, steps, { maxCalls: 1, reserve: directorReserve, llm: llmFields })
         if (arb.llmCalls > 0) {
           steps = arb.steps
           tickCalls = tickBudget.used
@@ -305,14 +311,16 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
           const t0 = Date.now()
           const callPersonId = step.personId ?? (input?.ctx?.person?.id as string | undefined) ?? null
           const reserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: callPersonId, purpose: step.kind }, tickBudget)
-          const { value, llmCalls } = await executor.decide(env, input, { maxCalls: remaining, reserve })
+          const { value, llmCalls } = await executor.decide(env, input, { maxCalls: remaining, reserve, llm: llmFields })
           console.log(`[tick] ${step.kind} decide 完成 llmCalls=${llmCalls} 耗时=${Math.round((Date.now() - t0) / 1000)}s value=${value ? 'ok' : 'null'}`)
           await assertLease()
           if (llmCalls > 0) {
             tickCalls = tickBudget.used
           }
           if (value === null) {
-            tlReport.steps.push({ kind: step.kind, personId: step.personId, ok: false, note: 'decide 失败跳过' })
+            const hint = byokFailureHint(llmResolution.source)
+            tlReport.steps.push({ kind: step.kind, personId: step.personId, ok: false,
+              note: hint ? `decide 失败跳过;${hint}` : 'decide 失败跳过' })
             continue
           }
           const note = (await executor.act(db, env, input, value)) as string

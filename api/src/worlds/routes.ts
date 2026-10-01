@@ -9,7 +9,8 @@ import type { SceneDocument } from '@possibility/scene-contract'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { buildWorldForkBrief, WORLD_PREVIEW_SYSTEM } from '../life/fork-preview'
-import { complete, configFromEnv } from '../llm/client'
+import { complete } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { extractJson, normalizeScenario } from '../timelines/routes'
 import type { AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
@@ -264,6 +265,18 @@ worldsRoutes.post('/:id/actions', async (c) => {
 })
 
 /** 世界快照（世界视图首屏） */
+function maskedWorldLlmConfig(raw: string | null) {
+  let parsed: { baseUrl?: string; apiKey?: string; model?: string } = {}
+  try { parsed = raw ? JSON.parse(raw) as typeof parsed : {} } catch { parsed = {} }
+  const apiKey = parsed.apiKey || null
+  return {
+    baseUrl: parsed.baseUrl ?? null,
+    model: parsed.model ?? null,
+    hasKey: apiKey !== null,
+    keyPreview: apiKey ? (apiKey.length >= 4 ? `…${apiKey.slice(-4)}` : '****') : null,
+  }
+}
+
 worldsRoutes.get('/:id', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
@@ -276,6 +289,37 @@ worldsRoutes.get('/:id', async (c) => {
   }
   if (!snapshot) return c.json({ error: '世界或时间线不存在' }, 404)
   return c.json(snapshot)
+})
+
+/** 世界级 BYOK 覆盖(F5/S3):掩码读取,永不回显明文 Key(N4)。 */
+worldsRoutes.get('/:id/llm-config', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  return c.json(maskedWorldLlmConfig(world.llmConfigJson))
+})
+
+worldsRoutes.patch('/:id', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const body = await c.req.json<{ llmConfig?: { baseUrl?: string | null; apiKey?: string | null; model?: string | null } | null }>()
+    .catch(() => null)
+  if (!body || body.llmConfig === undefined) return c.json({ error: '仅支持 llmConfig 字段' }, 400)
+  if (body.llmConfig === null) {
+    await db.update(worlds).set({ llmConfigJson: null }).where(eq(worlds.id, world.id))
+    return c.json(maskedWorldLlmConfig(null))
+  }
+  const { baseUrl = null, apiKey = null, model = null } = body.llmConfig
+  if (baseUrl !== null && !/^https?:\/\//.test(baseUrl)) return c.json({ error: 'baseUrl 须为 http(s) 地址' }, 400)
+  const next = {
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(model ? { model } : {}),
+  }
+  const raw = Object.keys(next).length ? JSON.stringify(next) : null
+  await db.update(worlds).set({ llmConfigJson: raw }).where(eq(worlds.id, world.id))
+  return c.json(maskedWorldLlmConfig(raw))
 })
 
 /** SSE 增量推送（N2：新事件/新想法/新对话 2 秒内出现在打开的页面） */
@@ -408,9 +452,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
 
   const brief = await buildWorldForkBrief(db, world, source, whatIf)
-  const config = configFromEnv(c.env, worldReservation(db, world.id, cfg, {
-    timelineId: source.id, personId: null, purpose: 'fork_preview',
-  }))
+  const { config } = await resolveLlmConfig(db, c.env, { userId: world.userId, worldId: world.id },
+    worldReservation(db, world.id, cfg, { timelineId: source.id, personId: null, purpose: 'fork_preview' }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

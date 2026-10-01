@@ -4,7 +4,8 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { createDb } from '../db/client'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateUser, userReservation } from '../engine/guard'
-import { complete, configFromEnv } from '../llm/client'
+import { complete } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import type { Env } from '../index'
 import { planEdits, EditPlannerError } from './edit-planner'
 import { buildEditPlannerMessages } from './prompts'
@@ -28,7 +29,8 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
   const db = createDb(c.env.DB)
   const gate = await gateUser(db, c.get('user').id, budgetFromEnv(c.env))
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
-  const config = configFromEnv(c.env, userReservation(db, c.get('user').id, budgetFromEnv(c.env), 'scene'))
+  const { config } = await resolveLlmConfig(db, c.env, { userId: c.get('user').id },
+    userReservation(db, c.get('user').id, budgetFromEnv(c.env), 'scene'))
   try {
     const ops = await planEdits(doc, body.intent.trim(), {
       complete: (messages) => complete(config, messages, {

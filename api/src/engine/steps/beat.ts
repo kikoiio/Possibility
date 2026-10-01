@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import { dialogues, events } from '../../db/schema'
-import { configFromEnv, completeContract } from '../../llm/client'
+import { completeContract } from '../../llm/client'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireNumber,
   requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
@@ -18,6 +18,7 @@ import { buildBeatPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { clampImportance } from '../../agent/memory'
 import { parseMemoryAnnotations, type MemoryAnnotations } from './annotations'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { llmConfigFor } from './types'
 import { recordResidentState, recordSimulationCheckpoint, startNpcDialogue } from '../../world-state/system'
 
 export type BeatInput =
@@ -213,9 +214,9 @@ export const beatExecutor: StepExecutor<BeatInput, BeatOutput> = {
     }
   },
 
-  async decide(env: Env, input: BeatInput, opts?: DecideOpts): Promise<DecideResult<BeatOutput>> {
+  async decide(env: Env, input: BeatInput, opts: DecideOpts): Promise<DecideResult<BeatOutput>> {
     if (input.kind === 'encounter') return { value: { kind: 'encounter' }, llmCalls: 0 }
-    const config = configFromEnv(env, opts?.reserve)
+    const config = llmConfigFor(env, opts.llm, opts.reserve)
     const locationNames = input.snapshot.locations.map((l) => l.name)
     let llmCalls = 0
     const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))

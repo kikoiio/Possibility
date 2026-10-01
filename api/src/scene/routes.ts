@@ -15,7 +15,8 @@ import { clampImportance } from '../agent/memory'
 import { retrievalConfig } from '../agent/retrieval-config'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
-import { completeContract, configFromEnv } from '../llm/client'
+import { completeContract } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { LLM_CONTRACT_VERSIONS, parseContractObject } from '../llm/contracts'
 import { proposeCommitment } from '../life/service'
 import { commitWorldCommand } from '../world-state/commit'
@@ -327,7 +328,8 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
     const reserve = worldReservation(db, world.id, budgetFromEnv(c.env), {
       timelineId: timeline.id, personId: persona.id, purpose: 'scene',
     })
-    let resolution = await completeContract(configFromEnv(c.env, reserve), buildIntentMessages(intentContext), {
+    const { config: intentConfig } = await resolveLlmConfig(db, c.env, { userId, worldId: world.id }, reserve)
+    let resolution = await completeContract(intentConfig, buildIntentMessages(intentContext), {
       maxTokens: 300, signal: c.req.raw.signal, requestId,
       contractVersion: LLM_CONTRACT_VERSIONS.sceneIntent,
       parse: raw => resolveIntentOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneIntent), intentContext),
@@ -684,7 +686,7 @@ sceneRoutes.post('/worlds/:id/scene', async (c) => {
 
       let output: ReturnType<typeof parseSceneOutput> | null = null
       const reserve = worldReservation(db, world.id, cfg, { timelineId: tl.id, personId: responder.id, purpose: 'scene' })
-      const responderConfig = configFromEnv(c.env, reserve)
+      const { config: responderConfig } = await resolveLlmConfig(db, c.env, { userId: world.userId, worldId: world.id }, reserve)
       for (let attempt = 0; attempt < 2 && !output; attempt++) {
         try {
           const [lease] = await db.update(sceneRequests).set({ heartbeatAt: Date.now() }).where(and(

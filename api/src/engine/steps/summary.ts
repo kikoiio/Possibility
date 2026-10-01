@@ -1,11 +1,12 @@
 import type { Db } from '../../db/client'
-import { configFromEnv, completeContract } from '../../llm/client'
+import { completeContract } from '../../llm/client'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../../llm/contracts'
 import type { Env } from '../../index'
 import { buildEngineContext, type EngineContext, type WorldSnapshot } from '../../agent/engine-context'
 import { buildSummaryPrompt, type PromptPair } from '../../agent/engine-prompt'
 import { aggregateImportance, oldestCompressible, type Memory } from '../../agent/memory'
 import type { AgentStep, DecideOpts, DecideResult, StepExecutor } from './types'
+import { llmConfigFor } from './types'
 import { mergeMemoryAnnotations } from './annotations'
 import { recordMemorySummary } from '../../world-state/system'
 
@@ -45,8 +46,8 @@ export const summaryExecutor: StepExecutor<SummaryInput, SummaryOutput> = {
     return { step, snapshot, ctx, batch, prompt: buildSummaryPrompt(ctx, batch) }
   },
 
-  async decide(env: Env, input: SummaryInput, opts?: DecideOpts): Promise<DecideResult<SummaryOutput>> {
-    const config = configFromEnv(env, opts?.reserve)
+  async decide(env: Env, input: SummaryInput, opts: DecideOpts): Promise<DecideResult<SummaryOutput>> {
+    const config = llmConfigFor(env, opts.llm, opts.reserve)
     let llmCalls = 0
     const maxAttempts = Math.max(0, Math.min(2, opts?.maxCalls ?? 2))
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

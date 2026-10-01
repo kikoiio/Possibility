@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { chapters, events, persons, timelines, worlds, worldPersons } from '../db/schema'
-import { completeContract, configFromEnv, type ChatMessage } from '../llm/client'
+import { completeContract, type ChatMessage } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { contractViolation, LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../llm/contracts'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateWorld, worldReservation } from '../engine/guard'
@@ -166,9 +167,8 @@ export async function generateChapter(
     eventLines: rows.map((e) => fmtEventLine(e, nameOf)),
   })
 
-  const config = configFromEnv(env, worldReservation(db, world.id, cfg, {
-    timelineId: timeline.id, personId: null, purpose: 'chapter',
-  }))
+  const { config } = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id },
+    worldReservation(db, world.id, cfg, { timelineId: timeline.id, personId: null, purpose: 'chapter' }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

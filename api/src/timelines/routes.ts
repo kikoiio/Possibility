@@ -9,7 +9,8 @@ import { readForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines } from '../life/snapshot-store'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { runAgentTurn } from '../agent/loop'
-import { complete, configFromEnv } from '../llm/client'
+import { complete } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { WorldStateError } from '../world-state/types'
@@ -87,9 +88,8 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
     `用户的 what-if：「${whatIf}」`,
   ].join('\n')
 
-  const config = configFromEnv(c.env, worldReservation(db, ctx.world.id, cfg, {
-    timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview',
-  }))
+  const { config } = await resolveLlmConfig(db, c.env, { userId: ctx.world.userId, worldId: ctx.world.id },
+    worldReservation(db, ctx.world.id, cfg, { timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: 'fork_preview' }))
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

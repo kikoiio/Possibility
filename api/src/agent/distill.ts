@@ -1,4 +1,5 @@
-import { complete, configFromEnv, type ChatMessage } from '../llm/client'
+import { complete, type ChatMessage } from '../llm/client'
+import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, userReservation } from '../engine/guard'
 import type { Db } from '../db/client'
@@ -123,7 +124,7 @@ function normalizeDistill(raw: unknown): DistillResult {
 /** 一次性蒸馏（非自主体回合，纯 JSON 输出）；解析失败重试 1 次。
  *  调用记入用户桶（此时世界尚未创建，无世界可归账）。 */
 export async function distillPerson(env: Env, db: Db, userId: string, description: string): Promise<DistillResult> {
-  const config = configFromEnv(env, userReservation(db, userId, budgetFromEnv(env), 'distill'))
+  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'distill'))
   const messages: ChatMessage[] = [
     { role: 'system', content: SYSTEM },
     { role: 'user', content: description },
