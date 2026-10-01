@@ -126,6 +126,10 @@ export default function VoxelViewport({
             return nearestStandable(engine.world, engine.registry, { x: object.anchor.x, y: object.anchor.y + 1, z: object.anchor.z })
           },
           spawnFallback: { x: Math.floor(doc.size.width / 2), y: 1, z: Math.floor(doc.size.depth / 2) },
+          // S4 环境漫步:可站立校正 + reduced-motion 降级(日程驱动移动优先,见 OverlayDriver)
+          resolveStandable: (coord) => (engine.world && engine.registry
+            ? nearestStandable(engine.world, engine.registry, coord) : null),
+          reducedMotion: () => engine.motion.isReduced(),
         })
 
         const router = new InteractionRouter(engine, {

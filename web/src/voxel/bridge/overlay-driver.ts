@@ -1,6 +1,7 @@
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
 import type { VoxelCoord } from '@possibility/voxel-contract'
 import type { ResidentRenderState } from '../engine'
+import { wanderDestination, wanderSlot, wanderWorldDay } from './wander'
 
 /** 引擎侧最小接口（便于单测替身） */
 export interface OverlayEngineSink {
@@ -17,6 +18,10 @@ export interface OverlayDriverOptions {
   resolveLocation(locationName: string): VoxelCoord | null
   /** 居民出生点兜底（地点解析失败时） */
   spawnFallback: VoxelCoord
+  /** S4 漫步:格坐标 → 可站立格(不可走 = null);缺省 = 不漫步 */
+  resolveStandable?: (at: VoxelCoord) => VoxelCoord | null
+  /** S4 漫步:reduced-motion 降级为静止(返回锚点本身) */
+  reducedMotion?: () => boolean
 }
 
 /** timeOfDay 标签 + simNow → 0..1 世界时间（t=0 午夜） */
@@ -48,16 +53,26 @@ export class OverlayDriver {
     this.opts.engine.setTimeOfDay(mapSimTime(overlay.timeOfDay, overlay.simNow))
     this.opts.engine.setWeather(mapWeather(overlay.weather))
     this.opts.engine.setSimNow(overlay.simNow)
+    const worldDay = wanderWorldDay(overlay.simNow)
+    const slot = wanderSlot(overlay.simNow)
     const states: ResidentRenderState[] = overlay.persons.map((person) => {
       const at = this.opts.resolveLocation(person.locationName) ?? this.opts.spawnFallback
       const key = `${at.x},${at.y},${at.z}`
       const first = !this.lastDestinations.has(person.personId)
+      const locationChanged = this.lastDestinations.get(person.personId) !== key
       this.lastDestinations.set(person.personId, key)
+      // S4 环境漫步:无日程驱动移动(地点未变)且非首次落位时,锚点邻域确定性漫步;
+      // 日程切换(地点变化)仍由 life 引擎驱动,漫步让位;reduced-motion 静止
+      // 首次同步直接落在地点上(destination=null);之后地点变化 → 寻路走过去(at)
+      let destination: VoxelCoord | null = first ? null : at
+      if (!first && !locationChanged && this.opts.resolveStandable && !this.opts.reducedMotion?.()) {
+        const stand = this.opts.resolveStandable(wanderDestination(person.personId, worldDay, at, slot))
+        if (stand && (stand.x !== at.x || stand.z !== at.z)) destination = stand
+      }
       return {
         personId: person.personId,
         at,
-        // 首次同步直接落在地点上；之后地点变化 → 寻路走过去
-        destination: first ? null : at,
+        destination,
         activity: person.activity,
       }
     })

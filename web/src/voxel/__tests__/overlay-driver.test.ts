@@ -83,3 +83,69 @@ describe('OverlayDriver setSimNow 透传(S3b F5)', () => {
     expect(calls.simNows).toEqual(['2026-09-29T14:30:00Z'])
   })
 })
+
+describe('OverlayDriver 环境漫步(S4 F5 / AC6)', () => {
+  const at = { x: 23, y: 1, z: 24 }
+
+  function driverWith(sinkOpts: { resolveStandable?: (c: typeof at) => typeof at | null; reducedMotion?: () => boolean }) {
+    const { engine, calls } = sink()
+    const driver = new OverlayDriver({
+      engine,
+      resolveLocation: () => at,
+      spawnFallback: { x: 5, y: 1, z: 5 },
+      ...(sinkOpts.resolveStandable ? { resolveStandable: sinkOpts.resolveStandable } : {}),
+      ...(sinkOpts.reducedMotion ? { reducedMotion: sinkOpts.reducedMotion } : {}),
+    })
+    return { driver, calls }
+  }
+
+  const person = (simNow: string) => overlay({ simNow, persons: [{ personId: 'p1', locationName: '主楼', activity: '休息', mood: '' }] })
+
+  it('首次落位不漫步;地点未变的后续同步给确定性漫步目的地', () => {
+    const { driver, calls } = driverWith({ resolveStandable: (c) => c })
+    driver.apply(person('2026-10-15T10:00:00Z'))
+    expect(calls.residents[0][0].destination).toBeNull() // 首次直接落位
+    driver.apply(person('2026-10-15T10:05:00Z'))
+    const dest = calls.residents[1][0].destination
+    expect(dest).not.toBeNull()
+    expect(Math.hypot(dest!.x - at.x, dest!.z - at.z)).toBeGreaterThanOrEqual(2)
+    // 同槽位同轨迹:重复同步目的地不变(不抖动)
+    driver.apply(person('2026-10-15T10:10:00Z'))
+    expect(calls.residents[2][0].destination).toEqual(dest)
+    // 跨槽位换站
+    driver.apply(person('2026-10-15T10:35:00Z'))
+    expect(calls.residents[3][0].destination).not.toEqual(dest)
+  })
+
+  it('日程驱动移动优先:地点变化时让位(漫步不干扰寻路)', () => {
+    const { engine, calls } = sink()
+    const driver = new OverlayDriver({
+      engine,
+      resolveLocation: (name) => (name === '主楼' ? at : { x: 8, y: 1, z: 12 }),
+      spawnFallback: { x: 5, y: 1, z: 5 },
+      resolveStandable: (c) => c,
+    })
+    driver.apply(overlay({ simNow: '2026-10-15T10:00:00Z', persons: [{ personId: 'p1', locationName: '主楼', activity: '休息', mood: '' }] }))
+    driver.apply(overlay({ simNow: '2026-10-15T10:05:00Z', persons: [{ personId: 'p1', locationName: '庭院', activity: '散步', mood: '' }] }))
+    expect(calls.residents[1][0].destination).toEqual({ x: 8, y: 1, z: 12 })
+  })
+
+  it('reduced-motion 降级:目的地 = 锚点(静止)', () => {
+    const { driver, calls } = driverWith({ resolveStandable: (c) => c, reducedMotion: () => true })
+    driver.apply(person('2026-10-15T10:00:00Z'))
+    driver.apply(person('2026-10-15T10:05:00Z'))
+    expect(calls.residents[1][0].destination).toEqual(at)
+  })
+
+  it('漫步落点不可走 → 停在锚点;未配 resolveStandable → 不漫步', () => {
+    const blocked = driverWith({ resolveStandable: () => null })
+    blocked.driver.apply(person('2026-10-15T10:00:00Z'))
+    blocked.driver.apply(person('2026-10-15T10:05:00Z'))
+    expect(blocked.calls.residents[1][0].destination).toEqual(at)
+
+    const noResolver = driverWith({})
+    noResolver.driver.apply(person('2026-10-15T10:00:00Z'))
+    noResolver.driver.apply(person('2026-10-15T10:05:00Z'))
+    expect(noResolver.calls.residents[1][0].destination).toEqual(at)
+  })
+})
