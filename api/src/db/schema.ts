@@ -125,6 +125,23 @@ export const forkSnapshots = sqliteTable('fork_snapshots', {
   createdAt: text('created_at').notNull(),
 })
 
+/** 日界核心锚点(0029, S4/F6):每线每世界日一份可变核心快照,历史分叉重建的封顶基点 */
+export const timelineAnchors = sqliteTable('timeline_anchors', {
+  timelineId: text('timeline_id')
+    .notNull()
+    .references(() => timelines.id),
+  // 锚点 simTime 的世界日(YYYY-MM-DD)
+  simDay: text('sim_day').notNull(),
+  // 捕获时的宇宙版本水位
+  version: integer('version').notNull(),
+  simTime: text('sim_time').notNull(),
+  worldModelVersion: integer('world_model_version').notNull(),
+  // AnchorCorePayload 规范哈希(SHA-256)
+  coreHash: text('core_hash').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.timelineId, t.simDay] })])
+
 /** 用户级 BYOK 全局 LLM 配置与日预算(0028);行不存在 = 未配置(预算缺省 400) */
 export const userLlmConfigs = sqliteTable('user_llm_configs', {
   userId: text('user_id')

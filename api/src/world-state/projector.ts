@@ -51,7 +51,8 @@ const KNOWN_ACTION_TYPES = new Set([
   'schedule_set', 'memory_summary', 'memory_correct', 'memory_forget', 'resident_state',
 ])
 
-function stableValue(value: unknown): string {
+/** 规范序列化:键序稳定、嵌套数组保留语义顺序。锚点哈希与投影哈希共用同一口径。 */
+export function stableValue(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableValue).join(',')}]`
   if (value && typeof value === 'object') {
     return `{${Object.entries(value as Record<string, unknown>)

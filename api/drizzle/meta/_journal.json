@@ -204,6 +204,13 @@
       "when": 1790803200000,
       "tag": "0028_snapshot_byok",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1790871600000,
+      "tag": "0029_timeline_anchors",
+      "breakpoints": true
     }
   ]
 }
