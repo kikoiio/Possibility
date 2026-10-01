@@ -107,7 +107,7 @@ export type Reservation = ((details?: ReceiptDetails) => Promise<string>) & {
 
 /** Auditable inventory of every autonomous model entry owned by the engine. */
 export const INTERNAL_ENGINE_CALL_PURPOSES = [
-  'director', 'schedule', 'beat', 'dialogue_turn', 'injection', 'summary',
+  'director', 'schedule', 'beat', 'dialogue_turn', 'injection', 'summary', 'voxel_distill',
 ] as const satisfies readonly CallPurpose[]
 
 function reservation(db: Db, admit: (details?: ReceiptDetails) => Promise<string>, tick?: TickBudget): Reservation {

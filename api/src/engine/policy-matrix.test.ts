@@ -76,7 +76,7 @@ async function markComplete(f: Fixture) {
 describe('internal engine policy matrix', () => {
   it('keeps the autonomous entry inventory explicit', () => {
     expect(INTERNAL_ENGINE_CALL_PURPOSES).toEqual([
-      'director', 'schedule', 'beat', 'dialogue_turn', 'injection', 'summary',
+      'director', 'schedule', 'beat', 'dialogue_turn', 'injection', 'summary', 'voxel_distill',
     ])
   })
 

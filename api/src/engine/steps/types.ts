@@ -65,6 +65,7 @@ export type CallPurpose =
   | AgentStepKind
   | 'chat'
   | 'distill'
+  | 'voxel_distill'
   | 'world_draft'
   | 'fork_preview'
   | 'fork_simulate'

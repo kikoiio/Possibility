@@ -23,6 +23,7 @@ import { injectionExecutor } from './steps/injection'
 import { scheduleExecutor } from './steps/schedule'
 import { summaryExecutor } from './steps/summary'
 import { advanceCommitments } from '../life/service'
+import { projectVoxelEvents } from '../voxel/projection'
 import type { AgentStep, StepExecutor } from './steps/types'
 import { advanceWorldClock, recoverDialogueLock, recordResidentState, recordSimulationCheckpoint } from '../world-state/system'
 import { WorldStateError } from '../world-state/types'
@@ -142,6 +143,8 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
     const llmResolution = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id })
     const llmFields = { baseUrl: llmResolution.config.baseUrl, apiKey: llmResolution.config.apiKey,
       model: llmResolution.config.model, source: llmResolution.source }
+    // S4 世界模拟:体素披露文案每世界每拍 ≤1 次 LLM(机械蒸馏零 LLM)
+    let voxelCopyUsed = false
 
     for (const tl of activeTimelines) {
       await assertLease()
@@ -348,6 +351,26 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
             note: e instanceof Error ? e.message.slice(0, 120) : '未知错误',
           })
         }
+      }
+
+      // S4 世界模拟:体素事件蒸馏投影(机械层零 LLM,每拍必跑;文案门控 LLM 在 projection 内部记账)
+      try {
+        const voxel = await projectVoxelEvents(db, env, {
+          world: currentWorld, timeline: tl, cfg, tickBudget, llm: llmFields,
+          allowCopyLlm: !voxelCopyUsed && tickCalls < cfg.tickCallCap,
+        })
+        if (voxel?.copyLlm) {
+          voxelCopyUsed = true
+          tickCalls = tickBudget.used
+        }
+        if (voxel && voxel.projected > 0) {
+          tlReport.steps.push({ kind: 'voxel_distill', personId: null, ok: true,
+            note: `投影 ${voxel.projected} 条体素事件${voxel.skipped ? `(跳过 ${voxel.skipped})` : ''}${voxel.copyLlm ? ',文案×1' : ''}` })
+        }
+      } catch (error) {
+        if (error instanceof TickLeaseLostError) throw error
+        // 蒸馏失败不阻塞整拍:下拍重试,事件随后补上线
+        console.warn(`[tick] 体素事件蒸馏失败 ${tl.id}:`, error instanceof Error ? error.message : error)
       }
 
       worldReport.timelines.push(tlReport)

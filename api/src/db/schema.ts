@@ -353,7 +353,7 @@ export const llmCallLog = sqliteTable('llm_call_log', {
   userId: text('user_id'),
   timelineId: text('timeline_id'),
   personId: text('person_id'),
-  // schedule / beat / dialogue_turn / injection / summary / chat / distill / world_draft / fork_preview / fork_simulate / chapter / director / scene
+  // schedule / beat / dialogue_turn / injection / summary / chat / distill / voxel_distill / world_draft / fork_preview / fork_simulate / chapter / director / scene
   purpose: text('purpose').notNull(),
   contextHash: text('context_hash'),
   contractVersion: text('contract_version'),
