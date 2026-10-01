@@ -405,7 +405,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-left">
             {renderSplitSideHeader('left', snapshot)}
             <div className="min-h-0 flex-1">
-              <VoxelViewport document={voxelDoc!} overlay={overlay} instanceId="left" probePrimary
+              <VoxelViewport document={voxelDoc!} overlay={overlay} events={snapshot!.voxelEvents ?? null} instanceId="left" probePrimary
                 cameraPose={linkActive ? sharedPose : undefined}
                 onCameraChange={setSharedPose}
                 onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, left: m === 'walk' }))} />
@@ -428,7 +428,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
             </div>
             <div className="min-h-0 flex-1">
               {otherSnapshot
-                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} instanceId="right"
+                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} events={otherSnapshot.voxelEvents ?? null} instanceId="right"
                     cameraPose={linkActive ? sharedPose : undefined}
                     onCameraChange={setSharedPose}
                     onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, right: m === 'walk' }))} />
@@ -475,6 +475,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         </div>
         {snap
           ? <VoxelViewport document={voxelDoc!} overlay={smallSide === 'left' ? overlay : otherOverlay}
+              events={(smallSide === 'left' ? snapshot!.voxelEvents : otherSnapshot?.voxelEvents) ?? null}
               instanceId={smallSide === 'left' ? 'left' : 'right'} probePrimary={smallSide === 'left'} />
           : <div className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
         <p className="text-[10px] text-[#849184]">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
@@ -501,7 +502,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const selectedEvents = selectedLocationName ? snapshot.events.filter(event => event.location === selectedLocationName).slice(-3).reverse() : []
   if (readonly) return <main className="relative h-full min-h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
     {voxelDoc
-      ? <VoxelViewport document={voxelDoc} overlay={overlay} />
+      ? <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} />
       : <WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} onSelect={setSelected} edgeToEdge />}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-[#23382f]/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
@@ -544,7 +545,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     {preview && <ScenePreviewBar summary={preview.summary} warnings={preview.warnings} onApply={applyPreview} onCancel={() => setPreview(null)} busy={busy} />}
     {legacyPreview && <ScenePreviewBar summary={legacyPreview.explanation} warnings={legacyPreview.warnings} onApply={confirmLegacy} onCancel={() => setLegacyPreview(null)} busy={busy} />}
     <div className="flex min-h-[500px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3">
-      {mode === 'possibility' && voxelDoc && !isSmall ? renderSplitView() : mode === 'possibility' && voxelDoc ? renderSmallSplit() : mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : voxelDoc ? <VoxelViewport document={voxelDoc} overlay={overlay} editable planEdits={planEditsViaApi} onSave={saveVoxel} /> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
+      {mode === 'possibility' && voxelDoc && !isSmall ? renderSplitView() : mode === 'possibility' && voxelDoc ? renderSmallSplit() : mode === 'possibility' ? <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">原来的发展 · {snapshot.currentTimelineId.slice(0, 8)}</p><WorldCanvasViewport scene={shown} mode="life" overlay={overlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section><section className="flex min-h-[430px] flex-col gap-2"><p className="text-xs font-medium text-[#687a6b]">{otherSnapshot ? `另一种发展 · ${otherSnapshot.currentTimelineId.slice(0, 8)}` : '正在读取另一种发展…'}</p><WorldCanvasViewport scene={shown} mode="life" overlay={otherOverlay} selectedId={selected} camera={comparisonCamera} onCameraChange={setComparisonCamera} onSelect={setSelected} /></section>{compareSummary && <p className="text-xs text-[#687a6b] lg:col-span-2">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}</div> : voxelDoc ? <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} editable planEdits={planEditsViaApi} onSave={saveVoxel} /> : <WorldCanvasViewport scene={shown} mode={mode} overlay={overlay} preview={currentPreview} selectedId={selected} activeAssetId={activeAssetId} onSelect={setSelected} onMove={submitOperation} onCanvasClick={position => activeAssetId && placeAt(activeAssetId, position)} onCanvasStroke={paintCells} />}
       {!readonly && mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{new Date(snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })}</span></div>}
       {mode === 'create' && !isSmall && <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="space-y-2"><SceneObjectInspector scene={shown} selectedId={selected} catalog={contemporaryTheme} /><SceneAiComposer value={instruction} onChange={setInstruction} onPreview={requestEditPreview} busy={busy} error="" /></div><div className="flex items-center gap-2"><SceneLockControls locked={!!selected && shown.lockedObjectIds.includes(selected)} onToggle={toggleLock} /><button onClick={() => setDrawer(value => !value)} className="rounded-full border border-[#d7ded3] bg-white px-4 py-3 text-sm text-[#42594a]">素材</button>{activeAssetId && <button onClick={() => setActiveAssetId(null)} className="text-xs text-[#617766]">取消放置</button>}</div></div>}
       {mode === 'possibility' && <button onClick={() => { search.set('view', 'text'); setSearch(search) }} className="self-start rounded-full border border-[#d6ddd3] bg-white px-4 py-2 text-sm text-[#47604f]">打开发展对照与分叉条件</button>}

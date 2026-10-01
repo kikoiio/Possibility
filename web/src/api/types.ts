@@ -268,6 +268,8 @@ export interface WorldSnapshot {
   currentFacts: Omit<WorldFact, 'timelineId' | 'visibility'>[]
   locationBoard: LocationBoardEntry[]
   events: WorldEventItem[]
+  /** S4 世界模拟:体素视口事件(蒸馏投影;旧 api 缺省视为无事件) */
+  voxelEvents?: VoxelWorldEvent[]
 }
 
 export type { SceneDocument, SceneOperation, ScenePatchPreview, SceneLifeOverlay, SceneChangeSet }
@@ -459,3 +461,4 @@ export interface ReturnBrief {
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
 }
 import type { SceneDocument, SceneOperation, ScenePatchPreview, SceneLifeOverlay, SceneChangeSet } from '@possibility/scene-contract'
+import type { WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'

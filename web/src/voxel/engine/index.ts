@@ -217,20 +217,29 @@ export class VoxelEngine {
     this.residents = new ResidentRenderer(this.renderer.scene, this.world, this.registry)
     this.picker = new Picker(this.world, this.assets)
     this.feedback = new BuildFeedback(this.renderer.scene, this.assets)
-    // S3b 事件披露:图标层装配(simNow 回放 + 初始档即裁决,首帧不出错档)
-    if (doc.events && doc.events.length > 0) {
-      this.eventList = doc.events
-      this.disclosure = new EventDisclosure({
-        scene: this.renderer.scene,
-        // worldToScreen 入参为格坐标(内部 +0.5 取格心);披露层锚点已是世界坐标,先回退
-        project: (at) => this.worldToScreen({ x: at.x - 0.5, y: at.y - 0.5, z: at.z - 0.5 }),
-      })
-      this.disclosure.setEvents(doc.events)
-      if (this.simNow) this.disclosure.setSimNow(this.simNow)
-      this.disclosure.setTier(this.zoomLod.tier)
-    }
+    // S3b 事件披露:图标层装配(文档事件 = dev fixture/存档语义;生产路径由 setEvents 覆盖)
+    this.setEvents(doc.events ?? [])
     this.registerLightEmitters()
     this.applyParticleDensity() // 新建的 WeatherSystem 也需要 LOD 合成密度
+  }
+
+  /**
+   * S4 世界模拟:运行期事件下发(生产路径唯一事件源;dev fixture 走 loadDocument 同一入口)。
+   * 替换事件快照并重建披露层;空数组 = 零事件(披露层销毁,零开销)。
+   */
+  setEvents(events: WorldEvent[]): void {
+    this.eventList = events
+    this.disclosure?.dispose()
+    this.disclosure = null
+    if (events.length === 0) return
+    this.disclosure = new EventDisclosure({
+      scene: this.renderer.scene,
+      // worldToScreen 入参为格坐标(内部 +0.5 取格心);披露层锚点已是世界坐标,先回退
+      project: (at) => this.worldToScreen({ x: at.x - 0.5, y: at.y - 0.5, z: at.z - 0.5 }),
+    })
+    this.disclosure.setEvents(events)
+    if (this.simNow) this.disclosure.setSimNow(this.simNow)
+    this.disclosure.setTier(this.zoomLod.tier)
   }
 
   syncResidents(states: ResidentRenderState[]): void {

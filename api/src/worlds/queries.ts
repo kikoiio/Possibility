@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { dialogues, dialogueTurns, events, persons, personStates, schedules, timelines, universeRevisions, worldPersons, worlds } from '../db/schema'
+import { dialogues, dialogueTurns, events, persons, personStates, schedules, timelines, universeRevisions, voxelEventProjections, worldPersons, worlds } from '../db/schema'
+import type { WorldEvent } from '@possibility/voxel-contract'
 import { parseLocations, parseScheduleItems, worldDateOf, type LocationDef, type ScheduleItem } from '../agent/engine-context'
 import { visibleMemories } from '../agent/memory'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents } from '../agent/visibility'
@@ -40,6 +41,8 @@ export interface WorldSnapshotDto {
   currentFacts: { id: string; version: number; simTime: string; factType: string; subjectId: string; value: unknown; sourceCommandId: string }[]
   locationBoard: { location: string; persons: { id: string; name: string; activity: string }[] }[]
   events: WorldEventDto[]
+  /** S4 世界模拟:体素视口事件(蒸馏投影,仅本线行;无体素文档/未蒸馏 = []) */
+  voxelEvents: WorldEvent[]
 }
 
 export interface WorldEventDto {
@@ -142,6 +145,16 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     )
   }
 
+  // S4 世界模拟:本线体素事件投影(派生数据;坏行跳过不致命)
+  const projectionRows = await db.select({ payloadJson: voxelEventProjections.payloadJson })
+    .from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, current.id)).all()
+  const voxelEvents = projectionRows.flatMap((row) => {
+    try {
+      const payload = JSON.parse(row.payloadJson) as { event?: WorldEvent }
+      return payload?.event ? [payload.event] : []
+    } catch { return [] }
+  }).sort((a, b) => a.timeWindow.start.localeCompare(b.timeWindow.start) || a.id.localeCompare(b.id))
+
   return {
     world: {
       id: world.id,
@@ -170,6 +183,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     currentFacts: structuredState.current.filter(f => f.visibility === 'world').map(f => ({ id: f.id, version: f.version,
       simTime: f.simTime, factType: f.factType, subjectId: f.subjectId, value: f.value, sourceCommandId: f.sourceCommandId })),
     locationBoard,
+    voxelEvents,
     events: eventRows.map((e) => ({
       id: e.id,
       simTime: e.simTime,

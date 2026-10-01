@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
-import type { EditOperation, VoxelDocument } from '@possibility/voxel-contract'
+import type { EditOperation, VoxelDocument, WorldEvent } from '@possibility/voxel-contract'
 import { nearestStandable, VoxelEngine, WebGL2UnavailableError, type OrbitPose } from './engine'
 import { EditController } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'
@@ -17,6 +17,8 @@ export interface VoxelViewportProps {
   document: VoxelDocument
   /** 生活覆盖层（时间 / 天气 / 居民活动），变化时驱动引擎 */
   overlay?: SceneLifeOverlay | null
+  /** S4 世界模拟:生产路径事件源(蒸馏投影);undefined = 文档事件驱动(dev fixture/存档) */
+  events?: WorldEvent[] | null
   /** 编辑入口（create 模式）；移动端由 PlatformGate 兜底隐藏 */
   editable?: boolean
   /** AI 编辑规划（产品层接 /api/voxel/edit-plan）；视口注入内部引擎，共享 plan-edits.ts 帮助器可直接传入 */
@@ -55,7 +57,7 @@ function poseNearlyEqual(a: OrbitPose, b: OrbitPose): boolean {
  * 引擎装配 + N4 分阶段加载进度 + 覆盖层/交互/编辑的桥接。
  */
 export default function VoxelViewport({
-  document: doc, overlay, editable = false, planEdits, onSave,
+  document: doc, overlay, events, editable = false, planEdits, onSave,
   onEnterSpace, onSelectPerson, onSelectLocation,
   instanceId = 'main', probePrimary, cameraPose, onCameraChange, onCameraModeChange,
 }: VoxelViewportProps) {
@@ -158,6 +160,18 @@ export default function VoxelViewport({
   useEffect(() => {
     if (ready && overlay) driverRef.current?.apply(overlay)
   }, [ready, overlay])
+
+  // S4 世界模拟:生产路径事件下发(bootstrap/SSE 刷新 → 无 reload 更新披露层)
+  // 快照刷新频繁(每拍),事件集未变时跳过披露层重建;文档重载(引擎重建)后强制重放
+  const lastEventsKeyRef = useRef<string | null>(null)
+  useEffect(() => { lastEventsKeyRef.current = null }, [doc])
+  useEffect(() => {
+    if (!ready || !events) return
+    const key = events.map(e => `${e.id}:${e.timeWindow.end}:${e.label}`).join('|')
+    if (key === lastEventsKeyRef.current) return
+    lastEventsKeyRef.current = key
+    engineRef.current?.setEvents(events)
+  }, [ready, events])
 
   // 受控相机(S1 分屏联动):外部 pose 变化 → 写入引擎(回显由近似相等抑制)
   useEffect(() => {
