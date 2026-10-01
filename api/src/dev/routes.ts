@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { createDb, type Db } from '../db/client'
 import { timelines, users } from '../db/schema'
-import { migratePhase2Data } from '../db/migrate-data'
 import { retrieveForPrompt, visibleMemories } from '../agent/memory'
 import { hashPassword } from '../auth/password'
 import { seedDemoWorld } from './seed-demo'
@@ -58,16 +57,6 @@ devRoutes.post('/seed', async (c) => {
   }
 
   return c.json({ accounts })
-})
-
-/** 阶段二数据迁移（幂等，可重跑） */
-devRoutes.post('/migrate-p2', async (c) => {
-  if (c.env.ENVIRONMENT !== 'local') {
-    return c.json({ error: '仅本地环境可用' }, 403)
-  }
-  const db = createDb(c.env.DB)
-  const result = await migratePhase2Data(db)
-  return c.json(result)
 })
 
 /** 演示世界「雾影庄」种子（按世界名幂等；需先 npm run seed 建 admin） */

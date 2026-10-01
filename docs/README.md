@@ -59,9 +59,8 @@ cp api/.dev.vars.example api/.dev.vars
 #    编辑 api/.dev.vars，填入你的 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
 #    并填一个 ENGINE_TICK_SECRET（任意随机串，引擎节拍密钥）
 
-# 3. 初始化本地数据库（D1 迁移 + 阶段二数据迁移）
+# 3. 初始化本地数据库（D1 迁移）
 npm run db:migrate
-npm run migrate:p2   # 需先启动 api（见第 4 步）；阶段一老数据才需要，可重复执行
 
 # 4. 启动（前端 :5173 + 后端 :8787 + 引擎节拍器，一条命令）
 npm run dev
@@ -90,7 +89,6 @@ npm run dev:web      # 只起前端（:5173）
 npm run dev:api      # 只起后端（:8787）
 npm run dev:engine   # 只起引擎节拍器
 npm run db:migrate   # 应用 D1 迁移（本地）
-npm run migrate:p2   # 阶段二数据迁移（幂等）
 npm run seed         # 种子账号
 npm run seed:demo    # 演示世界「雾影庄」
 npm --workspace web run build   # 前端类型检查 + 构建
@@ -124,8 +122,8 @@ api/            Worker 后端
   src/chat/       打电话 SSE + 懒惰追赶
   src/timelines/  Fork 预览 / 推演 / 时间线详情 / 归档
   src/llm/        OpenAI 兼容流式客户端
-  src/db/         Drizzle schema（15 张表）+ 阶段二数据迁移
-scripts/        seed / seed-demo / migrate-p2 / engine-pinger
+  src/db/         Drizzle schema + 迁移
+scripts/        seed / seed-demo / engine-pinger / 体素资产管线
 docs/           产品愿景与设计文档
 ```
 
