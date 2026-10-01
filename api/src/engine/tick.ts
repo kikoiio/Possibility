@@ -12,6 +12,7 @@ import {
 import { needsCompression } from '../agent/memory'
 import { retrievalConfig } from '../agent/retrieval-config'
 import { budgetFromEnv, recoverCappedWorlds, archiveIdleWorlds, type BudgetConfig } from './budget'
+import { captureDailyAnchor } from '../world-state/anchors'
 import { worldReservation, type TickBudget } from './guard'
 import { planTickSteps } from './director'
 import { arbitrateInjections } from './director-llm'
@@ -149,6 +150,16 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
       const simNow = await advanceWorldClock(db, { worldId: world.id, timelineId: tl.id, observedAt: nowReal,
         worldSpeed: cfg.worldSpeed, maxElapsedSeconds: MAX_REAL_ELAPSED_SEC,
         engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN })
+
+      // S4/F6:世界日翻转 → 捕获日界核心锚点。best-effort:失败只记日志,
+      // 缺锚点的日子由更早锚点或全量回放兜住,正确性不依赖锚点存在。
+      if (simNow && simNow.slice(0, 10) !== tl.simNow.slice(0, 10)) {
+        try {
+          await captureDailyAnchor(db, { ...tl, simNow }, nowReal.toISOString())
+        } catch (error) {
+          console.warn(`[tick] 日界锚点捕获失败 ${tl.id}:`, error)
+        }
+      }
 
       const snapshot = await buildWorldSnapshot(db, world.id, tl.id, retrievalConfig(env))
       if (!snapshot) {
