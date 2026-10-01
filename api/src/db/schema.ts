@@ -38,10 +38,12 @@ export const worlds = sqliteTable('worlds', {
   locationsJson: text('locations_json').notNull().default('[]'),
   // running / paused / capped（触顶自动暂停）
   status: text('status').notNull().default('paused'),
-  // manual / daily_cap / null
+  // manual / daily_cap / global_daily_cap / null
   pauseReason: text('pause_reason'),
   isDemo: integer('is_demo', { mode: 'boolean' }).notNull().default(false),
   callsToday: integer('calls_today').notNull().default(0),
+  // 用户级 BYOK 覆盖:{ baseUrl?, apiKey?, model? },逐字段覆盖全局配置;null = 跟随全局
+  llmConfigJson: text('llm_config_json'),
   // callsToday 对应的真实日期（YYYY-MM-DD），换天自动清零
   callsDay: text('calls_day'),
   // 最近一次用户交互（聊天/注入/章节等）；闲置自动归档以此为据（null = 不归档）
@@ -110,6 +112,30 @@ export const timelines = sqliteTable('timelines', {
   // 上次引擎推进此线的真实时间（时钟推进依据）
   lastRealTickAt: text('last_real_tick_at'),
   forkSnapshotJson: text('fork_snapshot_json'),
+})
+
+/** ForkSnapshot 正文外置存储(0028):timelines.forkSnapshotJson 只留 $ref 指针;旧行内 v1 永久可读 */
+export const forkSnapshots = sqliteTable('fork_snapshots', {
+  timelineId: text('timeline_id')
+    .primaryKey()
+    .references(() => timelines.id),
+  // 与 ForkSnapshot.version 对齐(现=1)
+  version: integer('version').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+/** 用户级 BYOK 全局 LLM 配置与日预算(0028);行不存在 = 未配置(预算缺省 400) */
+export const userLlmConfigs = sqliteTable('user_llm_configs', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id),
+  baseUrl: text('base_url'),
+  apiKey: text('api_key'),
+  model: text('model'),
+  // null = 不限;行不存在时按代码缺省 400
+  dailyCallCap: integer('daily_call_cap'),
+  updatedAt: text('updated_at').notNull(),
 })
 
 /** Audited replay evidence for one Universe timeline. Non-complete rows are fail-closed. */

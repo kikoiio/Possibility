@@ -1,5 +1,6 @@
 import type { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, worldFacts } from '../db/schema'
 import type { ProjectionDomain } from '../world-state/model'
+import { isSnapshotRef } from '../life/snapshot-store'
 
 export type Timeline = typeof timelines.$inferSelect
 type Memory = typeof memories.$inferSelect
@@ -42,6 +43,10 @@ export interface ForkSnapshot {
 export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
   const raw = timeline.forkSnapshotJson
   if (!raw) return null
+  // 外置指针($ref)必须先经 hydrateTimelines 回填;走到这里说明查询点漏水合,属程序错误,响亮抛出。
+  if (isSnapshotRef(raw)) {
+    throw new Error(`分叉快照未水合:${timeline.id}(查询点须先 hydrateTimelines)`)
+  }
   try {
     const value = JSON.parse(raw) as ForkSnapshot
     const validDomains = value.completeDomains === undefined || (Array.isArray(value.completeDomains)

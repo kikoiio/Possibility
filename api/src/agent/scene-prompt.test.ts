@@ -41,6 +41,7 @@ function fakeCtx(): EngineContext {
         isDemo: false,
         callsToday: 0,
         callsDay: null,
+        llmConfigJson: null,
         lastUserActivityAt: null,
         createdAt: '',
       },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { memories, timelines } from '../db/schema'
-import { selectVisibleMemories, visibilityBuckets, type MemoryBucket } from './visibility'
+import { readForkSnapshot, selectVisibleMemories, visibilityBuckets, type MemoryBucket } from './visibility'
+import { SNAPSHOT_REF_JSON } from '../life/snapshot-store'
 
 type Timeline = typeof timelines.$inferSelect
 type Memory = typeof memories.$inferSelect
@@ -86,5 +87,21 @@ describe('visibilityBuckets(S1:可见性桶 SQL 化,与 selectVisibleMemories �
     const actual = filterByBuckets(rows.filter((m) => m.personId === 'p'), visibilityBuckets(fork2, worldTimelines, false)!)
     expect(actual).toEqual(expected)
     expect([...actual].sort()).toEqual(['fork1-before', 'main-before', 'null-before', 'own-after-cutoff'])
+  })
+})
+
+describe('readForkSnapshot(F4:外置指针纪律)', () => {
+  it('未水合指针响亮抛错', () => {
+    const fork = { ...timeline('f', 'main', FORK1_AT), forkSnapshotJson: SNAPSHOT_REF_JSON }
+    expect(() => readForkSnapshot(fork)).toThrow('分叉快照未水合')
+  })
+  it('v1 内联快照照旧解析,null 返 null', () => {
+    const snapshot = {
+      version: 1, sourceTimelineId: 'main', sourceSimTime: MAIN, capturedAt: FORK1_AT,
+      ancestorCutoffs: [], states: [], schedules: [], memories: [], events: [], commitments: [], historyComplete: true,
+    }
+    const fork = { ...timeline('f', 'main', FORK1_AT), forkSnapshotJson: JSON.stringify(snapshot) }
+    expect(readForkSnapshot(fork)).toEqual(snapshot)
+    expect(readForkSnapshot(timeline('f2', 'main', FORK1_AT))).toBeNull()
   })
 })

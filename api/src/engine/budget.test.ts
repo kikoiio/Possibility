@@ -34,6 +34,7 @@ function world(patch: Partial<World>): World {
     isDemo: false,
     callsToday: 0,
     callsDay: null,
+    llmConfigJson: null,
     lastUserActivityAt: null,
     createdAt: '',
     ...patch,
