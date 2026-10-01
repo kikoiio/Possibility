@@ -38,6 +38,16 @@ export interface ForkSnapshot {
   sourceStateVersion?: number
   worldModelVersion?: number
   worldFacts?: (typeof worldFacts.$inferSelect)[]
+  /** S4/F6:历史分叉的重建证据;仅当快照内容来自 reconstructAt 时存在。结构性类型,
+   * 与 world-state/reconstruct.ts 的 ReconstructionEvidence 保持一致(此处不引入以避免循环依赖)。 */
+  reconstruction?: {
+    source: 'anchor_replay' | 'full_replay'
+    throughVersion: number
+    anchorVersion: number | null
+    completeDomains: ProjectionDomain[]
+    coreHash: string
+    invertedMaintenance: number
+  }
 }
 
 export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
@@ -65,6 +75,9 @@ export function readForkSnapshot(timeline: Timeline): ForkSnapshot | null {
       && (value.dialogues === undefined || Array.isArray(value.dialogues))
       && (value.dialogueTurns === undefined || Array.isArray(value.dialogueTurns))
       && (value.personaMessages === undefined || Array.isArray(value.personaMessages))
+      && (value.reconstruction === undefined || (typeof value.reconstruction === 'object' && value.reconstruction !== null
+        && (value.reconstruction.source === 'anchor_replay' || value.reconstruction.source === 'full_replay')
+        && Number.isSafeInteger(value.reconstruction.throughVersion)))
       && validDomains
       ? value : null
   } catch {

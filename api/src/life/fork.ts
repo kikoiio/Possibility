@@ -5,6 +5,7 @@ import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMe
 import { hydrateTimelines, SNAPSHOT_REF_JSON, writeForkSnapshot } from './snapshot-store'
 import type { ForkScenario } from '../agent/types'
 import { ensureUniverseRevision, PROJECTION_DOMAINS, type ProjectionDomain } from '../world-state/model'
+import { reconstructAt, type Reconstruction } from '../world-state/reconstruct'
 import { WorldStateError } from '../world-state/types'
 import { requireWritableUniverse } from '../engine/guard'
 
@@ -84,10 +85,18 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
   const source = worldTimelines.find((t) => t.id === sourceId)
   if (!source || source.status !== 'active') throw new Error('只能分叉活跃时间线')
   if (worldTimelines.filter((t) => t.status === 'active').length >= 3) throw new Error('活跃时间线已达上限（3 条）')
-  // A historical scenario is not a historical state snapshot; never relabel today's state as the past.
+  // S4/F6:startTime 等于源 simNow → 既有实况拷贝路径;否则 → 历史重建路径。
+  // 不可变命令日志无竞争,历史路径不做源线版本冲突预检。
+  let reconstruction: Reconstruction | null = null
   if (scenario && Date.parse(scenario.startTime) !== Date.parse(source.simNow)) {
-    throw new Error('历史状态快照不可用，请以当前时间线时间创建分叉')
+    const result = await reconstructAt(db, worldId, source.id, scenario.startTime)
+    if (!result.ok) {
+      const status = result.reasonCode === 'future_time' || result.reasonCode === 'before_history_start' ? 400 : 409
+      throw new WorldStateError(result.message, status)
+    }
+    reconstruction = result
   }
+  const forkSimTime = reconstruction?.simTime ?? source.simNow
   const sourceRevision = sourceRevisions[0]
   if (!sourceRevision) throw new Error('分叉源状态版本不可用')
   const sourceModel = await db.select().from(worldModelVersions).where(and(
@@ -136,40 +145,47 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     ...(sourceCheckpoint?.personaMessages ?? []),
     ...personaMessageRows.filter(message => message.timelineId === source.id),
   ].map(message => [message.id, message])).values()]
-  const copiedSchedules = scheduleRows.filter((s) => s.worldDate >= source.simNow.slice(0, 10))
+  const copiedSchedules = (reconstruction?.rows.schedules ?? scheduleRows)
+    .filter((s) => s.worldDate >= forkSimTime.slice(0, 10))
+  const commitmentPool = reconstruction?.rows.commitments ?? commitmentRows
   // Persist the exact child IDs inside its immutable checkpoint. Reconstructing
   // them later from source commitments would otherwise be impossible.
-  const copiedCommitments = commitmentRows.filter((commitment) => commitment.status === 'proposed' || commitment.status === 'accepted')
+  const copiedCommitments = commitmentPool.filter((commitment) => commitment.status === 'proposed' || commitment.status === 'accepted')
     .map((commitment) => ({ ...commitment, id: `fork:${forkId}:${commitment.id}`, timelineId: forkId }))
   const snapshot: ForkSnapshot = {
-    version: 1, sourceTimelineId: source.id, sourceSimTime: source.simNow, capturedAt: now,
-    ancestorCutoffs: [{ timelineId: source.id, realTime: now, simTime: source.simNow }, ...cutoffs],
-    states, schedules: copiedSchedules, commitments: commitmentRows, projectedCommitments: copiedCommitments,
-    memories: [...new Set([...states.map((s) => s.personId), ...memoryRows.map((m) => m.personId)])]
+    version: 1, sourceTimelineId: source.id, sourceSimTime: forkSimTime, capturedAt: now,
+    ancestorCutoffs: [{ timelineId: source.id, realTime: now, simTime: forkSimTime }, ...cutoffs],
+    states: reconstruction?.rows.states ?? states, schedules: copiedSchedules,
+    commitments: commitmentPool, projectedCommitments: copiedCommitments,
+    memories: reconstruction?.rows.memories ?? [...new Set([...states.map((s) => s.personId), ...memoryRows.map((m) => m.personId)])]
       .flatMap((personId) => selectVisibleMemories(memoryRows, personId, source, worldTimelines))
       .filter(m => m.timelineId !== null || !sharedPersonIds.has(m.personId)),
-    events: inherited.events, historyComplete: inherited.historyComplete,
-    dialogues: checkpointDialogues, dialogueTurns: checkpointDialogueTurns,
-    personaMessages: visiblePersonaMessages, completeDomains: [...completeDomains],
-    sourceStateVersion: sourceRevision.version,
+    events: reconstruction?.rows.events ?? inherited.events,
+    historyComplete: reconstruction ? true : inherited.historyComplete,
+    dialogues: reconstruction?.rows.dialogues ?? checkpointDialogues,
+    dialogueTurns: reconstruction?.rows.dialogueTurns ?? checkpointDialogueTurns,
+    personaMessages: reconstruction?.rows.personaMessages ?? visiblePersonaMessages,
+    completeDomains: reconstruction ? [...reconstruction.evidence.completeDomains] : [...completeDomains],
+    sourceStateVersion: reconstruction?.evidence.throughVersion ?? sourceRevision.version,
     worldModelVersion: sourceRevision.worldModelVersion,
-    worldFacts: [...(readForkSnapshot(source)?.worldFacts ?? []), ...sourceFacts],
+    worldFacts: reconstruction?.rows.worldFacts ?? [...(readForkSnapshot(source)?.worldFacts ?? []), ...sourceFacts],
+    ...(reconstruction ? { reconstruction: reconstruction.evidence } : {}),
   }
   const insertTimeline = db.insert(timelines).values({
     id: forkId, worldId, parentTimelineId: source.id,
     forkScenarioJson: scenario ? JSON.stringify(scenario) : null,
-    forkSnapshotJson: SNAPSHOT_REF_JSON, simNow: source.simNow, createdAt: now,
+    forkSnapshotJson: SNAPSHOT_REF_JSON, simNow: forkSimTime, createdAt: now,
     status: 'active', ancestorIdsJson: JSON.stringify([...cutoffs.map((a) => a.timelineId).reverse(), source.id]),
     lastRealTickAt: now,
   })
   try { await db.batch([
     insertTimeline,
     writeForkSnapshot(db, forkId, snapshot, now),
-    db.insert(universeRevisions).values({ timelineId: forkId, version: 0, simTime: source.simNow,
+    db.insert(universeRevisions).values({ timelineId: forkId, version: 0, simTime: forkSimTime,
       worldModelVersion: sourceRevision.worldModelVersion, updatedAt: now }),
     db.insert(universeEvidence).values({ timelineId: forkId, level: 'complete', assessedVersion: 0,
-      baselineVersion: sourceRevision.version, reasonCodesJson: '["fork_checkpoint_complete"]', assessedAt: now }),
-    ...states.map((s) => db.insert(personStates).values({
+      baselineVersion: reconstruction?.evidence.throughVersion ?? sourceRevision.version, reasonCodesJson: '["fork_checkpoint_complete"]', assessedAt: now }),
+    ...(reconstruction?.rows.states ?? states).map((s) => db.insert(personStates).values({
       ...s, timelineId: forkId, currentDialogueId: null, updatedRealAt: now,
     })),
     // 继承日程对子线而言在 V=0(分叉点)即存在——版本水位 0
@@ -182,5 +198,5 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     if (conflict) throw conflict
     throw error
   }
-  return { id: forkId, simNow: source.simNow, snapshot }
+  return { id: forkId, simNow: forkSimTime, snapshot }
 }
