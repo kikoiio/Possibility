@@ -18,6 +18,7 @@ import { comparisonRoutes } from './life/compare'
 import { scenesRoutes } from './scenes/routes'
 import { mapRoutes } from './map/routes'
 import { demoRoutes } from './demo/routes'
+import { settingsRoutes } from './settings/routes'
 import { voxelRoutes } from './voxel/routes'
 import { cleanupExpiredGuestData } from './demo/cleanup'
 import { createDb } from './db/client'
@@ -84,6 +85,7 @@ app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
 app.route('/api', lifeRoutes) // 归来回顾与承诺
 app.route('/api', comparisonRoutes) // 时间线证据对照
+app.route('/api/settings', settingsRoutes) // BYOK 与全局预算(F5/S3);须在 chat/timeline 全局鉴权之前
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
 app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id
 app.route('/api/home', homeRoutes)

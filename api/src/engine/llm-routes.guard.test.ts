@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import app from '../index'
 import { conversations, events, llmCallLog, messages, persons, personStates, sessions, timelines, universeEvidence, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
+import { userLlmConfigs } from '../db/schema'
 import { budgetFromEnv, reserveUserCall, reserveWorldCall, userCallsToday } from './budget'
 import { gateUser } from './guard'
 
@@ -57,6 +58,8 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
     await seedModelRoutes(current)
     const fetchSpy = vi.fn(async () => new Response('unexpected provider call', { status: 500 }))
     vi.stubGlobal('fetch', fetchSpy)
+    // 全局预算(F5):cap=1,一笔预留即触顶
+    await current.db.insert(userLlmConfigs).values({ userId: 'owner', dailyCallCap: 1, updatedAt: WORLD_TIME })
     await reserveWorldCall(current.db, 'home-world', cfg, { timelineId: 'home-main', personId: 'resident', purpose: 'chat' })
 
     const results = []

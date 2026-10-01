@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { llmCallLog, timelines, universeEvidence, users, worlds } from '../db/schema'
+import { llmCallLog, timelines, universeEvidence, userLlmConfigs, users, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 import { gateUniverseWrite, gateUser, gateWorld, userReservation, worldReservation, type TickBudget } from './guard'
 import { recoverCappedWorlds } from './budget'
@@ -49,24 +49,34 @@ describe('预算与模型调用出口门禁', () => {
     await f.db.update(worlds).set({ status: 'archived' }).where(eq(worlds.id, 'world'))
     expect(await gateWorld(f.db, 'world', CFG)).toMatchObject({ ok: false, status: 409 })
 
-    await f.db.update(worlds).set({ status: 'running', callsDay: TODAY, callsToday: CFG.dailyCallCap }).where(eq(worlds.id, 'world'))
+    // 全局预算(F5):cap=2 + 今日已记 2 笔 → 429 + 世界 capped/global_daily_cap
+    await f.db.update(worlds).set({ status: 'running' }).where(eq(worlds.id, 'world'))
+    await f.db.insert(userLlmConfigs).values({ userId: 'owner', dailyCallCap: 2, updatedAt: NOW })
+    for (let i = 0; i < 2; i++) {
+      await f.db.insert(llmCallLog).values({ id: `today-${i}`, userId: 'owner', purpose: 'chat', createdAt: NOW })
+    }
     expect(await gateWorld(f.db, 'world', CFG)).toMatchObject({ ok: false, status: 429 })
-    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'world')).get())?.status).toBe('capped')
+    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'world')).get()))
+      .toMatchObject({ status: 'capped', pauseReason: 'global_daily_cap' })
 
-    await f.db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap', callsDay: YESTERDAY, callsToday: CFG.dailyCallCap }).where(eq(worlds.id, 'world'))
+    // 换天恢复:昨日触顶记录不挡今日
+    await f.db.update(llmCallLog).set({ createdAt: `${YESTERDAY}T12:00:00.000Z` })
+    await f.db.update(worlds).set({ status: 'capped', pauseReason: 'global_daily_cap', callsDay: YESTERDAY, callsToday: 2 }).where(eq(worlds.id, 'world'))
     await recoverCappedWorlds(f.db, TODAY)
     expect((await gateWorld(f.db, 'world', CFG)).ok).toBe(true)
   })
 
   it('世界每日预留原子封顶；失败不记账，也不会进入 provider', async () => {
     const f = await setup()
+    // 全局预算 cap=2(F5):两笔后准入关闭,第三笔 409
+    await f.db.insert(userLlmConfigs).values({ userId: 'owner', dailyCallCap: 2, updatedAt: NOW })
     const reserve = worldReservation(f.db, 'world', CFG, { timelineId: 'main', personId: null, purpose: 'scene' })
     await reserve()
     await reserve()
     await expect(reserve()).rejects.toMatchObject({ status: 409 })
     expect(reserve.calls).toBe(2)
     expect(await f.db.select().from(llmCallLog)).toHaveLength(2)
-    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'world')).get())).toMatchObject({ status: 'capped', callsToday: 2, callsDay: TODAY })
+    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'world')).get())).toMatchObject({ status: 'capped', pauseReason: 'global_daily_cap', callsToday: 2, callsDay: TODAY })
     expect(await gateWorld(f.db, 'world', CFG)).toMatchObject({ ok: false, status: 409 })
   })
 

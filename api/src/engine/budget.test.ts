@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { archiveIdleWorlds, budgetFromEnv, bumpCalls, dailyCapHit, isIdleActivity, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
-import { users, worlds } from '../db/schema'
+import { eq } from 'drizzle-orm'
+import { archiveIdleWorlds, budgetFromEnv, bumpCalls, GLOBAL_CAP_REASON, GLOBAL_DAILY_CAP_DEFAULT, globalBudgetExceeded, isIdleActivity, recoverCappedWorlds, reserveWorldCall, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
+import { llmCallLog, timelines, userLlmConfigs, users, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 
 type World = typeof worlds.$inferSelect
@@ -63,16 +64,89 @@ describe('bumpCalls（记账核心：滚动 + 累加）', () => {
   })
 })
 
-describe('dailyCapHit（每日上限）', () => {
-  it('达到上限即触顶', () => {
-    expect(dailyCapHit(world({ callsDay: TODAY, callsToday: 400 }), CFG)).toBe(true)
+describe('全局日预算(F5)', () => {
+  const NOW = new Date().toISOString()
+
+  async function seedOwner(cap?: number | null) {
+    const fixture = createTestDb()
+    await fixture.db.insert(users).values({ id: 'u1', username: 'u1', passwordHash: 'x', createdAt: NOW })
+    await fixture.db.insert(worlds).values([
+      { id: 'w1', userId: 'u1', name: 'W1', description: '', status: 'running' },
+      { id: 'w2', userId: 'u1', name: 'W2', description: '', status: 'running' },
+    ])
+    await fixture.db.insert(timelines).values({ id: 't1', worldId: 'w1', simNow: NOW, createdAt: NOW })
+    if (cap !== undefined) {
+      await fixture.db.insert(userLlmConfigs).values({ userId: 'u1', dailyCallCap: cap, updatedAt: NOW })
+    }
+    return fixture
+  }
+
+  let logSeq = 0
+  async function logCalls(fixture: ReturnType<typeof createTestDb>, n: number, createdAt: string) {
+    await fixture.db.insert(llmCallLog).values(
+      Array.from({ length: n }, () => ({ id: `log-${logSeq++}`, userId: 'u1', purpose: 'chat' as const, createdAt })))
+  }
+
+  it('缺省 400:无配置行时 399 未触顶、400 触顶', async () => {
+    const fixture = await seedOwner()
+    await logCalls(fixture, GLOBAL_DAILY_CAP_DEFAULT - 1, NOW)
+    expect(await globalBudgetExceeded(fixture.db, 'u1')).toBe(false)
+    await logCalls(fixture, 1, NOW)
+    expect(await globalBudgetExceeded(fixture.db, 'u1')).toBe(true)
   })
-  it('未达上限不触顶', () => {
-    expect(dailyCapHit(world({ callsDay: TODAY, callsToday: 399 }), CFG)).toBe(false)
+
+  it('存储值生效;null = 不限', async () => {
+    const fixture = await seedOwner(2)
+    await logCalls(fixture, 2, NOW)
+    expect(await globalBudgetExceeded(fixture.db, 'u1')).toBe(true)
+    const unlimited = await seedOwner(null)
+    await logCalls(unlimited, 500, NOW)
+    expect(await globalBudgetExceeded(unlimited.db, 'u1')).toBe(false)
   })
-  it('换天后（callsDay 滞后）视为未触顶——配合 recoverCappedWorlds 自动恢复', () => {
-    // 这是 bug#4 的核心场景：昨天触顶的世界今天必须能被 tick 重新拾起
-    expect(dailyCapHit(world({ callsDay: YESTERDAY, callsToday: 400 }), CFG)).toBe(false)
+
+  it('reserveWorldCall 全局准入:触顶拒入 + 该用户全部 running 世界同停', async () => {
+    const fixture = await seedOwner(2)
+    const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const }
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toEqual(expect.any(String))
+    expect(await reserveWorldCall(fixture.db, 'w2', CFG, meta)).toEqual(expect.any(String))
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toBeNull()
+    for (const id of ['w1', 'w2']) {
+      expect((await fixture.db.select().from(worlds).where(eq(worlds.id, id)).get()))
+        .toMatchObject({ status: 'capped', pauseReason: GLOBAL_CAP_REASON })
+    }
+  })
+
+  it('不限(null)时 reserve 不触顶、用量照计', async () => {
+    const fixture = await seedOwner(null)
+    const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const }
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toEqual(expect.any(String))
+    expect((await fixture.db.select().from(worlds).where(eq(worlds.id, 'w1')).get())?.status).toBe('running')
+    expect(await fixture.db.select({ id: llmCallLog.id }).from(llmCallLog).all()).toHaveLength(1)
+  })
+
+  it('并发准入不超卖:cap=1 时两个并发 reserve 只进一个', async () => {
+    const fixture = await seedOwner(1)
+    const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const }
+    const results = await Promise.all([
+      reserveWorldCall(fixture.db, 'w1', CFG, meta),
+      reserveWorldCall(fixture.db, 'w1', CFG, meta),
+    ])
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(await fixture.db.select({ id: llmCallLog.id }).from(llmCallLog).all()).toHaveLength(1)
+  })
+
+  it('换天恢复覆盖 global_daily_cap 与存量 daily_cap', async () => {
+    const fixture = await seedOwner()
+    const yesterday = new Date(Date.parse(`${TODAY}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10)
+    await fixture.db.update(worlds).set({ status: 'capped', pauseReason: GLOBAL_CAP_REASON, callsDay: yesterday, callsToday: 5 })
+      .where(eq(worlds.id, 'w1'))
+    await fixture.db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap', callsDay: yesterday, callsToday: 5 })
+      .where(eq(worlds.id, 'w2'))
+    await recoverCappedWorlds(fixture.db, TODAY)
+    for (const id of ['w1', 'w2']) {
+      expect((await fixture.db.select().from(worlds).where(eq(worlds.id, id)).get()))
+        .toMatchObject({ status: 'running', pauseReason: null, callsToday: 0 })
+    }
   })
 })
 

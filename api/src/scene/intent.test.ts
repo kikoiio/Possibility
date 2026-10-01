@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
 import { dialogueTurns, dialogues, llmCallLog, persons, personStates, sceneIntentProposals, sceneRequests,
-  universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+  universeEvidence, universeRevisions, userLlmConfigs, worldCommands, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 import { LLM_CONTRACT_VERSIONS } from '../llm/contracts'
@@ -227,15 +227,16 @@ describe('scene intent proposal endpoint', () => {
   it('refuses resolver calls at the world budget gate without reserving an LLM call', async () => {
     const fixture = await setup()
     try {
-      fixture.env.DAILY_CALL_CAP = '1'
-      await fixture.db.update(worlds).set({ callsToday: 1, callsDay: new Date().toISOString().slice(0, 10) })
-        .where(eq(worlds.id, 'home-world'))
+      // 全局预算(F5):cap=1 且今日已记 1 笔 → 门禁 429
+      const now = new Date().toISOString()
+      await fixture.db.insert(userLlmConfigs).values({ userId: 'owner', dailyCallCap: 1, updatedAt: now })
+      await fixture.db.insert(llmCallLog).values({ id: 'usage-1', userId: 'owner', purpose: 'chat', createdAt: now })
       const fetch = vi.fn()
       vi.stubGlobal('fetch', fetch)
       const response = await postIntent(fixture, '去图书馆')
       expect(response.status).toBe(429)
       expect(fetch).not.toHaveBeenCalled()
-      expect(await fixture.db.select().from(llmCallLog).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(llmCallLog).all()).toHaveLength(1) // 仅预置的用量,拒绝不记账
       expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(0)
       expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(0)
     } finally { fixture.close() }

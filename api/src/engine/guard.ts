@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { demoBaselines, timelines, universeEvidence, worlds } from '../db/schema'
-import { capWorld, dailyCapHit, reserveWorldCall, reserveUserCall, settleCallReceipt, userCallsToday,
+import { capGlobalWorlds, globalBudgetExceeded, reserveWorldCall, reserveUserCall, settleCallReceipt, userCallsToday,
   type BudgetConfig, type CallMeta, type ReceiptDetails, type ReceiptStatus } from './budget'
 import type { CallPurpose } from './steps/types'
 import { WorldStateError } from '../world-state/types'
@@ -39,9 +39,9 @@ export async function gateWorld(
   if (world.status !== 'running') {
     return { ok: false, status: 409, error: `世界${STATUS_LABEL[world.status] ?? world.status}，恢复后才能继续` }
   }
-  if (dailyCapHit(world, cfg)) {
-    await capWorld(db, world.id, cfg)
-    return { ok: false, status: 429, error: '世界已达今日调用上限，次日自动恢复' }
+  if (await globalBudgetExceeded(db, world.userId)) {
+    await capGlobalWorlds(db, world.userId)
+    return { ok: false, status: 429, error: '已达今日全局调用预算，可在设置页提高预算' }
   }
   return { ok: true, world }
 }

@@ -1,6 +1,6 @@
-import { and, count, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, count, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { llmCallLog, worlds } from '../db/schema'
+import { llmCallLog, userLlmConfigs, worlds } from '../db/schema'
 import type { CallPurpose } from './steps/types'
 
 type World = typeof worlds.$inferSelect
@@ -9,7 +9,8 @@ type World = typeof worlds.$inferSelect
 export interface BudgetConfig {
   worldSpeed: number // WORLD_SPEED 缺省 6（世界时钟倍速）
   tickCallCap: number // TICK_CALL_CAP 缺省 8（每世界每拍 LLM 调用上限）
-  dailyCallCap: number // DAILY_CALL_CAP 缺省 400（每世界每日 LLM 调用上限）
+  // 已退役(F5/S3):每世界每日上限由 user_llm_configs 的全局日预算取代,此字段仅保留兼容
+  dailyCallCap: number
   summaryThreshold: number // MEMORY_SUMMARY_THRESHOLD 缺省 40（触发 L1 压缩的未压缩原文条数，即 S2 的 l1Threshold）
   l1Batch: number // MEMORY_SUMMARY_L1_BATCH 缺省 30（L1 压缩批次大小，截断 ≤30）
   l2Threshold: number // MEMORY_SUMMARY_L2_THRESHOLD 缺省 10（触发 L2 上卷的未上卷 L1 条数）
@@ -91,8 +92,46 @@ export interface ReceiptDetails {
 
 export type ReceiptStatus = 'completed' | 'failed' | 'cancelled'
 
+/** 全局日预算(F5/S3):行不存在 → 400;存储 NULL → 不限;否则存储值。 */
+export const GLOBAL_DAILY_CAP_DEFAULT = 400
+export const GLOBAL_CAP_REASON = 'global_daily_cap'
+
+/** 有效全局预算 SQL 表达式(供原子准入语句内联):userRef 为用户列或参数。 */
+function globalCapSql(userRef: unknown) {
+  return sql`case when exists(select 1 from ${userLlmConfigs} where ${userLlmConfigs.userId} = ${userRef})
+    then (select ${userLlmConfigs.dailyCallCap} from ${userLlmConfigs} where ${userLlmConfigs.userId} = ${userRef})
+    else ${GLOBAL_DAILY_CAP_DEFAULT} end`
+}
+
+/** 该用户今日已记账调用数 SQL 表达式(账本 llm_call_log 即真相)。 */
+function globalCountSql(userRef: unknown, day: string) {
+  return sql`(select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userRef}
+    and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'} and ${llmCallLog.createdAt} < ${day + 'T24:00:00'})`
+}
+
+/** JS 侧同一语义(门禁/端点用;准入判定永远走 SQL,不用本函数的结果写库)。 */
+export async function globalBudgetExceeded(db: Db, userId: string, day: string = today()): Promise<boolean> {
+  const row = await db.select().from(userLlmConfigs).where(eq(userLlmConfigs.userId, userId)).get()
+  const cap = row === undefined ? GLOBAL_DAILY_CAP_DEFAULT : row.dailyCallCap
+  if (cap === null) return false
+  return (await userCallsToday(db, userId, day)) >= cap
+}
+
+/** 全局触顶动作:该用户全部 running 世界同停(F10)。 */
+export async function capGlobalWorlds(db: Db, userId: string): Promise<void> {
+  await db.update(worlds).set({ status: 'capped', pauseReason: GLOBAL_CAP_REASON })
+    .where(and(eq(worlds.userId, userId), eq(worlds.status, 'running')))
+}
+
+/** 提额/设不限后恢复(由 PUT /settings/budget 同事务调用;只动全局触顶的世界)。 */
+export async function resumeGlobalCappedWorlds(db: Db, userId: string): Promise<void> {
+  await db.update(worlds).set({ status: 'running', pauseReason: null })
+    .where(and(eq(worlds.userId, userId), eq(worlds.status, 'capped'), eq(worlds.pauseReason, GLOBAL_CAP_REASON)))
+}
+
 /** D1 batch is transactional: the conditional insert and counter increment commit together.
  * Admission reads the live row in SQL; never write a counter derived from a caller's snapshot.
+ * 全局预算(F5):准入与计数在同一语句,并发不超卖;触顶同事务停该用户全部 running 世界。
  * Failed/uncertain provider attempts remain charged. Settlement changes observability only,
  * never the already-consumed budget counter.
  */
@@ -107,24 +146,33 @@ export async function reserveWorldCall(
   const now = new Date().toISOString()
   const day = now.slice(0, 10)
   const used = sql<number>`case when ${worlds.callsDay} = ${day} then ${worlds.callsToday} else 0 end`
+  const owner = sql`(select ${worlds.userId} from ${worlds} where ${worlds.id} = ${worldId})`
+  const cap = globalCapSql(owner)
+  const calls = globalCountSql(owner, day)
   const [admitted] = await db.batch([
     db.insert(llmCallLog).select(sql`select ${id}, ${details.requestId ?? meta.requestId ?? null}, ${worlds.id}, ${worlds.userId},
       ${meta.timelineId}, ${meta.personId}, ${meta.purpose}, ${details.contextHash ?? null},
       ${details.contractVersion ?? meta.contractVersion ?? null}, 'reserved', null, ${now}, null
       from ${worlds} where ${worlds.id} = ${worldId}
-      and ${worlds.status} = 'running' and ${used} < ${cfg.dailyCallCap}`)
+      and ${worlds.status} = 'running' and (${cap} is null or ${calls} < ${cap})`)
       .returning({ id: llmCallLog.id }),
     db.update(worlds).set({
       callsToday: sql`${used} + 1`,
       callsDay: day,
-      status: sql`case when ${used} + 1 >= ${cfg.dailyCallCap} then 'capped' else ${worlds.status} end`,
-      pauseReason: sql`case when ${used} + 1 >= ${cfg.dailyCallCap} then 'daily_cap' else ${worlds.pauseReason} end`,
     }).where(and(eq(worlds.id, worldId), sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`)),
+    // 全局触顶:该用户全部 running 世界同停(仅本次准入成功后才可能达成)
+    db.update(worlds).set({ status: 'capped', pauseReason: GLOBAL_CAP_REASON }).where(and(
+      sql`${worlds.userId} = (select ${worlds.userId} from ${worlds} where ${worlds.id} = ${worldId})`,
+      eq(worlds.status, 'running'),
+      sql`${globalCapSql(worlds.userId)} is not null and ${globalCountSql(worlds.userId, day)} >= ${globalCapSql(worlds.userId)}`,
+      sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`,
+    )),
   ])
   return admitted[0]?.id ?? null
 }
 
-/** A single INSERT ... SELECT serializes the user's check and reservation, including parallel retries. */
+/** A single INSERT ... SELECT serializes the user's check and reservation, including parallel retries.
+ * 全局预算(F5):在既有 preworldDailyCap 之外叠加同一全局条件。 */
 export async function reserveUserCall(
   db: Db,
   userId: string,
@@ -134,10 +182,13 @@ export async function reserveUserCall(
 ): Promise<string | null> {
   const now = new Date().toISOString()
   const day = now.slice(0, 10)
+  const cap = globalCapSql(userId)
+  const calls = globalCountSql(userId, day)
   const rows = await db.insert(llmCallLog).select(sql`select ${crypto.randomUUID()}, ${details.requestId ?? null}, null,
     ${userId}, null, null, ${purpose}, ${details.contextHash ?? null}, ${details.contractVersion ?? null},
     'reserved', null, ${now}, null
-    where (select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userId}
+    where (${cap} is null or ${calls} < ${cap})
+    and (select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userId}
       and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'}
     and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}) < ${cfg.preworldDailyCap}`)
     .returning({ id: llmCallLog.id })
@@ -181,32 +232,17 @@ export function tickBudgetOk(tickCalls: number, cfg: BudgetConfig): boolean {
   return tickCalls < cfg.tickCallCap
 }
 
-/** 每日上限是否触顶（换天未记账时视为 0） */
-export function dailyCapHit(world: World, cfg: BudgetConfig): boolean {
-  if (world.callsDay !== today()) return false
-  return world.callsToday >= cfg.dailyCallCap
-}
-
-/** 触顶动作：世界置 capped、记录原因 */
-export async function capWorld(db: Db, worldId: string, cfg?: BudgetConfig): Promise<void> {
-  if (!cfg) {
-    await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(eq(worlds.id, worldId))
-    return
-  }
-  await db.update(worlds).set({ status: 'capped', pauseReason: 'daily_cap' }).where(and(
-    eq(worlds.id, worldId), eq(worlds.status, 'running'), eq(worlds.callsDay, today()), gte(worlds.callsToday, cfg.dailyCallCap),
-  ))
-}
-
 /**
  * capped 世界换天自动恢复（tick 每拍开头调用）。
  * 换天清零原本只发生在 recordCall 内，而 capped 世界被 tick 排除、永远走不到记账——形成死锁；这里显式恢复。
+ * 覆盖存量 daily_cap 与全局 global_daily_cap(F5)。
  */
 export async function recoverCappedWorlds(db: Db, day: string = today()): Promise<void> {
   await db
     .update(worlds)
     .set({ status: 'running', pauseReason: null, callsToday: 0, callsDay: day })
-    .where(and(eq(worlds.status, 'capped'), eq(worlds.pauseReason, 'daily_cap'), or(isNull(worlds.callsDay), lt(worlds.callsDay, day))))
+    .where(and(eq(worlds.status, 'capped'), inArray(worlds.pauseReason, ['daily_cap', GLOBAL_CAP_REASON]),
+      or(isNull(worlds.callsDay), lt(worlds.callsDay, day))))
 }
 
 /** 闲置判定（纯函数）：最后活动时间距 now 超过 days 天；null/无法解析视为"不可判定"→ 不归档 */
