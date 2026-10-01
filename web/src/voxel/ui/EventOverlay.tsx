@@ -30,12 +30,13 @@ export default function EventOverlay({ engine, onSelect }: EventOverlayProps) {
         }
         const rect = canvas.getBoundingClientRect()
         // 锚点为 client 坐标 → 容器相对坐标(浮层是画布兄弟节点,同容器定位)
-        const list = engine.disclosure.screenAnchors(false).map((a) => ({
-          eventId: a.eventId,
-          x: a.x - rect.left,
-          y: a.y - rect.top,
-          teaser: engine.getEventById(a.eventId)?.teaser ?? '',
-        }))
+        const list = engine.disclosure.screenAnchors(false).flatMap((a) => {
+          // 相机补间中途投影可能暂不可解(NaN/Infinity)——跳过该帧,不渲染非法 style
+          const x = a.x - rect.left
+          const y = a.y - rect.top
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return []
+          return [{ eventId: a.eventId, x, y, teaser: engine.getEventById(a.eventId)?.teaser ?? '' }]
+        })
         const key = list.map((a) => `${a.eventId}:${Math.round(a.x)}:${Math.round(a.y)}`).join('|')
         if (key !== lastKey) {
           lastKey = key
