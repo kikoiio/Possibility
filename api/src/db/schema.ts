@@ -330,6 +330,21 @@ export const events = sqliteTable('events', {
   createdVersion: integer('created_version'),
 })
 
+/** S4 世界模拟:life 事件蒸馏出的体素事件投影(WorldEvent + sourceEventIds 证据链)。
+ * 派生数据——可随时由蒸馏管线重建;created_version 水位纪律同 0029,供历史分叉回放过滤。 */
+export const voxelEventProjections = sqliteTable('voxel_event_projections', {
+  // vep:{timelineId}:{clusterKey}
+  id: text('id').primaryKey(),
+  timelineId: text('timeline_id')
+    .notNull()
+    .references(() => timelines.id),
+  // { event: WorldEvent, sourceEventIds: string[], copySource: 'template' | 'llm' }
+  payloadJson: text('payload_json').notNull(),
+  createdVersion: integer('created_version'),
+}, t => [
+  index('voxel_event_projections_timeline_created_version').on(t.timelineId, t.createdVersion),
+])
+
 /** 成本护栏与可观测性：每次 LLM 调用一行；世界创建前的调用（蒸馏/骨架）记 user_id、world_id 为空 */
 export const llmCallLog = sqliteTable('llm_call_log', {
   id: text('id').primaryKey(),

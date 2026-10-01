@@ -211,6 +211,13 @@
       "when": 1790871600000,
       "tag": "0029_timeline_anchors",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1790958000000,
+      "tag": "0030_voxel_event_projections",
+      "breakpoints": true
     }
   ]
 }
