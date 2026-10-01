@@ -67,6 +67,35 @@ describe('captureDailyAnchor', () => {
     const timeline = (await db.select().from(timelines).all()).find((t) => t.id === 'orphan')!
     expect(await captureDailyAnchor(db, timeline, DAY2)).toBeNull()
   })
+
+  it('锚点成本:负载 KB 级(<64KB)且不随可见历史行数增长', async () => {
+    const db = fixture.db
+    const timeline = (await db.select().from(timelines).all())[0]
+    // 千行级历史(事件+记忆)不进入锚点负载——负载只含可变核心+版本水位
+    const seedHistory = async (prefix: string, n: number) => {
+      const { events, memories } = await import('../db/schema')
+      for (let offset = 0; offset < n; offset += 100) {
+        await db.insert(events).values(Array.from({ length: Math.min(100, n - offset) }, (_, i) => ({
+          id: `${prefix}-ev-${offset + i}`, timelineId: 'main', simTime: DAY1, title: '往事', description: 'x'.repeat(200),
+        })))
+        await db.insert(memories).values(Array.from({ length: Math.min(100, n - offset) }, (_, i) => ({
+          id: `${prefix}-m-${offset + i}`, personId: 'p1', timelineId: 'main', type: 'event',
+          content: 'y'.repeat(200), createdAt: DAY1, importance: 5,
+        })))
+      }
+    }
+    await seedHistory('h1', 1000)
+    const first = await captureDailyAnchor(db, timeline, DAY2)
+    const firstBytes = Buffer.byteLength(first!.payloadJson)
+    expect(firstBytes).toBeLessThan(64 * 1024)
+    expect(first!.payloadJson).not.toContain('x'.repeat(200))
+
+    // 历史翻倍后次日锚点负载不随历史增长(仅日程窗口漂移一行,容差 1KB;2000 行历史本身 ~400KB)
+    await seedHistory('h2', 1000)
+    const DAY3 = '2026-10-03T00:30:00.000Z'
+    const second = await captureDailyAnchor(db, { ...timeline, simNow: DAY3 }, DAY3)
+    expect(Math.abs(Buffer.byteLength(second!.payloadJson) - firstBytes)).toBeLessThan(1024)
+  })
 })
 
 describe('锚点查询', () => {

@@ -301,4 +301,32 @@ describe('历史范围与单点判定端点(S4/F6)', () => {
     expect(res.status, await res.clone().text()).toBe(200)
     expect(await res.json()).toMatchObject({ startTime: T1 })
   })
+
+  it('AC10:预算触顶时历史分叉 preview/创建与现时刻同样 409,不调用模型、不建线', async () => {
+    const { reserveWorldCall } = await import('../engine/budget')
+    const { worlds } = await import('../db/schema')
+    const f = await createWorldFixture()
+    await buildHistoryWorld(f)
+    const cfg = { worldSpeed: 6, tickCallCap: 8, dailyCallCap: 1, summaryThreshold: 40, l1Batch: 30,
+      l2Threshold: 10, l2Batch: 8, preworldDailyCap: 1, idleArchiveDays: 7, directorLlm: true }
+    await f.db.insert(userLlmConfigs).values({ userId: 'owner', dailyCallCap: 1, updatedAt: WORLD_TIME })
+    await reserveWorldCall(f.db, 'home-world', cfg, { timelineId: 'home-main', personId: 'resident', purpose: 'chat' })
+    const fetchSpy = vi.fn(async () => new Response('unexpected provider call', { status: 500 }))
+    vi.stubGlobal('fetch', fetchSpy)
+    const timelineCount = (await f.db.select().from(timelines).all()).length
+
+    const preview = await app.request('/api/worlds/home-world/timelines/home-main/fork/preview', {
+      method: 'POST', headers: owner, body: JSON.stringify({ whatIf: scenarioJson.whatIf, startTime: T1 }),
+    }, f.env)
+    const fork = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
+      method: 'POST', headers: owner,
+      body: JSON.stringify({ requestId: 'req-capped-hist', scenario: { whatIf: 'w', changedVariable: 'c', startTime: T1 } }),
+    }, f.env)
+    expect(preview.status, await preview.clone().text()).toBe(409)
+    expect(fork.status, await fork.clone().text()).toBe(409)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(await f.db.select().from(llmCallLog)).toHaveLength(1) // 仅触顶那笔预留
+    expect(await f.db.select().from(timelines)).toHaveLength(timelineCount)
+    expect((await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())?.status).toBe('capped')
+  })
 })

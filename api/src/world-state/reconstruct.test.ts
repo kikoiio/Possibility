@@ -300,3 +300,66 @@ describe('reconstructAt 全量回放兜底(T7)', () => {
     expect(result).toMatchObject({ ok: false, reasonCode: 'replay_diagnostics' })
   })
 })
+
+/* ---------- AC11 性能抽测:千条命令量级重建秒级 ---------- */
+
+describe('AC11 性能抽测', () => {
+  it('千条命令世界:全量回放(500 命令)与锚点路径均秒级完成', async () => {
+    fixture = await createWorldFixture()
+    const db = fixture.db
+    await db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME })
+    await db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
+    const state = { personId: 'resident', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe',
+      activity: 'Reading', mood: 'Calm', goal: 'Learn', updatedRealAt: WORLD_TIME,
+      currentDialogueId: null, lastBeatSimTime: null }
+    await db.insert(personStates).values(state)
+    const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [state])
+    await db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, createdAt: WORLD_TIME,
+      modelJson: JSON.stringify({ name: 'Home world', description: '',
+        locations: [{ name: 'Cafe', description: '' }],
+        residents: [{ id: 'resident', name: 'Ada', model: {} }], projectionBaseline: baseline }) })
+    await db.insert(universeRevisions).values({ timelineId: 'home-main', version: 0, simTime: WORLD_TIME,
+      worldModelVersion: 1, updatedAt: WORLD_TIME })
+
+    // 1000 拍时钟;每 100 拍追加一条带事件+记忆的居民拍(事件 simTime 须 ≤ 结果时刻,故先过钟)
+    const at = (minutes: number) => new Date(Date.parse(WORLD_TIME) + minutes * 60_000).toISOString()
+    let version = 0
+    const commit = async (action: WorldAction, i: number) => {
+      const result = await commitWorldCommand(db, { id: `perf-${i}`, worldId: 'home-world', timelineId: 'home-main',
+        userId: 'owner', expectedVersion: version, action, actorKind: 'system' })
+      version = result.version
+    }
+    const MID = 500
+    let commandId = 0
+    const tick = async (i: number) => {
+      await commit({ type: 'clock_advance', from: at(i - 1), to: at(i), observedAt: at(i) }, ++commandId)
+      if (i % 100 === 0) {
+        await commit({ type: 'resident_state', personId: 'resident', cause: 'beat', windowStart: at(i - 1),
+          patch: { activity: `act-${i}` },
+          events: [{ simTime: at(i), title: `事件${i}`, description: '一拍。' }],
+          memories: [{ type: 'thought', content: `m${i}`, importance: 5 }] }, ++commandId)
+      }
+    }
+    for (let i = 1; i <= MID; i++) await tick(i)
+
+    // 全量回放:无锚点,重建 V=500(重放 500 条命令)
+    const fullStart = Date.now()
+    const full = await reconstructAt(db, 'home-world', 'home-main', at(MID))
+    const fullMs = Date.now() - fullStart
+    expect(full.ok).toBe(true)
+
+    // 锚点落在 V=505(过钟 500 + 5 拍),再推进 500 拍;锚点路径重建同一时刻(0 条迷你回放 + 水位查询)
+    const timelineRow = (await db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
+    await captureDailyAnchor(db, { ...timelineRow, simNow: at(MID) })
+    for (let i = MID + 1; i <= 1000; i++) await tick(i)
+    const anchorStart = Date.now()
+    const anchored = await reconstructAt(db, 'home-world', 'home-main', at(MID))
+    const anchorMs = Date.now() - anchorStart
+    expect(anchored.ok).toBe(true)
+    if (anchored.ok) expect(anchored.evidence.source).toBe('anchor_replay')
+
+    console.log(`[AC11 perf] 1010 命令世界,重建 V=505: full_replay=${fullMs}ms anchor=${anchorMs}ms`)
+    expect(fullMs, `full_replay ${fullMs}ms`).toBeLessThan(10_000)
+    expect(anchorMs, `anchor ${anchorMs}ms`).toBeLessThan(10_000)
+  }, 60_000)
+})
