@@ -48,15 +48,11 @@ memoryRoutes.patch('/memories/:id', async (c) => {
     patch.content = content
   }
   if (body.importance !== undefined) patch.importance = clampImportance(body.importance)
-  if (memory.timelineId !== null) {
-    const result = await versionedMemoryAction(c, db, memory, body, 'memory_correct', {
-      content: patch.content ?? body.before?.content ?? memory.content,
-      importance: patch.importance ?? body.before?.importance ?? memory.importance,
-    })
-    return result
-  }
-  await db.update(memories).set(patch).where(eq(memories.id, memory.id))
-  return c.json({ ok: true })
+  // S4:NULL 桶(主线 legacy)同样走版本化命令——直改直删不可追溯,已关闭
+  return versionedMemoryAction(c, db, memory, body, 'memory_correct', {
+    content: patch.content ?? body.before?.content ?? memory.content,
+    importance: patch.importance ?? body.before?.importance ?? memory.importance,
+  })
 })
 
 /** 删除记忆（人物会立刻忘掉这件事） */
@@ -66,9 +62,7 @@ memoryRoutes.delete('/memories/:id', async (c) => {
   const memory = await loadOwnedMemory(db, c.req.param('id'), c.get('user').id)
   if (!memory && body?.timelineId && body.commandId) return versionedMemoryAction(c, db, null, body, 'memory_forget', undefined, c.req.param('id'))
   if (!memory) return c.json({ error: '记忆不存在' }, 404)
-  if (memory.timelineId !== null) return versionedMemoryAction(c, db, memory, body, 'memory_forget')
-  await db.delete(memories).where(eq(memories.id, memory.id))
-  return c.json({ ok: true })
+  return versionedMemoryAction(c, db, memory, body, 'memory_forget')
 })
 
 async function versionedMemoryAction(c: Context<{ Bindings: Env; Variables: AuthVariables }>, db: ReturnType<typeof createDb>,
@@ -79,9 +73,15 @@ async function versionedMemoryAction(c: Context<{ Bindings: Env; Variables: Auth
     return c.json({ error: '缺少时间线、版本或记忆基准信息' }, 400)
   }
   const before = body.before
-  if (memory && memory.timelineId !== body.timelineId) return c.json({ error: '时间线与记忆不匹配' }, 409)
+  if (memory && memory.timelineId !== null && memory.timelineId !== body.timelineId) {
+    return c.json({ error: '时间线与记忆不匹配' }, 409)
+  }
   const timeline = await db.select().from(timelines).where(eq(timelines.id, body.timelineId)).get()
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  // NULL 桶记忆只属于主线;分叉线视图本就不展示它们
+  if (memory && memory.timelineId === null && timeline.parentTimelineId !== null) {
+    return c.json({ error: '时间线与记忆不匹配' }, 409)
+  }
   const gate = await gateUniverseWrite(db, timeline.worldId, timeline.id)
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   if (gate.world.userId !== c.get('user').id) return c.json({ error: '时间线不存在' }, 404)

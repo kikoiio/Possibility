@@ -271,7 +271,10 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
       eq(memories.id, action.memoryId), eq(memories.personId, action.personId),
     )).get()
     const before = action.before
-    if (!memory || memory.timelineId !== timelineId || !before || before.type !== memory.type
+    // S4:NULL 桶(主线 legacy)记忆允许在主线维护;分叉线不可见 NULL 桶
+    const inBucket = memory && (memory.timelineId === timelineId
+      || (memory.timelineId === null && timeline.parentTimelineId === null))
+    if (!memory || !inBucket || !before || before.type !== memory.type
       || before.content !== memory.content || before.importance !== memory.importance
       || before.simTime !== memory.simTime || before.createdAt !== memory.createdAt
       || before.summarized !== memory.summarized) {

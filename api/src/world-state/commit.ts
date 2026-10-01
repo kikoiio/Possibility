@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull } from 'drizzle-orm'
+import { and, eq, exists, isNull, or } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { commitments, dialogueTurns, dialogues, events, memories, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
@@ -169,9 +169,13 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
     } else if (plan.memoryMaintenance) {
       const maintenance = plan.memoryMaintenance
       const before = maintenance.before
+      // S4:主线兼容 NULL 桶(legacy 记忆);分叉线只匹配本线行
       const memoryBefore = and(
         eq(memories.id, maintenance.memoryId), eq(memories.personId, maintenance.personId),
-        eq(memories.timelineId, timeline.id), eq(memories.type, before.type),
+        timeline.parentTimelineId === null
+          ? or(eq(memories.timelineId, timeline.id), isNull(memories.timelineId))
+          : eq(memories.timelineId, timeline.id),
+        eq(memories.type, before.type),
         eq(memories.content, before.content), eq(memories.importance, before.importance),
         before.simTime === null ? isNull(memories.simTime) : eq(memories.simTime, before.simTime),
         eq(memories.createdAt, before.createdAt), eq(memories.summarized, before.summarized),

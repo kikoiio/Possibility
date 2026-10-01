@@ -639,7 +639,11 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
       const memory = projection.memories[index]
       const before = action.before && typeof action.before === 'object' && !Array.isArray(action.before)
         ? action.before as Record<string, unknown> : null
-      const matches = memory && before && memory.timelineId === input.timelineId
+      // S4:主线回放允许匹配 NULL 桶(legacy)行;分叉线基线中的 NULL 行已被重定向,行为不变
+      const inBucket = memory
+        && (memory.timelineId === input.timelineId
+          || (memory.timelineId === null && input.baseline?.source === 'root'))
+      const matches = memory && before && inBucket
         && memory.type === before.type && memory.content === before.content && memory.importance === before.importance
         && memory.simTime === before.simTime && memory.createdAt === before.createdAt
         && memory.summarized === before.summarized
