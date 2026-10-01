@@ -142,19 +142,31 @@ export class EventDisclosure implements FrameUpdatable {
   pickEvent(x: number, y: number): string | null {
     let best: string | null = null
     let bestDist = PICK_RADIUS_PX
-    for (let i = 0; i < this.events.length; i++) {
-      const state = this.stateCache[i]
-      if (!state || state.level === 'none') continue
-      const e = this.events[i]
-      const p = this.opts.project({ x: e.at.x + 0.5, y: e.at.y + ANCHOR_LIFT, z: e.at.z + 0.5 })
-      if (!p) continue
-      const d = Math.hypot(p.x - x, p.y - y)
+    for (const a of this.screenAnchors(true)) {
+      const d = Math.hypot(a.x - x, a.y - y)
       if (d <= bestDist) {
         bestDist = d
-        best = e.id
+        best = a.eventId
       }
     }
     return best
+  }
+
+  /**
+   * 可见事件的屏幕锚点(client px,供 HTML 浮层/拾取)。
+   * includeIconOnly: true 时 icon 级也算(拾取用);false 只回 teaser 级(浮层用)。
+   */
+  screenAnchors(includeIconOnly = false): { eventId: string; x: number; y: number }[] {
+    const out: { eventId: string; x: number; y: number }[] = []
+    for (let i = 0; i < this.events.length; i++) {
+      const state = this.stateCache[i]
+      if (!state || state.level === 'none') continue
+      if (!includeIconOnly && state.level !== 'teaser') continue
+      const e = this.events[i]
+      const p = this.opts.project({ x: e.at.x + 0.5, y: e.at.y + ANCHOR_LIFT, z: e.at.z + 0.5 })
+      if (p) out.push({ eventId: e.id, x: p.x, y: p.y })
+    }
+    return out
   }
 
   private refresh(): void {

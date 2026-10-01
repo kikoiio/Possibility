@@ -222,7 +222,8 @@ export class VoxelEngine {
       this.eventList = doc.events
       this.disclosure = new EventDisclosure({
         scene: this.renderer.scene,
-        project: (at) => this.worldToScreen(at),
+        // worldToScreen 入参为格坐标(内部 +0.5 取格心);披露层锚点已是世界坐标,先回退
+        project: (at) => this.worldToScreen({ x: at.x - 0.5, y: at.y - 0.5, z: at.z - 0.5 }),
       })
       this.disclosure.setEvents(doc.events)
       if (this.simNow) this.disclosure.setSimNow(this.simNow)
@@ -375,6 +376,11 @@ export class VoxelEngine {
   /** F8 探针:各事件当前披露状态(无披露层 = []) */
   getEventDisclosure(): EventDisclosureState[] {
     return this.disclosure?.states() ?? []
+  }
+
+  /** 事件数据寻址(侧边面板/浮层文案) */
+  getEventById(id: string): WorldEvent | null {
+    return this.eventList.find((e) => e.id === id) ?? null
   }
 
   /** 屏幕空间事件拾取(点击路由用;无命中 = null) */
