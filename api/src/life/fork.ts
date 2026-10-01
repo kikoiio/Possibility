@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMemories, type ForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines, SNAPSHOT_REF_JSON, writeForkSnapshot } from './snapshot-store'
 import type { ForkScenario } from '../agent/types'
@@ -63,7 +63,7 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
   if (!world || world.status !== 'running') throw new Error('世界未运行，不能分叉')
   await ensureUniverseRevision(db, worldId, sourceId)
   const worldTimelineIds = db.select({ id: timelines.id }).from(timelines).where(eq(timelines.worldId, worldId))
-  const [worldTimelinesRaw, states, scheduleRows, memoryRows, eventRows, dialogueRows, transcriptRows, commitmentRows, sourceRevisions, sourceFacts, personaMessageRows] = await db.batch([
+  const [worldTimelinesRaw, states, scheduleRows, memoryRows, eventRows, dialogueRows, transcriptRows, commitmentRows, sourceRevisions, sourceFacts, personaMessageRows, sourceVoxelEvents] = await db.batch([
     db.select().from(timelines).where(eq(timelines.worldId, worldId)),
     db.select().from(personStates).where(eq(personStates.timelineId, sourceId)),
     db.select().from(schedules).where(eq(schedules.timelineId, sourceId)),
@@ -79,6 +79,8 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, sourceId)),
     db.select().from(worldFacts).where(eq(worldFacts.timelineId, sourceId)),
     db.select().from(personaMessages).where(inArray(personaMessages.timelineId, worldTimelineIds)),
+    // S4:体素事件投影(派生数据;历史路径由重建水位过滤替代)
+    db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, sourceId)),
   ])
   // 快照正文外置(F4):水合一次,下游 visibility 链路全部走回填后的行
   const worldTimelines = await hydrateTimelines(db, worldTimelinesRaw)
@@ -152,6 +154,15 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
   // them later from source commitments would otherwise be impossible.
   const copiedCommitments = commitmentPool.filter((commitment) => commitment.status === 'proposed' || commitment.status === 'accepted')
     .map((commitment) => ({ ...commitment, id: `fork:${forkId}:${commitment.id}`, timelineId: forkId }))
+  // S4:体素事件投影物化给子线——id 重命名到子线命名空间(重蒸馏 upsert 同键命中),
+  // 版本水位 0(对子线而言在分叉点即存在,同继承日程纪律);子线 bootstrap 即刻可见事件
+  const copiedVoxelEvents = (reconstruction?.rows.voxelEvents ?? sourceVoxelEvents)
+    .map((row) => ({
+      ...row,
+      id: `vep:${forkId}:${row.id.split(':').slice(2).join(':')}`,
+      timelineId: forkId,
+      createdVersion: 0,
+    }))
   const snapshot: ForkSnapshot = {
     version: 1, sourceTimelineId: source.id, sourceSimTime: forkSimTime, capturedAt: now,
     ancestorCutoffs: [{ timelineId: source.id, realTime: now, simTime: forkSimTime }, ...cutoffs],
@@ -191,6 +202,7 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     // 继承日程对子线而言在 V=0(分叉点)即存在——版本水位 0
     ...copiedSchedules.map((s) => db.insert(schedules).values({ ...s, timelineId: forkId, createdVersion: 0 })),
     ...copiedCommitments.map((commitment) => db.insert(commitments).values(commitment)),
+    ...copiedVoxelEvents.map((row) => db.insert(voxelEventProjections).values(row)),
   ]) } catch (error) {
     const committed = await replay()
     if (committed) return committed

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
-import { memories, persons, personStates, timelines, universeRevisions, worldModelVersions, worldPersons } from '../db/schema'
+import { memories, persons, personStates, timelines, universeRevisions, voxelEventProjections, worldModelVersions, worldPersons } from '../db/schema'
 import { createRootProjectionBaseline } from '../world-state/model'
 import { commitWorldCommand } from '../world-state/commit'
 import type { WorldAction } from '../world-state/types'
@@ -119,8 +119,45 @@ describe('forkTimeline 历史分叉(AC6)', () => {
   }
 })
 
-describe('forkTimeline 历史分叉(AC7 纪律)', () => {
-  it('起点之前/未来时刻 → 400 文案;NULL 桶主线 → 409 baseline_incomplete', async () => {
+describe('forkTimeline 体素事件投影物化(S4/AC4)', () => {
+  const VOXEL_ROW = (id: string, createdVersion: number) => ({
+    id, timelineId: 'home-main',
+    payloadJson: JSON.stringify({ event: { id }, sourceEventIds: [`src-${id}`], copySource: 'llm' }),
+    createdVersion,
+  })
+
+  it('历史分叉:水位 ≤V 的投影物化给子线(id 重命名/水位 0),V 之后的不带过去', async () => {
+    const { db } = await buildWorld()
+    await db.insert(voxelEventProjections).values([
+      VOXEL_ROW('vep:home-main:dlg:d1', 2),   // ≤ throughVersion(4)
+      VOXEL_ROW('vep:home-main:dlg:d2', 8),   // T2 之后才投影,不进历史分叉
+    ])
+    const fork = await forkTimeline(db, 'home-world', 'home-main', SCENARIO, 'req-voxel-historical')
+    const childRows = await db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, fork.id))
+    expect(childRows).toHaveLength(1)
+    expect(childRows[0]).toMatchObject({ id: `vep:${fork.id}:dlg:d1`, timelineId: fork.id, createdVersion: 0 })
+    // llm 文案随物化保留(子线不重复烧调用)
+    expect(JSON.parse(childRows[0].payloadJson)).toMatchObject({ copySource: 'llm' })
+    // 源线行不受影响
+    expect(await db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, 'home-main')))
+      .toHaveLength(2)
+  })
+
+  it('实况分叉(startTime = 源 simNow):源线全部投影物化给子线', async () => {
+    const { db } = await buildWorld()
+    await db.insert(voxelEventProjections).values([
+      VOXEL_ROW('vep:home-main:dlg:d1', 2),
+      VOXEL_ROW('vep:home-main:dlg:d2', 8),
+    ])
+    const fork = await forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3 }, 'req-voxel-live')
+    expect(fork.simNow).toBe(T3)
+    const childRows = await db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, fork.id))
+    expect(childRows.map(row => row.id).sort()).toEqual([`vep:${fork.id}:dlg:d1`, `vep:${fork.id}:dlg:d2`])
+    expect(childRows.every(row => row.createdVersion === 0)).toBe(true)
+  })
+})
+
+describe('forkTimeline 历史分叉(AC7 纪律)', () => {  it('起点之前/未来时刻 → 400 文案;NULL 桶主线 → 409 baseline_incomplete', async () => {
     const { db } = await buildWorld()
     const tooEarly = await forkTimeline(db, 'home-world', 'home-main',
       { ...SCENARIO, startTime: '2020-01-01T00:00:00.000Z' }).catch((error: unknown) => error)

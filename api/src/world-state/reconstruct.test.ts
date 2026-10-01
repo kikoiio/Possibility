@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { commitments, events, memories, persons, personStates, schedules, timelines, universeRevisions,
-  worldCommands, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+  voxelEventProjections, worldCommands, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createRootProjectionBaseline } from './model'
 import { commitWorldCommand } from './commit'
 import type { WorldAction } from './types'
@@ -298,6 +298,42 @@ describe('reconstructAt 全量回放兜底(T7)', () => {
       visibility: 'private' })
     const result = await reconstructAt(db, 'home-world', 'home-main', T2)
     expect(result).toMatchObject({ ok: false, reasonCode: 'replay_diagnostics' })
+  })
+})
+
+/* ---------- S4: 体素事件投影随快照重建 ---------- */
+
+const VOXEL_ROW = (id: string, createdVersion: number) => ({
+  id, timelineId: 'home-main',
+  payloadJson: JSON.stringify({ event: { id }, sourceEventIds: [`src-${id}`], copySource: 'template' }),
+  createdVersion,
+})
+
+describe('reconstructAt 体素事件投影(S4/AC4)', () => {
+  it('锚点路径:版本水位 ≤V 的投影行随快照重建,V 之后写入的不出现', async () => {
+    const { db } = await buildRichWorld()
+    await db.insert(voxelEventProjections).values([
+      VOXEL_ROW('vep:home-main:dlg:old', 3),
+      VOXEL_ROW('vep:home-main:dlg:future', 8),
+    ])
+    const result = await reconstructAt(db, 'home-world', 'home-main', T2) // throughVersion = 5
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    if (!result.ok) return
+    expect(result.evidence.source).toBe('anchor_replay')
+    expect(result.rows.voxelEvents.map(row => row.id)).toEqual(['vep:home-main:dlg:old'])
+  })
+
+  it('全量回放兜底:同一水位纪律(派生表不走命令回放,按活表水位取)', async () => {
+    const { db } = await buildRichWorld({ anchor: false })
+    await db.insert(voxelEventProjections).values([
+      VOXEL_ROW('vep:home-main:dlg:old', 3),
+      VOXEL_ROW('vep:home-main:dlg:future', 8),
+    ])
+    const result = await reconstructAt(db, 'home-world', 'home-main', T2)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    if (!result.ok) return
+    expect(result.evidence.source).toBe('full_replay')
+    expect(result.rows.voxelEvents.map(row => row.id)).toEqual(['vep:home-main:dlg:old'])
   })
 })
 

@@ -7,7 +7,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import {
   commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules,
-  timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons,
+  timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts, worldModelVersions, worldPersons,
 } from '../db/schema'
 import { hydrateTimelines } from '../life/snapshot-store'
 import { readForkSnapshot } from '../agent/visibility'
@@ -125,6 +125,8 @@ export interface ReconstructionRows {
   dialogueTurns: (typeof dialogueTurns.$inferSelect)[]
   personaMessages: (typeof personaMessages.$inferSelect)[]
   worldFacts: (typeof worldFacts.$inferSelect)[]
+  /** S4 世界模拟:体素事件投影(派生数据,版本水位过滤同六表;分叉时物化给子线) */
+  voxelEvents: (typeof voxelEventProjections.$inferSelect)[]
 }
 
 export interface Reconstruction {
@@ -240,7 +242,7 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
     // 用 created_version 而非 simTime:存在倒日期行(居民故事事件/摘要回填源时刻),
     // simTime 水位会把 V 之后创建的行漏进历史。NULL(部署前旧行)必早于首个锚点,安全纳入。
     const frozen = ctx.timeline.parentTimelineId ? readForkSnapshot(ctx.timeline) : null
-    const [ownEvents, ownDialogues, ownMessages, ownMemories, ownFacts] = await db.batch([
+    const [ownEvents, ownDialogues, ownMessages, ownMemories, ownFacts, ownVoxelEvents] = await db.batch([
       db.select().from(events).where(and(eq(events.timelineId, timelineId),
         or(isNull(events.createdVersion), lte(events.createdVersion, throughVersion)))),
       db.select().from(dialogues).where(and(eq(dialogues.timelineId, timelineId),
@@ -250,6 +252,9 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
       db.select().from(memories).where(and(eq(memories.timelineId, timelineId),
         or(isNull(memories.createdVersion), lte(memories.createdVersion, throughVersion)))),
       db.select().from(worldFacts).where(and(eq(worldFacts.timelineId, timelineId), lte(worldFacts.version, throughVersion))),
+      // S4:投影表同六表水位纪律(派生数据,回放时随快照重建)
+      db.select().from(voxelEventProjections).where(and(eq(voxelEventProjections.timelineId, timelineId),
+        or(isNull(voxelEventProjections.createdVersion), lte(voxelEventProjections.createdVersion, throughVersion)))),
     ])
     const dialogueIds = new Set(ownDialogues.map((dialogue) => dialogue.id))
     const ownTurns = dialogueIds.size
@@ -278,6 +283,7 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
         dialogueTurns: [...(frozen?.dialogueTurns ?? []), ...ownTurns],
         personaMessages: [...(frozen?.personaMessages ?? []), ...ownMessages],
         worldFacts: [...(frozen?.worldFacts ?? []), ...ownFacts],
+        voxelEvents: ownVoxelEvents,
       },
       evidence: {
         source: 'anchor_replay', throughVersion, anchorVersion: anchor.version,
@@ -306,6 +312,11 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
     .sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
   const coreHash = await hashAnchorCore({ version: 1, states: projection.states, schedules: projection.schedules,
     commitments: projection.commitments })
+  // S4:投影表非命令回放域,直接按活表版本水位取(与锚点路径同纪律)
+  const ownVoxelEvents = await db.select().from(voxelEventProjections).where(and(
+    eq(voxelEventProjections.timelineId, timelineId),
+    or(isNull(voxelEventProjections.createdVersion), lte(voxelEventProjections.createdVersion, throughVersion)),
+  )).all()
   return {
     ok: true,
     simTime: effectiveSimTime,
@@ -316,6 +327,7 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
       personaMessages: projection.personaMessages,
       worldFacts: [...(frozen?.worldFacts ?? []),
         ...replayInput.facts.filter((fact) => fact.version <= throughVersion)],
+      voxelEvents: ownVoxelEvents,
     },
     evidence: {
       source: 'full_replay', throughVersion, anchorVersion: null,

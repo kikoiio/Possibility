@@ -4,7 +4,7 @@ import { projectVoxelEvents, type VoxelProjectionPayload } from './projection'
 import { createTestDb } from '../test/db'
 import { budgetFromEnv, type BudgetConfig } from '../engine/budget'
 import type { TickBudget } from '../engine/guard'
-import { dialogues, events, llmCallLog, persons, personStates, timelines, universeEvidence, universeRevisions, users, voxelEventProjections, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
+import { dialogues, events, llmCallLog, memories, persons, personStates, timelines, universeEvidence, universeRevisions, users, voxelEventProjections, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
 
 const SIM_NOW = '2026-10-15T17:00:00.000Z'
 const CFG: BudgetConfig = budgetFromEnv({})
@@ -141,6 +141,17 @@ describe('projectVoxelEvents 门控(AC2)', () => {
     const run = await projectVoxelEvents(db, env, { world, timeline, cfg: CFG, tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: true })
     expect(run).toBeNull()
     expect(await db.select().from(voxelEventProjections).all()).toHaveLength(0)
+  })
+
+  it('legacy NULL 桶世界:蒸馏不崩,投影照常(AC4)', async () => {
+    const { db, env, world, timeline } = await seed()
+    // 主线遗留 NULL 桶记忆(历史分叉因此对主线不可用,但蒸馏管线不得受影响)
+    await db.insert(memories).values({ id: 'legacy-m', personId: 'p-a', timelineId: null, type: 'event',
+      content: 'legacy', simTime: '2026-10-15T09:00:00.000Z', createdAt: '2026-10-15T09:00:00.000Z', importance: 5 })
+    await db.insert(events).values({ id: 'e1', timelineId: 'tl1', simTime: '2026-10-15T10:00:00.000Z',
+      title: '在主楼打扫', description: '', kind: 'action', actorPersonId: 'p-a', dialogueId: null })
+    const run = await projectVoxelEvents(db, env, { world, timeline, cfg: CFG, tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: false })
+    expect(run).toMatchObject({ projected: 1 })
   })
 
   it('其他时间线(非祖先)的事件不进入本线投影', async () => {
