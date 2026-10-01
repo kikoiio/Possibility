@@ -1,24 +1,31 @@
 import { useState } from 'react'
-import type { ForkScenario, ForkScenarioInput, TimelineInfo } from '../../api/types'
+import type { ForkScenario, ForkScenarioInput, HistoryRange, TimelineInfo } from '../../api/types'
 import ScenarioCard from '../ScenarioCard'
+import { planMomentCheck, toLocalInputValue } from './forkMoment'
 
 interface Props {
   timelines: TimelineInfo[]
   currentTimelineId: string
   onSwitch: (timelineId: string) => void
   onFork: (scenario: ForkScenarioInput) => Promise<boolean>
-  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库 */
-  onPreview: (whatIf: string) => Promise<ForkScenario>
+  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库；S4/F6 可带已吸附的历史时刻 */
+  onPreview: (whatIf: string, startTime?: string) => Promise<ForkScenario>
   onArchive: (timelineId: string) => void
   writeLocked?: boolean
   /** S1 分屏入口:活跃线 ≥2 时可点,否则置灰提示先分叉 */
   onSplitView?: () => void
+  /** S4/F6:当前线的历史可回溯范围;undefined=尚未加载(时刻区不渲染),earliest=null=不支持历史分叉 */
+  historyRange?: HistoryRange | null
+  /** 分叉弹窗打开时触发(父级借此加载 historyRange) */
+  onForkOpen?: () => void
+  /** S4/F6:单点可重建性判定——返回吸附后的有效时刻;不可重建时抛错,消息即原因 */
+  onCheckMoment?: (at: string) => Promise<string>
 }
 
 type ForkStep = 'input' | 'advanced' | 'confirm'
 
 /** 时间线切换器：列表 + Fork 入口（一句话预览 → 确认卡；高级=两字段手写）+ 归档 */
-export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onPreview, onArchive, writeLocked = false, onSplitView }: Props) {
+export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onPreview, onArchive, writeLocked = false, onSplitView, historyRange, onForkOpen, onCheckMoment }: Props) {
   const [open, setOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
   const [step, setStep] = useState<ForkStep>('input')
@@ -27,6 +34,13 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   const [scenario, setScenario] = useState<ForkScenario | null>(null)
   const [forkError, setForkError] = useState('')
   const [forking, setForking] = useState(false)
+  // S4/F6 时刻选择:默认当前时刻;custom=过去时刻,失焦/提交前经 checkMoment 吸附
+  const [momentMode, setMomentMode] = useState<'current' | 'custom'>('current')
+  const [momentInput, setMomentInput] = useState('')
+  const [momentDirty, setMomentDirty] = useState(false)
+  const [effectiveMoment, setEffectiveMoment] = useState<string | null>(null)
+  const [momentError, setMomentError] = useState('')
+  const [momentChecking, setMomentChecking] = useState(false)
   const active = timelines.filter((t) => t.status === 'active')
   const current = timelines.find((t) => t.id === currentTimelineId)
   const depth = (id: string): number => {
@@ -50,6 +64,48 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
     setStep('input')
     setScenario(null)
     setForkError('')
+    setMomentMode('current')
+    setMomentInput('')
+    setMomentDirty(false)
+    setEffectiveMoment(null)
+    setMomentError('')
+  }
+
+  /** 校验当前所选时刻:返回吸附后的有效时刻(当前时刻=null);不可重建时抛出带原因的错误 */
+  const checkMomentNow = async (): Promise<string | null> => {
+    if (momentMode === 'current') return null
+    const plan = planMomentCheck(momentInput, historyRange ?? null)
+    if (plan.kind === 'current') {
+      setEffectiveMoment(null); setMomentError(''); setMomentDirty(false)
+      return null
+    }
+    if (plan.kind === 'invalid' || !onCheckMoment) {
+      const reason = plan.kind === 'invalid' ? plan.reason : '这条时间线没有可回溯的历史，只能从当前时刻分叉。'
+      setEffectiveMoment(null); setMomentError(reason); setMomentDirty(false)
+      throw new Error(reason)
+    }
+    setMomentChecking(true)
+    try {
+      const effective = await onCheckMoment(plan.at)
+      setEffectiveMoment(effective); setMomentError(''); setMomentDirty(false)
+      return effective
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : '该时刻无法完整重建'
+      setEffectiveMoment(null); setMomentError(reason); setMomentDirty(false)
+      throw e instanceof Error ? e : new Error(reason)
+    } finally {
+      setMomentChecking(false)
+    }
+  }
+
+  /** 提交前解析 startTime:当前时刻=undefined;过去时刻必须已成功吸附,否则抛出原因 */
+  const resolveStartTime = async (): Promise<string | undefined> => {
+    if (momentMode !== 'custom') return undefined
+    if (!momentDirty) {
+      if (effectiveMoment) return effectiveMoment
+      if (momentError) throw new Error(momentError)
+    }
+    return (await checkMomentNow()) ?? undefined
   }
 
   const preview = async () => {
@@ -61,7 +117,8 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
     setForkError('')
     setForking(true)
     try {
-      setScenario(await onPreview(text))
+      const startTime = await resolveStartTime()
+      setScenario(await onPreview(text, startTime))
       setStep('confirm')
     } catch (e) {
       setForkError(e instanceof Error ? e.message : '场景生成失败，请重试')
@@ -71,7 +128,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   }
 
   const forkDirect = async () => {
-    const input = { whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
+    const input: ForkScenarioInput = { whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
     if (!input.whatIf || !input.changedVariable) {
       setForkError('请说明这条线的假设和唯一改变的条件。')
       return
@@ -79,7 +136,11 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
     setForkError('')
     setForking(true)
     try {
+      const startTime = await resolveStartTime()
+      if (startTime) input.startTime = startTime
       if (await onFork(input)) { setForkOpen(false); resetFork() }
+    } catch (e) {
+      setForkError(e instanceof Error ? e.message : '该时刻无法完整重建')
     } finally {
       setForking(false)
     }
@@ -95,12 +156,68 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
         changedVariable: scenario.changedVariable.trim(),
         participants: scenario.participants,
         invariants: scenario.invariants,
+        // 预览返回的 startTime 已是服务端吸附后的有效时刻(现时刻=simNow,透传不改变行为)
+        startTime: scenario.startTime,
       }
       if (await onFork(input)) { setForkOpen(false); resetFork() }
     } finally {
       setForking(false)
     }
   }
+
+  // S4/F6 时刻选择区:范围未加载(undefined)时不渲染;input/advanced 两步共用
+  const momentSection = historyRange !== undefined && step !== 'confirm' && (
+    <div className="mt-3" data-testid="fork-moment">
+      <span className="block text-xs text-ink-soft">从哪个时刻分叉？</span>
+      <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft">
+        <input
+          type="radio"
+          name="fork-moment"
+          checked={momentMode === 'current'}
+          onChange={() => { setMomentMode('current'); setMomentError('') }}
+          data-testid="fork-moment-current"
+        />
+        当前时刻（{(historyRange?.simNow ?? current?.simNow ?? '').slice(0, 16).replace('T', ' ')}）
+      </label>
+      {historyRange?.earliest ? (
+        <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft">
+          <input
+            type="radio"
+            name="fork-moment"
+            checked={momentMode === 'custom'}
+            onChange={() => setMomentMode('custom')}
+            data-testid="fork-moment-custom"
+          />
+          过去的某个时刻
+        </label>
+      ) : (
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">这条线还没有可回溯的历史，只能从当前时刻分叉。</p>
+      )}
+      {momentMode === 'custom' && historyRange?.earliest && (
+        <div className="mt-1.5">
+          <input
+            type="datetime-local"
+            value={momentInput}
+            min={toLocalInputValue(historyRange.earliest)}
+            max={toLocalInputValue(historyRange.simNow)}
+            onChange={(event) => { setMomentInput(event.target.value); setMomentDirty(true); setEffectiveMoment(null); setMomentError('') }}
+            onBlur={() => { if (momentDirty) void checkMomentNow().catch(() => { /* 原因已展示在 momentError */ }) }}
+            disabled={forking || momentChecking}
+            data-testid="fork-moment-input"
+            className="w-full rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft focus:border-ink-faint focus:outline-none"
+          />
+          <p className="mt-1 text-[11px] text-ink-faint">
+            可回溯 {historyRange.earliest.slice(0, 16).replace('T', ' ')} ～ {historyRange.simNow.slice(0, 16).replace('T', ' ')}
+          </p>
+          {momentChecking && <p className="mt-1 text-[11px] text-ink-faint">正在校验这个时刻…</p>}
+          {!momentChecking && effectiveMoment && !momentError && (
+            <p className="mt-1 text-[11px] text-woad-deep" data-testid="fork-moment-effective">将从 {effectiveMoment.slice(0, 16).replace('T', ' ')} 分叉</p>
+          )}
+          {momentError && <p role="alert" className="mt-1 text-[11px] text-red-600" data-testid="fork-moment-error">{momentError}</p>}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="relative">
@@ -171,6 +288,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
                 setOpen(false)
                 resetFork()
                 setForkOpen(true)
+                onForkOpen?.()
               }}
               disabled={writeLocked || active.length >= 3}
               data-testid="fork-entry"
@@ -187,6 +305,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
           {step !== 'confirm' && (
             <p className="mt-1 text-xs leading-relaxed text-ink-faint">从当前这个时刻复制世界。说一个「如果」，我们先起草场景设定，你确认后才分叉，源宇宙不会被改写。</p>
           )}
+          {momentSection}
 
           {step === 'input' && (
             <>

@@ -45,9 +45,15 @@ export interface ForkScenario {
   invariants: string[]
 }
 
-/** 世界级 fork 提交入参（S2/F4）：两字段必填，participants/invariants 可选 */
+/** 世界级 fork 提交入参（S2/F4）：两字段必填，participants/invariants 可选；S4/F6 startTime 可选=过去时刻分叉 */
 export type ForkScenarioInput = Pick<ForkScenario, 'whatIf' | 'changedVariable'>
-  & Partial<Pick<ForkScenario, 'participants' | 'invariants'>>
+  & Partial<Pick<ForkScenario, 'participants' | 'invariants' | 'startTime'>>
+
+/** S4/F6:历史可回溯范围（earliest=null 表示该线不支持历史分叉） */
+export interface HistoryRange {
+  earliest: string | null
+  simNow: string
+}
 
 export interface TimelineSummary {
   id: string

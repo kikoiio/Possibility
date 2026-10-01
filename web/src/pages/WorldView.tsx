@@ -6,6 +6,7 @@ import type {
   PersonFocus,
   ForkScenario,
   ForkScenarioInput,
+  HistoryRange,
   WorldEventItem,
   WorldSnapshot,
   WorldStreamEvent,
@@ -88,6 +89,8 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
   const [expandedDialogue, setExpandedDialogue] = useState<{ id: string; timelineId: string; detail: DialogueDetail | null } | null>(null)
   const [actionError, setActionError] = useState('')
   const [forkHint, setForkHint] = useState<{ sourceId: string; newId: string } | null>(null)
+  // S4/F6:分叉弹窗打开时按线加载历史可回溯范围;失败保持 undefined(时刻区不渲染,现时刻分叉不受影响)
+  const [historyRange, setHistoryRange] = useState<{ tid: string; range: HistoryRange } | null>(null)
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [sceneOpen, setSceneOpen] = useState(false)
   const [personaUnread, setPersonaUnread] = useState(0)
@@ -349,10 +352,26 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
     }
   }
 
-  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库 */
-  const handleForkPreview = async (whatIf: string): Promise<ForkScenario> => {
+  /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库；S4/F6 可带已吸附的历史时刻 */
+  const handleForkPreview = async (whatIf: string, startTime?: string): Promise<ForkScenario> => {
     if (!timelineId) throw new Error('尚未选择时间线')
-    return worldsApi.forkPreview(worldId, timelineId, whatIf)
+    return worldsApi.forkPreview(worldId, timelineId, whatIf, startTime)
+  }
+
+  /** S4/F6:分叉弹窗打开时加载当前线的历史可回溯范围(按线缓存一次) */
+  const handleForkOpen = () => {
+    const tid = timelineId ?? snapshot?.currentTimelineId
+    if (!tid || historyRange?.tid === tid) return
+    worldsApi.historyRange(worldId, tid)
+      .then((range) => setHistoryRange({ tid, range }))
+      .catch(() => { /* 范围不可用:时刻区不渲染,现时刻分叉不受影响 */ })
+  }
+
+  /** S4/F6:单点可重建性判定,返回吸附后的有效时刻 */
+  const handleCheckMoment = async (at: string): Promise<string> => {
+    const tid = timelineId ?? snapshot?.currentTimelineId
+    if (!tid) throw new Error('尚未选择时间线')
+    return (await worldsApi.checkMoment(worldId, tid, at)).effectiveMoment
   }
 
   const handleArchive = async (tid: string) => {
@@ -431,6 +450,9 @@ export default function WorldView({ worldId, readonly = false }: WorldViewProps)
                   onArchive={handleArchive}
                   writeLocked={evidenceReadonly}
                   onSplitView={() => navigate(`/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(timelineId ?? snapshot.currentTimelineId)}`)}
+                  historyRange={historyRange?.tid === (timelineId ?? snapshot.currentTimelineId) ? historyRange.range : undefined}
+                  onForkOpen={handleForkOpen}
+                  onCheckMoment={handleCheckMoment}
                 />
                 {(!evidenceReadonly || running) && <button
                   onClick={handlePauseResume}

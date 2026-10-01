@@ -134,6 +134,7 @@ import type {
   DialogueDetail,
   ForkScenario,
   ForkScenarioInput,
+  HistoryRange,
   PersonFocus,
   Persona,
   PersonaMention,
@@ -215,10 +216,19 @@ export const worldsApi = {
       method: 'POST',
       body: JSON.stringify({ requestId, scenario }),
     }),
-  forkPreview: (worldId: string, timelineId: string, whatIf: string) =>
+  forkPreview: (worldId: string, timelineId: string, whatIf: string, startTime?: string) =>
     apiFetch<ForkScenario>(`/api/worlds/${worldId}/timelines/${timelineId}/fork/preview`, {
       method: 'POST',
-      body: JSON.stringify({ whatIf }),
+      body: JSON.stringify(startTime ? { whatIf, startTime } : { whatIf }),
+    }),
+  /** S4/F6:历史可回溯范围(打开分叉弹窗时加载) */
+  historyRange: (worldId: string, timelineId: string) =>
+    apiFetch<HistoryRange>(`/api/worlds/${worldId}/timelines/${timelineId}/history`),
+  /** S4/F6:单点可重建性判定;不可重建时 apiFetch 抛出带原因文案的错误 */
+  checkMoment: (worldId: string, timelineId: string, at: string) =>
+    apiFetch<{ ok: true; effectiveMoment: string }>(`/api/worlds/${worldId}/timelines/${timelineId}/history/check`, {
+      method: 'POST',
+      body: JSON.stringify({ at }),
     }),
   archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
