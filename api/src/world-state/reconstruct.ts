@@ -137,7 +137,9 @@ export type ReconstructResult = Reconstruction | HistoryReject
 type MemoryRow = typeof memories.$inferSelect
 
 /** 逆放 V 之后的记忆维护命令:correct 恢复 before、forget 重新插入 before、summary 复位 summarized。
- * 按版本倒序(先撤销最新)。任何结构性不符即 integrity_mismatch——不猜、不冒充。 */
+ * 按版本倒序(先撤销最新)。负载形状与 rules.ts 校验一致:before 只含
+ * {type, content, importance, simTime, createdAt, summarized},行标识在 action.memoryId/personId。
+ * 任何结构性不符即 integrity_mismatch——不猜、不冒充。 */
 function invertMaintenance(
   assembled: MemoryRow[], commands: (typeof worldCommands.$inferSelect)[], timelineId: string, simTime: string,
 ): { inverted: number } | HistoryReject {
@@ -149,8 +151,6 @@ function invertMaintenance(
       action = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
     } catch { /* fallthrough: action null → mismatch */ }
     if (!action) return reject('integrity_mismatch')
-    const before = action.before && typeof action.before === 'object' && !Array.isArray(action.before)
-      ? action.before as Record<string, unknown> : null
     if (action.type === 'memory_summary') {
       const sourceIds = Array.isArray(action.sourceMemoryIds)
         ? action.sourceMemoryIds.filter((id): id is string => typeof id === 'string') : null
@@ -162,34 +162,44 @@ function invertMaintenance(
       inverted += 1
       continue
     }
-    if (!before || typeof before.id !== 'string') return reject('integrity_mismatch')
+    const memoryId = typeof action.memoryId === 'string' ? action.memoryId : null
+    const personId = typeof action.personId === 'string' ? action.personId : null
+    const before = action.before && typeof action.before === 'object' && !Array.isArray(action.before)
+      ? action.before as Record<string, unknown> : null
+    if (!memoryId || !personId || !before
+      || typeof before.type !== 'string' || typeof before.content !== 'string'
+      || typeof before.importance !== 'number' || typeof before.createdAt !== 'string'
+      || (before.simTime !== null && typeof before.simTime !== 'string')) return reject('integrity_mismatch')
     // 只关心在 T 时刻已存在(或本应存在)的行
     if (typeof before.simTime === 'string' && Date.parse(before.simTime) > Date.parse(simTime)) continue
-    const index = assembled.findIndex((memory) => memory.id === before.id)
+    const index = assembled.findIndex((memory) => memory.id === memoryId)
     if (action.type === 'memory_correct') {
       const after = action.after && typeof action.after === 'object' && !Array.isArray(action.after)
         ? action.after as Record<string, unknown> : null
-      if (!after) return reject('integrity_mismatch')
+      if (!after || typeof after.content !== 'string' || typeof after.importance !== 'number') {
+        return reject('integrity_mismatch')
+      }
       if (index < 0) {
         // 活表水位下该行应可见却缺席 → 历史被非命令路径动过
         return reject('integrity_mismatch')
       }
       const current = assembled[index]
-      if (current.content !== after.content || current.importance !== after.importance) return reject('integrity_mismatch')
-      if (typeof before.content !== 'string' || typeof before.importance !== 'number') return reject('integrity_mismatch')
+      // 监管链:现行行必须与命令记载的 after 完全一致(correct 只改 content/importance)
+      if (current.content !== after.content || current.importance !== after.importance
+        || current.type !== before.type || current.simTime !== before.simTime
+        || current.createdAt !== before.createdAt || current.summarized !== before.summarized) {
+        return reject('integrity_mismatch')
+      }
       assembled[index] = { ...current, content: before.content, importance: before.importance }
       inverted += 1
       continue
     }
     if (action.type === 'memory_forget') {
       if (index >= 0) return reject('integrity_mismatch')
-      if (before.timelineId !== timelineId && before.timelineId !== null) return reject('integrity_mismatch')
-      if (typeof before.personId !== 'string' || typeof before.type !== 'string' || typeof before.content !== 'string'
-        || typeof before.importance !== 'number' || typeof before.createdAt !== 'string') return reject('integrity_mismatch')
       assembled.push({
-        id: before.id, personId: before.personId, timelineId: before.timelineId === null ? null : timelineId,
+        id: memoryId, personId, timelineId,
         type: before.type, content: before.content,
-        simTime: typeof before.simTime === 'string' ? before.simTime : null,
+        simTime: before.simTime as string | null,
         createdAt: before.createdAt, importance: before.importance,
         summarized: before.summarized === true,
         mentionedPersonIdsJson: null, locationName: null, topicsJson: null, level: null,
