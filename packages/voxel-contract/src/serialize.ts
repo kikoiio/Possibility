@@ -1,4 +1,6 @@
 import { SECTION_VOLUME } from './sections'
+import { assertWorldEvent } from './events'
+import type { WorldEvent } from './events'
 import type {
   AssetPlacement, ChunkSection, LocationBinding, SpaceEntry, StylePackRef, VoxelDocument, VoxelObject, VoxelObjectCells,
   VoxelSize, WorldTerrainMeta,
@@ -74,6 +76,8 @@ export interface SerializedVoxelDocument {
   /** S3b:可选元数据,缺省不产出该键(N2) */
   terrain?: WorldTerrainMeta
   style?: StylePackRef
+  /** S3b 事件披露:可选,缺省 = 旧存档零事件 */
+  events?: WorldEvent[]
 }
 
 /** 服务端/客户端共用的格式探测（与 2D SceneDocument 区分） */
@@ -119,6 +123,7 @@ export function serialize(doc: VoxelDocument): string {
     lockedObjectIds: doc.lockedObjectIds,
     ...(doc.terrain ? { terrain: doc.terrain } : {}),
     ...(doc.style ? { style: doc.style } : {}),
+    ...(doc.events ? { events: doc.events } : {}),
   }
   return JSON.stringify(envelope)
 }
@@ -210,6 +215,15 @@ export function deserialize(raw: string): VoxelDocument {
     assert(typeof s.preset === 'string' && s.preset.length > 0, 'style.preset must be a non-empty string')
     style = s as unknown as StylePackRef
   }
+  // S3b 事件披露:存在时逐项形状校验,缺省不产出该键(旧存档无损)
+  let events: WorldEvent[] | undefined
+  if (doc.events !== undefined) {
+    assert(Array.isArray(doc.events), 'events must be an array')
+    for (let i = 0; i < (doc.events as unknown[]).length; i++) {
+      assertWorldEvent((doc.events as unknown[])[i], i, assert)
+    }
+    events = doc.events as WorldEvent[]
+  }
 
   return {
     version: 1,
@@ -225,5 +239,6 @@ export function deserialize(raw: string): VoxelDocument {
     lockedObjectIds: doc.lockedObjectIds as string[],
     ...(terrain ? { terrain } : {}),
     ...(style ? { style } : {}),
+    ...(events ? { events } : {}),
   }
 }

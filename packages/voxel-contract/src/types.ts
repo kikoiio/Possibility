@@ -1,5 +1,7 @@
 // ── 坐标与尺寸 ──────────────────────────────
 // x/z 为水平面，y 为高度（向上为正）
+import type { WorldEvent } from './events'
+
 export interface VoxelCoord { x: number; y: number; z: number }
 export interface VoxelSize { width: number; height: number; depth: number }
 
@@ -131,6 +133,7 @@ export interface VoxelDocument {
   lockedObjectIds: string[]
   terrain?: WorldTerrainMeta        // S3b:无此字段 = 非参数化地形世界(旧存档)
   style?: StylePackRef              // S3b:无此字段 = 默认氛围(旧存档)
+  events?: WorldEvent[]             // S3b 事件披露:无此字段 = 旧存档,零事件
 }
 
 // ── 物体模板（仓库条目）───────────────────────
