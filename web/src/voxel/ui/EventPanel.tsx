@@ -16,9 +16,13 @@ export interface EventPanelProps {
   /** 'trace' = 已落幕留痕;事件被关闭/缺失传 null event */
   phase: 'active' | 'trace'
   onClose: () => void
+  /** S4 身份统一:personId → 显示名(缺省显示原 id) */
+  personNames?: Record<string, string>
+  /** S4 身份统一:点击参与者 = 选中居民(与渲染拾取同一联动出口) */
+  onSelectPerson?: (personId: string) => void
 }
 
-export default function EventPanel({ event, phase, onClose }: EventPanelProps) {
+export default function EventPanel({ event, phase, onClose, personNames, onSelectPerson }: EventPanelProps) {
   if (!event) return null
   const start = new Date(event.timeWindow.start)
   const end = new Date(event.timeWindow.end)
@@ -48,7 +52,24 @@ export default function EventPanel({ event, phase, onClose }: EventPanelProps) {
       <p className="whitespace-pre-line text-zinc-200" data-testid="event-panel-scene">{event.scene}</p>
       {event.participants && event.participants.length > 0 && (
         <div data-testid="event-panel-participants">
-          <span className="text-zinc-400">在场:</span> {event.participants.join('、')}
+          <span className="text-zinc-400">在场:</span>{' '}
+          {event.participants.map((personId, index) => (
+            <span key={personId}>
+              {index > 0 && '、'}
+              {onSelectPerson ? (
+                <button
+                  type="button"
+                  data-testid={`event-panel-participant-${personId}`}
+                  className="underline decoration-zinc-500 underline-offset-2 hover:text-zinc-50"
+                  onClick={() => onSelectPerson(personId)}
+                >
+                  {personNames?.[personId] ?? personId}
+                </button>
+              ) : (
+                personNames?.[personId] ?? personId
+              )}
+            </span>
+          ))}
         </div>
       )}
       <div className="text-zinc-400" data-testid="event-panel-time">

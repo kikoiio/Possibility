@@ -270,8 +270,8 @@ function record(set: (e: InteractionEvent) => void, event: InteractionEvent): vo
 }
 
 const PERSON_NAMES: Record<string, string> = {
-  'resident-sayo': '小夜',
-  'resident-ichinose': '柊一成',
+  'person-sayo': '小夜',
+  'person-ichinose': '柊一成',
 }
 
 /** 居民当前活动由 startFixtureResidents 的每次同步更新 */
@@ -349,17 +349,17 @@ function startFixtureResidents(engine: VoxelEngine): void {
     const toHouse = phase % 2 === 1
     const sayoActivity = toHouse ? '回主楼' : '到庭院散步'
     const ichinoseActivity = toHouse ? '穿过庭院' : '去池塘边'
-    residentActivities.set('resident-sayo', sayoActivity)
-    residentActivities.set('resident-ichinose', ichinoseActivity)
+    residentActivities.set('person-sayo', sayoActivity)
+    residentActivities.set('person-ichinose', ichinoseActivity)
     engine.syncResidents([
       {
-        personId: 'resident-sayo', name: '小夜',
+        personId: 'person-sayo', name: '小夜',
         at: RESIDENT_SPOTS.courtyard,
         destination: toHouse ? RESIDENT_SPOTS.houseDoor : RESIDENT_SPOTS.courtyard,
         activity: sayoActivity,
       },
       {
-        personId: 'resident-ichinose', name: '柊一成',
+        personId: 'person-ichinose', name: '柊一成',
         at: RESIDENT_SPOTS.pond,
         destination: toHouse ? RESIDENT_SPOTS.courtyard : RESIDENT_SPOTS.pond,
         activity: ichinoseActivity,

@@ -19,7 +19,7 @@ async function freezeResidents(page: Page, spot = { x: 12, y: 1, z: 42 }) {
     const engine = window.__voxelEngine as never as SyncProbe
     engine.syncResidents([])
     engine.syncResidents([
-      { personId: 'resident-sayo', name: '小夜', at, destination: null, activity: '站桩' },
+      { personId: 'person-sayo', name: '小夜', at, destination: null, activity: '站桩' },
     ])
   }, spot)
 }

@@ -27,6 +27,8 @@ export interface VoxelViewportProps {
   onEnterSpace?: (spaceId: string) => void
   onSelectPerson?: (personId: string) => void
   onSelectLocation?: (locationName: string, objectId: string) => void
+  /** S4 身份统一:事件面板参与者显示名(personId → name) */
+  personNames?: Record<string, string>
   /** 实例标识(S1 分屏):探针注册表按此隔离;缺省 'main' 保持单视口现状 */
   instanceId?: string
   /** 主实例标记:`__voxelEngine` 别名写给谁;缺省 = instanceId === 'main' */
@@ -58,7 +60,7 @@ function poseNearlyEqual(a: OrbitPose, b: OrbitPose): boolean {
  */
 export default function VoxelViewport({
   document: doc, overlay, events, editable = false, planEdits, onSave,
-  onEnterSpace, onSelectPerson, onSelectLocation,
+  onEnterSpace, onSelectPerson, onSelectLocation, personNames,
   instanceId = 'main', probePrimary, cameraPose, onCameraChange, onCameraModeChange,
 }: VoxelViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -276,6 +278,8 @@ export default function VoxelViewport({
           event={eventRouting.panelEventId ? engineRef.current?.getEventById(eventRouting.panelEventId) ?? null : null}
           phase={eventRouting.panelPhase === 'active' ? 'active' : 'trace'}
           onClose={() => eventRouting.setPanelEventId(null)}
+          personNames={personNames}
+          onSelectPerson={onSelectPerson ? (personId) => callbacksRef.current.onSelectPerson?.(personId) : undefined}
         />
       )}
       {ready && controller && planEdits && cameraMode === 'orbit' && (

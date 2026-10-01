@@ -173,6 +173,7 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
           document={voxelDoc}
           overlay={currentOverlay}
           events={liveSnapshot.voxelEvents ?? null}
+          personNames={Object.fromEntries(liveSnapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name])))}
           onEnterSpace={(next) => { if (voxelSpaces?.spaces.some(space => space.id === next)) { setSpaceId(next); setSelected(null); setSelectedPersonId(null) } }}
           onSelectLocation={(_name, objectId) => selectObject(objectId)}
           onSelectPerson={selectResident}
