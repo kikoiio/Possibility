@@ -52,9 +52,10 @@ export async function captureDailyAnchor(db: Db, timeline: Timeline, now = new D
     timelineId: timeline.id, simDay, version: revision.version, simTime: timeline.simNow,
     worldModelVersion: revision.worldModelVersion, coreHash, payloadJson: JSON.stringify(payload), createdAt: now,
   }).onConflictDoNothing()
-  return db.select().from(timelineAnchors).where(and(
+  const stored = await db.select().from(timelineAnchors).where(and(
     eq(timelineAnchors.timelineId, timeline.id), eq(timelineAnchors.simDay, simDay),
-  )).get() ?? null
+  )).get()
+  return stored ?? null
 }
 
 /** 重建选锚:版本水位 ≤ 目标版本的最新锚点。 */

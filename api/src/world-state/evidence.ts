@@ -50,6 +50,49 @@ function parseBaseline(value: unknown): ProjectionBaseline | null {
   return candidate as unknown as ProjectionBaseline
 }
 
+/** 装配一条线的回放基线:分叉线取其不可变分叉快照,主线取钉住模型的 projectionBaseline。
+ * completeDomains 不足(且无 legacy  attest)返回 null——调用方 fail-closed。 */
+export function resolveProjectionBaseline(
+  timeline: typeof timelines.$inferSelect | null,
+  revision: typeof universeRevisions.$inferSelect | null,
+  evidenceRecord: typeof universeEvidence.$inferSelect | null,
+  modelRows: (typeof worldModelVersions.$inferSelect)[],
+): ProjectionBaseline | null {
+  if (!timeline || !revision) return null
+  if (timeline.parentTimelineId) {
+    const checkpoint = readForkSnapshot(timeline)
+    if (!checkpoint) return null
+    let completeDomains = checkpoint.completeDomains
+    if (!completeDomains && evidenceRecord?.level === 'complete') {
+      let reasons: unknown = []
+      try { reasons = JSON.parse(evidenceRecord.reasonCodesJson) } catch { /* invalid evidence remains fail-closed */ }
+      const attestedLegacyFork = Array.isArray(reasons) && reasons.includes('legacy_fork_domains_derivable')
+        && checkpoint.historyComplete && Number.isSafeInteger(checkpoint.sourceStateVersion)
+        && Number.isSafeInteger(checkpoint.worldModelVersion) && Array.isArray(checkpoint.dialogues)
+        && Array.isArray(checkpoint.dialogueTurns) && Array.isArray(checkpoint.personaMessages)
+        && Array.isArray(checkpoint.worldFacts)
+      if (attestedLegacyFork) completeDomains = [...PROJECTION_DOMAINS]
+    }
+    if (!completeDomains) return null
+    return parseBaseline({
+      source: 'fork', version: checkpoint.sourceStateVersion ?? 0, capturedAt: checkpoint.capturedAt,
+      simTime: checkpoint.sourceSimTime, completeDomains,
+      rows: {
+        states: checkpoint.states, schedules: checkpoint.schedules, events: checkpoint.events,
+        commitments: checkpoint.projectedCommitments ?? checkpoint.commitments,
+        memories: checkpoint.memories, dialogues: checkpoint.dialogues ?? [],
+        dialogueTurns: checkpoint.dialogueTurns ?? [], personaMessages: checkpoint.personaMessages ?? [],
+        knowledge: (checkpoint.worldFacts ?? []).filter(fact => fact.factType === 'knowledge'),
+      },
+    })
+  }
+  const model = modelRows.find(row => row.version === revision.worldModelVersion)
+  try {
+    const pinned = model ? JSON.parse(model.modelJson) as { projectionBaseline?: unknown } : null
+    return parseBaseline(pinned?.projectionBaseline)
+  } catch { return null }
+}
+
 /** Read only baseline, command, fact, and pinned-model evidence required for deterministic replay. */
 export async function collectReplayInput(db: Db, worldId: string, timelineId: string): Promise<CollectedReplayInput> {
   const [timelineRows, revisionRows, evidenceRows, commands, facts, modelRows] = await db.batch([
@@ -63,41 +106,7 @@ export async function collectReplayInput(db: Db, worldId: string, timelineId: st
   const timeline = (await hydrateTimelines(db, timelineRows))[0] ?? null
   const revision = revisionRows[0] ?? null
   const evidenceRecord = evidenceRows[0] ?? null
-  const baseline = (() => {
-    if (!timeline || !revision) return null
-    if (timeline.parentTimelineId) {
-      const checkpoint = readForkSnapshot(timeline)
-      if (!checkpoint) return null
-      let completeDomains = checkpoint.completeDomains
-      if (!completeDomains && evidenceRecord?.level === 'complete') {
-        let reasons: unknown = []
-        try { reasons = JSON.parse(evidenceRecord.reasonCodesJson) } catch { /* invalid evidence remains fail-closed */ }
-        const attestedLegacyFork = Array.isArray(reasons) && reasons.includes('legacy_fork_domains_derivable')
-          && checkpoint.historyComplete && Number.isSafeInteger(checkpoint.sourceStateVersion)
-          && Number.isSafeInteger(checkpoint.worldModelVersion) && Array.isArray(checkpoint.dialogues)
-          && Array.isArray(checkpoint.dialogueTurns) && Array.isArray(checkpoint.personaMessages)
-          && Array.isArray(checkpoint.worldFacts)
-        if (attestedLegacyFork) completeDomains = [...PROJECTION_DOMAINS]
-      }
-      if (!completeDomains) return null
-      return parseBaseline({
-        source: 'fork', version: checkpoint.sourceStateVersion ?? 0, capturedAt: checkpoint.capturedAt,
-        simTime: checkpoint.sourceSimTime, completeDomains,
-        rows: {
-          states: checkpoint.states, schedules: checkpoint.schedules, events: checkpoint.events,
-          commitments: checkpoint.projectedCommitments ?? checkpoint.commitments,
-          memories: checkpoint.memories, dialogues: checkpoint.dialogues ?? [],
-          dialogueTurns: checkpoint.dialogueTurns ?? [], personaMessages: checkpoint.personaMessages ?? [],
-          knowledge: (checkpoint.worldFacts ?? []).filter(fact => fact.factType === 'knowledge'),
-        },
-      })
-    }
-    const model = modelRows.find(row => row.version === revision.worldModelVersion)
-    try {
-      const pinned = model ? JSON.parse(model.modelJson) as { projectionBaseline?: unknown } : null
-      return parseBaseline(pinned?.projectionBaseline)
-    } catch { return null }
-  })()
+  const baseline = resolveProjectionBaseline(timeline, revision, evidenceRecord, modelRows)
   const pinnedModelRows = revision ? modelRows.filter(row => row.version === revision.worldModelVersion) : []
   let personNames: Record<string, string> = {}
   try {

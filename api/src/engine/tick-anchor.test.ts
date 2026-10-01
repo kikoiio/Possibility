@@ -37,7 +37,7 @@ async function tickAcrossDay() {
 
 it('跨日界 tick 捕获日界锚点且幂等', async () => {
   await tickAcrossDay()
-  const timeline = await fixture!.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()!
+  const timeline = (await fixture!.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
   const anchors = await fixture!.db.select().from(timelineAnchors).where(eq(timelineAnchors.timelineId, 'home-main'))
   expect(anchors).toHaveLength(1)
   expect(anchors[0].simDay).toBe(timeline.simNow.slice(0, 10))
@@ -58,7 +58,7 @@ it('锚点捕获失败不中断 tick', async () => {
   const result = await tickAcrossDay()
   expect(warn).toHaveBeenCalled()
   // tick 正常完成:时钟已推进,锚点缺失
-  const timeline = await fixture!.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()!
+  const timeline = (await fixture!.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
   expect(timeline.simNow > WORLD_TIME).toBe(true)
   expect(result?.worlds.length).toBeGreaterThan(0)
   expect(await fixture!.db.select().from(timelineAnchors).all()).toEqual([])
