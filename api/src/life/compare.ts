@@ -32,6 +32,13 @@ function forkEvidence(child: Timeline | undefined) {
     eventIds: snapshot?.events.map((e) => e.id) ?? null,
     sourceStateVersion: snapshot?.sourceStateVersion ?? null,
     worldModelVersion: snapshot?.worldModelVersion ?? null,
+    // S4/F6:历史重建来源证据(重建至版本/来源形态/完整性结论);现时刻分叉为 null
+    reconstruction: snapshot?.reconstruction
+      ? { source: snapshot.reconstruction.source, throughVersion: snapshot.reconstruction.throughVersion,
+          anchorVersion: snapshot.reconstruction.anchorVersion,
+          completeDomains: snapshot.reconstruction.completeDomains.length,
+          invertedMaintenance: snapshot.reconstruction.invertedMaintenance }
+      : null,
     scenario,
   }
 }
@@ -170,6 +177,8 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
         ? ['Legacy fork history lacks an immutable event snapshot; unavailable ancestor events are omitted.'] : []),
       ...(leftWorldState.evidence.level !== 'complete' || rightWorldState.evidence.level !== 'complete'
         ? ['At least one timeline predates structured facts; missing facts mean unknown, not unchanged.'] : []),
+      ...([left, right].some((t) => readForkSnapshot(t)?.reconstruction)
+        ? ['One timeline originates from a reconstructed historical checkpoint; the reconstruction is evidence-complete but establishes a starting state, not a cause.'] : []),
     ],
   }
 }

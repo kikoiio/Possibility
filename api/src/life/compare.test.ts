@@ -8,6 +8,10 @@ import { hydrateTimelines, SNAPSHOT_REF_JSON } from './snapshot-store'
 import { comparisonRoutes, compareTimelines } from './compare'
 import { forkTimeline } from './fork'
 import { commitWorldCommand } from '../world-state/commit'
+import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
+import { worldModelVersions, universeRevisions } from '../db/schema'
+import { createRootProjectionBaseline } from '../world-state/model'
+import { captureDailyAnchor } from '../world-state/anchors'
 import { readWorldState } from '../world-state/query'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
 import { auditUniverse } from '../world-state/invariants'
@@ -804,5 +808,72 @@ describe('fork snapshots', () => {
     expect(result?.right.historyComplete).toBe(false)
     expect(result?.limitations).toHaveLength(3)
     expect(result?.limitations.some(x => x.includes('missing facts'))).toBe(true)
+  })
+})
+
+describe('S4 历史重建源证据(T11)', () => {
+  const T1 = '2026-09-21T09:00:00.000Z'
+  const T2 = '2026-09-21T10:00:00.000Z'
+  const T3 = '2026-09-21T11:00:00.000Z'
+  const RECON_LIMITATION = 'reconstructed historical checkpoint'
+
+  /** v1..v3 推进到 T2 并落锚点,v4 推进到 T3——历史分叉(T2)走锚点重建,现时刻分叉(T3)走实况拷贝。 */
+  async function buildAnchoredWorld() {
+    const world = await createWorldFixture()
+    const db = world.db
+    await db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME })
+    await db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
+    const state = { personId: 'resident', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe',
+      activity: 'Reading', mood: 'Calm', goal: 'Learn', updatedRealAt: WORLD_TIME,
+      currentDialogueId: null, lastBeatSimTime: null }
+    await db.insert(personStates).values(state)
+    const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [state])
+    await db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, createdAt: WORLD_TIME,
+      modelJson: JSON.stringify({ name: 'Home world', description: '',
+        locations: [{ name: 'Cafe', description: '' }, { name: 'Library', description: '' }],
+        residents: [{ id: 'resident', name: 'Ada', model: {} }], projectionBaseline: baseline }) })
+    await db.insert(universeRevisions).values({ timelineId: 'home-main', version: 0, simTime: WORLD_TIME,
+      worldModelVersion: 1, updatedAt: WORLD_TIME })
+    let version = 0
+    const commit = async (id: string, action: Parameters<typeof commitWorldCommand>[1]['action']) => {
+      const result = await commitWorldCommand(db, { id, worldId: 'home-world', timelineId: 'home-main',
+        userId: 'owner', expectedVersion: version, action, actorKind: 'system' })
+      expect(result.version).toBe(++version)
+    }
+    await commit('cmd-clock1', { type: 'clock_advance', from: WORLD_TIME, to: T1, observedAt: T1 })
+    await commit('cmd-s1', { type: 'resident_state', personId: 'resident', cause: 'beat', windowStart: WORLD_TIME,
+      patch: { activity: 'Walking' },
+      events: [{ simTime: T1, title: '晨间散步', description: 'Ada 在 Cafe 散步。' }], memories: [] })
+    await commit('cmd-clock2', { type: 'clock_advance', from: T1, to: T2, observedAt: T2 })
+    await captureDailyAnchor(db, (await db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!)
+    await commit('cmd-clock3', { type: 'clock_advance', from: T2, to: T3, observedAt: T3 })
+    return world
+  }
+
+  it('重建源分叉:sharedForkOrigin 含重建证据,limitations 增谦逊行;现时刻分叉不含', async () => {
+    const world = await buildAnchoredWorld()
+    try {
+      const db = world.db
+      const scenario = { whatIf: '如果那天没有下雨', changedVariable: '天气', participants: [], invariants: [] }
+      const historical = await forkTimeline(db, 'home-world', 'home-main', { ...scenario, startTime: T2 }, 'req-hist')
+      const current = await forkTimeline(db, 'home-world', 'home-main', { ...scenario, startTime: T3 }, 'req-cur')
+
+      const body = (await compareTimelines(db, 'home-world', historical.id, current.id))!
+      expect(body.sharedForkOrigin?.timelineId).toBe('home-main')
+      expect(body.sharedForkOrigin?.leftFork?.reconstruction).toMatchObject({
+        source: 'anchor_replay', throughVersion: 3, anchorVersion: 3, invertedMaintenance: 0 })
+      expect(body.sharedForkOrigin?.leftFork?.reconstruction?.completeDomains).toBeGreaterThan(0)
+      expect(body.sharedForkOrigin?.leftFork?.sourceStateVersion).toBe(3)
+      expect(body.sharedForkOrigin?.rightFork?.reconstruction).toBeNull()
+      expect(body.limitations.some((line) => line.includes(RECON_LIMITATION))).toBe(true)
+
+      // 现时刻分叉之间/与主线的比较:无重建证据,谦逊行不出现,其余输出不变
+      const plain = (await compareTimelines(db, 'home-world', 'home-main', current.id))!
+      expect(plain.sharedForkOrigin?.rightFork?.reconstruction).toBeNull()
+      expect(plain.sharedForkOrigin?.rightFork?.sourceStateVersion).toBe(4)
+      expect(plain.limitations.some((line) => line.includes(RECON_LIMITATION))).toBe(false)
+    } finally {
+      world.close()
+    }
   })
 })
