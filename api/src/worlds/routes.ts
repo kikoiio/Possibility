@@ -21,6 +21,7 @@ import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateUser, gateWorld, worldReservation } from '../engine/guard'
 import { commitWorldCommand } from '../world-state/commit'
+import { checkMoment, historyRange, type HistoryRejectCode } from '../world-state/reconstruct'
 import { createRootProjectionBaseline, ensureUniverseRevision } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { WorldStateError, type WorldAction } from '../world-state/types'
@@ -428,9 +429,34 @@ worldsRoutes.post('/:id/inject', async (c) => {
   }
 })
 
+/** S4/F6:历史可回溯范围(earliest=null 表示该线不支持历史分叉) */
+const historyRejectStatus = (code: HistoryRejectCode): 400 | 404 | 409 =>
+  code === 'future_time' || code === 'before_history_start' ? 400 : code === 'timeline_not_active' ? 404 : 409
+
+worldsRoutes.get('/:id/timelines/:tid/history', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const range = await historyRange(db, world.id, c.req.param('tid'))
+  if (!range) return c.json({ error: '时间线不存在' }, 404)
+  return c.json(range)
+})
+
+/** S4/F6:单点可重建性判定——可 → 吸附后的有效时刻;不可 → 原因文案 */
+worldsRoutes.post('/:id/timelines/:tid/history/check', async (c) => {
+  const body = await c.req.json<{ at?: string }>().catch(() => null)
+  if (!body?.at || typeof body.at !== 'string') return c.json({ error: '请提供要检验的时刻' }, 400)
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  const check = await checkMoment(db, world.id, c.req.param('tid'), body.at)
+  if (!check.ok) return c.json({ error: check.message, reasonCode: check.reasonCode }, historyRejectStatus(check.reasonCode))
+  return c.json(check)
+})
+
 /** 世界级 Fork 预览（S2/F2）：以世界为上下文 LLM 起草五字段场景；不落库，走护栏记账 */
 worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
-  const body = await c.req.json<{ whatIf?: string }>().catch(() => ({}) as { whatIf?: string })
+  const body = await c.req.json<{ whatIf?: string; startTime?: string }>().catch(() => ({}) as { whatIf?: string; startTime?: string })
   const whatIf = body.whatIf?.trim()
   if (!whatIf || whatIf.length > 500) return c.json({ error: '请提供有效的 what-if（500 字以内）' }, 400)
 
@@ -446,6 +472,14 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
     .get()
   if (!source) return c.json({ error: '时间线不存在' }, 404)
   if (source.status !== 'active') return c.json({ error: '只能分叉活跃时间线' }, 400)
+
+  // S4/F6:startTime 缺省=当前时刻;显式历史时刻先过可重建性判定,吸附后写回草稿
+  let startTime = source.simNow
+  if (body.startTime && Date.parse(body.startTime) !== Date.parse(source.simNow)) {
+    const check = await checkMoment(db, world.id, source.id, body.startTime)
+    if (!check.ok) return c.json({ error: check.message }, historyRejectStatus(check.reasonCode))
+    startTime = check.effectiveMoment
+  }
 
   const cfg = budgetFromEnv(c.env)
   const gate = await gateWorld(db, world.id, cfg)
@@ -465,8 +499,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
         ],
         { maxTokens: 8000 },
       )
-      // startTime 纪律：只能以当前时刻分叉——强制对齐源线 simNow
-      return c.json({ ...normalizeScenario(extractJson(raw), whatIf, source.simNow), startTime: source.simNow })
+      // startTime 纪律:缺省当前时刻;历史时刻已被 checkMoment 吸附校验
+      return c.json({ ...normalizeScenario(extractJson(raw), whatIf, source.simNow), startTime })
     } catch (e) {
       if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
       lastError = e
@@ -540,9 +574,17 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   if (!source) return c.json({ error: '时间线不存在' }, 404)
   if (source.status !== 'active') return c.json({ error: '只能分叉活跃时间线' }, 400)
 
+  // S4/F6:startTime 缺省=当前时刻;显式历史时刻先过可重建性判定,吸附后写入场景
+  let startTime = source.simNow
+  const requestedStart = typeof record.startTime === 'string' ? record.startTime : null
+  if (requestedStart && Date.parse(requestedStart) !== Date.parse(source.simNow)) {
+    const check = await checkMoment(db, world.id, source.id, requestedStart)
+    if (!check.ok) return c.json({ error: check.message }, historyRejectStatus(check.reasonCode))
+    startTime = check.effectiveMoment
+  }
   const scenario: ForkScenario = {
     ...scenarioDraft,
-    startTime: source.simNow,
+    startTime,
   }
 
   const activeCount = await db

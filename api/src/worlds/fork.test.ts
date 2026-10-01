@@ -206,3 +206,99 @@ describe('人物级 fork 预览 startTime 纪律（S2/T1）', () => {
     expect(body.changedVariable).toBe('信件是否送达')
   })
 })
+
+/* ---------- S4/F6:历史范围端点与历史分叉 ---------- */
+
+const T1 = '2026-09-21T09:00:00.000Z'
+const T2 = '2026-09-21T10:00:00.000Z'
+
+async function buildHistoryWorld(f: Awaited<ReturnType<typeof createWorldFixture>>) {
+  const { createRootProjectionBaseline } = await import('../world-state/model')
+  const { commitWorldCommand } = await import('../world-state/commit')
+  const { worldModelVersions, universeRevisions } = await import('../db/schema')
+  await seedResident(f)
+  const state = (await f.db.select().from(personStates).where(eq(personStates.personId, 'resident')).get())!
+  const baseline = createRootProjectionBaseline(WORLD_TIME, WORLD_TIME, [
+    { ...state, currentDialogueId: null, lastBeatSimTime: null }])
+  await f.db.insert(worldModelVersions).values({ worldId: 'home-world', version: 1, createdAt: WORLD_TIME,
+    modelJson: JSON.stringify({ name: 'Home world', description: '',
+      locations: [{ name: 'Cafe', description: '' }, { name: 'Library', description: '' }],
+      residents: [{ id: 'resident', name: 'Resident', model: {} }], projectionBaseline: baseline }) })
+  await f.db.insert(universeRevisions).values({ timelineId: 'home-main', version: 0, simTime: WORLD_TIME,
+    worldModelVersion: 1, updatedAt: WORLD_TIME })
+  let version = 0
+  const commit = async (id: string, action: import('../world-state/types').WorldAction) => {
+    const result = await commitWorldCommand(f.db, { id, worldId: 'home-world', timelineId: 'home-main',
+      userId: 'owner', expectedVersion: version, action, actorKind: 'system' })
+    expect(result.version).toBe(++version)
+  }
+  await commit('h-clock1', { type: 'clock_advance', from: WORLD_TIME, to: T1, observedAt: T1 })
+  await commit('h-s1', { type: 'resident_state', personId: 'resident', cause: 'beat', windowStart: WORLD_TIME,
+    patch: { activity: 'Walking' }, events: [{ simTime: T1, title: '散步', description: '在 Cafe 散步。' }],
+    memories: [{ type: 'thought', content: 'morning note', importance: 5 }] })
+  await commit('h-clock2', { type: 'clock_advance', from: T1, to: T2, observedAt: T2 })
+}
+
+describe('历史范围与单点判定端点(S4/F6)', () => {
+  it('GET history:完整世界 earliest=基线时刻;缺基线世界 earliest=null;不存在 → 404', async () => {
+    const f = await createWorldFixture()
+    await buildHistoryWorld(f)
+    const res = await app.request('/api/worlds/home-world/timelines/home-main/history', { headers: owner }, f.env)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ earliest: WORLD_TIME, simNow: T2 })
+    const missing = await app.request('/api/worlds/home-world/timelines/nope/history', { headers: owner }, f.env)
+    expect(missing.status).toBe(404)
+
+    const legacy = await createWorldFixture()
+    const noBaseline = await app.request('/api/worlds/home-world/timelines/home-main/history', { headers: owner }, legacy.env)
+    expect(await noBaseline.json()).toEqual({ earliest: null, simNow: WORLD_TIME })
+  })
+
+  it('POST history/check:历史时刻吸附、未来/起点之前 400、归档 404、缺 at 400', async () => {
+    const f = await createWorldFixture()
+    await buildHistoryWorld(f)
+    const url = '/api/worlds/home-world/timelines/home-main/history/check'
+    const check = (body: unknown) => app.request(url, { method: 'POST', headers: owner, body: JSON.stringify(body) }, f.env)
+    const snapped = await check({ at: '2026-09-21T09:30:00.000Z' })
+    expect(snapped.status).toBe(200)
+    expect(await snapped.json()).toEqual({ ok: true, effectiveMoment: T1 })
+    expect((await check({ at: '2026-12-31T00:00:00.000Z' })).status).toBe(400)
+    expect((await check({ at: '2020-01-01T00:00:00.000Z' })).status).toBe(400)
+    expect((await check({})).status).toBe(400)
+    await f.db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, 'home-main'))
+    expect((await check({ at: T1 })).status).toBe(404)
+  })
+
+  it('fork 携带历史 startTime:吸附后重建分叉,子线 simNow=有效时刻;不可重建 → 400', async () => {
+    const f = await createWorldFixture()
+    await buildHistoryWorld(f)
+    const res = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
+      method: 'POST', headers: owner,
+      body: JSON.stringify({ requestId: 'req-hist', scenario: { whatIf: '如果那天没下雨', changedVariable: '天气',
+        startTime: '2026-09-21T09:30:00.000Z' } }),
+    }, f.env)
+    expect(res.status, await res.clone().text()).toBe(200)
+    const body = await res.json() as { id: string; simNow: string }
+    expect(body.simNow).toBe(T1) // 09:30 吸附到最近命令边界 T1
+    const row = await f.db.select().from(timelines).where(eq(timelines.id, body.id)).get()
+    expect(JSON.parse(row!.forkScenarioJson!)).toMatchObject({ startTime: T1 })
+
+    const rejected = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
+      method: 'POST', headers: owner,
+      body: JSON.stringify({ scenario: { whatIf: 'w', changedVariable: 'c', startTime: '2020-01-01T00:00:00.000Z' } }),
+    }, f.env)
+    expect(rejected.status).toBe(400)
+    expect(await rejected.json()).toMatchObject({ error: expect.stringContaining('早于这条线可回溯的起点') })
+  })
+
+  it('fork/preview 携带历史 startTime:草稿吸附为有效时刻', async () => {
+    const f = await createWorldFixture()
+    await buildHistoryWorld(f)
+    stubLlm(scenarioJson)
+    const res = await app.request('/api/worlds/home-world/timelines/home-main/fork/preview', {
+      method: 'POST', headers: owner, body: JSON.stringify({ whatIf: scenarioJson.whatIf, startTime: T1 }),
+    }, f.env)
+    expect(res.status, await res.clone().text()).toBe(200)
+    expect(await res.json()).toMatchObject({ startTime: T1 })
+  })
+})
