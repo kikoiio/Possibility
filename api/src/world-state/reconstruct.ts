@@ -13,7 +13,8 @@ import { hydrateTimelines } from '../life/snapshot-store'
 import { readForkSnapshot } from '../agent/visibility'
 import { hashAnchorCore, latestAnchorAtOrBefore, parseAnchorCore } from './anchors'
 import { applyCoreCommands } from './core-replay'
-import { resolveProjectionBaseline } from './evidence'
+import { resolveProjectionBaseline, collectReplayInput } from './evidence'
+import { reduceProjection } from './projector'
 import { PROJECTION_DOMAINS, type ProjectionBaseline, type ProjectionDomain } from './model'
 
 export type HistoryRejectCode =
@@ -284,6 +285,41 @@ export async function reconstructAt(db: Db, worldId: string, timelineId: string,
       },
     }
   }
-  // 无锚点 → 全量回放兜底(T7)
-  return reject('replay_diagnostics')
+  // 无锚点 → 全量回放兜底:从基线确定性回放至 V,按构造精确;任何诊断即拒绝
+  const replayInput = await collectReplayInput(db, worldId, timelineId)
+  if (!replayInput.baseline || !baselineComplete(replayInput.baseline)) return reject('baseline_incomplete')
+  const replay = reduceProjection({
+    worldId, timelineId, baseline: replayInput.baseline,
+    commands: replayInput.commands.filter((command) => command.resultVersion <= throughVersion),
+    facts: replayInput.facts.filter((fact) => fact.version <= throughVersion),
+    throughVersion,
+    personNames: replayInput.personNames,
+    sourceFacts: replayInput.sourceFacts,
+    visibleTimelineIds: replayInput.visibleTimelineIds,
+  })
+  if (!replay.ok || !replay.projection) return reject('replay_diagnostics')
+  const projection = replay.projection
+  const frozen = ctx.timeline.parentTimelineId ? readForkSnapshot(ctx.timeline) : null
+  const memoriesSorted = [...projection.memories]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+  const eventsSorted = [...projection.events]
+    .sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
+  const coreHash = await hashAnchorCore({ version: 1, states: projection.states, schedules: projection.schedules,
+    commitments: projection.commitments })
+  return {
+    ok: true,
+    simTime: effectiveSimTime,
+    rows: {
+      states: projection.states, schedules: projection.schedules, commitments: projection.commitments,
+      memories: memoriesSorted, events: eventsSorted,
+      dialogues: projection.dialogues, dialogueTurns: projection.dialogueTurns,
+      personaMessages: projection.personaMessages,
+      worldFacts: [...(frozen?.worldFacts ?? []),
+        ...replayInput.facts.filter((fact) => fact.version <= throughVersion)],
+    },
+    evidence: {
+      source: 'full_replay', throughVersion, anchorVersion: null,
+      completeDomains: [...baseline.completeDomains], coreHash, invertedMaintenance: 0,
+    },
+  }
 }

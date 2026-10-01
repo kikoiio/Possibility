@@ -131,8 +131,8 @@ type MemoryRow = typeof memories.$inferSelect
 const beforeOf = (row: MemoryRow) => ({ type: row.type, content: row.content, importance: row.importance,
   simTime: row.simTime, createdAt: row.createdAt, summarized: row.summarized })
 
-/** 完整基线 + 一名居民 + 五条 ≤T2 命令(v5 停在 T2),捕获日界锚点。 */
-async function buildRichWorld() {
+/** 完整基线 + 一名居民 + 五条 ≤T2 命令(v5 停在 T2),可选捕获日界锚点。 */
+async function buildRichWorld(options: { anchor?: boolean } = {}) {
   fixture = await createWorldFixture()
   const db = fixture.db
   await db.insert(persons).values({ id: 'resident', userId: 'owner', name: 'Ada', modelJson: '{}', createdAt: WORLD_TIME })
@@ -173,8 +173,10 @@ async function buildRichWorld() {
       { start: '18:00', end: '00:00', location: 'Cafe', activity: 'Rest', kind: 'sleep' }] }, 'system')
   await commit('cmd-clock2', { type: 'clock_advance', from: T1, to: T2, observedAt: T2 }, 'system')
   const timelineRow = (await db.select().from(timelines).where(eq(timelines.id, 'home-main')).get())!
-  const anchor = await captureDailyAnchor(db, timelineRow)
-  expect(anchor?.version).toBe(5)
+  if (options.anchor !== false) {
+    const anchor = await captureDailyAnchor(db, timelineRow)
+    expect(anchor?.version).toBe(5)
+  }
   return { db, commit }
 }
 
@@ -248,5 +250,53 @@ describe('reconstructAt 锚点路径', () => {
     await db.update(memories).set({ content: 'tampered' }).where(eq(memories.id, rowA.id))
     const result = await reconstructAt(db, 'home-world', 'home-main', T2)
     expect(result).toMatchObject({ ok: false, reasonCode: 'integrity_mismatch' })
+  })
+})
+
+describe('reconstructAt 全量回放兜底(T7)', () => {
+  it('无锚点 → full_replay,与 T2 实况逐域一致(V 之后的维护不影响)', async () => {
+    const { db, commit } = await buildRichWorld({ anchor: false })
+    const truth = await snapshotLive(db)
+    await commit('cmd-clock3', { type: 'clock_advance', from: T2, to: T3, observedAt: T3 }, 'system')
+    const rowA = (await db.select().from(memories).where(eq(memories.id, 'cmd-s1:memory:0')).get())!
+    const rowB = (await db.select().from(memories).where(eq(memories.id, 'cmd-s1:memory:1')).get())!
+    const rowC = (await db.select().from(memories).where(eq(memories.id, 'cmd-s2:memory:0')).get())!
+    await commit('cmd-correct', { type: 'memory_correct', memoryId: rowA.id, personId: 'resident',
+      before: beforeOf(rowA), after: { content: 'mA corrected', importance: 7 } })
+    await commit('cmd-forget', { type: 'memory_forget', memoryId: rowB.id, personId: 'resident', before: beforeOf(rowB) })
+    await commit('cmd-summary', { type: 'memory_summary', personId: 'resident', sourceMemoryIds: [rowC.id],
+      summaryId: 'sum-1', content: '一段压缩后的摘要', importance: 6,
+      simTime: rowC.simTime ?? rowC.createdAt, createdAt: rowC.createdAt }, 'system')
+
+    const result = await reconstructAt(db, 'home-world', 'home-main', T2)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    if (!result.ok) return
+    expect(result.simTime).toBe(T2)
+    expect(result.evidence).toMatchObject({ source: 'full_replay', throughVersion: 5, anchorVersion: null,
+      invertedMaintenance: 0 })
+    expect(result.rows.states).toEqual(truth.states)
+    expect(result.rows.schedules).toEqual(truth.schedules)
+    expect(result.rows.commitments).toEqual(truth.commitments)
+    expect(byId(result.rows.events)).toEqual(byId(truth.events))
+    expect(semanticMemories(result.rows.memories)).toEqual(semanticMemories(truth.memories))
+    expect(byId(result.rows.worldFacts)).toEqual(byId(truth.facts))
+  })
+
+  it('回放诊断(绕过校验的幽灵命令)→ replay_diagnostics 拒绝', async () => {
+    const { db } = await buildRichWorld({ anchor: false })
+    // 命令/事实不可删改(触发器),改为直插一条绕过校验的幽灵命令:回放必然诊断。
+    // 触发器顺序:命令(证据水位=5)→ 修订推进(要求命令存在)→ 事实(要求版本对齐)
+    await db.insert(worldCommands).values({ id: 'cmd-ghost', worldId: 'home-world', timelineId: 'home-main',
+      actorKind: 'owner', actorId: 'owner', type: 'dialogue_turn',
+      payloadJson: JSON.stringify({ type: 'dialogue_turn', dialogueId: 'ghost', turnIndex: 0,
+        speakerId: 'resident', utterance: 'phantom', thought: 'phantom' }),
+      expectedVersion: 5, resultVersion: 6, createdAt: T2 })
+    await db.update(universeRevisions).set({ version: 6, simTime: T2, updatedAt: T2 })
+      .where(eq(universeRevisions.timelineId, 'home-main'))
+    await db.insert(worldFacts).values({ id: 'fact-ghost', timelineId: 'home-main', version: 6, simTime: T2,
+      factType: 'conversation', subjectId: 'ghost', valueJson: '{}', sourceCommandId: 'cmd-ghost',
+      visibility: 'private' })
+    const result = await reconstructAt(db, 'home-world', 'home-main', T2)
+    expect(result).toMatchObject({ ok: false, reasonCode: 'replay_diagnostics' })
   })
 })
