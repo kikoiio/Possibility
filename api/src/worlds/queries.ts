@@ -4,6 +4,7 @@ import { dialogues, dialogueTurns, events, persons, personStates, schedules, tim
 import { parseLocations, parseScheduleItems, worldDateOf, type LocationDef, type ScheduleItem } from '../agent/engine-context'
 import { visibleMemories } from '../agent/memory'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents } from '../agent/visibility'
+import { hydrateTimelines } from '../life/snapshot-store'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { readPublicUniverseEvidence, type PublicUniverseEvidence } from '../world-state/evidence-status'
@@ -58,7 +59,8 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   if (!world) return null
 
-  const tls = await db.select().from(timelines).where(eq(timelines.worldId, worldId)).orderBy(asc(timelines.createdAt)).all()
+  const tls = await hydrateTimelines(db,
+    await db.select().from(timelines).where(eq(timelines.worldId, worldId)).orderBy(asc(timelines.createdAt)).all())
   if (!tls.length) return null
   // 显式指定的时间线必须属于本世界；不能悄悄回落主线。
   const current = timelineId !== undefined
@@ -275,8 +277,9 @@ export async function dialogueDetail(db: Db, dialogueId: string, timelineId?: st
   let dialogue: typeof dialogues.$inferSelect | undefined
   let turns: (typeof dialogueTurns.$inferSelect)[]
   if (timelineId !== undefined) {
-    const current = await db.select().from(timelines).where(eq(timelines.id, timelineId)).get()
-    if (!current) return null
+    const currentRow = await db.select().from(timelines).where(eq(timelines.id, timelineId)).get()
+    if (!currentRow) return null
+    const current = (await hydrateTimelines(db, [currentRow]))[0]
     const checkpoint = readForkSnapshot(current)
     const isVisibleCheckpointDialogue = checkpoint?.events.some(event => event.dialogueId === dialogueId) ?? false
     if (isVisibleCheckpointDialogue) {

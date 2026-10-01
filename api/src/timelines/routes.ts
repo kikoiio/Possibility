@@ -6,6 +6,7 @@ import { events, persons, personStates, timelines, universeEvidence, worldPerson
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { buildAgentContext } from '../agent/context'
 import { readForkSnapshot } from '../agent/visibility'
+import { hydrateTimelines } from '../life/snapshot-store'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { runAgentTurn } from '../agent/loop'
 import { complete, configFromEnv } from '../llm/client'
@@ -267,12 +268,13 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
 timelineRoutes.get('/timelines/:id', async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
-  const timeline = await db
+  const timelineRow = await db
     .select()
     .from(timelines)
     .where(eq(timelines.id, c.req.param('id')))
     .get()
-  if (!timeline) return c.json({ error: '时间线不存在' }, 404)
+  if (!timelineRow) return c.json({ error: '时间线不存在' }, 404)
+  const timeline = (await hydrateTimelines(db, [timelineRow]))[0]
 
   const world = await db
     .select()

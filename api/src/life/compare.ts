@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { and, eq, inArray } from 'drizzle-orm'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, type Timeline } from '../agent/visibility'
+import { hydrateTimelines } from './snapshot-store'
 import { createDb, type Db } from '../db/client'
 import { events, personStates, timelines, universeEvidence, universeRevisions, worldFacts, worlds } from '../db/schema'
 import type { Env } from '../index'
@@ -52,7 +53,7 @@ export function sharedForkOrigin(left: Timeline, right: Timeline, worldTimelines
 
 export async function compareTimelines(db: Db, worldId: string, leftId: string, rightId: string, at?: string) {
   // One read transaction keeps state, clocks, and event evidence on the same database snapshot.
-  const [worldTimelines, states, eventRows, revisions, factRows, evidenceRows] = await db.batch([
+  const [worldTimelinesRaw, states, eventRows, revisions, factRows, evidenceRows] = await db.batch([
     db.select().from(timelines).where(eq(timelines.worldId, worldId)),
     db.select().from(personStates).where(inArray(personStates.timelineId,
       db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.worldId, worldId), inArray(timelines.id, [leftId, rightId]))))),
@@ -64,6 +65,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
       db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.worldId, worldId), inArray(timelines.id, [leftId, rightId]))))),
     db.select().from(universeEvidence).where(inArray(universeEvidence.timelineId, [leftId, rightId])),
   ])
+  const worldTimelines = await hydrateTimelines(db, worldTimelinesRaw)
   const left = worldTimelines.find((t) => t.id === leftId)
   const right = worldTimelines.find((t) => t.id === rightId)
   if (!left || !right) return null

@@ -2,13 +2,15 @@ import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions } from '../db/schema'
 import { readForkSnapshot } from '../agent/visibility'
+import { hydrateTimelines } from '../life/snapshot-store'
 import { WorldStateError } from './types'
 import { publicUniverseEvidence } from './evidence-status'
 
 export async function readWorldState(db: Db, worldId: string, timelineId: string) {
-  const timeline = await db.select().from(timelines)
+  const timelineRow = await db.select().from(timelines)
     .where(and(eq(timelines.id, timelineId), eq(timelines.worldId, worldId))).get()
-  if (!timeline) throw new WorldStateError('时间线不存在', 404)
+  if (!timelineRow) throw new WorldStateError('时间线不存在', 404)
+  const timeline = (await hydrateTimelines(db, [timelineRow]))[0]
   const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)).get()
   const evidenceRow = await db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, timelineId)).get()
   const model = revision ? await db.select().from(worldModelVersions)

@@ -4,6 +4,7 @@ import { createTestDb } from '../test/db'
 import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, persons, personStates, schedules, sessions, timelines, universeEvidence, users, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, retrieveForPrompt } from '../agent/memory'
 import { readForkSnapshot } from '../agent/visibility'
+import { hydrateTimelines, SNAPSHOT_REF_JSON } from './snapshot-store'
 import { comparisonRoutes, compareTimelines } from './compare'
 import { forkTimeline } from './fork'
 import { commitWorldCommand } from '../world-state/commit'
@@ -305,8 +306,10 @@ describe('fork snapshots', () => {
         content: 'Grandchild only.', createdAt: '2026-09-19T12:00:00.000Z', simTime: SIM },
     ])
 
-    const childRow = (await fixture.db.select().from(timelines).where(eq(timelines.id, child.id)).get())!
-    const grandchildRow = (await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!
+    const childRow = (await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, child.id)).get())!]))[0]
+    const grandchildRow = (await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!]))[0]
     const childSnapshot = readForkSnapshot(childRow)!
     const grandchildSnapshot = readForkSnapshot(grandchildRow)!
     const commitmentIds = (timelineId: string) => fixture.db.select().from(commitments).where(eq(commitments.timelineId, timelineId)).all()
@@ -445,7 +448,8 @@ describe('fork snapshots', () => {
       action: { type: 'intervention', requestId: 'root-rain', text: 'Rain begins.' },
     })
     const first = await forkTimeline(fixture.db, 'world', 'main')
-    const firstRow = (await fixture.db.select().from(timelines).where(eq(timelines.id, first.id)).get())!
+    const firstRow = (await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, first.id)).get())!]))[0]
     expect(readForkSnapshot(firstRow)).toMatchObject({ sourceStateVersion: 2, worldModelVersion: 1 })
     expect((await readWorldState(fixture.db, 'world', first.id)).current.map(f => f.id)).toEqual(expect.arrayContaining([moved.factId, changed.factId]))
 
@@ -534,7 +538,8 @@ describe('fork snapshots', () => {
     ])
 
     const grandchild = await forkTimeline(fixture.db, 'world', child.id)
-    const row = (await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!
+    const row = (await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!]))[0]
     const snapshot = readForkSnapshot(row)!
     const visible = await visibleMemories(fixture.db, 'npc', row)
 
@@ -648,7 +653,7 @@ describe('fork snapshots', () => {
     const promises = await fixture.db.select().from(commitments).where(eq(commitments.timelineId, body.id)).all()
     expect(promises.map((c) => c.status).sort()).toEqual(['accepted', 'proposed'])
     expect(promises.every((c) => c.id !== c.status && c.sourceDialogueId === 'dialogue-ref' && c.visitorId === 'visitor')).toBe(true)
-    expect(readForkSnapshot(child!)?.commitments).toHaveLength(4)
+    expect(readForkSnapshot((await hydrateTimelines(fixture.db, [child!]))[0])?.commitments).toHaveLength(4)
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -711,8 +716,10 @@ describe('fork snapshots', () => {
     await insertMessage('child-before', child.id)
     const grandchild = await forkTimeline(fixture.db, 'world', child.id)
 
-    const childSnapshot = readForkSnapshot((await fixture.db.select().from(timelines).where(eq(timelines.id, child.id)).get())!)!
-    const grandchildSnapshot = readForkSnapshot((await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!)!
+    const childSnapshot = readForkSnapshot((await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, child.id)).get())!]))[0])!
+    const grandchildSnapshot = readForkSnapshot((await hydrateTimelines(fixture.db,
+      [(await fixture.db.select().from(timelines).where(eq(timelines.id, grandchild.id)).get())!]))[0])!
     expect(childSnapshot.personaMessages?.map(message => message.id)).toEqual(['root-before'])
     expect(grandchildSnapshot.personaMessages?.map(message => message.id)).toEqual(['root-before', 'child-before'])
     expect(grandchildSnapshot.personaMessages?.map(message => message.id)).not.toContain('root-after')

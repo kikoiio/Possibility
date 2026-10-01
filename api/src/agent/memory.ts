@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import type { Db } from '../db/client'
 import { memories, memoryAccess, timelines, worldPersons } from '../db/schema'
 import { readForkSnapshot, selectVisibleMemories, visibilityBuckets, type MemoryBucket } from './visibility'
+import { hydrateTimelines } from '../life/snapshot-store'
 import { DEFAULT_RETRIEVAL_CONFIG, type RetrievalConfig } from './retrieval-config'
 
 type Timeline = typeof timelines.$inferSelect
@@ -49,12 +50,13 @@ async function mainTimelineOf(db: Db, worldId: string): Promise<Timeline | null>
  * 主线自身查询时 NULL 全部可见；分叉仅当主线在其祖先链中时可见 NULL 桶（同样限分叉点之前）。
  */
 export async function visibleMemories(db: Db, personId: string, timeline: Timeline): Promise<Memory[]> {
+  timeline = (await hydrateTimelines(db, [timeline]))[0]
   const memberships = await db.select({ worldId: worldPersons.worldId }).from(worldPersons)
     .where(eq(worldPersons.personId, personId)).all()
   const sharedAcrossWorlds = new Set(memberships.map(m => m.worldId)).size > 1
   const snapshot = readForkSnapshot(timeline)
   const worldTimelines = snapshot ? [timeline]
-    : await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all()
+    : await hydrateTimelines(db, await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all())
   const rows = await db.select().from(memories).where(and(
     eq(memories.personId, personId),
     snapshot ? eq(memories.timelineId, timeline.id)
@@ -165,6 +167,7 @@ export async function recordAccess(db: Db, memoryIds: string[], simNow: string):
 
 export async function retrieveForPrompt(db: Db, personId: string, timeline: Timeline,
   situation: Situation = EMPTY_SITUATION, config: RetrievalConfig = DEFAULT_RETRIEVAL_CONFIG): Promise<Memory[]> {
+  timeline = (await hydrateTimelines(db, [timeline]))[0]
   const memberships = await db.select({ worldId: worldPersons.worldId }).from(worldPersons)
     .where(eq(worldPersons.personId, personId)).all()
   const sharedAcrossWorlds = new Set(memberships.map((m) => m.worldId)).size > 1
@@ -182,7 +185,8 @@ export async function retrieveForPrompt(db: Db, personId: string, timeline: Time
     for (const m of [...frozen, ...own]) merged.set(m.id, m)
     pool = [...merged.values()]
   } else {
-    const worldTimelines = await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all()
+    const worldTimelines = await hydrateTimelines(db,
+      await db.select().from(timelines).where(eq(timelines.worldId, timeline.worldId)).all())
     const buckets = visibilityBuckets(timeline, worldTimelines, sharedAcrossWorlds)
     pool = buckets ? await candidateMemories(db, personId, buckets, situation, config) : []
   }

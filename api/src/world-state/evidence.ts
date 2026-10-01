@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull, or } from 'drizzle-orm'
 import { readForkSnapshot } from '../agent/visibility'
+import { hydrateTimelines } from '../life/snapshot-store'
 import type { Db } from '../db/client'
 import {
   commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules,
@@ -59,7 +60,7 @@ export async function collectReplayInput(db: Db, worldId: string, timelineId: st
     db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).orderBy(asc(worldFacts.version)),
     db.select().from(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)),
   ])
-  const timeline = timelineRows[0] ?? null
+  const timeline = (await hydrateTimelines(db, timelineRows))[0] ?? null
   const revision = revisionRows[0] ?? null
   const evidenceRecord = evidenceRows[0] ?? null
   const baseline = (() => {
@@ -133,7 +134,7 @@ export async function readCurrentProjection(db: Db, worldId: string, timelineId:
     db.select().from(personaMessages).where(and(eq(personaMessages.worldId, worldId), eq(personaMessages.timelineId, timelineId))),
     db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).orderBy(asc(worldFacts.version)),
   ])
-  const timeline = timelineRows[0] ?? null
+  const timeline = (await hydrateTimelines(db, timelineRows))[0] ?? null
   const revision = revisionRows[0] ?? null
   const checkpoint = timeline ? readForkSnapshot(timeline) : null
   const mergeById = <T extends { id: string }>(baseline: T[] | undefined, own: T[]): T[] =>

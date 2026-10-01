@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import app from '../index'
-import { dialogueTurns, dialogues, events, memories, messages, personaMessages, persons, personStates, sceneRequests, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { dialogueTurns, dialogues, events, forkSnapshots, memories, messages, personaMessages, persons, personStates, sceneRequests, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 import { auditUniverse } from '../world-state/invariants'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
@@ -135,7 +135,10 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   const storedFork = await f.db.select().from(timelines).where(eq(timelines.id, branchId)).get()
   expect(await f.db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, branchId)).get())
     .toMatchObject({ level: 'complete', assessedVersion: 0, baselineVersion: 2 })
-  expect(JSON.parse(storedFork!.forkSnapshotJson!).completeDomains).toEqual(expect.arrayContaining([
+  // F4 快照外置:行内为指针,正文在 fork_snapshots
+  expect(JSON.parse(storedFork!.forkSnapshotJson!).$ref).toBe('table:fork_snapshots')
+  const storedSnapshot = await f.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, branchId)).get()
+  expect(JSON.parse(storedSnapshot!.payloadJson).completeDomains).toEqual(expect.arrayContaining([
     'clock', 'states', 'schedules', 'events', 'commitments', 'memories', 'dialogues', 'dialogueTurns',
     'personaMessages', 'knowledge',
   ]))
