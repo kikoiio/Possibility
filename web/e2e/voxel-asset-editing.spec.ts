@@ -219,7 +219,7 @@ test('guest 演示世界无编辑入口', async ({ page }) => {
     world: { id: 'demo', name: '雾影庄', description: '白雾町的旧宅', status: 'running', pauseReason: null, isDemo: true, callsToday: 0, locations: [{ name: '主楼', description: '主楼' }] },
     timelines: [{ id: 'main', parentTimelineId: null, simNow: '2026-09-28T12:00:00.000Z' }], currentTimelineId: 'main', simNow: '2026-09-28T12:00:00.000Z',
     stateVersion: 1, worldModelVersion: 1, evidenceStatus: 'structured', evidence: { level: 'complete', reasonCodes: [] }, currentFacts: [],
-    locationBoard: [{ location: '主楼', persons: [{ id: 'resident-1', name: '主人', activity: '读书' }] }],
+    locationBoard: [{ location: '主楼', persons: [{ id: 'person-host', name: '主人', activity: '读书' }] }],
     events: [],
   }
   await page.addInitScript(() => localStorage.setItem('possibility:flag:voxel', '1'))

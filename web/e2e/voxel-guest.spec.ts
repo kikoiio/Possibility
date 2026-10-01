@@ -17,7 +17,7 @@ const snapshot = {
   world: { id: 'demo', name: '雾影庄', description: '白雾町的旧宅', status: 'running', pauseReason: null, isDemo: true, callsToday: 0, locations: [{ name: '主楼', description: '主楼' }, { name: '温室', description: '玻璃温室' }, { name: '庭院', description: '庭院' }] },
   timelines: [{ id: 'main', parentTimelineId: null, simNow: '2026-09-28T12:00:00.000Z' }], currentTimelineId: 'main', simNow: '2026-09-28T12:00:00.000Z',
   stateVersion: 1, worldModelVersion: 1, evidenceStatus: 'structured', evidence: { level: 'complete', reasonCodes: [] }, currentFacts: [],
-  locationBoard: [{ location: '主楼', persons: [{ id: 'resident-1', name: '主人', activity: '独自在书房读信' }] }],
+  locationBoard: [{ location: '主楼', persons: [{ id: 'person-host', name: '主人', activity: '独自在书房读信' }] }],
   events: [{ id: 'ev-1', title: '玻璃上的手印', description: '温室的玻璃上多了一枚陌生手印', location: '温室' }],
 }
 
@@ -45,17 +45,17 @@ async function mockGuestVoxel(page: Page) {
   await page.route('**/api/worlds/demo/persona?**', (route) => route.fulfill({ json: { persona: { id: 'visitor-1', name: '阿透', description: '旅人', location: null }, unread: 0 } }))
   await page.route('**/api/worlds/demo/persona/messages**', (route) => route.fulfill({ json: { messages: [], mentions: [] } }))
   await page.route('**/api/worlds/demo/state**', (route) => route.fulfill({ json: { version: 1 } }))
-  await page.route('**/api/worlds/demo/scene/board**', (route) => route.fulfill({ json: { board: [{ location: '主楼', count: 1, people: [{ id: 'resident-1', name: '主人' }] }] } }))
+  await page.route('**/api/worlds/demo/scene/board**', (route) => route.fulfill({ json: { board: [{ location: '主楼', count: 1, people: [{ id: 'person-host', name: '主人' }] }] } }))
   await page.route('**/api/worlds/demo/scene/history**', (route) => route.fulfill({ json: { dialogueId: null, location: null, turns: [] } }))
   await page.route('**/api/worlds/demo/scene/intent/pending**', (route) => route.fulfill({ json: { proposal: null } }))
   await page.route('**/api/worlds/demo/scene/position', (route) => route.fulfill({ json: { commandId: 'cmd-1', version: 2, location: '主楼' } }))
   await page.route('**/api/worlds/demo/scene/inform', (route) => route.fulfill({ json: { commandId: 'cmd-2', version: 3, certainty: 'rumor' } }))
   await page.route('**/api/worlds/demo/scene', (route) => route.fulfill({
     status: 200, contentType: 'text/event-stream',
-    body: 'data: {"type":"turn","personId":"resident-1","name":"主人","utterance":"欢迎。"}\n\ndata: {"type":"done"}\n\n',
+    body: 'data: {"type":"turn","personId":"person-host","name":"主人","utterance":"欢迎。"}\n\ndata: {"type":"done"}\n\n',
   }))
   await page.route('**/api/demo/worlds/demo/fork', (route) => route.fulfill({ json: { id: 'fork-a', simNow: snapshot.simNow } }))
-  await page.route('**/api/demo/worlds/demo/compare**', (route) => route.fulfill({ json: { differences: { facts: [{ key: 'letter' }], states: [{ personId: 'resident-1' }], events: { leftOnly: [], rightOnly: [{ id: 'ev-fork' }] } }, limitations: [] } }))
+  await page.route('**/api/demo/worlds/demo/compare**', (route) => route.fulfill({ json: { differences: { facts: [{ key: 'letter' }], states: [{ personId: 'person-host' }], events: { leftOnly: [], rightOnly: [{ id: 'ev-fork' }] } }, limitations: [] } }))
 }
 
 async function toScreen(page: Page, at: { x: number; y: number; z: number }) {
@@ -111,7 +111,7 @@ test('guest voxel sandbox: multi-space navigation and full onboarding tour (AC16
 
   // 步骤 5 改变条件：当面传话
   await page.getByText('明确告诉现场某人一条消息').click()
-  await page.getByLabel('消息接收者').selectOption('resident-1')
+  await page.getByLabel('消息接收者').selectOption('person-host')
   await page.getByLabel('消息主题').fill('温室的手印')
   await page.getByLabel('消息内容').fill('温室玻璃上有一枚陌生手印。')
   await page.getByRole('button', { name: '告诉 TA' }).click()
