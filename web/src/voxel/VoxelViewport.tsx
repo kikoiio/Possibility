@@ -85,6 +85,12 @@ export default function VoxelViewport({
     if (!canvas) return
     const engine = new VoxelEngine()
     engineRef.current = engine
+    // S3a:滚轮/pinch 驱动的落地/升空不经过 toggle——引擎补间完成后主动推送,
+    // 同步 HUD 与点击门控(编辑仅 orbit);toggle 的乐观 setState 与此幂等
+    engine.onCameraModeChange = (mode) => {
+      setCameraMode(mode)
+      onCameraModeChangeRef.current?.(mode)
+    }
     const probes = window as unknown as VoxelProbeTarget
     registerEngineProbe(probes, instanceId, engine, primary)
     let cancelled = false

@@ -121,10 +121,30 @@ export class Assets {
     }
     return null
   }
+  /** S3a LOD:摇摆振幅缩放(overview 档 0 = 静止且零矩阵重算) */
+  private swayScale = 1
+  setSwayScale(scale: number): void {
+    const next = Math.max(0, scale)
+    if (next === this.swayScale) return
+    const wasZero = this.swayScale === 0
+    this.swayScale = next
+    // 归零时把实例摆正一次(避免冻结在半倾姿态);从 0 恢复由下一帧 update 接管
+    if (next === 0 && !wasZero) {
+      for (const group of this.groups.values()) {
+        group.base.forEach((matrix, i) => { for (const mesh of group.meshes) mesh.setMatrixAt(i, matrix) })
+        for (const mesh of group.meshes) mesh.instanceMatrix.needsUpdate = true
+      }
+    }
+  }
+  get currentSwayScale(): number {
+    return this.swayScale
+  }
+
   update(dt: number): void {
+    if (this.swayScale === 0) return // LOD overview 档:零矩阵重算
     this.time += dt * this.motion.animationTimeScale()
     for (const group of this.groups.values()) for (let i = 0; i < group.base.length; i++) {
-      const sway = Math.sin(this.time * 1.7 + group.seeds[i] * 6.28) * group.sway * this.motion.animationTimeScale()
+      const sway = Math.sin(this.time * 1.7 + group.seeds[i] * 6.28) * group.sway * this.swayScale * this.motion.animationTimeScale()
       const matrix = group.base[i].clone().multiply(new THREE.Matrix4().makeRotationZ(sway))
       for (const mesh of group.meshes) mesh.setMatrixAt(i, matrix)
     }

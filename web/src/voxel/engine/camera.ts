@@ -68,21 +68,15 @@ export class OrbitCameraStrategy implements CameraStrategy {
       this.dragging = null
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
     }
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      this.distance = THREE.MathUtils.clamp(this.distance * (e.deltaY > 0 ? 1.1 : 0.9), MIN_DISTANCE, MAX_DISTANCE)
-    }
     const onContextMenu = (e: Event) => e.preventDefault()
     canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointermove', onPointerMove)
     canvas.addEventListener('pointerup', onPointerUp)
-    canvas.addEventListener('wheel', onWheel, { passive: false })
     canvas.addEventListener('contextmenu', onContextMenu)
     this.disposers = [
       () => canvas.removeEventListener('pointerdown', onPointerDown),
       () => canvas.removeEventListener('pointermove', onPointerMove),
       () => canvas.removeEventListener('pointerup', onPointerUp),
-      () => canvas.removeEventListener('wheel', onWheel),
       () => canvas.removeEventListener('contextmenu', onContextMenu),
     ]
   }
@@ -134,6 +128,16 @@ export class OrbitCameraStrategy implements CameraStrategy {
     this.target.set(at.x, at.y, at.z)
   }
 
+  /** S3a:距离改由 ZoomAxis 刻度驱动(wheel/pinch 已收编到 ZoomInput) */
+  setDistance(d: number): void {
+    this.distance = THREE.MathUtils.clamp(d, MIN_DISTANCE, MAX_DISTANCE)
+  }
+
+  /** S3a:双指成捏时取消进行中的拖拽(ZoomInput.onPinchStart 广播) */
+  cancelDrag(): void {
+    this.dragging = null
+  }
+
   /** 受控位姿写入(S1 分屏联动):越界值按既有边界收敛 */
   setPose(pose: OrbitPose): void {
     this.theta = pose.theta
@@ -149,6 +153,8 @@ export class CameraRig {
   private walk: CameraStrategy | null = null
   private active: CameraStrategy
   private canvas: HTMLCanvasElement | null = null
+  /** S3a continuum 补间期间的过渡相机(非 null 时优先作为渲染相机) */
+  private transition: THREE.PerspectiveCamera | null = null
 
   constructor() {
     this.orbit = new OrbitCameraStrategy()
@@ -156,7 +162,24 @@ export class CameraRig {
   }
 
   get camera(): THREE.PerspectiveCamera {
-    return this.active.camera
+    return this.transition ?? this.active.camera
+  }
+
+  /** S3a:挂接/摘下过渡相机(ContinuumController 补间始末调用) */
+  setTransition(camera: THREE.PerspectiveCamera | null): void {
+    this.transition = camera
+    if (camera) this.syncAspect(camera)
+  }
+
+  /** orbit 策略句柄(S3a 门面驱动 setDistance / cancelDrag) */
+  get orbitStrategy(): OrbitCameraStrategy {
+    return this.orbit
+  }
+
+  /** walk 视角读出(S3a 升空交接:theta ← yaw);非 walk 策略为 null */
+  get walkLook(): { yaw: number; pitch: number } | null {
+    const w = this.walk as { lookState?: { yaw: number; pitch: number } } | null
+    return w?.lookState ?? null
   }
 
   get mode(): string {
@@ -201,6 +224,12 @@ export class CameraRig {
       walkCam.camera.aspect = aspect
       walkCam.camera.updateProjectionMatrix()
     }
+    if (this.transition) this.syncAspect(this.transition)
+  }
+
+  private syncAspect(camera: THREE.PerspectiveCamera): void {
+    camera.aspect = this.orbit.camera.aspect
+    camera.updateProjectionMatrix()
   }
 
   /** 相机注视点(天气粒子跟随、阴影相机聚焦)。walk 时为玩家位置 */

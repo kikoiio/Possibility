@@ -63,6 +63,13 @@ export class WalkCameraStrategy implements CameraStrategy {
   /** 测试/调试读数 */
   get lookState() { return { yaw: this.yaw, pitch: this.pitch } }
 
+  /** S3a 落地交接:让 walk 起始视角与落地补间终点一致(避免激活瞬间跳变) */
+  setLook(yaw: number, pitch: number): void {
+    this.yaw = yaw
+    this.pitch = THREE.MathUtils.clamp(pitch, -MAX_PITCH, MAX_PITCH)
+    this.update(0)
+  }
+
   /** CameraStrategy 交接协议:玩家脚底位置(切回 orbit 的注视点) */
   get playerPosition() { return this.player.state.position }
 

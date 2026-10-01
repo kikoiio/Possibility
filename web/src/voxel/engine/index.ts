@@ -7,6 +7,7 @@ import { AmbientAnimator } from './ambient'
 import { buildPlaceholderAtlas, TextureAtlas } from './atlas'
 import { CameraRig, type OrbitPose } from './camera'
 import { findSpawnNear, WalkCameraStrategy } from './camera-walk'
+import { ContinuumController, type WalkPose } from './camera-continuum'
 import { DayNightCycle } from './day-night'
 import { BuildFeedback } from './feedback'
 import { LightingEngine } from './lighting'
@@ -15,6 +16,7 @@ import { MotionPreference } from './motion-preference'
 import { applyStyleTweaks, loadPalette, samplePalette, type RGB, type ThemePalette } from './palette'
 import { resolvePalette } from './palettes/style-presets'
 import { Picker } from './picker'
+import { PLAYER } from './player'
 import { ResidentRenderer, type ResidentRenderState } from './residents'
 import {
   isEyeUnderwater, smoothUnderwater, underwaterDepth,
@@ -25,6 +27,10 @@ import type { AssetManifest } from '@possibility/voxel-contract'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
+import { Z_AFTER_LIFT, ZoomAxis } from './zoom-axis'
+import { ZoomInput } from './zoom-input'
+import { ZoomLod, type TierParams, type ZoomTier } from './zoom-lod'
+import type { VoxelCoord } from '@possibility/voxel-contract'
 
 function rgbToHex(c: RGB): number {
   return (Math.round(Math.min(1, c[0]) * 255) << 16)
@@ -91,10 +97,35 @@ export class VoxelEngine {
   /** 每帧回调（fps 探针等） */
   onFrame: ((dt: number) => void) | null = null
 
+  // ── S3a 缩放 continuum ─────────────────────────────
+  /** 唯一缩放状态(0=最远全貌 → 1=贴地);LOD 与 S3b 披露共用 */
+  readonly zoomAxis = new ZoomAxis()
+  /** 落地/升空补间状态机(reduced-motion 直切) */
+  readonly continuum = new ContinuumController(this.motion)
+  /** 渲染 LOD 三档档位机(滞回) */
+  readonly zoomLod = new ZoomLod()
+  private readonly zoomInput = new ZoomInput()
+  /** LOD 旋钮:bloom/雾缩放存字段,applyPalette 每帧换算;阴影/粒子/摇摆即时分发 */
+  private tierBloomScale = 1
+  private tierFogScale = 1
+  /** 风格包粒子密度基准(LOD 系数在门面层相乘,子系统接口不动) */
+  private baseParticleDensity = 1
+  /** 落地交接:补间完成后创建 Walk 策略所需 */
+  private pendingLanding: { spawn: VoxelCoord; yaw: number } | null = null
+  /** 升空交接:补间终点 orbit 位姿(完成后写回策略防跳变) */
+  private pendingLiftPose: OrbitPose | null = null
+  /** 模式变化推送(S3a:滚轮驱动的落地/升空不经过 Viewport toggle,引擎主动通知) */
+  onCameraModeChange: ((mode: 'orbit' | 'walk') => void) | null = null
+
   mount(canvas: HTMLCanvasElement): void {
     this.canvas = canvas
     this.renderer.mount(canvas, () => this.cameraRig.camera)
     this.cameraRig.attach(canvas)
+    // S3a:统一缩放输入(wheel+pinch)→ ZoomAxis;成捏取消 orbit 拖拽
+    this.zoomInput.onZoomDelta = (delta) => this.zoomAxis.applyDelta(delta)
+    this.zoomInput.onPinchStart = () => this.cameraRig.orbitStrategy.cancelDrag()
+    this.zoomInput.attach(canvas)
+    this.zoomLod.onTierChange = (_tier, params) => this.applyTier(params)
     this.ambient = new AmbientAnimator(this.renderer.scene, this.renderer.shaderUniforms, this.motion)
     this.dayNight = new DayNightCycle({
       setSkyLevel: (level) => { this.pendingSkyLevel = level },
@@ -132,7 +163,14 @@ export class VoxelEngine {
     if (!this.registry) throw new Error('loadAssets must be called before loadDocument')
     // S2b:旧存档摆放无 id,加载边界幂等补齐(ops 按 id 寻址的前置)
     doc = ensureAssetPlacementIds(doc)
+    // S3a:文档重载——补间直切回 orbit 稳定态,刻度随后按 fit 构图重置(N4)
+    const prevMode = this.cameraRig.mode
+    this.continuum.cancel()
+    this.cameraRig.setTransition(null)
+    this.pendingLanding = null
+    this.pendingLiftPose = null
     this.cameraRig.setMode('orbit') // 文档重载:重置回上帝视角(S2b)
+    if (prevMode !== 'orbit') this.onCameraModeChange?.('orbit')
     this.weather?.dispose()
     this.residents?.dispose()
     this.feedback?.dispose()
@@ -141,7 +179,8 @@ export class VoxelEngine {
     this.palette = resolvePalette(doc.theme, doc.style)
     this.dayNight?.setPalette(this.palette)
     this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
-    this.ambient?.setParticleDensity(this.palette.particleDensity ?? 1)
+    this.baseParticleDensity = this.palette.particleDensity ?? 1
+    this.applyParticleDensity()
     this.world = new WorldModel(doc)
     if (this.assetManifest) this.assets.sync(doc.assetPlacements ?? [], this.assetManifest)
     this.lighting = new LightingEngine(this.world, this.registry)
@@ -150,6 +189,11 @@ export class VoxelEngine {
     this.renderer.removeSections([...this.allSectionKeys()])
     this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv, this.aoParams))
     this.cameraRig.fitToWorld(doc.size)
+    // S3a:默认构图映射到刻度(N4:落在刻度中段偏下,不触地)
+    this.zoomAxis.reset(this.zoomAxis.zoomFromDistance(this.cameraRig.state.distance))
+    // 初始 LOD 档立即落定并下发(否则首个跨档前参数不生效)
+    this.zoomLod.update(this.zoomAxis.value)
+    this.applyTier(this.zoomLod.params)
     this.weather = new WeatherSystem(
       this.renderer.scene, this.world, this.registry, this.motion,
       { setWeatherEnv: (mod) => { this.weatherMod = mod; this.applyPalette() } },
@@ -159,6 +203,7 @@ export class VoxelEngine {
     this.picker = new Picker(this.world, this.assets)
     this.feedback = new BuildFeedback(this.renderer.scene, this.assets)
     this.registerLightEmitters()
+    this.applyParticleDensity() // 新建的 WeatherSystem 也需要 LOD 合成密度
   }
 
   syncResidents(states: ResidentRenderState[]): void {
@@ -209,22 +254,33 @@ export class VoxelEngine {
       depth = underwaterDepth(this.world, this.registry, eye)
     }
     this.underwaterStrengthValue = smoothUnderwater(this.underwaterStrengthValue, target, dt)
-    const strength = this.underwaterStrengthValue
+    const strength = this.underwaterStrength
     if (strength > 0.001) {
       this.renderer.setUnderwaterFog(
         mixRGB(resolved.fog.color, resolved.water.fog, strength),
         lerpNum(resolved.fog.density, UNDERWATER_FOG_BASE + UNDERWATER_FOG_DEPTH * depth, strength),
       )
     } else {
-      const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density }
+      // S3a LOD:雾密度按档缩放(全貌略增雾感,大气透视)
+      const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density * this.tierFogScale }
       this.renderer.setEnvironment(env)
     }
 
-    this.renderer.setDirectLight(resolved.direct, this.palette.shadow, this.palette.ambientLift)
+    // S3a LOD:阴影贴图尺寸按档缩放(引擎层换算,renderer 接口不动)
+    const lodShadow = this.zoomLod.params.shadowMapScale === 1 ? this.palette.shadow : {
+      ...this.palette.shadow,
+      mapSize: Math.max(256, Math.round(this.palette.shadow.mapSize * this.zoomLod.params.shadowMapScale)),
+      softwareMapSize: Math.max(256, Math.round(this.palette.shadow.softwareMapSize * this.zoomLod.params.shadowMapScale)),
+    }
+    this.renderer.setDirectLight(resolved.direct, lodShadow, this.palette.ambientLift)
     const time = this.renderer.shaderUniforms.uTime.value
     const motion = this.motion.animationTimeScale()
     this.renderer.sky?.update(resolved.sky, resolved.fog.color, time, motion)
-    this.renderer.post?.update(resolved.post, { motion, time })
+    // S3a LOD:bloom 强度按档缩放
+    this.renderer.post?.update(
+      this.tierBloomScale === 1 ? resolved.post : { ...resolved.post, bloomStrength: resolved.post.bloomStrength * this.tierBloomScale },
+      { motion, time },
+    )
     this.renderer.post?.setUnderwater(strength, resolved.water.fog)
 
     // 天空反射色：从 resolved.sky 按相机俯仰现算（平视取地平线色、俯视取天顶色），随昼夜天气自动变化
@@ -243,24 +299,154 @@ export class VoxelEngine {
   }
 
   /**
-   * 双视角切换(S2b F1):orbit 上帝视角 ⇄ walk 第一视角。
-   * walk:orbit 注视点投影落点搜索,找不到可站立位置则不切换。
+   * 相机模式快捷直达(S3a F4):与滚轮落地/升空完全同路——推刻度到端点 +
+   * 立即进入补间。签名与失败路径保持 S2b 契约(Viewport/WalkHud 零改动)。
    */
   setCameraMode(mode: 'orbit' | 'walk'): { ok: boolean; reason?: string } {
     if (mode === 'walk') {
+      if (this.cameraRig.mode === 'walk' || this.continuum.state === 'landing') return { ok: true }
       if (!this.world || !this.registry) return { ok: false, reason: '世界尚未加载,无法进入第一视角' }
       const target = this.cameraRig.state.target
       const spawn = findSpawnNear(this.world, this.registry, {
         x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z),
       })
       if (!spawn) return { ok: false, reason: '注视点附近没有可站立的位置' }
-      this.cameraRig.registerWalkStrategy(new WalkCameraStrategy(this.world, this.registry, spawn))
+      this.zoomAxis.setTarget(1)
+      this.beginLanding()
+      return { ok: true }
     }
-    return this.cameraRig.setMode(mode)
+    if (this.cameraRig.mode === 'orbit' || this.continuum.state === 'lifting') return { ok: true }
+    this.zoomAxis.setTarget(Z_AFTER_LIFT)
+    this.beginLifting()
+    return { ok: true }
   }
 
   get cameraMode(): 'orbit' | 'walk' {
     return this.cameraRig.mode as 'orbit' | 'walk'
+  }
+
+  /** 当前平滑 zoom 刻度 0..1(S3a F1;e2e 探针 / S3b 披露消费) */
+  getZoom(): number {
+    return this.zoomAxis.value
+  }
+
+  /** 当前渲染 LOD 档(S3a F6;e2e 探针 / S3b 披露层级基准) */
+  getZoomTier(): ZoomTier {
+    return this.zoomLod.tier
+  }
+
+  // ── S3a continuum 链路(每帧 continuumTick 驱动) ──────────────────
+
+  private continuumTick(dt: number): void {
+    const crossing = this.zoomAxis.update(dt)
+    if (crossing === 'enter-walk') this.beginLanding()
+    else if (crossing === 'exit-walk') this.beginLifting()
+
+    const done = this.continuum.update(dt)
+    if (done === 'landed') this.finishLanding()
+    else if (done === 'lifted') this.finishLifting()
+
+    this.zoomLod.update(this.zoomAxis.value)
+    // orbit 稳定态:距离由刻度驱动(对数映射)
+    if (this.continuum.state === 'orbit' && this.cameraRig.mode === 'orbit') {
+      this.cameraRig.orbitStrategy.setDistance(this.zoomAxis.distanceFromZoom(this.zoomAxis.value))
+    }
+  }
+
+  /** 落地:orbit 注视点 → 可站立格投影 → 补间;无落点钳回阈值下停留 orbit */
+  private beginLanding(): void {
+    if (!this.world || !this.registry || this.continuum.state !== 'orbit') {
+      if (this.continuum.state === 'orbit') this.zoomAxis.reset(Z_AFTER_LIFT)
+      return
+    }
+    const target = this.cameraRig.state.target
+    const spawn = findSpawnNear(this.world, this.registry, {
+      x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z),
+    })
+    const pose = this.cameraRig.getOrbitPose()
+    if (!spawn || !pose) {
+      this.zoomAxis.reset(Z_AFTER_LIFT)
+      return
+    }
+    // walk 视线 yaw = orbit theta(相机位于 theta 方向望向注视点,视线同向)
+    const walkPose: WalkPose = {
+      eye: { x: spawn.x + 0.5, y: spawn.y + PLAYER.eye, z: spawn.z + 0.5 },
+      yaw: pose.theta,
+      pitch: 0,
+    }
+    this.pendingLanding = { spawn, yaw: pose.theta }
+    this.zoomAxis.freeze() // 补间期间输入忽略(F2)
+    this.continuum.beginLanding(pose, walkPose)
+    this.cameraRig.setTransition(this.continuum.transitionCamera)
+  }
+
+  private finishLanding(): void {
+    const pending = this.pendingLanding
+    this.pendingLanding = null
+    if (pending && this.world && this.registry) {
+      const walk = new WalkCameraStrategy(this.world, this.registry, pending.spawn)
+      walk.setLook(pending.yaw, 0) // 视角与补间终点一致,激活不跳变
+      this.cameraRig.registerWalkStrategy(walk)
+    }
+    this.cameraRig.setTransition(null)
+    const result = this.cameraRig.setMode('walk')
+    if (!result.ok) {
+      // 策略缺失(世界重载等竞态):回 orbit 稳定态,不卡中间态
+      this.continuum.forceSettle('orbit')
+      this.zoomAxis.reset(Z_AFTER_LIFT)
+      return
+    }
+    this.zoomAxis.setBand('walk')
+    this.zoomAxis.unfreeze(1)
+    this.onCameraModeChange?.('walk')
+  }
+
+  /** 升空:玩家眼位 → orbit(注视点=玩家位置,theta=yaw,默认俯角,滞回带外距离) */
+  private beginLifting(): void {
+    if (this.continuum.state !== 'walk') return
+    const playerPos = this.cameraRig.state.target // walk 模式 = 玩家脚底
+    const look = this.cameraRig.walkLook
+    const from: WalkPose = {
+      eye: { x: playerPos.x, y: playerPos.y + PLAYER.eye, z: playerPos.z },
+      yaw: look?.yaw ?? 0,
+      pitch: look?.pitch ?? 0,
+    }
+    const pose: OrbitPose = {
+      theta: look?.yaw ?? Math.PI * 0.25,
+      phi: 0.96,
+      distance: this.zoomAxis.distanceFromZoom(Z_AFTER_LIFT),
+      target: { x: playerPos.x, y: playerPos.y, z: playerPos.z },
+    }
+    this.pendingLiftPose = pose
+    this.zoomAxis.freeze()
+    this.continuum.beginLifting(from, pose)
+    this.cameraRig.setTransition(this.continuum.transitionCamera)
+  }
+
+  private finishLifting(): void {
+    const pose = this.pendingLiftPose
+    this.pendingLiftPose = null
+    this.cameraRig.setTransition(null)
+    this.cameraRig.setMode('orbit') // 既有交接:注视点跟随玩家位置
+    if (pose) this.cameraRig.setOrbitPose(pose) // 完整位姿写回,与补间终点无跳变
+    this.zoomAxis.setBand('orbit')
+    this.zoomAxis.unfreeze(Z_AFTER_LIFT)
+    this.onCameraModeChange?.('orbit')
+  }
+
+  /** LOD 跨档分发:阴影/雾/bloom 走 applyPalette 每帧换算,粒子/摇摆即时下发 */
+  private applyTier(params: TierParams): void {
+    this.tierBloomScale = params.bloomScale
+    this.tierFogScale = params.fogScale
+    this.assets.setSwayScale(params.swayScale)
+    this.applyParticleDensity()
+  }
+
+  /** 粒子密度合成:风格包基准 × LOD 系数(单一合成点,避免两处真源) */
+  private applyParticleDensity(): void {
+    const density = this.baseParticleDensity * this.zoomLod.params.particleDensity
+    this.weather?.setParticleDensity(density)
+    this.ambient?.setParticleDensity(density)
   }
 
   /** orbit 位姿读出(S1 分屏相机联动);walk 模式返回 null */
@@ -271,6 +457,10 @@ export class VoxelEngine {
   /** 受控位姿写入(S1 分屏相机联动);walk 模式忽略 */
   setOrbitPose(pose: OrbitPose): void {
     this.cameraRig.setOrbitPose(pose)
+    // S3a:距离与刻度同一真源——受控写入同步刻度,避免下帧被刻度回写(F8)
+    if (this.continuum.state === 'orbit' && this.cameraRig.mode === 'orbit') {
+      this.zoomAxis.reset(this.zoomAxis.zoomFromDistance(pose.distance))
+    }
   }
 
   setTimeOfDay(t: number): void {
@@ -283,9 +473,8 @@ export class VoxelEngine {
     const theme = this.world?.doc.theme ?? 'mist-manor'
     this.styleRef = style
     this.palette = resolvePalette(theme, style)
-    const density = this.palette.particleDensity ?? 1
-    this.weather?.setParticleDensity(density)
-    this.ambient?.setParticleDensity(density)
+    this.baseParticleDensity = this.palette.particleDensity ?? 1
+    this.applyParticleDensity() // 风格包基准 × LOD 系数,门面层合成
     this.dayNight?.setPalette(this.palette)
     this.dayNight?.setTimeOfDay(this.currentTimeOfDay)
     this.applyPalette()
@@ -350,6 +539,7 @@ export class VoxelEngine {
       if (!this.running) return
       const dt = Math.min(0.1, (now - this.lastTime) / 1000)
       this.lastTime = now
+      this.continuumTick(dt) // S3a:刻度推进 → 落地/升空补间 → LOD 档位 → orbit 距离
       this.cameraRig.update(dt)
       this.updatablesTick(dt)
       this.assets.update(dt)
@@ -378,6 +568,7 @@ export class VoxelEngine {
   dispose(): void {
     this.stop()
     this.resizeObserver?.disconnect()
+    this.zoomInput.detach()
     this.cameraRig.detach()
     this.weather?.dispose()
     this.ambient?.dispose()
@@ -394,6 +585,7 @@ export * from './ambient'
 export * from './assets'
 export * from './atlas'
 export * from './camera'
+export * from './camera-continuum'
 export * from './camera-walk'
 export * from './day-night'
 export * from './lighting'
@@ -410,3 +602,6 @@ export * from './residents'
 export * from './renderer'
 export * from './weather'
 export * from './world-model'
+export * from './zoom-axis'
+export * from './zoom-input'
+export * from './zoom-lod'
