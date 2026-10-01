@@ -9,6 +9,8 @@ import { PlatformGate } from './bridge/platform-gate'
 import { registerEngineProbe, unregisterEngineProbe, type VoxelProbeTarget } from './probe-registry'
 import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
+import EventOverlay, { useEventClickRouting } from './ui/EventOverlay'
+import EventPanel from './ui/EventPanel'
 import { useCanvasClick } from './ui/use-canvas-click'
 
 export interface VoxelViewportProps {
@@ -183,8 +185,12 @@ export default function VoxelViewport({
     })
   }, [ready])
 
-  // 只读(无编辑器)时的观察点击
-  const handleObserveClick = useCallback((x: number, y: number) => { interactRef.current(x, y) }, [])
+  // 只读(无编辑器)时的观察点击:S3b 事件路由优先,未命中走既有观察链
+  const eventRouting = useEventClickRouting(engineRef.current)
+  const handleObserveClick = useCallback((x: number, y: number) => {
+    if (eventRouting.routeAt(x, y)) return
+    interactRef.current(x, y)
+  }, [eventRouting.routeAt])
   useCanvasClick(engineRef.current, ready && !controller && cameraMode === 'orbit', handleObserveClick)
   // 第一视角:点击 = 屏幕中心(准星)射线(F4,只读选中;编辑入口不渲染)
   const handleWalkClick = useCallback(() => {
@@ -249,6 +255,14 @@ export default function VoxelViewport({
       )}
       {ready && gate.showFirstPerson && (
         <WalkHud mode={cameraMode} onToggle={toggleCameraMode} notice={modeNotice} />
+      )}
+      {ready && <EventOverlay engine={engineRef.current} onSelect={eventRouting.routeById} />}
+      {ready && (
+        <EventPanel
+          event={eventRouting.panelEventId ? engineRef.current?.getEventById(eventRouting.panelEventId) ?? null : null}
+          phase={eventRouting.panelPhase === 'active' ? 'active' : 'trace'}
+          onClose={() => eventRouting.setPanelEventId(null)}
+        />
       )}
       {ready && controller && planEdits && cameraMode === 'orbit' && (
         <VoxelEditor

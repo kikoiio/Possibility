@@ -4,11 +4,12 @@ import { mapSimTime, mapWeather, OverlayDriver, type OverlayEngineSink } from '.
 import type { ResidentRenderState } from '../engine'
 
 function sink() {
-  const calls: { times: number[]; weathers: unknown[]; residents: ResidentRenderState[][] } = { times: [], weathers: [], residents: [] }
+  const calls: { times: number[]; weathers: unknown[]; residents: ResidentRenderState[][]; simNows: string[] } = { times: [], weathers: [], residents: [], simNows: [] }
   const engine: OverlayEngineSink = {
     setTimeOfDay: (t) => { calls.times.push(t) },
     setWeather: (w) => { calls.weathers.push(w) },
     syncResidents: (s) => { calls.residents.push(s) },
+    setSimNow: (iso) => { calls.simNows.push(iso) },
   }
   return { engine, calls }
 }
@@ -67,5 +68,18 @@ describe('OverlayDriver', () => {
     driver.apply(overlay({ persons: [{ personId: 'p1', locationName: '主楼', activity: '休息', mood: '' }] }))
     driver.apply(overlay({ persons: [{ personId: 'p1', locationName: '庭院', activity: '散步', mood: '' }] }))
     expect(calls.residents[1][0].destination).toEqual({ x: 8, y: 1, z: 12 })
+  })
+})
+
+describe('OverlayDriver setSimNow 透传(S3b F5)', () => {
+  it('apply 时把 overlay.simNow 原样透传给引擎', () => {
+    const { engine, calls } = sink()
+    const driver = new OverlayDriver({
+      engine,
+      resolveLocation: () => null,
+      spawnFallback: { x: 0, y: 0, z: 0 },
+    })
+    driver.apply(overlay({}))
+    expect(calls.simNows).toEqual(['2026-09-29T14:30:00Z'])
   })
 })

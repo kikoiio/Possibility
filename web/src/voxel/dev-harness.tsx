@@ -4,9 +4,11 @@ import { VoxelEngine, WebGL2UnavailableError } from './engine'
 import { EditController } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'
 import { PlatformGate } from './bridge/platform-gate'
-import { buildFixtureWorld, buildTerrainFixtureWorld } from './fixture'
+import { buildFixtureWorld, buildTerrainFixtureWorld, FIXTURE_SIM_NOW } from './fixture'
 import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
+import EventOverlay, { useEventClickRouting } from './ui/EventOverlay'
+import EventPanel from './ui/EventPanel'
 import { planEditsViaApi as devPlanEdits } from './plan-edits'
 
 /** e2e 探针：最近的产品交互事件（居民 / 地点 / 空间导航） */
@@ -48,6 +50,8 @@ export default function VoxelDevHarness() {
   // S2b 双视角(与 VoxelViewport 同一套接线,供 e2e 走查)
   const [cameraMode, setCameraMode] = useState<'orbit' | 'walk'>('orbit')
   const [modeNotice, setModeNotice] = useState<string | null>(null)
+  // S3b 事件披露:点击路由(事件优先,未命中走观察链);engine 就绪后非 null
+  const eventRouting = useEventClickRouting(engineRef.current)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -106,6 +110,8 @@ export default function VoxelDevHarness() {
         })()
         engine.loadDocument(override ?? fixture ?? buildFixtureWorld())
         engine.start()
+        // S3b:预览默认锚定 fixture 参考时间(婚礼/集市活跃);e2e 经探针覆盖
+        engine.setSimNow(FIXTURE_SIM_NOW)
         // 居民点位写死在平地 fixture 坐标;参数化地形世界地面起伏,跳过以免埋进地里
         if (!fixture) startFixtureResidents(engine)
         // 观察点击 → 产品交互（T28）：居民活动 / 地点详情 / 空间导航
@@ -228,8 +234,16 @@ export default function VoxelDevHarness() {
           engine={engineRef.current!}
           controller={controller}
           planEdits={(intent) => devPlanEdits(engineRef.current!, intent)}
-          interact={(x, y) => interactRef.current?.(x, y) ?? false}
+          interact={(x, y) => eventRouting.routeAt(x, y) || (interactRef.current?.(x, y) ?? false)}
           editing={gate.showEditing}
+        />
+      )}
+      {ready && <EventOverlay engine={engineRef.current} onSelect={eventRouting.routeById} />}
+      {ready && (
+        <EventPanel
+          event={eventRouting.panelEventId ? engineRef.current?.getEventById(eventRouting.panelEventId) ?? null : null}
+          phase={eventRouting.panelPhase === 'active' ? 'active' : 'trace'}
+          onClose={() => eventRouting.setPanelEventId(null)}
         />
       )}
       {interaction && (

@@ -7,6 +7,8 @@ export interface OverlayEngineSink {
   setTimeOfDay(t: number): void
   setWeather(state: { rain?: number; snow?: number; fog?: number }): void
   syncResidents(states: ResidentRenderState[]): void
+  /** S3b 事件披露:世界绝对时间透传(披露裁决的时间源) */
+  setSimNow(iso: string): void
 }
 
 export interface OverlayDriverOptions {
@@ -45,6 +47,7 @@ export class OverlayDriver {
   apply(overlay: SceneLifeOverlay): void {
     this.opts.engine.setTimeOfDay(mapSimTime(overlay.timeOfDay, overlay.simNow))
     this.opts.engine.setWeather(mapWeather(overlay.weather))
+    this.opts.engine.setSimNow(overlay.simNow)
     const states: ResidentRenderState[] = overlay.persons.map((person) => {
       const at = this.opts.resolveLocation(person.locationName) ?? this.opts.spawnFallback
       const key = `${at.x},${at.y},${at.z}`
