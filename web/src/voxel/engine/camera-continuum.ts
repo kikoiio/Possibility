@@ -12,7 +12,7 @@ import type { MotionPreference } from './motion-preference'
  * - reduced-motion:begin* 立即落定,无补间(F7)
  */
 
-export type ContinuumState = 'orbit' | 'landing' | 'walk' | 'lifting'
+export type ContinuumState = 'orbit' | 'landing' | 'walk' | 'lifting' | 'flying'
 
 export interface WalkPose {
   eye: { x: number; y: number; z: number }
@@ -50,7 +50,7 @@ function walkQuat(pose: WalkPose): THREE.Quaternion {
 }
 
 interface Tween {
-  kind: 'landing' | 'lifting'
+  kind: 'landing' | 'lifting' | 'flyto'
   t: number
   p0: THREE.Vector3
   ctrl: THREE.Vector3
@@ -66,7 +66,7 @@ export class ContinuumController {
   private tween: Tween | null = null
   private camera: THREE.PerspectiveCamera | null = null
   /** reduced-motion 直切的待返回结果(update 取一次) */
-  private pendingResult: 'landed' | 'lifted' | null = null
+  private pendingResult: 'landed' | 'lifted' | 'settled' | null = null
 
   constructor(private readonly motion: MotionPreference) {}
 
@@ -121,8 +121,8 @@ export class ContinuumController {
     this.currentState = 'lifting'
   }
 
-  /** 补间推进;完成时返回 'landed' | 'lifted' 供引擎交接,其余帧 null */
-  update(dt: number): 'landed' | 'lifted' | null {
+  /** 补间推进;完成时返回 'landed' | 'lifted' | 'settled' 供引擎交接,其余帧 null */
+  update(dt: number): 'landed' | 'lifted' | 'settled' | null {
     if (this.pendingResult) {
       const r = this.pendingResult
       this.pendingResult = null
@@ -132,16 +132,37 @@ export class ContinuumController {
     this.tween.t = Math.min(1, this.tween.t + (dt * 1000) / TWEEN_MS)
     this.applyTween(easeInOutCubic(this.tween.t))
     if (this.tween.t < 1) return null
-    const done = this.tween.kind === 'landing' ? 'landed' : 'lifted'
+    const done = this.tween.kind === 'landing' ? 'landed' : this.tween.kind === 'lifting' ? 'lifted' : 'settled'
     this.currentState = this.tween.kind === 'landing' ? 'walk' : 'orbit'
     this.tween = null
     this.camera = null
     return done
   }
 
+  /** S3b 事件披露(F6):orbit→orbit 飞向事件;fov 不变,完成返回 'settled' */
+  beginFlyTo(from: OrbitPose, to: OrbitPose): void {
+    if (this.currentState !== 'orbit') this.cancel()
+    if (this.motion.isReduced()) {
+      this.pendingResult = 'settled'
+      return
+    }
+    const p0 = orbitPosition(from)
+    const p1 = orbitPosition(to)
+    this.tween = {
+      kind: 'flyto', t: 0, p0, p1,
+      ctrl: this.controlPoint(p0, p1),
+      q0: lookQuat(p0, new THREE.Vector3(from.target.x, from.target.y, from.target.z)),
+      q1: lookQuat(p1, new THREE.Vector3(to.target.x, to.target.y, to.target.z)),
+      fov0: ORBIT_FOV, fov1: ORBIT_FOV,
+    }
+    this.camera = new THREE.PerspectiveCamera(ORBIT_FOV, 1, 0.1, 2000)
+    this.applyTween(0)
+    this.currentState = 'flying'
+  }
+
   /** 直切回最近稳定态(文档重载/反向指令) */
   cancel(): void {
-    if (this.currentState === 'landing') this.currentState = 'orbit'
+    if (this.currentState === 'landing' || this.currentState === 'flying') this.currentState = 'orbit'
     else if (this.currentState === 'lifting') this.currentState = 'walk'
     this.tween = null
     this.camera = null

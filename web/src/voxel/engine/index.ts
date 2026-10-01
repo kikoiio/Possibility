@@ -1,6 +1,7 @@
 import {
   createBlockRegistry, ensureAssetPlacementIds,
-  type BlockRegistry, type EditResult, type SectionKey, type StylePackRef, type VoxelDocument,
+  type BlockRegistry, type EditResult, type EventDisclosureState, type SectionKey, type StylePackRef,
+  type VoxelDocument, type WorldEvent,
 } from '@possibility/voxel-contract'
 import * as THREE from 'three'
 import { AmbientAnimator } from './ambient'
@@ -9,6 +10,7 @@ import { CameraRig, type OrbitPose } from './camera'
 import { findSpawnNear, WalkCameraStrategy } from './camera-walk'
 import { ContinuumController, type WalkPose } from './camera-continuum'
 import { DayNightCycle } from './day-night'
+import { EventDisclosure } from './event-disclosure'
 import { BuildFeedback } from './feedback'
 import { LightingEngine } from './lighting'
 import { DEFAULT_BAKE_ENV, Mesher, type AoParams, type BakeEnvironment } from './mesher'
@@ -117,6 +119,16 @@ export class VoxelEngine {
   /** 模式变化推送(S3a:滚轮驱动的落地/升空不经过 Viewport toggle,引擎主动通知) */
   onCameraModeChange: ((mode: 'orbit' | 'walk') => void) | null = null
 
+  // ── S3b 事件披露 ─────────────────────────────
+  /** 事件图标披露层;doc 无 events = null(零开销) */
+  disclosure: EventDisclosure | null = null
+  /** 文档事件快照(flyToEvent 寻址用) */
+  private eventList: WorldEvent[] = []
+  /** 世界绝对时间(ISO,bridge 透传);披露层未建也存,loadDocument 后回放 */
+  private simNow: string | null = null
+  /** 飞向事件补间的终点位姿(settled 时写回) */
+  private pendingFlyPose: OrbitPose | null = null
+
   mount(canvas: HTMLCanvasElement): void {
     this.canvas = canvas
     this.renderer.mount(canvas, () => this.cameraRig.camera)
@@ -174,6 +186,9 @@ export class VoxelEngine {
     this.weather?.dispose()
     this.residents?.dispose()
     this.feedback?.dispose()
+    this.disclosure?.dispose()
+    this.disclosure = null
+    this.eventList = []
     // S3b 风格包:先解析预设/微调并下发昼夜循环,后续初次烘焙即用新 bakeEnv
     this.styleRef = doc.style
     this.palette = resolvePalette(doc.theme, doc.style)
@@ -202,6 +217,17 @@ export class VoxelEngine {
     this.residents = new ResidentRenderer(this.renderer.scene, this.world, this.registry)
     this.picker = new Picker(this.world, this.assets)
     this.feedback = new BuildFeedback(this.renderer.scene, this.assets)
+    // S3b 事件披露:图标层装配(simNow 回放 + 初始档即裁决,首帧不出错档)
+    if (doc.events && doc.events.length > 0) {
+      this.eventList = doc.events
+      this.disclosure = new EventDisclosure({
+        scene: this.renderer.scene,
+        project: (at) => this.worldToScreen(at),
+      })
+      this.disclosure.setEvents(doc.events)
+      if (this.simNow) this.disclosure.setSimNow(this.simNow)
+      this.disclosure.setTier(this.zoomLod.tier)
+    }
     this.registerLightEmitters()
     this.applyParticleDensity() // 新建的 WeatherSystem 也需要 LOD 合成密度
   }
@@ -335,6 +361,55 @@ export class VoxelEngine {
     return this.zoomLod.tier
   }
 
+  // ── S3b 事件披露(F4/F5/F6/F8) ──────────────────
+
+  /** 飞向事件的目标刻度:close 档上沿、Z_ENTER 之下(保持 orbit 不触地) */
+  private static readonly FLY_TO_ZOOM = 0.78
+
+  /** 世界绝对时间下发(bridge OverlayDriver / e2e 探针) */
+  setSimNow(iso: string): void {
+    this.simNow = iso
+    this.disclosure?.setSimNow(iso)
+  }
+
+  /** F8 探针:各事件当前披露状态(无披露层 = []) */
+  getEventDisclosure(): EventDisclosureState[] {
+    return this.disclosure?.states() ?? []
+  }
+
+  /** 屏幕空间事件拾取(点击路由用;无命中 = null) */
+  pickEventAt(x: number, y: number): string | null {
+    return this.disclosure?.pickEvent(x, y) ?? null
+  }
+
+  /** F6:orbit 模式下相机平滑飞向事件并落入 close 档;walk/补间中拒绝 */
+  flyToEvent(id: string): boolean {
+    if (!this.disclosure || this.cameraRig.mode !== 'orbit' || this.continuum.state !== 'orbit') return false
+    const event = this.eventList.find((e) => e.id === id)
+    const from = this.cameraRig.getOrbitPose()
+    if (!event || !from) return false
+    const zoom = VoxelEngine.FLY_TO_ZOOM
+    const to: OrbitPose = {
+      theta: from.theta,
+      phi: from.phi,
+      distance: this.zoomAxis.distanceFromZoom(zoom),
+      target: { x: event.at.x + 0.5, y: event.at.y + 1.5, z: event.at.z + 0.5 },
+    }
+    this.pendingFlyPose = to
+    this.zoomAxis.freeze() // 补间期间输入忽略(与落地/升空一致)
+    this.continuum.beginFlyTo(from, to)
+    this.cameraRig.setTransition(this.continuum.transitionCamera)
+    return true
+  }
+
+  private finishFlyTo(): void {
+    const pose = this.pendingFlyPose
+    this.pendingFlyPose = null
+    this.cameraRig.setTransition(null)
+    if (pose) this.cameraRig.setOrbitPose(pose) // 完整位姿写回,与补间终点无跳变
+    this.zoomAxis.unfreeze(VoxelEngine.FLY_TO_ZOOM)
+  }
+
   // ── S3a continuum 链路(每帧 continuumTick 驱动) ──────────────────
 
   private continuumTick(dt: number): void {
@@ -345,8 +420,10 @@ export class VoxelEngine {
     const done = this.continuum.update(dt)
     if (done === 'landed') this.finishLanding()
     else if (done === 'lifted') this.finishLifting()
+    else if (done === 'settled') this.finishFlyTo()
 
     this.zoomLod.update(this.zoomAxis.value)
+    this.disclosure?.setTier(this.zoomLod.tier)
     // orbit 稳定态:距离由刻度驱动(对数映射)
     if (this.continuum.state === 'orbit' && this.cameraRig.mode === 'orbit') {
       this.cameraRig.orbitStrategy.setDistance(this.zoomAxis.distanceFromZoom(this.zoomAxis.value))
@@ -558,6 +635,7 @@ export class VoxelEngine {
     this.weather?.update(dt)
     this.residents?.update(dt)
     this.feedback?.update(dt)
+    this.disclosure?.update(dt)
   }
 
   stop(): void {
@@ -588,6 +666,8 @@ export * from './camera'
 export * from './camera-continuum'
 export * from './camera-walk'
 export * from './day-night'
+export * from './event-disclosure'
+export * from './event-icons'
 export * from './lighting'
 export * from './mesher'
 export * from './palette'

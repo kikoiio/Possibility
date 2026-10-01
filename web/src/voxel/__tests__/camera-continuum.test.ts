@@ -14,7 +14,7 @@ const walkPose = (): WalkPose => ({ eye: { x: 10.5, y: 2.6, z: 8.5 }, yaw: 0.3, 
 
 /** 逐步推进直到完成,返回最后一次 update 结果与期间捕获的相机 */
 function runToCompletion(c: ContinuumController, maxFrames = 200) {
-  let result: 'landed' | 'lifted' | null = null
+  let result: 'landed' | 'lifted' | 'settled' | null = null
   let lastCam = c.transitionCamera
   for (let i = 0; i < maxFrames && !result; i++) {
     result = c.update(1 / 60)
@@ -127,5 +127,44 @@ describe('ContinuumController 边界(T3)', () => {
     c.update(1 / 60)
     c.cancel()
     expect(c.state).toBe('walk')
+  })
+})
+
+describe('ContinuumController 飞向事件(S3b F6)', () => {
+  it('orbit→orbit 补间完成返回 settled,状态落定 orbit,fov 恒 35', () => {
+    const c = new ContinuumController(normalMotion())
+    const from = orbitPose()
+    const to: OrbitPose = { theta: from.theta, phi: from.phi, distance: 24, target: { x: 30.5, y: 4, z: 12.5 } }
+    c.beginFlyTo(from, to)
+    expect(c.state).toBe('flying')
+    expect(c.transitionCamera).not.toBeNull()
+    expect(c.transitionCamera!.fov).toBeCloseTo(35, 5)
+    const { result, lastCam } = runToCompletion(c)
+    expect(result).toBe('settled')
+    expect(c.state).toBe('orbit')
+    expect(c.transitionCamera).toBeNull()
+    // 终点 = 目标 orbit 球面位
+    const sinPhi = Math.sin(to.phi)
+    expect(lastCam!.position.x).toBeCloseTo(to.target.x + to.distance * sinPhi * Math.sin(to.theta), 3)
+    expect(lastCam!.position.y).toBeCloseTo(to.target.y + to.distance * Math.cos(to.phi), 3)
+    expect(lastCam!.position.z).toBeCloseTo(to.target.z + to.distance * sinPhi * Math.cos(to.theta), 3)
+  })
+
+  it('reduced-motion 直切:无过渡相机,update 取一次 settled', () => {
+    const c = new ContinuumController(reducedMotion())
+    c.beginFlyTo(orbitPose(), { ...orbitPose(), distance: 24 })
+    expect(c.state).toBe('orbit')
+    expect(c.transitionCamera).toBeNull()
+    expect(c.update(1 / 60)).toBe('settled')
+    expect(c.update(1 / 60)).toBeNull()
+  })
+
+  it('flying 中 cancel 回 orbit 稳定态', () => {
+    const c = new ContinuumController(normalMotion())
+    c.beginFlyTo(orbitPose(), { ...orbitPose(), distance: 24 })
+    c.update(1 / 60)
+    c.cancel()
+    expect(c.state).toBe('orbit')
+    expect(c.transitionCamera).toBeNull()
   })
 })
