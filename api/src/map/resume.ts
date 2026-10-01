@@ -6,14 +6,10 @@ import { readCurrentScene, type StoredSceneDocument } from '../scenes/repository
 
 export type MapMode = 'create' | 'life' | 'possibility'
 
-/** 场景文档的空间索引（2D v2 / 体素多空间包）；单空间场景返回 null */
+/** 场景文档的空间索引（体素多空间包）；单空间场景返回 null */
 function sceneSpaceIndex(document: StoredSceneDocument | undefined): { defaultSpaceId: string; spaceIds: string[] } | null {
   if (!document) return null
   if (isSerializedVoxelSpaces(document)) return { defaultSpaceId: document.defaultSpaceId, spaceIds: document.spaces.map((space) => space.id) }
-  if ('schemaVersion' in document && document.schemaVersion === 2) {
-    const v2 = document as unknown as import('@possibility/scene-contract').SceneDocumentV2
-    return { defaultSpaceId: v2.defaultSpaceId, spaceIds: v2.spaces.map((space) => space.id) }
-  }
   return null
 }
 

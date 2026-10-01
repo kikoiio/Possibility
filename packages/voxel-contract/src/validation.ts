@@ -136,9 +136,10 @@ export function validateDocument(doc: VoxelDocument, registry?: BlockRegistry, a
     }
   }
 
-  // 地点绑定：必须指向存在的物体
+  // 地点绑定:必须指向存在的物体或资产摆放(S1 起 GLB 资产也可承载地点)
+  const placementIds = new Set((doc.assetPlacements ?? []).map(p => p.id).filter(Boolean))
   for (const location of doc.locations) {
-    if (!doc.objects.some((o) => o.id === location.objectId)) {
+    if (!doc.objects.some((o) => o.id === location.objectId) && !placementIds.has(location.objectId)) {
       issues.push({ code: 'location-unbound', message: `location '${location.name}' binds to missing object '${location.objectId}'` })
     }
   }

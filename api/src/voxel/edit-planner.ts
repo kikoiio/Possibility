@@ -37,7 +37,8 @@ const isCoord = (v: unknown): v is VoxelCoord => {
 }
 const isRotation = (v: unknown): v is 0 | 90 | 180 | 270 => v === 0 || v === 90 || v === 180 || v === 270
 
-/** 严格解析编辑操作数组；结构不合法抛 EditPlannerError */
+/** 严格解析编辑操作数组；结构不合法抛 EditPlannerError。
+ *  LLM 边界容错:弱模型常把判别字段写成 type,归一为 kind 后再走严格校验(契约形状不变) */
 export function parseEditOperations(content: string): EditOperation[] {
   const root = extractJson(content) as { ops?: unknown }
   if (!Array.isArray(root.ops)) throw new EditPlannerError('缺少 ops 数组')
@@ -45,6 +46,13 @@ export function parseEditOperations(content: string): EditOperation[] {
   if (root.ops.length > 64) throw new EditPlannerError('ops 过多（>64）')
   return root.ops.map((raw, i): EditOperation => {
     const op = raw as Record<string, unknown>
+    if (op && op.kind === undefined) {
+      // 弱模型判别字段变种:kind / type / op(契约形状不变,仅 LLM 边界归一)
+      if (typeof op.type === 'string') op.kind = op.type
+      else if (typeof op.op === 'string') op.kind = op.op
+    }
+    // 弱模型操作名变种:place-block = set-block
+    if (op && op.kind === 'place-block') op.kind = 'set-block'
     const bad = (why: string): never => { throw new EditPlannerError(`ops[${i}] 不合法：${why}`) }
     switch (op?.kind) {
       case 'set-block':
@@ -53,13 +61,20 @@ export function parseEditOperations(content: string): EditOperation[] {
       case 'fill':
         if (!isCoord(op.from) || !isCoord(op.to) || typeof op.block !== 'string' || !op.block) return bad('fill 需要 from/to 与 block')
         return { kind: 'fill', from: op.from, to: op.to, block: op.block }
-      case 'place-object':
-        if (typeof op.objectType !== 'string' || !op.objectType || !isCoord(op.anchor) || !isRotation(op.rotation)) return bad('place-object 需要 objectType/anchor/rotation')
+      case 'place-object': {
+        // 弱模型常借用资产摆放的习惯:objectType 写成 assetId、rotation 用 0..3 四分之一圈
+        // (契约 rotation 只收 90 的倍数,1/2/3 只能解读为四分之一圈,归一安全)
+        const objectType = typeof op.objectType === 'string' && op.objectType ? op.objectType
+          : typeof op.assetId === 'string' && op.assetId ? op.assetId : null
+        const rawRotation = op.rotation === undefined ? 0 : op.rotation
+        const rotation = rawRotation === 1 || rawRotation === 2 || rawRotation === 3 ? rawRotation * 90 : rawRotation
+        if (!objectType || !isCoord(op.anchor) || !isRotation(rotation)) return bad('place-object 需要 objectType/anchor/rotation')
         return {
-          kind: 'place-object', objectType: op.objectType, anchor: op.anchor, rotation: op.rotation,
+          kind: 'place-object', objectType, anchor: op.anchor, rotation,
           ...(typeof op.objectId === 'string' && op.objectId ? { objectId: op.objectId } : {}),
           ...(typeof op.label === 'string' && op.label ? { label: op.label } : {}),
         }
+      }
       case 'move-object':
         if (typeof op.objectId !== 'string' || !op.objectId || !isCoord(op.anchor)) return bad('move-object 需要 objectId 与 anchor')
         return { kind: 'move-object', objectId: op.objectId, anchor: op.anchor }

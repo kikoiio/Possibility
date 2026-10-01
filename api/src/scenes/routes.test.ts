@@ -28,7 +28,7 @@ describe('scene HTTP routes', () => {
     const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
     const read = await scenesRoutes.request('/worlds/home-world/scene', { headers }, f.env)
     expect(await read.json()).toEqual({ status: 'missing' })
-    const save = await scenesRoutes.request('/worlds/home-world/scene/revisions', { method: 'POST', headers, body: JSON.stringify({ requestId: 'req-1', expectedVersion: 0, operations: [{ type: 'add_object', object: { id: 'bench-1', assetId: 'bench', position: { x: 1, y: 1 }, binding: null, label: null, purpose: null } }] }) }, f.env)
+    const save = await scenesRoutes.request('/worlds/home-world/scene/voxel-revision', { method: 'POST', headers, body: JSON.stringify({ requestId: 'req-1', expectedVersion: 0, document: voxelEnvelope() }) }, f.env)
     expect(save.status).toBe(200); expect(await save.json()).toMatchObject({ version: 1 })
     const current = await scenesRoutes.request('/worlds/home-world/scene', { headers }, f.env)
     expect(await current.json()).toMatchObject({ status: 'ready', version: 1 })

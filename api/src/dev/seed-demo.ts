@@ -2,83 +2,40 @@ import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { demoBaselines, persons, personStates, timelines, universeEvidence, users, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
 import type { PersonModel } from '../agent/types'
-import { contemporaryTheme, hashScene, type SceneDocument } from '@possibility/scene-contract'
+import { isSerializedVoxelSpaces, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { initialSceneStatements, isVoxelScenePayload, readCurrentScene } from '../scenes/repository'
-import { createMistManorScene } from '../demo/mist-manor-scene'
+import seedBundle from '../demo/mist-manor-voxel-spaces.json'
 
 /** spec 附录：演示世界「雾影庄」完整设定（D15：手写人物卡，不走蒸馏） */
 
 const WORLD_NAME = '雾影庄'
 
-const DEMO_LOCATIONS = [
-  { name: '大厅', assetId: 'home-small', position: { x: 2, y: 2 } },
-  { name: '书房', assetId: 'home-row', position: { x: 8, y: 2 } },
-  { name: '餐厅', assetId: 'cafe-corner', position: { x: 15, y: 2 } },
-  { name: '图书室', assetId: 'bookshop-small', position: { x: 22, y: 2 } },
-  { name: '温室花房', assetId: 'grocery-small', position: { x: 2, y: 10 } },
-  { name: '门房小屋', assetId: 'station-stop', position: { x: 8, y: 10 } },
-  { name: '后山散步道', assetId: 'park-pavilion', position: { x: 16, y: 10 } },
-] as const
-
-function demoScene(people: { id: string; name: string }[]): SceneDocument {
-  const objects: SceneDocument['objects'] = DEMO_LOCATIONS.map((location) => ({
-    id: `demo-location-${location.name}`,
-    assetId: location.assetId,
-    position: { ...location.position },
-    binding: { kind: 'location' as const, locationName: location.name },
-    label: location.name,
-    purpose: null,
-  }))
-  const personAssets = ['person-ada', 'person-bo', 'person-cora', 'person-dan', 'person-eli', 'person-faye']
-  const personCells = [{ x: 6, y: 7 }, { x: 12, y: 7 }, { x: 19, y: 7 }, { x: 25, y: 7 }, { x: 6, y: 16 }, { x: 12, y: 16 }]
-  people.slice(0, personAssets.length).forEach((person, index) => objects.push({
-    id: `demo-person-${person.id}`,
-    assetId: personAssets[index],
-    position: personCells[index],
-    binding: { kind: 'person' as const, personId: person.id },
-    label: person.name,
-    purpose: null,
-  }))
-  const terrain = Array.from({ length: 28 * 18 }, (_, index) => ({ x: index % 28, y: Math.floor(index / 28), assetId: 'terrain-grass' }))
-  const roadCells = Array.from({ length: 28 }, (_, x) => ({ x, y: 8 }))
-  return {
-    schemaVersion: 1, themeId: contemporaryTheme.id,
-    size: { columns: 28, rows: 18 }, version: 0,
-    terrain,
-    paths: [{ id: 'demo-road-middle', category: 'road', assetId: 'road-straight', cells: roadCells }],
-    objects, lockedObjectIds: [], lockedAreas: [],
-  }
+async function hashText(text: string): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 
+/** 演示场景（S2 起）：体素多空间包种子;2D 生成器已退役,非体素旧场景以种子包覆盖升级 */
 async function ensureDemoScene(db: Db, worldId: string) {
-  const members = await db.select({ id: persons.id, name: persons.name })
-    .from(worldPersons).innerJoin(persons, eq(worldPersons.personId, persons.id))
-    .where(eq(worldPersons.worldId, worldId)).all()
   const current = await readCurrentScene(db, worldId)
+  if (current && isVoxelScenePayload(current.document)) return
+  const bundle = seedBundle as unknown as SerializedVoxelSpaces
+  if (!isSerializedVoxelSpaces(bundle)) throw new Error('演示体素种子包损坏')
   if (!current) {
-    const statements = await initialSceneStatements(db, worldId, demoScene(members), `demo-scene-${worldId}`)
-    await db.batch(statements)
+    await db.batch(await initialSceneStatements(db, worldId, bundle, `demo-scene-${worldId}`))
+    return
   }
-  const latest = await readCurrentScene(db, worldId)
-  // 体素场景由 rebuild-scenes-voxel + 入库脚本管理，seed 不再用 2D 生成器覆盖
-  if (latest && isVoxelScenePayload(latest.document)) return
-  const states = await db.select({ personId: personStates.personId, location: personStates.location }).from(personStates)
-    .innerJoin(timelines, eq(personStates.timelineId, timelines.id)).where(eq(timelines.worldId, worldId)).all()
-  const locationByPerson = new Map(states.map(row => [row.personId, row.location]))
-  const document = createMistManorScene(members.map(person => ({ ...person, location: locationByPerson.get(person.id) })))
-  document.version = latest?.version ?? 0
-  if (latest && latest.contentHash === await hashScene(document)) return
-  const version = (latest?.version ?? 0) + 1
-  document.version = version
-  const contentHash = await hashScene(document)
+  const version = current.version + 1
   const now = new Date().toISOString()
   await db.batch([
     db.insert(worldSceneRevisions).values({
-      id: crypto.randomUUID(), worldId, version, parentVersion: latest?.version ?? null,
-      requestId: `mist-manor-scene-${worldId}-v${version}`, contentHash, documentJson: JSON.stringify(document),
-      summary: '升级为雾影庄外景与主楼室内连续地图', kind: 'theme-upgrade', createdAt: now,
+      id: crypto.randomUUID(), worldId, version, parentVersion: current.version,
+      requestId: `mist-manor-voxel-seed-${worldId}-v${version}`,
+      contentHash: await hashText(JSON.stringify({ document: bundle, version })),
+      documentJson: JSON.stringify(bundle),
+      summary: '体素场景种子包覆盖（2D 退役）', kind: 'voxel-seed', createdAt: now,
     }),
-    db.update(worldScenes).set({ currentVersion: version, themeId: document.themeId, updatedAt: now }).where(eq(worldScenes.worldId, worldId)),
+    db.update(worldScenes).set({ currentVersion: version, themeId: bundle.spaces[0]?.document.theme ?? 'mist-manor', updatedAt: now }).where(eq(worldScenes.worldId, worldId)),
   ])
 }
 

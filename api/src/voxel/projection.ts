@@ -41,6 +41,7 @@ const WINDOW_MS = 36 * 60 * 60 * 1000
 interface VoxelDocLike {
   locations?: { name: string; objectId: string }[]
   objects?: { id: string; anchor: VoxelCoord }[]
+  assetPlacements?: { id?: string; anchor: [number, number, number] }[]
 }
 
 function isVoxelDoc(doc: unknown): doc is VoxelDocLike {
@@ -49,6 +50,10 @@ function isVoxelDoc(doc: unknown): doc is VoxelDocLike {
 
 function locationResolver(doc: VoxelDocLike): (name: string) => VoxelCoord | null {
   const anchors = new Map((doc.objects ?? []).map(object => [object.id, object.anchor]))
+  // S1 起地点可绑定资产摆放(GLB 建筑):锚点取摆放 anchor
+  for (const placement of doc.assetPlacements ?? []) {
+    if (placement.id) anchors.set(placement.id, { x: placement.anchor[0], y: placement.anchor[1], z: placement.anchor[2] })
+  }
   const bindings = new Map((doc.locations ?? []).map(binding => [binding.name, binding.objectId]))
   return (name) => {
     const objectId = bindings.get(name)

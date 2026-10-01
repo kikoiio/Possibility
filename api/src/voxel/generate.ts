@@ -1,8 +1,8 @@
 import {
-  applyEdits, clampStyleRef, clampTerrainParams, createEmptyWorld, deserialize, generateTerrain,
-  serialize, validateDocument, validateWalkability, writeTerrainCells,
+  applyEdits, assetFootprintCells, clampStyleRef, clampTerrainParams, createBlockRegistry, createEmptyWorld, deserialize, generateTerrain,
+  getBlock, getObjectTemplate, serialize, validateDocument, validateWalkability, writeTerrainCells,
   type AssetManifest, type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
-  type TerrainParams, type VoxelDocument, type WorldTerrainMeta,
+  type TerrainParams, type VoxelCoord, type VoxelDocument, type WorldTerrainMeta,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { EditPlannerError, parseEditOperations, type CompleteFn } from './edit-planner'
@@ -13,6 +13,15 @@ export class WorldGeneratorError extends Error {
     super(message)
     this.name = 'WorldGeneratorError'
   }
+}
+
+/** 可行走性 issue → 给 LLM 的修复方向(坐标已在 detail 里) */
+const WALK_HINTS: Record<string, string> = {
+  'walk-clearance': '把门洞/走廊/通道正上方的方块挖掉或整体抬高,保证每个通行格上方连续 2 格是空气',
+  'walk-connectivity': '检查被水/墙/围栏围死的区域,铺路或开门让室外能走到每个地点',
+  'walk-stairs': '超过 1 格的高差处放台阶/楼梯,不要让人跳坎',
+  'walk-gap': '把地面的坑洞/缺口填平或绕开,通行路径不能断',
+  'walk-lighting': '室内/洞穴等封闭通行区域放发光方块(灯笼等)照明',
 }
 
 interface GeneratedWorldPayload {
@@ -78,8 +87,100 @@ function allocateSeed(): number {
   return buf[0] & 0x7fffffff
 }
 
+/**
+ * 生成后归一:整体悬空的物体/资产摆放逐格沉降直到落地(支撑规则与 validation 一致)。
+ * 弱模型常把 anchor.y 放错(尤其带 terrain 时地面不在 y=0);意图显然是落地,与其烧重试不如确定性修复。
+ */
+export function settleFloatingObjects(doc: VoxelDocument, assets?: AssetManifest): { document: VoxelDocument; settled: string[] } {
+  const registry = createBlockRegistry(doc.theme)
+  const settled = new Set<string>()
+  let next = doc
+  const hasSupport = (cells: VoxelCoord[]): boolean => {
+    if (cells.length === 0) return true
+    const minY = Math.min(...cells.map(c => c.y))
+    const own = new Set(cells.map(c => `${c.x},${c.y},${c.z}`))
+    return cells.filter(c => c.y === minY).some(c => {
+      if (c.y === 0) return true
+      const below = { x: c.x, y: c.y - 1, z: c.z }
+      if (own.has(`${below.x},${below.y},${below.z}`)) return false
+      return !!registry.get(getBlock(next, below))?.solid
+    })
+  }
+  for (const object of doc.objects) {
+    for (let guard = 0; guard < doc.size.height; guard++) {
+      const entry = next.objectCells.find(c => c.objectId === object.id)
+      if (!entry || hasSupport(entry.cells)) break
+      const current = next.objects.find(o => o.id === object.id)!
+      if (current.anchor.y <= 0) break
+      next = applyEdits(next, [{ kind: 'move-object', objectId: object.id, anchor: { ...current.anchor, y: current.anchor.y - 1 } }]).document
+      settled.add(object.id)
+    }
+  }
+  if (assets && next.assetPlacements && next.assetPlacements.length > 0) {
+    const placements = next.assetPlacements.map((placement, index) => {
+      const entry = assets.assets[placement.assetId]
+      if (!entry) return placement
+      let current = placement
+      for (let guard = 0; guard < doc.size.height; guard++) {
+        const anchor = { x: current.anchor[0], y: current.anchor[1], z: current.anchor[2] }
+        if (anchor.y <= 0 || hasSupport(assetFootprintCells(entry, anchor, current.rotation))) break
+        current = { ...current, anchor: [anchor.x, anchor.y - 1, anchor.z] }
+        settled.add(current.id ?? `${current.assetId}#${index}`)
+      }
+      return current
+    })
+    next = { ...next, assetPlacements: placements }
+  }
+  return { document: next, settled: [...settled] }
+}
+
+/**
+ * 物体重叠的确定性避让(2D resolveObjectOverlaps 的体素版):
+ * 地点绑定物体优先保持原位;冲突物体在同层按曼哈顿距离就近搜索空位;找不到则保留原状交给校验重试。
+ */
+export function resolveObjectOverlaps(doc: VoxelDocument): { document: VoxelDocument; moved: string[] } {
+  const bound = new Set(doc.locations.map(l => l.objectId))
+  const key = (c: VoxelCoord) => `${c.x},${c.y},${c.z}`
+  const occupied = new Map<string, string>()
+  const moved: string[] = []
+  let next = doc
+  const ordered = [...doc.objects].sort((a, b) => Number(bound.has(b.id)) - Number(bound.has(a.id)))
+  for (const object of ordered) {
+    const entry = next.objectCells.find(c => c.objectId === object.id)
+    const template = getObjectTemplate(object.objectType)
+    if (!entry || !template) continue
+    const claim = () => { for (const c of next.objectCells.find(c => c.objectId === object.id)?.cells ?? []) occupied.set(key(c), object.id) }
+    if (!entry.cells.some(c => occupied.has(key(c)))) { claim(); continue }
+    const minX = Math.min(...template.cells.map(c => c.offset.x)), maxX = Math.max(...template.cells.map(c => c.offset.x))
+    const minY = Math.min(...template.cells.map(c => c.offset.y)), maxY = Math.max(...template.cells.map(c => c.offset.y))
+    const minZ = Math.min(...template.cells.map(c => c.offset.z)), maxZ = Math.max(...template.cells.map(c => c.offset.z))
+    let spot: VoxelCoord | null = null
+    const maxR = Math.max(doc.size.width, doc.size.depth)
+    outer: for (let r = 1; r <= maxR && !spot; r++) {
+      for (let dx = -r; dx <= r && !spot; dx++) {
+        for (let dz = -r; dz <= r && !spot; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue
+          const ax = object.anchor.x + dx, az = object.anchor.z + dz
+          if (ax + minX < 0 || ax + maxX >= doc.size.width || az + minZ < 0 || az + maxZ >= doc.size.depth) continue
+          if (object.anchor.y + minY < 0 || object.anchor.y + maxY >= doc.size.height) continue
+          const cells = template.cells.map(t => ({ x: ax + t.offset.x, y: object.anchor.y + t.offset.y, z: az + t.offset.z }))
+          if (cells.some(c => occupied.has(key(c)))) continue
+          spot = { x: ax, y: object.anchor.y, z: az }
+          break outer
+        }
+      }
+    }
+    if (spot) {
+      next = applyEdits(next, [{ kind: 'move-object', objectId: object.id, anchor: spot }]).document
+      moved.push(object.id)
+    }
+    claim()
+  }
+  return { document: next, moved }
+}
+
 /** 把 LLM 的建造脚本组装成 VoxelDocument（S3b:地形参数先铺地,再应用建筑 ops） */
-export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id: string): VoxelDocument {
+export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id: string, assets?: AssetManifest): VoxelDocument {
   const size = payload.size
   if (!size || !Number.isInteger(size.width) || !Number.isInteger(size.height) || !Number.isInteger(size.depth)) {
     throw new WorldGeneratorError('缺少合法的 size')
@@ -110,21 +211,75 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
   if (Array.isArray(payload.ops)) {
     ops.push(...parseEditOperations(JSON.stringify({ ops: payload.ops })))
   }
+  // 弱模型常把库内资产(GLB)当 place-object 输出:objectType 不是物体模板但命中资产清单时,
+  // 确定性改写为 place-asset(角度制 → 四分之一圈);地点绑定若指向它,后续绑定校验会带名反馈重试
+  if (assets) {
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+      if (op.kind === 'place-object' && !getObjectTemplate(op.objectType) && assets.assets[op.objectType]) {
+        ops[i] = {
+          kind: 'place-asset', assetId: op.objectType, anchor: op.anchor,
+          rotation: (op.rotation / 90) as 0 | 1 | 2 | 3,
+          ...(op.objectId ? { placementId: op.objectId } : {}),
+        }
+      }
+      // 反向同样常见:物体模板 id 写进了 assetPlacements(四分之一圈 → 角度制)
+      if (op.kind === 'place-asset' && !assets.assets[op.assetId] && getObjectTemplate(op.assetId)) {
+        ops[i] = {
+          kind: 'place-object', objectType: op.assetId, anchor: op.anchor,
+          rotation: (op.rotation * 90) as 0 | 90 | 180 | 270,
+          ...(op.placementId ? { objectId: op.placementId } : {}),
+        }
+      }
+    }
+  }
   if (Array.isArray(payload.placements)) {
     throw new WorldGeneratorError('字段 placements 已改名为 assetPlacements（GLB 资产摆放，形状 {assetId, anchor, rotation?, seed?}），请用新字段名重新返回')
   }
   if (Array.isArray(payload.assetPlacements)) {
     ops.push(...assetPlacementOps(payload.assetPlacements))
   }
+  // 模型臆造的 objectType(既非模板也非资产):丢弃该 op;装饰少一件无感,
+  // 若有地点绑定到它,下方绑定校验会带名反馈走重试链
+  const knownOps = ops.filter(op => op.kind !== 'place-object' || !!getObjectTemplate(op.objectType))
 
   let doc = createEmptyWorld({ width, height, depth }, theme, id)
+  const terrainPlacementIds = new Set<string>()
   try {
     if (terrainMeta) {
       const generated = generateTerrain(doc.size, terrainMeta.params)
       doc = writeTerrainCells(doc, generated.cells).document
-      if (generated.assetPlacements.length > 0) doc = { ...doc, assetPlacements: generated.assetPlacements }
+      if (generated.assetPlacements.length > 0) {
+        for (const p of generated.assetPlacements) { if (p.id) terrainPlacementIds.add(p.id) }
+        doc = { ...doc, assetPlacements: generated.assetPlacements }
+      }
     }
-    doc = applyEdits(doc, ops).document
+    doc = applyEdits(doc, knownOps).document
+    doc = resolveObjectOverlaps(doc).document
+    doc = settleFloatingObjects(doc, assets).document
+    // 摆放冲突的确定性裁决:物体(承载地点绑定)> 模型显式摆放 > 地形撒布,后到者让位丢弃。
+    // 装饰少一件无感,烧一轮 16k token 的重试太贵;物体重叠已先行确定性避让,实在避不开才留给校验重试
+    if (assets && doc.assetPlacements && doc.assetPlacements.length > 0) {
+      const cellsOf = (p: (typeof doc.assetPlacements)[number]): string[] => {
+        const entry = assets.assets[p.assetId]
+        if (!entry) return []
+        return assetFootprintCells(entry, { x: p.anchor[0], y: p.anchor[1], z: p.anchor[2] }, p.rotation)
+          .map(c => `${c.x},${c.y},${c.z}`)
+      }
+      const occupied = new Set(doc.objectCells.flatMap(o => o.cells.map(c => `${c.x},${c.y},${c.z}`)))
+      const kept: typeof doc.assetPlacements = []
+      const prioritized = [
+        ...doc.assetPlacements.filter(p => !terrainPlacementIds.has(p.id ?? '')),
+        ...doc.assetPlacements.filter(p => terrainPlacementIds.has(p.id ?? '')),
+      ]
+      for (const p of prioritized) {
+        const cells = cellsOf(p)
+        if (cells.some(c => occupied.has(c))) continue
+        for (const c of cells) occupied.add(c)
+        kept.push(p)
+      }
+      doc = { ...doc, assetPlacements: kept }
+    }
   } catch (error) {
     throw new WorldGeneratorError(`建造脚本应用失败：${error instanceof Error ? error.message : String(error)}`)
   }
@@ -132,12 +287,19 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
   if (styleRef) doc = { ...doc, style: styleRef }
 
   const objectIds = new Set(doc.objects.map((o) => o.id))
+  const placementIds = new Set((doc.assetPlacements ?? []).map(p => p.id).filter((v): v is string => Boolean(v)))
   const locations: LocationBinding[] = []
   if (Array.isArray(payload.locations)) {
     for (const raw of payload.locations) {
       const l = raw as Record<string, unknown>
       if (typeof l?.name !== 'string' || !l.name || typeof l.objectId !== 'string') continue
-      if (!objectIds.has(l.objectId)) throw new WorldGeneratorError(`地点「${l.name}」绑定了不存在的物体 ${l.objectId}`)
+      if (!objectIds.has(l.objectId) && !placementIds.has(l.objectId)) {
+        throw new WorldGeneratorError(
+          `地点「${l.name}」绑定了不存在的物体 ${l.objectId}。locations 可绑定 place-object 的物体`
+          + `（${doc.objects.map(o => o.id).join('、') || '无'}）或 assetPlacements 的资产摆放 id`
+          + `（${[...placementIds].join('、') || '无'}）`,
+        )
+      }
       locations.push({ name: l.name, objectId: l.objectId })
     }
   }
@@ -177,7 +339,7 @@ export async function generateWorld(
     const content = await deps.complete(messages)
     let doc: VoxelDocument
     try {
-      doc = assembleWorld(extractPayload(content), theme, id)
+      doc = assembleWorld(extractPayload(content), theme, id, deps.assets)
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
       lastIssues = []
@@ -194,7 +356,10 @@ export async function generateWorld(
     }
     lastIssues = issues
     const detail = issues.slice(0, 6).map((i) => `${i.code}${i.at ? `@(${i.at.x},${i.at.y},${i.at.z})` : ''}: ${i.message}`).join('；')
-    messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界未通过契约校验：${detail}。请修正后重新返回完整世界 JSON。` }]
+    // 可行走性语义错误给弱模型可操作的修复方向(机械错误已被确定性归一拦截,到这里的都是布局问题)
+    const hints = [...new Set(issues.map(i => WALK_HINTS[i.code]).filter((h): h is string => Boolean(h)))]
+    const hintText = hints.length > 0 ? `修复方向:${hints.join('；')}。` : ''
+    messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界未通过契约校验：${detail}。${hintText}请修正后重新返回完整世界 JSON。` }]
   }
   throw new WorldGeneratorError(
     lastIssues.length > 0

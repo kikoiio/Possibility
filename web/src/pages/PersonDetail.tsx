@@ -213,9 +213,9 @@ export default function PersonDetail() {
 
       {tab === 'timelines' && (
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-6">
-          {mainTimeline && (
+          {mainTimeline && detail.world && (
             <button
-              onClick={() => navigate(`/timelines/${mainTimeline.id}`)}
+              onClick={() => navigate(`/worlds/${detail.world!.id}?timeline=${mainTimeline.id}`)}
               className="w-full rounded-xl border border-dashed border-ink-faint bg-sheet p-4 text-left text-sm text-ink-soft"
             >
               ＋ 创建一个 What-if 分叉…
@@ -236,9 +236,11 @@ export default function PersonDetail() {
                   <p className="mt-0.5 text-xs text-ink-faint">时间：{t.simNow.slice(0, 16).replace('T', ' ')}</p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
-                  <Link to={`/timelines/${t.id}`} className="text-xs text-ink-soft underline">
-                    事件流
-                  </Link>
+                  {detail.world && (
+                    <Link to={`/worlds/${detail.world.id}?timeline=${t.id}`} className="text-xs text-ink-soft underline">
+                      世界地图
+                    </Link>
+                  )}
                   <button
                     onClick={() => {
                       setSearchParams(t.parentTimelineId === null ? {} : { timeline: t.id })

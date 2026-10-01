@@ -84,7 +84,7 @@ export default function Home() {
             {activeTimelines.map((t) => (
               <Link
                 key={t.id}
-                to={`/timelines/${t.id}`}
+                to={`/worlds/${t.worldId}?timeline=${t.id}`}
                 className="block rounded-xl border border-ink-line bg-sheet px-4 py-3"
               >
                 <div className="flex items-center gap-2">

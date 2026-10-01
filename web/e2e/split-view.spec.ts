@@ -184,7 +184,7 @@ test.describe('S1 入口(F6)', () => {
   test('TimelineSwitcher「分屏比较」导航到分屏', async ({ page }) => {
     const errors = watchErrors(page)
     await stubSplitApis(page)
-    await page.goto('/worlds/world-1?view=text&timeline=timeline-main')
+    await page.goto('/worlds/world-1?timeline=timeline-main')
     // 文字视图秒级时钟高频重渲染,按钮易被重建;dispatchEvent 绕过可动性检查
     await page.getByRole('button', { name: /主宇宙 ▾|平行宇宙 ▾/ }).dispatchEvent('click')
     await page.getByTestId('split-view-entry').click()
@@ -196,7 +196,7 @@ test.describe('S1 入口(F6)', () => {
   test('ComparePanel「分屏查看」带上左右选择导航', async ({ page }) => {
     const errors = watchErrors(page)
     await stubSplitApis(page)
-    await page.goto('/worlds/world-1?view=text&timeline=timeline-main')
+    await page.goto('/worlds/world-1?timeline=timeline-main')
     await page.getByRole('button', { name: '对照宇宙' }).click()
     await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible()
     await page.getByTestId('compare-split-entry').click()

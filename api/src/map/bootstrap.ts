@@ -1,5 +1,4 @@
 import { and, eq } from 'drizzle-orm'
-import type { SceneDocumentAny } from '@possibility/scene-contract'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { readCurrentScene } from '../scenes/repository'
 import { worldSnapshot } from '../worlds/queries'
@@ -25,7 +24,7 @@ export interface WorldPresentation {
 export interface MapBootstrap {
   access: WorldCapabilities
   world: Awaited<ReturnType<typeof worldSnapshot>>
-  scene: { status: 'ready' | 'legacy'; document: SceneDocumentAny | SerializedVoxelDocument | SerializedVoxelSpaces } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
+  scene: { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
   presentation: WorldPresentation
   theme: { id: string; assetVersion: string }
   resume: { worldId: string; timelineId: string; spaceId: string; mode: 'create' | 'life' | 'possibility'; updatedAt: string }
@@ -42,7 +41,7 @@ function timeOfDay(simNow: string): WorldPresentation['timeOfDay'] {
 
 /** Read-only bootstrap; it never advances the simulation or writes a scene revision. */
 export async function loadMapBootstrap(db: Db, worldId: string, userId: string, timelineId?: string): Promise<MapBootstrap | null> {
-  return loadMapBootstrapForAccess(db, worldId, { kind: 'user', userId, username: '', ownerId: userId }, timelineId)
+  return loadMapBootstrapForAccess(db, worldId, { kind: 'user', userId, username: '', role: 'user', ownerId: userId }, timelineId)
 }
 
 export async function loadMapBootstrapForAccess(db: Db, worldId: string, access: AccessContext, timelineId?: string): Promise<MapBootstrap | null> {
@@ -56,10 +55,8 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
   let scene: MapBootstrap['scene']
   try {
     const stored = await readCurrentScene(db, worldId)
-    // 体素信封没有 schemaVersion/themeId，按 ready 直出；格式由客户端按信封识别（N12 路由不变）
-    scene = !stored ? { status: 'missing' } : 'schemaVersion' in stored.document && stored.document.schemaVersion === 1
-      ? { status: 'legacy', document: stored.document }
-      : { status: 'ready', document: stored.document }
+    // S2 起存储层只剩体素系负载,格式由客户端按信封识别
+    scene = !stored ? { status: 'missing' } : { status: 'ready', document: stored.document }
   } catch {
     scene = { status: 'unavailable', retryable: true }
   }
@@ -97,9 +94,8 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
     presentation,
     theme: {
       id: scene.status === 'missing' || scene.status === 'unavailable' ? 'contemporary-daily-life'
-        : 'themeId' in scene.document ? scene.document.themeId
-          : 'theme' in scene.document ? scene.document.theme
-            : scene.document.spaces[0]?.document.theme ?? 'mist-manor',
+        : 'theme' in scene.document ? scene.document.theme
+          : scene.document.spaces[0]?.document.theme ?? 'mist-manor',
       assetVersion: 'current',
     },
     resume: { worldId, timelineId: defaultTimelineId, spaceId, mode, updatedAt: preference?.updatedAt ?? new Date().toISOString() },

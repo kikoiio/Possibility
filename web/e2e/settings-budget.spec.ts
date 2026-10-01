@@ -119,7 +119,7 @@ test.describe('S3 世界级 LLM 覆盖(AC6)', () => {
       return route.fulfill({ json: worldConfig })
     })
 
-    await page.goto('/worlds/world-1?view=text&timeline=timeline-main')
+    await page.goto('/worlds/world-1?timeline=timeline-main')
     await page.getByRole('button', { name: 'LLM', exact: true }).dispatchEvent('click')
     const panel = page.getByTestId('world-llm-config')
     await expect(panel).toBeVisible()

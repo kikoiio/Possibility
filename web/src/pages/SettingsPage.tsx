@@ -1,10 +1,24 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, settingsApi, type BudgetSettings, type LlmSettings } from '../api/client'
+
+/** S4 提供方预设:选中填 baseUrl+建议模型,不碰 Key;自定义 = 手填 */
+const PROVIDER_PRESETS = [
+  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5' },
+  { id: 'custom', label: '自定义', baseUrl: '', model: '' },
+] as const
+type PresetId = (typeof PROVIDER_PRESETS)[number]['id']
+
+function presetOf(baseUrl: string): PresetId {
+  const hit = PROVIDER_PRESETS.find(p => p.id !== 'custom' && p.baseUrl === baseUrl.trim())
+  return hit?.id ?? 'custom'
+}
 
 /** 设置页(F5/S3):全局 BYOK LLM 配置 + 全局日预算。Key 只写不读,掩码回显。 */
 export default function SettingsPage() {
   const [llm, setLlm] = useState<LlmSettings | null>(null)
   const [budget, setBudget] = useState<BudgetSettings | null>(null)
+  const [preset, setPreset] = useState<PresetId>('custom')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -13,12 +27,16 @@ export default function SettingsPage() {
   const [llmMsg, setLlmMsg] = useState('')
   const [budgetMsg, setBudgetMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  // 用户已动手(预设/输入)后,迟到的 getLlm 回填不得覆盖
+  const touched = useRef(false)
 
   useEffect(() => {
     settingsApi.getLlm().then((data) => {
       setLlm(data)
+      if (touched.current) return
       setBaseUrl(data.baseUrl ?? '')
       setModel(data.model ?? '')
+      setPreset(presetOf(data.baseUrl ?? ''))
     }).catch(() => setLlmMsg('配置读取失败'))
     settingsApi.getBudget().then((data) => {
       setBudget(data)
@@ -90,6 +108,16 @@ export default function SettingsPage() {
 
   const inputCls = 'w-full rounded-xl border border-ink-faint px-3 py-2 text-sm outline-none focus:border-ink-soft'
 
+  function applyPreset(next: PresetId) {
+    touched.current = true
+    setPreset(next)
+    const found = PROVIDER_PRESETS.find(p => p.id === next)
+    if (!found || next === 'custom') return
+    setBaseUrl(found.baseUrl)
+    // 建议模型:当前为空或仍是其他预设的建议值时跟随,用户手填过的不覆盖
+    if (!model.trim() || PROVIDER_PRESETS.some(p => p.id !== 'custom' && p.model === model.trim())) setModel(found.model)
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
       <div>
@@ -102,13 +130,23 @@ export default function SettingsPage() {
         <p className="text-xs text-ink-faint">配置后,全部 LLM 调用(世界推进、对话、分叉)都走你的 Key;留空则回落平台兜底。</p>
         {llm?.hasKey && <p className="text-xs text-ink-soft">当前 Key:{llm.keyPreview}(仅显示末 4 位;输入新 Key 即替换)</p>}
         <form onSubmit={saveLlm} className="space-y-3">
+          <div className="text-sm text-ink-soft">提供方
+            <div className="mt-1.5 flex gap-2" data-testid="llm-preset">
+              {PROVIDER_PRESETS.map(p => (
+                <button key={p.id} type="button" onClick={() => applyPreset(p.id)} aria-pressed={preset === p.id}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs ${preset === p.id ? 'border-ink bg-ink text-white' : 'border-ink-faint text-ink-soft'}`}
+                  data-testid={`llm-preset-${p.id}`}>{p.label}</button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-faint">须 OpenAI 兼容协议（/chat/completions）;Anthropic 等不兼容的提供方需经兼容代理。</p>
+          </div>
           <label className="block text-sm text-ink-soft">端点 baseUrl(OpenAI 兼容)
             <input className={inputCls} placeholder="https://api.example.com/v1" value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)} data-testid="llm-baseurl" />
+              onChange={(e) => { touched.current = true; setBaseUrl(e.target.value); setPreset(presetOf(e.target.value)) }} data-testid="llm-baseurl" />
           </label>
           <label className="block text-sm text-ink-soft">模型
-            <input className={inputCls} placeholder="例如 claude-sonnet-4-5 / gpt-5" value={model}
-              onChange={(e) => setModel(e.target.value)} data-testid="llm-model" />
+            <input className={inputCls} placeholder="例如 deepseek-chat / gpt-5" value={model}
+              onChange={(e) => { touched.current = true; setModel(e.target.value) }} data-testid="llm-model" />
           </label>
           <label className="block text-sm text-ink-soft">API Key
             <input className={inputCls} type="password" placeholder={llm?.hasKey ? `当前 ${llm.keyPreview}` : 'sk-…'}

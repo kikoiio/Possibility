@@ -13,7 +13,11 @@ export async function resolveWorldScope(db: Db, access: AccessContext, worldId: 
   const ownsWorld = access.kind === 'user' ? world.userId === access.userId
     : access.kind === 'guest' ? world.id === access.worldId && world.userId === access.ownerId
       : false
-  const capabilities = capabilitiesFor(access, { isPublicBaseline, ownsWorld })
+  const capabilities = capabilitiesFor(access, {
+    isPublicBaseline,
+    ownsWorld,
+    adminDemoOwner: access.kind === 'user' && access.role === 'admin' && world.isDemo && world.userId === access.userId,
+  })
   if (!capabilities.observe) return null
   return { world, baselineId: baseline?.id ?? null, isPublicBaseline, ownsWorld, capabilities }
 }

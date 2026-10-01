@@ -13,7 +13,7 @@ export function scopedUserMiddleware(guestRouteAllowed: (method: string, path: s
     }).catch(() => null)
     if (!access || access.kind === 'anonymous') return c.json({ error: '未登录或访客体验已失效' }, 401)
     if (access.kind === 'user') {
-      c.set('user', { id: access.userId, username: access.username })
+      c.set('user', { id: access.userId, username: access.username, role: access.role })
       await next()
       return
     }
@@ -24,7 +24,7 @@ export function scopedUserMiddleware(guestRouteAllowed: (method: string, path: s
     if (requestedWorldId !== access.worldId || !guestRouteAllowed(c.req.method.toUpperCase(), c.req.path, access.worldId)) {
       return c.json({ error: '访客无权访问此接口或世界' }, 404)
     }
-    c.set('user', { id: access.ownerId, username: '访客' })
+    c.set('user', { id: access.ownerId, username: '访客', role: 'user' })
     await next()
   })
 }

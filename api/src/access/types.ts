@@ -8,6 +8,7 @@ export interface UserAccessContext {
   kind: 'user'
   userId: string
   username: string
+  role: 'admin' | 'user'
   ownerId: string
 }
 

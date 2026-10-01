@@ -34,6 +34,7 @@ async function readWithD1ContentionRetry<T>(read: () => Promise<T>): Promise<T> 
 export interface AuthUser {
   id: string
   username: string
+  role: 'admin' | 'user'
 }
 
 export interface AuthVariables {
@@ -55,7 +56,7 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: AuthV
     const user = await readWithD1ContentionRetry(() => db.select().from(users).where(eq(users.id, session.userId)).get())
     if (!user) return c.json({ error: '用户不存在' }, 401)
 
-    c.set('user', { id: user.id, username: user.username })
+    c.set('user', { id: user.id, username: user.username, role: user.role === 'admin' ? 'admin' : 'user' })
     await next()
   },
 )

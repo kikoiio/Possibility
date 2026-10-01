@@ -3,7 +3,7 @@ import {
   type SerializedVoxelSpaces, type VoxelDocument,
 } from '@possibility/voxel-contract'
 
-/** 体素渲染特性开关（T30）：?voxel=1 或 localStorage possibility:flag:voxel=1；T37 退役已取消，开关长期保留 */
+/** 体素渲染特性开关（T30）：?voxel=1 或 localStorage possibility:flag:voxel=1；S1 起产品页按文档形状直渲,本开关不再门控,仅留 dev 用途 */
 export function isVoxelEnabled(): boolean {
   if (typeof window === 'undefined') return false
   try {

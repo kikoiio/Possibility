@@ -272,10 +272,11 @@ export interface WorldSnapshot {
   voxelEvents?: VoxelWorldEvent[]
 }
 
-export type { SceneDocument, SceneOperation, ScenePatchPreview, SceneLifeOverlay, SceneChangeSet }
+export type { SceneLifeOverlay }
 export interface SceneDraftWorld { name: string; description: string; locations: LocationDef[] }
-export interface SceneDraftResponse { world: SceneDraftWorld; scene: SceneDocument; explanation: string; warnings: string[] }
-export type SceneReadResponse = { status: 'missing' } | { status: 'ready'; document: SceneDocument; version: number; contentHash: string; createdAt: string }
+/** S1 体素创建:骨架 + 单空间体素信封草稿 */
+export interface VoxelSceneDraftResponse { world: SceneDraftWorld; document: SerializedVoxelDocument; explanation: string; warnings: string[] }
+export type SceneReadResponse = { status: 'missing' } | { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }
 
 export interface PublicUniverseEvidence {
   level: 'unassessed' | 'complete' | 'upgradeable' | 'incomplete'
@@ -460,5 +461,5 @@ export interface ReturnBrief {
   timelineId: string; simNow: string; firstVisit: boolean; cursor: number
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
 }
-import type { SceneDocument, SceneOperation, ScenePatchPreview, SceneLifeOverlay, SceneChangeSet } from '@possibility/scene-contract'
-import type { WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'
+import type { SceneLifeOverlay } from '@possibility/scene-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'

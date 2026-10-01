@@ -147,8 +147,8 @@ import type {
   ReturnBrief,
   TimelineComparison,
 } from './types'
-import type { SceneChangeSet, SceneDocument, SceneOperation, SceneDraftResponse, SceneReadResponse } from './types'
-import type { SerializedVoxelDocument } from '@possibility/voxel-contract'
+import type { SceneReadResponse, VoxelSceneDraftResponse } from './types'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
 
@@ -192,7 +192,7 @@ export const chatApi = {
 
 export const worldsApi = {
   draft: (prompt: string) => apiFetch<WorldDraft>('/api/worlds/draft', { method: 'POST', body: JSON.stringify({ prompt }) }),
-  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[]; scene?: SceneDocument; sceneRequestId?: string }) =>
+  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[]; scene?: SerializedVoxelDocument | SerializedVoxelSpaces; sceneRequestId?: string }) =>
     apiFetch<{ id: string; timelineId: string }>('/api/worlds', { method: 'POST', body: JSON.stringify(payload) }),
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
   snapshot: (worldId: string, timelineId?: string) =>
@@ -265,17 +265,14 @@ export const demoApi = {
 }
 
 export const worldSceneApi = {
-  draft: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<SceneDraftResponse>('/api/scene-drafts', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
-  draftPreview: (draft: SceneDocument, instruction: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; changes: SceneChangeSet }; documentPreview: SceneDocument; world: unknown }>('/api/scene-drafts/edit-preview', { method: 'POST', body: JSON.stringify({ draft, instruction, personIds, requestId }) }),
+  // S1 体素创建:提示词 → 世界骨架 + 体素草稿信封(S2 起唯一创建通道)
+  draftVoxel: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<VoxelSceneDraftResponse>('/api/scene-drafts/voxel', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
   get: (worldId: string) => apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`),
-  legacyPreview: (worldId: string, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; explanation: string; warnings: string[] }>(`/api/worlds/${worldId}/scene/legacy-preview`, { method: 'POST', body: JSON.stringify({ requestId }) }),
-  legacyConfirm: (worldId: string, document: SceneDocument, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/legacy-confirm`, { method: 'POST', body: JSON.stringify({ document, requestId }) }),
-  editPreview: (worldId: string, instruction: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ preview: { requestId: string; baseVersion: number; summary: string; operations: SceneOperation[]; warnings: string[]; result: SceneDocument; changes: SceneChangeSet } }>(`/api/worlds/${worldId}/scene/edit-preview`, { method: 'POST', body: JSON.stringify({ instruction, expectedVersion, requestId }) }),
-  commit: (worldId: string, expectedVersion: number, requestId: string, operations: SceneOperation[], kind = 'edit') => apiFetch<{ document: SceneDocument; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/revisions`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, operations, kind }) }),
   // S2b:体素整文档保存通道（T10 服务端 voxel-revision 端点）
-  commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument) => apiFetch<{ document: SerializedVoxelDocument; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document }) }),
+  commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument | SerializedVoxelSpaces, spaceId?: string) => apiFetch<{ document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document, ...(spaceId ? { spaceId } : {}) }) }),
+  regenerateDemo: (worldId: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number; document: SerializedVoxelSpaces }>(`/api/worlds/${worldId}/scene/voxel-regenerate`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId }) }),
   history: (worldId: string) => apiFetch<{ revisions: { version: number; parentVersion: number | null; summary: string; kind: string; createdAt: string }[] }>(`/api/worlds/${worldId}/scene/revisions`),
-  restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ document: SceneDocument; version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
+  restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
 }
 
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */

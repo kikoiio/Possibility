@@ -23,7 +23,7 @@ export async function resolveAccessContext(
     if (!session || session.expiresAt <= now.toISOString()) throw new AccessCredentialError('expired', '登录会话已过期，请重新登录', 401)
     const user = await db.select().from(users).where(eq(users.id, session.userId)).get()
     if (!user) throw new AccessCredentialError('invalid', '登录用户不存在', 401)
-    return { kind: 'user', userId: user.id, username: user.username, ownerId: user.id }
+    return { kind: 'user', userId: user.id, username: user.username, role: user.role === 'admin' ? 'admin' : 'user', ownerId: user.id }
   }
 
   const token = credentials.guestToken?.trim()

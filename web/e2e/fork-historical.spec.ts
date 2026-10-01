@@ -50,8 +50,8 @@ async function stubHistoryApis(page: Page, opts: { checkOk?: boolean } = {}): Pr
 }
 
 async function openForkDialog(page: Page) {
-  await page.goto('/worlds/world-1?view=text&timeline=timeline-main')
-  // 文字视图秒级时钟高频重渲染,按钮易被重建;dispatchEvent 绕过可动性检查
+  await page.goto('/worlds/world-1?timeline=timeline-main')
+  // 画布头部按钮在渲染帧中可能被重建;dispatchEvent 绕过可动性检查
   await page.getByRole('button', { name: /主宇宙 ▾|平行宇宙 ▾/ }).dispatchEvent('click')
   await page.getByTestId('fork-entry').dispatchEvent('click')
   await expect(page.getByRole('dialog', { name: '创建平行宇宙' })).toBeVisible()

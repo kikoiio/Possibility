@@ -55,7 +55,7 @@ function poseNearlyEqual(a: OrbitPose, b: OrbitPose): boolean {
 }
 
 /**
- * 体素视口（T30）：替换 WorldCanvasViewport 的挂载点。
+ * 体素视口（T30）：世界页唯一渲染挂载点（2D 视口已于 S2 退役）。
  * 引擎装配 + N4 分阶段加载进度 + 覆盖层/交互/编辑的桥接。
  */
 export default function VoxelViewport({
@@ -122,8 +122,12 @@ export default function VoxelViewport({
           resolveLocation: (name) => {
             const binding = doc.locations.find((l) => l.name === name)
             const object = binding ? doc.objects.find((o) => o.id === binding.objectId) : null
-            if (!object || !engine.world || !engine.registry) return null
-            return nearestStandable(engine.world, engine.registry, { x: object.anchor.x, y: object.anchor.y + 1, z: object.anchor.z })
+            // S1 起地点可绑定资产摆放(GLB 建筑):物体查不到时取摆放锚点
+            const placement = !object && binding
+              ? (doc.assetPlacements ?? []).find((p) => p.id === binding.objectId) : null
+            const anchor = object?.anchor ?? (placement ? { x: placement.anchor[0], y: placement.anchor[1], z: placement.anchor[2] } : null)
+            if (!anchor || !engine.world || !engine.registry) return null
+            return nearestStandable(engine.world, engine.registry, { x: anchor.x, y: anchor.y + 1, z: anchor.z })
           },
           spawnFallback: { x: Math.floor(doc.size.width / 2), y: 1, z: Math.floor(doc.size.depth / 2) },
           // S4 环境漫步:可站立校正 + reduced-motion 降级(日程驱动移动优先,见 OverlayDriver)

@@ -65,7 +65,7 @@ export interface AssetPlacement {
 
 export interface LocationBinding {
   name: string                      // '主楼' | '庭院' | '温室'
-  objectId: string                  // 绑到哪个物体
+  objectId: string                  // 绑到哪个物体;S1 起也可是资产摆放(placement)id(GLB 建筑可承载地点)
 }
 
 export interface SpaceEntry {       // 多空间（F19）

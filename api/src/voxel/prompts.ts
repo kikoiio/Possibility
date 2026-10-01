@@ -110,7 +110,7 @@ export const WORLD_GEN_SPEC = `返回 JSON 对象：
   "spaceEntries": [ {"spaceId":"空间id","label":"进入主楼 →","at":{...}} ],
   "lockedObjectIds": ["承载地点的建筑 objectId"]
 }
-硬约束：世界尺寸 width/depth ≤ 64、height ≤ 32；terrain 与 style 整个可选——省略 terrain 时用 groundBlock 铺 y=0 一整层平地（一个 fill 操作），省略 style 时用默认氛围；需要起伏/河流/植被时优先用 terrain 参数表达，不要用大量 fill 硬堆地形；带 terrain 的世界基准地面在 y=3、水面在 y=3；优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点必须由 ops 中的 place-object 建筑承载并登记 locations（assetPlacements 不支持地点绑定）；主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
+硬约束：世界尺寸 width/depth ≤ 64、height ≤ 32；terrain 与 style 整个可选——省略 terrain 时用 groundBlock 铺 y=0 一整层平地（一个 fill 操作），省略 style 时用默认氛围；需要起伏/河流/植被时优先用 terrain 参数表达，不要用大量 fill 硬堆地形；带 terrain 的世界基准地面在 y=3、水面在 y=3；优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点登记进 locations，objectId 可指向 ops 中 place-object 的 objectId，也可指向 assetPlacements 里 GLB 建筑的 placementId（S1 起支持）；主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；世界必须可行走——居民要能走到每个地点：任何供人通行的格子（门洞、走廊、桥、拱下）其上方必须留出至少 2 格空气，墙体/屋顶不要压在通道头顶，地面不要留缺口；每个地点绑定的物体旁边必须留有可站立的空地，且经平地/台阶与室外连通——不要把地点建筑孤立在水面中央、围栏闭环或高台之上；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
 
 export function buildWorldGeneratorMessages(sceneDescription: string, theme: string, assets?: AssetManifest): ChatMessage[] {
   const catalog = assetCatalogSummary(assets)

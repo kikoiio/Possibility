@@ -110,15 +110,16 @@ describe('generateWorld（mock LLM 三态）', () => {
     expect(doc.spaceEntries).toHaveLength(1)
   })
 
-  it('重试通过：首次悬空物体，带 issue 重试后成功', async () => {
+  it('重试通过：首次未知方块，带 issue 重试后成功', async () => {
     let call = 0
     const doc = await generateWorld('庭院加灯笼', 'mist-manor', {
       complete: async () => {
         call += 1
         if (call === 1) {
+          // 未知方块不可确定性修复,走重试链(悬空/重叠自 S1 起已被沉降/避让归一,不再触发重试)
           return JSON.stringify({
             size: { width: 16, height: 16, depth: 16 },
-            ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
+            ops: [{ kind: 'fill', from: { x: 2, y: 1, z: 2 }, to: { x: 3, y: 1, z: 3 }, block: 'ectoplasm' }],
           })
         }
         return JSON.stringify({
@@ -136,7 +137,7 @@ describe('generateWorld（mock LLM 三态）', () => {
     await expect(generateWorld('坏世界', 'mist-manor', {
       complete: async () => JSON.stringify({
         size: { width: 16, height: 16, depth: 16 },
-        ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 4, y: 9, z: 4 }, rotation: 0, objectId: 'lamp' }],
+        ops: [{ kind: 'fill', from: { x: 2, y: 1, z: 2 }, to: { x: 3, y: 1, z: 3 }, block: 'ectoplasm' }],
       }),
       id: 'gen-3',
     })).rejects.toMatchObject({ name: 'WorldGeneratorError' })

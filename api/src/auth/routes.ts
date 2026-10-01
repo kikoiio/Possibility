@@ -43,11 +43,12 @@ authRoutes.post('/register', async (c) => {
     id: crypto.randomUUID(),
     username: parsed.username,
     passwordHash: await hashPassword(parsed.password),
+    role: 'user',
     createdAt: new Date().toISOString(),
   }
   await db.insert(users).values(user)
   const token = await createSession(db, user.id)
-  return c.json({ token, user: { id: user.id, username: user.username } })
+  return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
 })
 
 authRoutes.post('/login', async (c) => {
@@ -60,7 +61,7 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: '用户名或密码错误' }, 401)
   }
   const token = await createSession(db, user.id)
-  return c.json({ token, user: { id: user.id, username: user.username } })
+  return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
 })
 
 authRoutes.post('/logout', authMiddleware, async (c) => {

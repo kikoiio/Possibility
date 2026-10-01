@@ -1,4 +1,4 @@
-import type { SceneDocumentAny } from '@possibility/scene-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import type { WorldSnapshot } from './types'
 
 export interface WorldCapabilities {
@@ -20,7 +20,7 @@ export interface WorldPresentation {
   locations: { name: string; description: string; residentCount: number }[]
   signals: { eventId: string; locationName: string; kind: 'movement' | 'gathering' | 'conversation' | 'environment'; emphasis: 'ambient' | 'noticeable' }[]
 }
-export type MapScene = { status: 'ready' | 'legacy'; document: SceneDocumentAny } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
+export type MapScene = { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
 export interface MapBootstrap {
   access: WorldCapabilities
   world: WorldSnapshot

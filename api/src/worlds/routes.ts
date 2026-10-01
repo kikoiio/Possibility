@@ -4,8 +4,11 @@ import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
 import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
-import { contemporaryTheme, validateScene } from '@possibility/scene-contract'
-import type { SceneDocument } from '@possibility/scene-contract'
+import {
+  deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
+  type SerializedVoxelDocument,
+} from '@possibility/voxel-contract'
+import { libraryManifest } from '../voxel/library-manifest'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { buildWorldForkBrief, WORLD_PREVIEW_SYSTEM } from '../life/fork-preview'
@@ -65,7 +68,7 @@ worldsRoutes.post('/draft', async (c) => {
 /** 确认创建世界：骨架 + 选定 1-6 人物 → 世界/关联/主线/初始状态，直接开跑 */
 worldsRoutes.post('/', async (c) => {
   const body = await c.req
-    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; scene?: SceneDocument; sceneRequestId?: string }>()
+    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; scene?: SerializedVoxelDocument; sceneRequestId?: string }>()
     .catch(() => null)
   const name = body?.name?.trim()
   const description = body?.description?.trim()
@@ -77,11 +80,26 @@ worldsRoutes.post('/', async (c) => {
   if (locations.length < 5 || locations.length > 8) return c.json({ error: '地点需 5-8 个' }, 400)
   if (personIds.length < 1 || personIds.length > 6) return c.json({ error: '人物需 1-6 个' }, 400)
   if (body.scene) {
-    const validation = validateScene(body.scene, contemporaryTheme)
-    if (!validation.ok || !body.sceneRequestId) return c.json({ error: '场景草稿无效或缺少创建请求标识', issues: validation.issues }, 400)
-    const boundLocations = new Set(body.scene.objects.flatMap(o => o.binding?.kind === 'location' ? [o.binding.locationName] : []))
-    const boundPersons = new Set(body.scene.objects.flatMap(o => o.binding?.kind === 'person' ? [o.binding.personId] : []))
-    if (boundLocations.size !== locations.length || locations.some(l => !boundLocations.has(l.name)) || boundPersons.size !== personIds.length || personIds.some(id => !boundPersons.has(id))) return c.json({ error: '场景绑定必须与世界地点或居民完全一致' }, 400)
+    if (!body.sceneRequestId) return c.json({ error: '场景草稿缺少创建请求标识' }, 400)
+    if (isSerializedVoxelDocument(body.scene)) {
+      // S1 体素创建:信封 → 反序列化 → 契约+可行走性校验(含资产清单) → 地点绑定覆盖 → 归一化落库
+      let doc
+      try {
+        doc = ensureAssetPlacementIds(deserialize(JSON.stringify(body.scene)))
+      } catch (error) {
+        return c.json({ error: `体素场景无法解析:${error instanceof Error ? error.message : String(error)}` }, 400)
+      }
+      const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
+      if (issues.length > 0) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 400)
+      const boundLocations = new Set(doc.locations.map(l => l.name))
+      if (boundLocations.size !== locations.length || locations.some(l => !boundLocations.has(l.name))) {
+        return c.json({ error: '体素场景地点绑定必须与世界地点完全一致' }, 400)
+      }
+      body.scene = JSON.parse(serialize(doc)) as SerializedVoxelDocument
+    } else {
+      // S2:2D 场景文档已退役,不再接受
+      return c.json({ error: '2D 场景已退役，请使用体素创建流程' }, 410)
+    }
   }
 
   const db = createDb(c.env.DB)

@@ -11,7 +11,7 @@ describe('world access policy', () => {
     const baseline = await resolveWorldScope(fixture.db, { kind: 'anonymous' }, 'home-world')
     expect(baseline?.capabilities).toMatchObject({ observe: true, participate: false, editScene: false })
     // 登录用户（含非物主）同样可观察公共基线，但不可写
-    const loggedIn = await resolveWorldScope(fixture.db, { kind: 'user', userId: 'other', username: 'other', ownerId: 'other' }, 'home-world')
+    const loggedIn = await resolveWorldScope(fixture.db, { kind: 'user', userId: 'other', username: 'other', role: 'user', ownerId: 'other' }, 'home-world')
     expect(loggedIn?.capabilities).toMatchObject({ observe: true, participate: false, editScene: false, fork: false })
     expect(capabilitiesFor({ kind: 'guest', sessionId: 's', ownerId: 'owner', worldId: 'home-world', generation: 0, expiresAt: '2099' }, { isPublicBaseline: false, ownsWorld: true }))
       .toMatchObject({ participate: true, editScene: false, fork: true, resetDemo: true })

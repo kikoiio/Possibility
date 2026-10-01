@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { mistManorTheme, type SceneDocumentV2, type SceneLifeOverlay } from '@possibility/scene-contract'
-import { deserialize, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { useNavigate } from 'react-router-dom'
+import { type SceneLifeOverlay } from '@possibility/scene-contract'
+import { deserialize, serialize, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import type { WorldSnapshot } from '../../api/types'
-import { clearToken, demoApi, lifeApi, mapApi, worldsApi } from '../../api/client'
-import { WorldCanvasViewport } from '../scene/WorldCanvasViewport'
-import { projectSpace, projectTheme } from '../../world/sceneProjection'
+import { clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
 import { buildSceneOverlay } from '../../scene/life/overlay'
 import VoxelViewport from '../../voxel/VoxelViewport'
-
-const projectedTheme = projectTheme(mistManorTheme)
 const tourSteps = [
   ['discover-event', '发现事件：选择正在发生变化的地点。'],
   ['inspect-person', '认识居民：选择一位人物查看其活动。'],
@@ -31,18 +27,15 @@ function loadTourProgress(worldId: string): TourStep[] {
   } catch { return [] }
 }
 
-export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true }: { scene?: SceneDocumentV2; voxelSpaces?: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean }) {
+/** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
+export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, editable = false }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; editable?: boolean }) {
   const navigate = useNavigate()
-  const [search, setSearch] = useSearchParams()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string }[]>([])
   const [sceneLocation, setSceneLocation] = useState<string | null>(null)
   useEffect(() => setLiveSnapshot(snapshot), [snapshot])
-  const voxelMode = !!voxelSpaces && voxelSpaces.spaces.length > 0
-  const [spaceId, setSpaceIdState] = useState(() => {
-    if (voxelSpaces) return voxelSpaces.spaces.some(space => space.id === initialSpaceId) ? initialSpaceId! : voxelSpaces.defaultSpaceId
-    return scene!.spaces.some(space => space.id === initialSpaceId) ? initialSpaceId! : scene!.defaultSpaceId
-  })
+  const [spaceId, setSpaceIdState] = useState(() =>
+    voxelSpaces.spaces.some(space => space.id === initialSpaceId) ? initialSpaceId! : voxelSpaces.defaultSpaceId)
   const [selected, setSelected] = useState<string | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [tourDone, setTourDone] = useState<TourStep[]>(() => loadTourProgress(snapshot.world.id))
@@ -53,6 +46,36 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
   const [compare, setCompare] = useState<{ facts: number; states: number; events: number } | null>(null)
   const [actionError, setActionError] = useState('')
   const [timelineBusy, setTimelineBusy] = useState(false)
+  const [editDoc, setEditDoc] = useState<import('@possibility/voxel-contract').VoxelDocument | null>(null)
+  const [editVersion, setEditVersion] = useState<number | null>(null)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  async function regenerateDemo() {
+    if (!editable || !liveSnapshot.world.isDemo || regenerating || !window.confirm('重新生成所有演示空间？当前场景将保留在历史版本中。')) return
+    setRegenerating(true); setSaveError('')
+    try {
+      const current = await worldSceneApi.get(liveSnapshot.world.id)
+      const version = current.status === 'ready' ? current.version : 0
+      await worldSceneApi.regenerateDemo(liveSnapshot.world.id, version)
+      window.location.reload()
+    } catch (error) { setSaveError(error instanceof Error ? error.message : '重新生成失败') }
+    finally { setRegenerating(false) }
+  }
+  async function saveSpace(next: import('@possibility/voxel-contract').VoxelDocument) {
+    if (!editable || saveBusy) return
+    setSaveBusy(true); setSaveError('')
+    try {
+      const current = await worldSceneApi.get(liveSnapshot.world.id)
+      const version = editVersion ?? (current.status === 'ready' ? current.version : 0)
+      const bundle = current.status === 'ready' && 'spaces' in current.document ? current.document : voxelSpaces
+      const nextBundle = { ...bundle, spaces: bundle.spaces.map(space => space.id === spaceId ? { ...space, document: JSON.parse(serialize(next)) as SerializedVoxelDocument } : space) }
+      const saved = await worldSceneApi.commitVoxel(liveSnapshot.world.id, version, crypto.randomUUID(), nextBundle, spaceId)
+      setEditVersion(saved.version)
+      setEditDoc(null)
+    } catch (error) { setSaveError(error instanceof Error ? error.message : '空间保存失败') }
+    finally { setSaveBusy(false) }
+  }
   async function switchTimeline(nextId: string) {
     if (nextId === liveSnapshot.currentTimelineId || timelineBusy) return
     setTimelineBusy(true); setActionError('')
@@ -65,7 +88,6 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
     } catch { setActionError('时间线切换失败；当前宇宙仍可继续浏览。') }
     finally { setTimelineBusy(false) }
   }
-  function openTextView() { search.set('view', 'text'); setSearch(search) }
   useEffect(() => {
     if (guest) return
     let active = true
@@ -74,10 +96,8 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
     }).catch(() => {})
     return () => { active = false }
   }, [guest])
-  const projected = useMemo(() => (voxelMode ? null : projectSpace(scene!, spaceId)), [voxelMode, scene, spaceId])
-  // 体素模式：当前空间文档（空间切换 → 换文档重挂载视口）
+  // 体素模式:当前空间文档(空间切换 → 换文档重挂载视口)
   const voxelDoc = useMemo(() => {
-    if (!voxelSpaces) return null
     const space = voxelSpaces.spaces.find(item => item.id === spaceId) ?? voxelSpaces.spaces[0]
     try {
       return deserialize(JSON.stringify(space.document))
@@ -85,20 +105,16 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
       return null
     }
   }, [voxelSpaces, spaceId])
-  const voxelObject = voxelMode && selected ? voxelDoc?.objects.find(object => object.id === selected) ?? null : null
-  const selectedObject = !voxelMode && selected ? projected?.objects.find(object => object.id === selected) ?? null : null
-  const locationName = voxelMode
-    ? (voxelObject?.binding?.kind === 'location' ? voxelObject.binding.locationName : voxelDoc?.locations.find(item => item.objectId === selected)?.name ?? null)
-    : (selectedObject?.binding?.kind === 'location' ? selectedObject.binding.locationName : null)
-  const personId = voxelMode
-    ? (voxelObject?.binding?.kind === 'person' ? voxelObject.binding.personId : selectedPersonId)
-    : (selectedObject?.binding?.kind === 'person' ? selectedObject.binding.personId : null)
+  const voxelObject = selected ? voxelDoc?.objects.find(object => object.id === selected) ?? null : null
+  const locationName = voxelObject?.binding?.kind === 'location'
+    ? voxelObject.binding.locationName
+    : voxelDoc?.locations.find(item => item.objectId === selected)?.name ?? null
+  const personId = voxelObject?.binding?.kind === 'person' ? voxelObject.binding.personId : selectedPersonId
   const person = personId ? liveSnapshot.locationBoard.flatMap(row => row.persons.map(item => ({ ...item, location: row.location }))).find(item => item.id === personId) : null
   const location = locationName ? liveSnapshot.world.locations.find(item => item.name === locationName) : null
   const people = locationName ? liveSnapshot.locationBoard.find(row => row.location === locationName)?.persons ?? [] : []
   const currentOverlay = useMemo(() => buildSceneOverlay(liveSnapshot, liveSnapshot.currentTimelineId) ?? overlay, [liveSnapshot, overlay])
-  const inside = spaceId === 'main-house-interior'
-  const spaceName = voxelMode ? voxelSpaces?.spaces.find(item => item.id === spaceId)?.name ?? '' : (inside ? '主楼室内' : '山间外景')
+  const spaceName = voxelSpaces.spaces.find(item => item.id === spaceId)?.name ?? ''
   const nextTourStep = tourOrder.find(step => !tourDone.includes(step))
   const tourIndex = nextTourStep ? tourOrder.indexOf(nextTourStep) : tourOrder.length
   function markTour(milestone: TourStep) {
@@ -111,22 +127,12 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
   function selectObject(objectId: string | null) {
     setSelected(objectId)
     setSelectedPersonId(null)
-    if (voxelMode) {
-      const object = objectId ? voxelDoc?.objects.find(item => item.id === objectId) : null
-      if (object?.binding?.kind === 'person') markTour('inspect-person')
-      const boundLocation = object?.binding?.kind === 'location'
-        ? object.binding.locationName
-        : (objectId ? voxelDoc?.locations.find(item => item.objectId === objectId)?.name : undefined)
-      if (boundLocation && liveSnapshot.events.some(event => event.location === boundLocation)) markTour('discover-event')
-      return
-    }
-    const object = projected?.objects.find(item => item.id === objectId)
+    const object = objectId ? voxelDoc?.objects.find(item => item.id === objectId) : null
     if (object?.binding?.kind === 'person') markTour('inspect-person')
-    if (object?.binding?.kind === 'location') {
-      const locationName = object.binding.locationName
-      const hasEvent = liveSnapshot.events.some(event => event.location === locationName)
-      if (hasEvent) markTour('discover-event')
-    }
+    const boundLocation = object?.binding?.kind === 'location'
+      ? object.binding.locationName
+      : (objectId ? voxelDoc?.locations.find(item => item.objectId === objectId)?.name : undefined)
+    if (boundLocation && liveSnapshot.events.some(event => event.location === boundLocation)) markTour('discover-event')
   }
   /** 体素模式：直接点中行走的居民（无需物体绑定） */
   function selectResident(personId: string) {
@@ -168,38 +174,38 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
     finally { setBusy(false) }
   }
   return <main className="relative h-full min-h-screen overflow-hidden bg-[#dfe8df]" data-testid="guest-world-map">
-    {voxelMode && voxelDoc
+    {voxelDoc
       ? <VoxelViewport
-          document={voxelDoc}
+          document={editDoc ?? voxelDoc}
           overlay={currentOverlay}
+          editable={editable}
+          onSave={saveSpace}
           events={liveSnapshot.voxelEvents ?? null}
           personNames={Object.fromEntries(liveSnapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name])))}
-          onEnterSpace={(next) => { if (voxelSpaces?.spaces.some(space => space.id === next)) { setSpaceId(next); setSelected(null); setSelectedPersonId(null) } }}
+          onEnterSpace={(next) => { if (voxelSpaces.spaces.some(space => space.id === next)) { setSpaceId(next); setSelected(null); setSelectedPersonId(null) } }}
           onSelectLocation={(_name, objectId) => selectObject(objectId)}
           onSelectPerson={selectResident}
         />
-      : <WorldCanvasViewport scene={projected!} theme={projectedTheme} mode="life" overlay={currentOverlay} selectedId={selected} onSelect={selectObject} edgeToEdge />}
+      : <div className="grid h-full place-items-center text-sm text-[#718075]">空间场景暂时不可用。</div>}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
-        {guest ? <div className="flex items-center gap-2"><button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button><a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">登录并保存</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={openTextView} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">文字世界视图</button><button onClick={() => setTourOpen(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">重新开启导览</button></div></details></div> : <div className="flex items-center gap-2"><select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => event.target.value === '__new__' ? navigate('/worlds/new') : navigate(`/worlds/${encodeURIComponent(event.target.value)}`)} className="max-w-40 rounded-full border border-white/45 bg-[#263a31]/70 px-3 py-2 text-xs text-white"><option value={liveSnapshot.world.id}>{liveSnapshot.world.name}</option>{worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} className="text-[#263a31]">{world.name}</option>)}<option value="__new__" className="text-[#263a31]">创建世界</option></select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={openTextView} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">文字世界视图</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
+        {guest ? <div className="flex items-center gap-2"><button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button><a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">登录并保存</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => setTourOpen(true)} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">重新开启导览</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => event.target.value === '__new__' ? navigate('/worlds/new') : navigate(`/worlds/${encodeURIComponent(event.target.value)}`)} className="max-w-40 rounded-full border border-white/45 bg-[#263a31]/70 px-3 py-2 text-xs text-white"><option value={liveSnapshot.world.id}>{liveSnapshot.world.name}</option>{worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} className="text-[#263a31]">{world.name}</option>)}<option value="__new__" className="text-[#263a31]">创建世界</option></select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
       </header>
       <div className="pointer-events-auto absolute left-3 top-24 flex gap-2 sm:left-5">
-        {voxelMode
-          ? voxelSpaces!.spaces.filter(space => space.id !== spaceId).map(space => (
-              <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-white/70 bg-[#f8faf6]/92 px-4 py-2 text-xs font-medium text-[#385142] shadow-md backdrop-blur-md">{space.name} →</button>
-            ))
-          : <button onClick={() => { setSpaceId(inside ? 'exterior' : 'main-house-interior'); setSelected(null) }} className="rounded-full border border-white/70 bg-[#f8faf6]/92 px-4 py-2 text-xs font-medium text-[#385142] shadow-md backdrop-blur-md">{inside ? '← 返回庭院' : '进入主楼 →'}</button>}
+        {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (
+          <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-white/70 bg-[#f8faf6]/92 px-4 py-2 text-xs font-medium text-[#385142] shadow-md backdrop-blur-md">{space.name} →</button>
+        ))}
         <span className="rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-2 text-[10px] text-[#5a6e61] shadow-sm">{new Date(liveSnapshot.simNow).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
         {liveSnapshot.timelines.length > 1 && <label className="flex items-center gap-1 rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-1 text-[10px] text-[#5a6e61] shadow-sm">宇宙<select aria-label="切换时间线" data-testid="timeline-switcher" disabled={timelineBusy} value={liveSnapshot.currentTimelineId} onChange={event => void switchTimeline(event.target.value)} className="bg-transparent text-[#385142] outline-none">{liveSnapshot.timelines.map(timeline => <option key={timeline.id} value={timeline.id}>{timeline.parentTimelineId ? `分支 ${timeline.id.slice(0, 6)}` : '原来的发展'}{timeline.id === forkId ? ' · 新' : ''}</option>)}</select>{timelineBusy && <span>切换中…</span>}</label>}
       </div>
       <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 rounded-full border border-white/40 bg-[#253b31]/60 p-1 text-[11px] text-white shadow-md backdrop-blur-md">
         {([['observe', '观察'], ['life', '在场'], ['possibility', '可能']] as const).map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => setMapMode(value)} className={`rounded-full px-3 py-1.5 ${mode === value ? 'bg-white text-[#30483a]' : 'text-white/80'}`}>{label}</button>)}
       </nav>
-      {(selectedObject || locationName || person) && <section className="pointer-events-auto absolute right-3 top-24 w-[min(21rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
-        <div className="flex items-start justify-between gap-2"><div><p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">{person ? '居民' : '地点'}</p><h1 className="mt-0.5 font-story text-lg">{person?.name ?? locationName ?? selectedObject?.label}</h1></div><button aria-label="关闭信息" onClick={() => setSelected(null)} className="rounded-full px-2 text-lg text-[#718075]">×</button></div>
+      {(voxelObject || locationName || person) && <section className="pointer-events-auto absolute right-3 top-24 w-[min(21rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
+        <div className="flex items-start justify-between gap-2"><div><p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">{person ? '居民' : '地点'}</p><h1 className="mt-0.5 font-story text-lg">{person?.name ?? locationName ?? voxelObject?.label}</h1></div><button aria-label="关闭信息" onClick={() => setSelected(null)} className="rounded-full px-2 text-lg text-[#718075]">×</button></div>
         {person && <><p className="mt-2 text-xs text-[#68796d]">现在在{person.location} · {person.activity}</p><div className="mt-4 flex gap-2"><button onClick={() => setSceneLocation(person.location)} className="rounded-full bg-[#315641] px-3 py-2 text-xs text-white">以访客身份进入</button><button onClick={() => setSelected(null)} className="rounded-full border border-[#ccd7cf] px-3 py-2 text-xs">继续观察</button></div></>}
-        {locationName && <><p className="mt-2 text-xs leading-relaxed text-[#68796d]">{location?.description ?? '雾影庄中的一处空间。'}</p><p className="mt-3 border-t border-[#dce3de] pt-3 text-xs">此刻在这里：{people.length ? people.map(item => `${item.name}（${item.activity}）`).join('、') : '暂时没有居民'}</p><button onClick={() => setSceneLocation(locationName)} className="mt-4 rounded-full bg-[#315641] px-4 py-2 text-xs text-white">进入此地点</button>{selectedObject?.id === 'main-manor' && !inside && <button onClick={() => { setSpaceId('main-house-interior'); setSelected(null) }} className="ml-2 rounded-full border border-[#ccd7cf] px-4 py-2 text-xs">查看室内</button>}</>}
+        {locationName && <><p className="mt-2 text-xs leading-relaxed text-[#68796d]">{location?.description ?? '庄园中的一处空间。'}</p><p className="mt-3 border-t border-[#dce3de] pt-3 text-xs">此刻在这里：{people.length ? people.map(item => `${item.name}（${item.activity}）`).join('、') : '暂时没有居民'}</p><button onClick={() => setSceneLocation(locationName)} className="mt-4 rounded-full bg-[#315641] px-4 py-2 text-xs text-white">进入此地点</button></>}
       </section>}
       {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
         <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">改变一个条件</p><h2 className="mt-1 font-story text-lg">如果匿名信更早被发现</h2><p className="mt-2 text-xs leading-relaxed text-[#68796d]">共同过去保持不变，从当前世界时刻创建另一条真实时间线。对照只说明两个宇宙记录到的差异。</p>
@@ -213,6 +219,7 @@ export function GuestWorldMap({ scene, voxelSpaces, snapshot, overlay, initialSp
       </aside> : <button onClick={() => setTourOpen(true)} className="pointer-events-auto absolute bottom-4 left-3 rounded border border-white/80 bg-[#f8faf6]/95 px-3 py-2 text-xs text-[#50665a] shadow-lg sm:left-5">重新开启导览</button>}
       <div className="absolute bottom-4 right-3 hidden rounded-full border border-white/80 bg-[#f8faf6]/90 px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
+    {saveError && <p role="status" className="pointer-events-auto absolute bottom-16 left-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 shadow sm:left-5">{saveError}</p>}
     {sceneLocation && <ScenePanel worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
       setSceneLocation(null)
       void mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId).then(data => setLiveSnapshot(data.world)).catch(() => {})

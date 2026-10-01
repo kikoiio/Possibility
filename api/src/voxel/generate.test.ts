@@ -50,10 +50,16 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
     const calls: string[] = []
     const complete: CompleteFn = async () => {
       calls.push('x')
-      // 悬空物体 → validateDocument floating-object;不应出现 walk-* issue
+      // 物体重叠 → validateDocument object-overlap;不应出现 walk-* issue
+      // (S1 起 assembleWorld 确定性避让:就近找空位搬移。三栋主楼(9×8)在 16×16 里最多摆两栋,
+      //  第三栋无处可去 → 仍 overlap,走重试/报错链)
       return JSON.stringify({
         size: { width: 16, height: 16, depth: 16 },
-        ops: [{ kind: 'place-object', objectType: 'stone-lantern', anchor: { x: 8, y: 8, z: 8 }, rotation: 0 }],
+        ops: [
+          { kind: 'place-object', objectId: 'a', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+          { kind: 'place-object', objectId: 'b', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+          { kind: 'place-object', objectId: 'c', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+        ],
       })
     }
     let error: unknown
@@ -64,8 +70,36 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
     }
     expect(error).toBeInstanceOf(WorldGeneratorError)
     const issues = (error as WorldGeneratorError).issues
-    expect(issues.some((i) => i.code === 'floating-object')).toBe(true)
+    expect(issues.some((i) => i.code === 'object-overlap')).toBe(true)
     expect(issues.some((i) => i.code.startsWith('walk-'))).toBe(false)
+  })
+
+  it('S1 沉降归一:整体悬空的物体自动落地,不再触发 floating-object', async () => {
+    const complete: CompleteFn = async () => JSON.stringify({
+      size: { width: 16, height: 16, depth: 16 },
+      groundBlock: 'grass',
+      ops: [{ kind: 'place-object', objectId: 'l', objectType: 'stone-lantern', anchor: { x: 8, y: 8, z: 8 }, rotation: 0 }],
+    })
+    const doc = await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 1 })
+    expect(doc.objects.find(o => o.id === 'l')?.anchor.y).toBe(1)
+    expect(validateDocument(doc)).toEqual([])
+  })
+
+  it('S1 重叠避让:同位物体就近搬移,地点绑定物体保持原位', async () => {
+    const complete: CompleteFn = async () => JSON.stringify({
+      size: { width: 16, height: 16, depth: 16 },
+      groundBlock: 'grass',
+      ops: [
+        { kind: 'place-object', objectId: 'a', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+        { kind: 'place-object', objectId: 'b', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+      ],
+      locations: [{ name: '主楼', objectId: 'a' }],
+    })
+    const doc = await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 1 })
+    expect(doc.objects.find(o => o.id === 'a')?.anchor).toEqual({ x: 8, y: 1, z: 8 })
+    const b = doc.objects.find(o => o.id === 'b')!.anchor
+    expect(b.x !== 8 || b.z !== 8).toBe(true)
+    expect(validateDocument(doc)).toEqual([])
   })
 })
 
@@ -174,7 +208,7 @@ describe('assembleWorld × S2b assetPlacements 契约', () => {
     }, 'mist-manor', 'ap-4')).toThrow(/rotation/)
   })
 
-  it('generateWorld 传清单时摆放参与严格校验,悬空摆放进重试链', async () => {
+  it('generateWorld 传清单时摆放参与严格校验;悬空摆放由沉降归一落地(S1 起不进重试链)', async () => {
     const manifest = {
       version: 2 as const,
       assets: {
@@ -185,14 +219,13 @@ describe('assembleWorld × S2b assetPlacements 契约', () => {
     const doc = await generateWorld('小屋', 'mist-manor', {
       complete: async () => {
         call += 1
-        return call === 1
-          ? JSON.stringify({ size: { width: 16, height: 16, depth: 16 }, assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 8, z: 4 } }] })
-          : JSON.stringify({ size: { width: 16, height: 16, depth: 16 }, assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 } }] })
+        return JSON.stringify({ size: { width: 16, height: 16, depth: 16 }, assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 8, z: 4 } }] })
       },
       id: 'ap-5',
       assets: manifest,
     })
-    expect(call).toBe(2)
+    // 沉降到世界底面基岩之上(y=1),一次通过
+    expect(call).toBe(1)
     expect(doc.assetPlacements![0].anchor).toEqual([4, 1, 4])
   })
 })

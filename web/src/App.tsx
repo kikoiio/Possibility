@@ -7,7 +7,6 @@ import Home from './pages/Home'
 import People from './pages/People'
 import PersonCreate from './pages/PersonCreate'
 import PersonDetail from './pages/PersonDetail'
-import TimelineView from './pages/TimelineView'
 import Worlds from './pages/Worlds'
 import SettingsPage from './pages/SettingsPage'
 import WorldCreate from './pages/WorldCreate'
@@ -104,6 +103,9 @@ function Layout() {
         <NavLink to="/people" className={tabClass}>
           人物
         </NavLink>
+        <NavLink to="/settings" className={tabClass}>
+          设置
+        </NavLink>
         <NavLink to="/people/new" className={tabClass}>
           ＋ 创建
         </NavLink>
@@ -143,7 +145,6 @@ export default function App() {
         <Route path="/people" element={<People />} />
         <Route path="/people/new" element={<PersonCreate />} />
         <Route path="/people/:id" element={<PersonDetail />} />
-        <Route path="/timelines/:id" element={<TimelineView />} />
         <Route path="/worlds" element={<Worlds />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
