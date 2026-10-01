@@ -54,7 +54,7 @@ test.describe('S2 一句话分叉入口', () => {
     await dialog.getByTestId('fork-preview-submit').click()
 
     // 确认卡(AC2):startTime 无编辑控件,其余字段可编辑
-    await expect(dialog.getByText('分叉只能从当前时刻开始')).toBeVisible()
+    await expect(dialog.getByText('起始时刻在确认后不可更改')).toBeVisible()
     expect(await dialog.locator('input[type="datetime-local"]').count()).toBe(0)
     // 微调 participants(确认卡内唯一的 input)
     await dialog.locator('input').fill('小夜，阿澄')
@@ -146,6 +146,6 @@ test('预览失败:错误文案展示且可重试,无分叉副作用(AC7 前端�
   expect(forkCalled).toBe(false)
   // 重试成功 → 进入确认卡
   await dialog.getByTestId('fork-preview-submit').click()
-  await expect(dialog.getByText('分叉只能从当前时刻开始')).toBeVisible()
+  await expect(dialog.getByText('起始时刻在确认后不可更改')).toBeVisible()
   expect(errors).toEqual([])
 })

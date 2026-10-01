@@ -112,6 +112,8 @@ export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } =
       const url = new URL(route.request().url())
       return route.fulfill({ json: comparisonFor(url.searchParams.get('left') ?? 'timeline-main', url.searchParams.get('right') ?? 'timeline-fork', url.searchParams.get('simTime')) })
     }),
+    // S4/F6 默认:已加载但该线无可回溯历史(分叉弹窗只显示当前时刻);需要历史范围的用例自行覆盖
+    page.route('**/api/worlds/world-1/timelines/*/history', (route) => route.fulfill({ json: { earliest: null, simNow: NOW } })),
     page.route('**/api/worlds/world-1?*', (route) => {
       const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
       return route.fulfill({ json: snapshotFor(id, timelineList) })

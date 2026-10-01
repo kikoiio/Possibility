@@ -34,7 +34,7 @@ export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, 
       <div>
         <label className="mb-1 block text-xs text-woad-deep">起始时间</label>
         <p className="text-sm text-ink">{scenario.startTime.slice(0, 16).replace('T', ' ')}</p>
-        <p className="mt-0.5 text-[11px] text-ink-faint">分叉只能从当前时刻开始</p>
+        <p className="mt-0.5 text-[11px] text-ink-faint">起始时刻在确认后不可更改</p>
       </div>
 
       <div>

@@ -303,7 +303,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
         <div role="dialog" aria-modal="true" aria-label="创建平行宇宙" className="absolute right-0 top-10 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-ink-line bg-sheet p-4 shadow-xl">
           <h2 className="text-sm font-semibold text-ink">创建平行宇宙</h2>
           {step !== 'confirm' && (
-            <p className="mt-1 text-xs leading-relaxed text-ink-faint">从当前这个时刻复制世界。说一个「如果」，我们先起草场景设定，你确认后才分叉，源宇宙不会被改写。</p>
+            <p className="mt-1 text-xs leading-relaxed text-ink-faint">从选定时刻复制世界。说一个「如果」，我们先起草场景设定，你确认后才分叉，源宇宙不会被改写。</p>
           )}
           {momentSection}
 
