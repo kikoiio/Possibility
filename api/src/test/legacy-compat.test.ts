@@ -4,7 +4,7 @@ import app from '../index'
 import { buildAgentContext } from '../agent/context'
 import { ensureUniverseRevision } from '../world-state/model'
 import { auditUniverse } from '../world-state/invariants'
-import { chapters, commitments, conversations, dialogueTurns, dialogues, events, memories, messages, persons, personStates, sessions, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { chapters, commitments, conversations, dialogueTurns, dialogues, events, memories, messages, persons, personStates, sessions, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worldScenes, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from './world-fixture'
 
 type Fixture = Awaited<ReturnType<typeof createWorldFixture>>
@@ -119,6 +119,31 @@ describe('legacy reads and exact timeline scope', () => {
     expect((await app.request('/api/timelines/legacy-archived/reactivate', { method: 'POST', headers }, f.env)).status).toBe(409)
     expect((await f.db.select().from(timelines).where(eq(timelines.id, 'legacy-archived')).get())?.status).toBe('archived')
     expect((await app.request('/api/worlds/home-world/archive', { method: 'POST', headers }, f.env)).status).toBe(200)
+  })
+
+  it('annotates archival after a replacement world only for worlds without scenes', async () => {
+    fixture = await createWorldFixture()
+    const f = fixture
+    const headers = { ...auth, 'Content-Type': 'application/json' }
+    const reason = '已在新世界中安家'
+
+    const archived = await app.request('/api/worlds/home-world/archive', {
+      method: 'POST', headers, body: JSON.stringify({ pauseReason: reason }),
+    }, f.env)
+    expect(archived.status).toBe(200)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())
+      .toMatchObject({ status: 'archived', pauseReason: reason })
+
+    await f.db.insert(worldScenes).values({
+      worldId: 'home-world', currentVersion: 1, themeId: 'test', updatedAt: WORLD_TIME,
+    })
+    await f.db.update(worlds).set({ status: 'running', pauseReason: null }).where(eq(worlds.id, 'home-world'))
+    const refused = await app.request('/api/worlds/home-world/archive', {
+      method: 'POST', headers, body: JSON.stringify({ pauseReason: reason }),
+    }, f.env)
+    expect(refused.status).toBe(409)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())
+      .toMatchObject({ status: 'running', pauseReason: null })
   })
 
   it('does not fall back to mutable assets when a structured world loses its pinned model', async () => {

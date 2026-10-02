@@ -1,6 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import { scenesRoutes } from './routes'
+import * as voxelDraft from './voxel-draft'
+import { BudgetRefusal } from '../engine/guard'
+import { LlmContractError } from '../llm/contracts'
+import { WorldGeneratorError } from '../voxel/generate'
+import { CONTENT_ISSUE_COPY } from './error-copy'
 import { createWorldFixture } from '../test/world-fixture'
 
 /** 合法体素信封:平地 + 可选摆放 op */
@@ -15,7 +20,69 @@ function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxe
 
 describe('scene HTTP routes', () => {
   const fixtures: Awaited<ReturnType<typeof createWorldFixture>>[] = []
-  afterEach(() => fixtures.splice(0).forEach(f => f.close()))
+  afterEach(() => {
+    vi.restoreAllMocks()
+    fixtures.splice(0).forEach(f => f.close())
+  })
+
+  it('POST /scene-drafts/voxel returns classified errors with request ids and user-safe content copy', async () => {
+    expect(Object.keys(CONTENT_ISSUE_COPY)).toHaveLength(14)
+    const f = await createWorldFixture(); fixtures.push(f)
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    const send = () => scenesRoutes.request('/scene-drafts/voxel', {
+      method: 'POST', headers,
+      body: JSON.stringify({ requestId: 'draft-error-1', prompt: '海边小镇', personIds: ['p1'] }),
+    }, f.env)
+
+    vi.spyOn(voxelDraft, 'createVoxelSceneDraft').mockRejectedValueOnce(new BudgetRefusal('调用额度已用完', 429))
+    const budget = await send()
+    expect(budget.status).toBe(429)
+    expect(await budget.json()).toMatchObject({ kind: 'budget', callsUsed: 0, requestId: 'draft-error-1', error: '调用额度已用完' })
+
+    const configError = Object.assign(new LlmContractError('provider_http_error', 'LLM 请求失败（401）：secret'), { callsUsed: 1 })
+    vi.spyOn(voxelDraft, 'createVoxelSceneDraft').mockRejectedValueOnce(configError)
+    const config = await send()
+    expect(config.status).toBe(502)
+    expect(await config.json()).toMatchObject({ kind: 'config', callsUsed: 1, requestId: 'draft-error-1', error: expect.stringContaining('设置') })
+
+    const generatorError = Object.assign(new WorldGeneratorError('internal validator detail', [
+      { code: 'out-of-bounds', message: 'raw detail out of bounds' },
+      { code: 'unknown-block', message: 'raw detail unknown block' },
+      { code: 'floating-object', message: 'raw detail floating' },
+      { code: 'object-overlap', message: 'raw detail overlap' },
+      { code: 'location-unbound', message: 'raw detail location' },
+      { code: 'locked-violation', message: 'raw detail locked' },
+      { code: 'walk-clearance', message: 'raw clearance detail' },
+      { code: 'walk-connectivity', message: 'raw detail connectivity' },
+      { code: 'walk-lighting', message: 'raw detail lighting' },
+      { code: 'walk-stairs', message: 'raw detail stairs' },
+      { code: 'walk-gap', message: 'raw detail gap' },
+      { code: 'invalid-meta', message: 'raw detail metadata' },
+      { code: 'unknown-asset', message: 'raw detail unknown asset' },
+      { code: 'asset-overlap', message: 'raw detail asset overlap' },
+      { code: 'unrecognized-test-code', message: 'raw unknown detail' },
+    ]), { callsUsed: 7 })
+    vi.spyOn(voxelDraft, 'createVoxelSceneDraft').mockRejectedValueOnce(generatorError)
+    const content = await send()
+    expect(content.status).toBe(502)
+    const contentBody = await content.json() as { kind: string; requestId: string; error: string; callsUsed: number; issues: Array<{ code: string; summary: string; suggestion: string }> }
+    expect(contentBody).toMatchObject({ kind: 'content', callsUsed: 7, requestId: 'draft-error-1' })
+    expect(contentBody.error).not.toContain('internal validator')
+    expect(contentBody.issues).toHaveLength(12)
+    expect(contentBody.issues[6]).toMatchObject({ code: 'walk-clearance', summary: expect.stringContaining('走不过去'), suggestion: expect.stringContaining('通道') })
+    expect(contentBody.issues.every(issue => issue.summary.length > 0 && issue.suggestion.length > 0)).toBe(true)
+    expect(JSON.stringify(contentBody)).not.toContain('raw clearance detail')
+    expect(JSON.stringify(contentBody)).not.toContain('raw unknown detail')
+
+    const systemError = Object.assign(new Error('sensitive internal failure'), { callsUsed: 2 })
+    vi.spyOn(voxelDraft, 'createVoxelSceneDraft').mockRejectedValueOnce(systemError)
+    const system = await send()
+    expect(system.status).toBe(400)
+    const systemBody = await system.json() as { kind: string; requestId: string; callsUsed: number; error: string }
+    expect(systemBody).toMatchObject({ kind: 'system', callsUsed: 2, requestId: 'draft-error-1', error: expect.stringContaining('重试') })
+    expect(JSON.stringify(systemBody)).not.toContain('sensitive internal failure')
+  })
+
   it('requires authentication and hides worlds not owned by the caller', async () => {
     const f = await createWorldFixture(); fixtures.push(f)
     const unauth = await scenesRoutes.request('/worlds/home-world/scene', {}, f.env)

@@ -7,9 +7,14 @@ import {
 import type { ChatMessage } from '../llm/client'
 import { EditPlannerError, parseEditOperations, type CompleteFn } from './edit-planner'
 import { buildWorldGeneratorMessages } from './prompts'
+import { normalizePayloadSize, normalizeWorldDocument } from './normalize'
 
 export class WorldGeneratorError extends Error {
-  constructor(message: string, public readonly issues: Array<{ code: string; message: string }> = []) {
+  constructor(
+    message: string,
+    public readonly issues: Array<{ code: string; message: string }> = [],
+    public readonly normalizationFixes: string[] = [],
+  ) {
     super(message)
     this.name = 'WorldGeneratorError'
   }
@@ -25,7 +30,7 @@ const WALK_HINTS: Record<string, string> = {
 }
 
 interface GeneratedWorldPayload {
-  size?: { width?: number; height?: number; depth?: number }
+  size?: { width?: unknown; height?: unknown; depth?: unknown }
   groundBlock?: string
   terrain?: unknown
   style?: unknown
@@ -334,12 +339,19 @@ export async function generateWorld(
   let messages = buildMessages(sceneDescription, theme)
   let lastIssues: Array<{ code: string; message: string }> = []
   let lastError = '未知错误'
+  let lastNormalizationFixes: string[] = []
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const content = await deps.complete(messages)
     let doc: VoxelDocument
+    lastNormalizationFixes = []
     try {
-      doc = assembleWorld(extractPayload(content), theme, id, deps.assets)
+      const normalizedPayload = normalizePayloadSize(extractPayload(content))
+      lastNormalizationFixes = normalizedPayload.fixes
+      doc = assembleWorld(normalizedPayload.payload, theme, id, deps.assets)
+      const normalizedWorld = normalizeWorldDocument(doc, deps.assets)
+      doc = normalizedWorld.document
+      lastNormalizationFixes = [...lastNormalizationFixes, ...normalizedWorld.fixes]
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
       lastIssues = []
@@ -366,6 +378,7 @@ export async function generateWorld(
       ? `世界生成 ${maxAttempts} 次仍未通过校验：${lastIssues[0].message}`
       : `世界生成 ${maxAttempts} 次仍无法组装：${lastError}`,
     lastIssues,
+    lastNormalizationFixes,
   )
 }
 

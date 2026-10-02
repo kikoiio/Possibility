@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { DistillDraft } from '../api/types'
 import PersonCard from '../components/PersonCard'
@@ -13,6 +13,7 @@ export default function PersonCreate() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   async function onDistill(e: FormEvent) {
     e.preventDefault()
@@ -89,7 +90,11 @@ export default function PersonCreate() {
         method: 'POST',
         body: JSON.stringify(draft),
       })
-      navigate(`/people/${res.id}`)
+      if (searchParams.get('returnTo') === '/worlds/new') {
+        navigate(`/worlds/new?person=${encodeURIComponent(res.id)}`)
+      } else {
+        navigate(`/people/${res.id}`)
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '保存失败，请重试')
       setBusy(false)

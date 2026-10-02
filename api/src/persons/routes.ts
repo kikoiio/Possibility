@@ -6,9 +6,6 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
 import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, gateUser } from '../engine/guard'
-import type { InitialState } from '../agent/types'
-import { DEFAULT_WORLD_LOCATIONS } from '../worlds/defaults'
-import { createRootProjectionBaseline } from '../world-state/model'
 import type { Env } from '../index'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -32,7 +29,7 @@ personRoutes.post('/distill', async (c) => {
   }
 })
 
-/** 创建人物：连带建默认世界 + 主线时间线 + 初始状态（一次批量写入） */
+/** 创建人物；worldName、worldDescription 和 initialState 为兼容旧客户端而忽略 */
 personRoutes.post('/', async (c) => {
   const body = await c.req
     .json<{
@@ -40,80 +37,24 @@ personRoutes.post('/', async (c) => {
       model?: unknown
       worldName?: string
       worldDescription?: string
-      initialState?: Partial<InitialState>
+      initialState?: unknown
     }>()
     .catch(() => null)
   const name = body?.name?.trim()
   if (!body || !name || !body.model) return c.json({ error: 'name 与 model 必填' }, 400)
   const model = normalizeModel(body.model)
-  const state = body.initialState ?? {}
 
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const now = new Date().toISOString()
   const personId = crypto.randomUUID()
-  const worldId = crypto.randomUUID()
-  const timelineId = crypto.randomUUID()
-  const initialState = {
-    simTime: now,
-    location: state.location?.trim() || '未知地点',
-    activity: state.activity?.trim() || '未知活动',
-    mood: state.mood?.trim() || '平静',
-    goal: state.goal?.trim() || '暂无',
-    lastBeatSimTime: null,
-    currentDialogueId: null,
-  }
-  const baselineState = { personId, ...initialState, timelineId, updatedRealAt: now }
-
-  await db.batch([
-    db.insert(persons).values({
-      id: personId,
-      userId,
-      name,
-      modelJson: JSON.stringify(model),
-      createdAt: now,
-    }),
-    // 默认单人世界：status 走默认 paused，主人可从世界列表手动启动（D14 同理）
-    db.insert(worlds).values({
-      id: worldId,
-      userId,
-      name: body.worldName?.trim() || `${name}的世界`,
-      description: body.worldDescription?.trim() || '一个普通的世界。',
-      locationsJson: JSON.stringify(DEFAULT_WORLD_LOCATIONS),
-      createdAt: now,
-    }),
-    db.insert(worldPersons).values({ worldId, personId, joinedAt: now }),
-    db.insert(timelines).values({
-      id: timelineId,
-      worldId,
-      parentTimelineId: null,
-      forkScenarioJson: null,
-      simNow: now,
-      createdAt: now,
-    }),
-    db.insert(personStates).values({
-      personId,
-      timelineId,
-      simTime: initialState.simTime,
-      location: initialState.location,
-      activity: initialState.activity,
-      mood: initialState.mood,
-      goal: initialState.goal,
-      updatedRealAt: now,
-    }),
-    db.insert(worldModelVersions).values({ worldId, version: 1, modelJson: JSON.stringify({
-      name: body.worldName?.trim() || `${name}的世界`,
-      description: body.worldDescription?.trim() || '一个普通的世界。',
-      locations: DEFAULT_WORLD_LOCATIONS,
-      residents: [{ id: personId, name, model }],
-      initialStates: { capturedAt: now, states: [{ personId, ...initialState }] },
-      initialEvents: { timelineId, eventIds: [] },
-      projectionBaseline: createRootProjectionBaseline(now, now, [baselineState]),
-    }), createdAt: now }),
-    db.insert(universeRevisions).values({ timelineId, version: 0, simTime: now, worldModelVersion: 1, updatedAt: now }),
-    db.insert(universeEvidence).values({ timelineId, level: 'complete', assessedVersion: 0,
-      baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
-  ])
+  await db.insert(persons).values({
+    id: personId,
+    userId,
+    name,
+    modelJson: JSON.stringify(model),
+    createdAt: now,
+  })
   return c.json({ id: personId })
 })
 

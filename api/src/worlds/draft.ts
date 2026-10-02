@@ -1,7 +1,7 @@
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
-import { BudgetRefusal, userReservation } from '../engine/guard'
+import { BudgetRefusal, userReservation, type Reservation } from '../engine/guard'
 import type { Db } from '../db/client'
 import type { Env } from '../index'
 import { extractJson } from '../agent/engine-prompt'
@@ -44,8 +44,16 @@ function normalizeDraft(raw: unknown): WorldDraft {
 }
 
 /** Quick World 骨架生成（不落库）；解析失败重试一次；调用记入用户桶 */
-export async function draftWorld(env: Env, db: Db, userId: string, prompt: string): Promise<WorldDraft> {
-  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'world_draft'))
+export async function draftWorld(
+  env: Env,
+  db: Db,
+  userId: string,
+  prompt: string,
+  onReceipt?: (receipt: Pick<Reservation, 'calls'>) => void,
+): Promise<WorldDraft> {
+  const reserve = userReservation(db, userId, budgetFromEnv(env), 'world_draft')
+  onReceipt?.(reserve)
+  const { config } = await resolveLlmConfig(db, env, { userId }, reserve)
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

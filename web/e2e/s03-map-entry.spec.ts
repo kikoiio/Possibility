@@ -69,6 +69,7 @@ test('signed-in landing resumes the last world directly on its map', async ({ pa
     resume: { worldId: 'user-world', timelineId: 'main', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
   } }))
   await page.route('**/api/worlds/user-world/map/resume', route => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [] } }))
   // 文字视图挂载期请求(未 stub 会打到真实后端 401 → 竞态跳 /login)
   await page.route('**/api/worlds/user-world/persona**', route => route.fulfill({ json: { persona: null, unread: 0 } }))
   await page.route('**/api/worlds/user-world/state**', route => route.fulfill({ json: { timelineId: 'main', version: 1, worldModelVersion: 1, evidenceStatus: 'structured', current: [], facts: [] } }))

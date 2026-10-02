@@ -101,15 +101,22 @@ export default function PersonDetail() {
   const returnHref = detail.world && returnTimelineId
     ? timelineHref(`/worlds/${encodeURIComponent(detail.world.id)}`, returnTimelineId)
     : '/people'
+  const noWorldReason = '需要先为 TA 创造生活的地方。'
 
   return (
     <div className="flex h-full flex-col">
       {/* 头部 */}
       <div className="border-b border-ink-line bg-sheet px-4 py-3">
         <div className="flex items-center gap-3">
-          <Link to={returnHref} className="text-ink-faint hover:text-ink" aria-label={detail.world ? '返回世界' : '返回人物列表'}>
-            ←
-          </Link>
+          {detail.world ? (
+            <Link to={returnHref} className="text-ink-faint hover:text-ink" aria-label="返回世界">
+              ←
+            </Link>
+          ) : (
+            <button type="button" disabled title={noWorldReason} aria-label={`返回世界不可用。${noWorldReason}`} className="cursor-not-allowed text-ink-faint opacity-40">
+              ←
+            </button>
+          )}
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold text-ink">{detail.person.name}</h1>
             <p className="truncate text-xs text-ink-soft">
@@ -122,7 +129,15 @@ export default function PersonDetail() {
             </p>
           </div>
         </div>
-        {state && (
+        {!detail.world ? (
+          <div className="mt-3 rounded-lg border border-ink-line bg-paper px-3 py-3">
+            <p className="text-sm font-medium text-ink">TA 还没有生活的地方</p>
+            <p className="mt-1 text-xs text-ink-soft">为 TA 创造一个世界，之后即可开始交谈和探索 What-if。</p>
+            <Link to={`/worlds/new?person=${encodeURIComponent(detail.person.id)}`} className="mt-3 inline-flex rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white">
+              为 TA 创造地方
+            </Link>
+          </div>
+        ) : state && (
           <div className="mt-2">
             <StateBar state={state} />
           </div>
@@ -142,9 +157,11 @@ export default function PersonDetail() {
           <button
             key={key}
             onClick={() => setTab(key)}
+            disabled={key === 'chat' && !detail.world}
+            title={key === 'chat' && !detail.world ? noWorldReason : undefined}
             className={`flex-1 py-2.5 text-center ${
               tab === key ? 'border-b-2 border-ink font-medium text-ink' : 'text-ink-soft'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-40`}
           >
             {label}
           </button>
@@ -154,8 +171,10 @@ export default function PersonDetail() {
       {error && <p className="bg-red-50 px-4 py-2 text-center text-xs text-red-600">{error}</p>}
 
       {/* 内容区 */}
-      {tab === 'chat' && (evidence?.level !== 'complete'
-        ? <div className="p-8 text-center text-sm text-ink-faint">历史证据处于只读保护，暂不能发起交谈。</div>
+      {tab === 'chat' && (!detail.world
+        ? <div className="p-8 text-center text-sm text-ink-faint">{noWorldReason}创建地方后即可打电话。</div>
+        : evidence?.level !== 'complete'
+        ? <div className="p-8 text-center text-sm text-ink-faint">当前时间线的历史证据尚未完整，暂不能发起交谈。</div>
         : (conversationId ? (
           <ChatStream
             key={conversationId}
@@ -213,14 +232,21 @@ export default function PersonDetail() {
 
       {tab === 'timelines' && (
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-6">
-          {mainTimeline && detail.world && (
+          {detail.world && mainTimeline ? (
             <button
               onClick={() => navigate(`/worlds/${detail.world!.id}?timeline=${mainTimeline.id}`)}
               className="w-full rounded-xl border border-dashed border-ink-faint bg-sheet p-4 text-left text-sm text-ink-soft"
             >
               ＋ 创建一个 What-if 分叉…
             </button>
-          )}
+          ) : !detail.world ? (
+            <div>
+              <button type="button" disabled title={noWorldReason} className="w-full cursor-not-allowed rounded-xl border border-dashed border-ink-faint bg-sheet p-4 text-left text-sm text-ink-soft opacity-50">
+                ＋ 创建一个 What-if 分叉…
+              </button>
+              <p className="mt-1 text-xs text-ink-faint">{noWorldReason}</p>
+            </div>
+          ) : null}
           {detail.timelines.map((t) => (
             <div key={t.id} className="rounded-xl border border-ink-line bg-sheet p-4">
               <div className="flex items-center justify-between gap-2">
@@ -236,20 +262,31 @@ export default function PersonDetail() {
                   <p className="mt-0.5 text-xs text-ink-faint">时间：{t.simNow.slice(0, 16).replace('T', ' ')}</p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
-                  {detail.world && (
+                  {detail.world ? (
                     <Link to={`/worlds/${detail.world.id}?timeline=${t.id}`} className="text-xs text-ink-soft underline">
                       世界地图
                     </Link>
+                  ) : (
+                    <>
+                      <button type="button" disabled title={noWorldReason} className="cursor-not-allowed text-xs text-ink-soft underline opacity-40">
+                        世界地图
+                      </button>
+                      <p className="max-w-32 text-right text-xs text-ink-faint">{noWorldReason}</p>
+                    </>
                   )}
                   <button
+                    type="button"
+                    disabled={!detail.world}
                     onClick={() => {
                       setSearchParams(t.parentTimelineId === null ? {} : { timeline: t.id })
                       setTab('chat')
                     }}
-                    className="text-xs text-ink-soft underline"
+                    title={!detail.world ? noWorldReason : undefined}
+                    className="text-xs text-ink-soft underline disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     打电话
                   </button>
+                  {!detail.world && <p className="max-w-32 text-right text-xs text-ink-faint">{noWorldReason}</p>}
                 </div>
               </div>
             </div>

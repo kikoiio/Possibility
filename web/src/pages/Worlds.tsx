@@ -16,10 +16,11 @@ export default function Worlds() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    worldsApi
-      .list()
-      .then((d) => setWorlds(d.worlds))
-      .catch(() => setError('加载失败'))
+    let active = true
+    void worldsApi.list().then(({ worlds: items }) => {
+      if (active) setWorlds(items)
+    }).catch(() => { if (active) setError('加载失败') })
+    return () => { active = false }
   }, [])
 
   if (error) return <div className="p-8 text-center text-sm text-red-600">{error}</div>
@@ -45,24 +46,37 @@ export default function Worlds() {
         {worlds.map((w) => {
           const st = STATUS_LABEL[w.status] ?? STATUS_LABEL.paused
           return (
-            <Link
-              key={w.id}
-              to={`/worlds/${w.id}`}
-              className="block rounded-xl border border-ink-line bg-sheet px-4 py-3 hover:border-ink-faint"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-ink">{w.name}</span>
-                {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
-                <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>
-                  {w.status === 'archived' && w.pauseReason === 'idle' ? '闲置归档' : st.text}
-                </span>
-                <span className="ml-auto text-xs text-ink-faint">{w.personCount} 个人物</span>
-              </div>
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-soft">{w.description}</p>
-              <p className="mt-1 text-xs text-ink-faint">
-                {w.simNow ? `世界时间 ${w.simNow.slice(0, 16).replace('T', ' ')}` : ''} · 今日调用 {w.callsToday}
-              </p>
-            </Link>
+            <article key={w.id} className="rounded-xl border border-ink-line bg-sheet px-4 py-3 hover:border-ink-faint">
+              <Link to={`/worlds/${w.id}`} className="block rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-ink">{w.name}</span>
+                  {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
+                  {!w.hasScene && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">待创建场景</span>}
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>
+                    {w.status === 'archived' && w.pauseReason === 'idle' ? '闲置归档' : st.text}
+                  </span>
+                  <span className="ml-auto text-xs text-ink-faint">{w.personCount} 个人物</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-soft">{w.description}</p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  {w.simNow ? `世界时间 ${w.simNow.slice(0, 16).replace('T', ' ')}` : ''} · 今日调用 {w.callsToday}
+                </p>
+              </Link>
+              {!w.hasScene && (() => {
+                const personId = w.personIds[0]
+                const reason = '当前世界没有可用于补建场景的人物。'
+                return personId ? (
+                  <Link to={`/worlds/new?person=${encodeURIComponent(personId)}&fromWorld=${encodeURIComponent(w.id)}`} className="mt-3 inline-flex rounded-lg border border-ink-faint px-3 py-1.5 text-xs font-medium text-ink-soft hover:border-ink-soft">
+                    补建场景
+                  </Link>
+                ) : (
+                  <div className="mt-3">
+                    <button type="button" disabled title={reason} className="cursor-not-allowed rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-faint opacity-70">补建场景</button>
+                    {reason && <p className="mt-1 text-xs text-ink-faint">{reason}</p>}
+                  </div>
+                )
+              })()}
+            </article>
           )
         })}
       </div>

@@ -13,6 +13,9 @@ import { demoBaselines, worlds } from '../db/schema'
 import { BudgetRefusal, gateUser } from '../engine/guard'
 import { budgetFromEnv } from '../engine/budget'
 import type { Env } from '../index'
+import { LlmContractError } from '../llm/contracts'
+import { byokFailureHint } from '../llm/resolve'
+import { CONTENT_ISSUE_COPY, CONTENT_ISSUE_FALLBACK } from './error-copy'
 import { createVoxelSceneDraft } from './voxel-draft'
 import { commitScene, listSceneVersions, readCurrentScene, SceneConflict } from './repository'
 import { generateWorld, WorldGeneratorError } from '../voxel/generate'
@@ -50,13 +53,26 @@ scenesRoutes.post('/scene-drafts/voxel', async c => {
   const body = await c.req.json<{ requestId?: string; prompt?: string; personIds?: string[] }>().catch(() => null)
   if (!body || !body.requestId || !body.prompt?.trim() || !Array.isArray(body.personIds)) return c.json({ error: '请提供 requestId、场景描述和居民' }, 400)
   const db = createDb(c.env.DB); const gate = await gateUser(db, c.get('user').id, budgetFromEnv(c.env))
-  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
+  if (!gate.ok) return c.json({ error: gate.error, kind: 'budget', callsUsed: 0, requestId: body.requestId }, gate.status)
   try {
     return c.json(await createVoxelSceneDraft(c.env, db, c.get('user').id, { requestId: body.requestId, prompt: body.prompt, personIds: body.personIds }))
   } catch (error) {
-    if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)
-    if (error instanceof WorldGeneratorError) return c.json({ error: error.message, issues: error.issues.slice(0, 12) }, 502)
-    return c.json({ error: error instanceof Error ? error.message : '体素场景生成失败' }, 400)
+    const requestId = body.requestId
+    const callsUsed = error && typeof error === 'object' && 'callsUsed' in error
+      && typeof error.callsUsed === 'number' ? error.callsUsed : 0
+    if (error instanceof BudgetRefusal) return c.json({ error: error.message, kind: 'budget', callsUsed, requestId }, error.status)
+    if (error instanceof WorldGeneratorError) {
+      const issues = error.issues.slice(0, 12).map(issue => ({
+        code: issue.code,
+        ...(CONTENT_ISSUE_COPY[issue.code as keyof typeof CONTENT_ISSUE_COPY] ?? CONTENT_ISSUE_FALLBACK),
+      }))
+      return c.json({ error: '场景暂时没有生成成功,请按建议调整描述后重试。', kind: 'content', issues, callsUsed, requestId }, 502)
+    }
+    if (error instanceof LlmContractError && error.code === 'provider_http_error' && /(?:401|403)/.test(error.message)) {
+      const hint = byokFailureHint('user')
+      return c.json({ error: hint ?? '模型配置无法使用,请检查 API Key 和服务地址。', kind: 'config', callsUsed, requestId }, 502)
+    }
+    return c.json({ error: '场景生成时遇到问题,请稍后重试。', kind: 'system', callsUsed, requestId }, 400)
   }
 })
 

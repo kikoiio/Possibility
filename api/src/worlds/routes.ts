@@ -3,7 +3,7 @@ import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
-import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worldScenes, worlds } from '../db/schema'
 import {
   deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
   type SerializedVoxelDocument,
@@ -192,15 +192,20 @@ worldsRoutes.post('/', async (c) => {
 worldsRoutes.get('/', async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
-  const list = await db.select().from(worlds).where(eq(worlds.userId, userId)).all()
+  const list = await db.select({ world: worlds, sceneWorldId: worldScenes.worldId })
+    .from(worlds)
+    .leftJoin(worldScenes, eq(worldScenes.worldId, worlds.id))
+    .where(eq(worlds.userId, userId))
+    .all()
   const out = []
-  for (const w of list) {
+  for (const { world: w, sceneWorldId } of list) {
     const main = await db
       .select()
       .from(timelines)
       .where(and(eq(timelines.worldId, w.id), isNull(timelines.parentTimelineId)))
       .get()
-    const pc = await db.select({ n: count() }).from(worldPersons).where(eq(worldPersons.worldId, w.id)).get()
+    const pc = await db.select({ personId: worldPersons.personId }).from(worldPersons)
+      .where(eq(worldPersons.worldId, w.id)).all()
     out.push({
       id: w.id,
       name: w.name,
@@ -209,7 +214,9 @@ worldsRoutes.get('/', async (c) => {
       pauseReason: w.pauseReason,
       isDemo: w.isDemo,
       callsToday: w.callsToday,
-      personCount: pc?.n ?? 0,
+      personCount: pc.length,
+      personIds: pc.map(person => person.personId),
+      hasScene: sceneWorldId !== null,
       simNow: main?.simNow ?? null,
       createdAt: w.createdAt,
     })
@@ -404,7 +411,19 @@ worldsRoutes.post('/:id/archive', async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  await db.update(worlds).set({ status: 'archived', pauseReason: null }).where(eq(worlds.id, world.id))
+  const body = await c.req.json<{ pauseReason?: string }>().catch(() => null)
+  if (body?.pauseReason !== undefined && body.pauseReason !== '已在新世界中安家') {
+    return c.json({ error: '暂停原因无效' }, 400)
+  }
+  if (body?.pauseReason === '已在新世界中安家') {
+    const scene = await db.select({ worldId: worldScenes.worldId }).from(worldScenes)
+      .where(eq(worldScenes.worldId, world.id)).get()
+    if (scene) return c.json({ error: '该世界已有场景，不能按此原因归档' }, 409)
+  }
+  await db.update(worlds).set({
+    status: 'archived',
+    pauseReason: body?.pauseReason ?? null,
+  }).where(eq(worlds.id, world.id))
   return c.json({ ok: true, status: 'archived' })
 })
 

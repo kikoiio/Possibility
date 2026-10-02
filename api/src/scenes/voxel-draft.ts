@@ -3,7 +3,7 @@ import { serialize, type SerializedVoxelDocument } from '@possibility/voxel-cont
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
-import { userReservation } from '../engine/guard'
+import { userReservation, type Reservation } from '../engine/guard'
 import type { Db } from '../db/client'
 import { persons } from '../db/schema'
 import type { Env } from '../index'
@@ -17,6 +17,11 @@ export interface VoxelSceneDraftResult {
   document: SerializedVoxelDocument
   explanation: string
   warnings: string[]
+  callsUsed: number
+}
+
+export interface VoxelSceneDraftError extends Error {
+  callsUsed: number
 }
 
 /**
@@ -51,29 +56,41 @@ export async function createVoxelSceneDraft(
   const owned = await db.select({ id: persons.id }).from(persons).where(and(eq(persons.userId, userId), inArray(persons.id, selected))).all()
   if (owned.length !== selected.length) throw new Error('包含不属于你的居民')
 
-  const world = await (deps.draftWorldFn ?? draftWorld)(env, db, userId, request.prompt)
-  const assets = libraryManifest() ?? undefined
-  const { config } = await resolveLlmConfig(db, env, { userId }, userReservation(db, userId, budgetFromEnv(env), 'scene'))
-  const doc = await (deps.generateWorldFn ?? generateWorld)(buildVoxelSceneDescription(world, request.prompt), 'mist-manor', {
-    id: `draft-${request.requestId}`,
-    complete: (messages) => complete(config, messages, {
-      maxTokens: 16000,
-      requestId: request.requestId,
-      responseFormat: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-    }),
-    assets,
-    // 弱模型修可行走性(净空/连通)偏慢,多给一次机会;确定性归一已兜住机械错误,这里只兜语义错误
-    maxAttempts: 4,
-    buildMessages: assets ? (desc, theme) => buildWorldGeneratorMessages(desc, theme, assets) : undefined,
-  })
-  const bound = new Set(doc.locations.map(l => l.name))
-  const missing = world.locations.filter(l => !bound.has(l.name))
-  if (missing.length > 0) throw new WorldGeneratorError(`有地点没有绑定到场景物体:${missing.map(l => l.name).join('、')}`)
-  return {
-    world,
-    document: JSON.parse(serialize(doc)) as SerializedVoxelDocument,
-    explanation: `「${world.name}」已经成形:可以拖一拖、让 AI 改一改,或者直接让这里开始生活。`,
-    warnings: [],
+  let skeletonReceipt: Pick<Reservation, 'calls'> | undefined
+  let sceneReceipt: Pick<Reservation, 'calls'> | undefined
+  const callsUsed = () => (skeletonReceipt?.calls ?? 0) + (sceneReceipt?.calls ?? 0)
+  try {
+    const world = await (deps.draftWorldFn ?? draftWorld)(env, db, userId, request.prompt, receipt => { skeletonReceipt = receipt })
+    const assets = libraryManifest() ?? undefined
+    const reserve = userReservation(db, userId, budgetFromEnv(env), 'scene')
+    sceneReceipt = reserve
+    const { config } = await resolveLlmConfig(db, env, { userId }, reserve)
+    const doc = await (deps.generateWorldFn ?? generateWorld)(buildVoxelSceneDescription(world, request.prompt), 'mist-manor', {
+      id: `draft-${request.requestId}`,
+      complete: (messages) => complete(config, messages, {
+        maxTokens: 16000,
+        requestId: request.requestId,
+        responseFormat: { type: 'json_object' },
+        thinking: { type: 'disabled' },
+      }),
+      assets,
+      // 弱模型修可行走性(净空/连通)偏慢,多给一次机会;确定性归一已兜住机械错误,这里只兜语义错误
+      maxAttempts: 4,
+      buildMessages: assets ? (desc, theme) => buildWorldGeneratorMessages(desc, theme, assets) : undefined,
+    })
+    const bound = new Set(doc.locations.map(l => l.name))
+    const missing = world.locations.filter(l => !bound.has(l.name))
+    if (missing.length > 0) throw new WorldGeneratorError(`有地点没有绑定到场景物体:${missing.map(l => l.name).join('、')}`)
+    return {
+      world,
+      document: JSON.parse(serialize(doc)) as SerializedVoxelDocument,
+      explanation: `「${world.name}」已经成形:可以拖一拖、让 AI 改一改,或者直接让这里开始生活。`,
+      warnings: [],
+      callsUsed: callsUsed(),
+    }
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error))
+    Object.assign(failure, { callsUsed: callsUsed() })
+    throw failure
   }
 }

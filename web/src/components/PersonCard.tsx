@@ -54,38 +54,17 @@ export default function PersonCard({ draft, onChange }: PersonCardProps) {
       {/* 基本信息 */}
       <section className="rounded-xl border border-ink-line bg-sheet p-4">
         {editable ? (
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs text-ink-soft">姓名</label>
-              <input
-                className="w-full rounded-lg border border-ink-faint px-3 py-2 text-lg font-semibold outline-none focus:border-ink-soft"
-                value={draft.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-ink-soft">世界</label>
-              <input
-                className="mb-2 w-full rounded-lg border border-ink-faint px-3 py-2 outline-none focus:border-ink-soft"
-                value={draft.worldName}
-                placeholder={`${draft.name || '人物'}的世界`}
-                onChange={(e) => patch({ worldName: e.target.value })}
-              />
-              <textarea
-                className="w-full rounded-lg border border-ink-faint px-3 py-2 text-sm outline-none focus:border-ink-soft"
-                rows={2}
-                value={draft.worldDescription}
-                placeholder="留空则使用通用世界背景"
-                onChange={(e) => patch({ worldDescription: e.target.value })}
-              />
-            </div>
+          <div>
+            <label className="mb-1 block text-xs text-ink-soft">姓名</label>
+            <input
+              className="w-full rounded-lg border border-ink-faint px-3 py-2 text-lg font-semibold outline-none focus:border-ink-soft"
+              value={draft.name}
+              onChange={(e) => patch({ name: e.target.value })}
+            />
           </div>
         ) : (
           <div>
             <h2 className="text-xl font-semibold text-ink">{draft.name}</h2>
-            <p className="mt-1 text-sm text-ink-soft">
-              {draft.worldName}——{draft.worldDescription}
-            </p>
           </div>
         )}
       </section>

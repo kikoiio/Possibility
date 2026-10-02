@@ -15,27 +15,64 @@ const NOOP_OPS = [{ kind: 'set-block', at: { x: 0, y: 0, z: 0 }, block: 'grass' 
 
 /** 净高 1 的「门洞」:平地上 (8,2,8) 压一块石头,(8,1,8) 成净空不足格 */
 const LOW_DOOR_OPS = [{ kind: 'set-block', at: { x: 8, y: 2, z: 8 }, block: 'stone' }]
+const OVERLAPPING_HOUSES = [
+  { kind: 'place-object', objectId: 'a', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+  { kind: 'place-object', objectId: 'b', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+  { kind: 'place-object', objectId: 'c', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 0 },
+]
 
 describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
-  it('首轮可行走性失败 → 重试文案带 walk issue 与坐标 → 次轮合规通过', async () => {
+  it('normalizes missing size and repairable clearance once without an extra LLM call', async () => {
     const calls: ChatMessage[][] = []
     const complete: CompleteFn = async (messages) => {
       calls.push(messages)
-      return calls.length === 1 ? payload(LOW_DOOR_OPS) : payload(NOOP_OPS)
+      return JSON.stringify({
+        ops: [{ kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' }, ...LOW_DOOR_OPS],
+      })
     }
-    const doc = await generateWorld('测试世界', 'mist-manor', { complete })
-    expect(calls.length).toBe(2)
-    const retryMsg = calls[1][calls[1].length - 1]
-    expect(retryMsg.role).toBe('user')
-    expect(retryMsg.content).toContain('walk-clearance')
-    expect(retryMsg.content).toContain('(8,1,8)')
-    // 最终产物通过双重校验
+    const doc = await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 1 })
+    expect(calls).toHaveLength(1)
+    expect(doc.size).toEqual({ width: 18, height: 5, depth: 18 })
+    expect(getBlock(doc, { x: 8, y: 2, z: 8 })).toBe('air')
     expect(validateDocument(doc)).toEqual([])
     expect(validateWalkability(doc)).toEqual([])
   })
 
-  it('maxAttempts 耗尽 → WorldGeneratorError 携带 walk issue', async () => {
-    const complete: CompleteFn = async () => payload(LOW_DOOR_OPS)
+  it('unrepairable document retries with feedback and reports normalization fixes on exhaustion', async () => {
+    const calls: ChatMessage[][] = []
+    const overlap = JSON.stringify({ size: { width: 16.2, height: 16, depth: 16 }, ops: OVERLAPPING_HOUSES })
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return overlap
+    }
+    let error: unknown
+    try {
+      await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(WorldGeneratorError)
+    expect(calls).toHaveLength(2)
+    expect(calls[1][calls[1].length - 1].content).toContain('未通过契约校验')
+    expect((error as WorldGeneratorError).issues.some(issue => issue.code === 'object-overlap')).toBe(true)
+    expect((error as WorldGeneratorError).normalizationFixes).toEqual(['size:16.2x16x16->16x16x16'])
+  })
+
+  it('clearance-only failure is repaired before retry and passes in one provider call', async () => {
+    const calls: ChatMessage[][] = []
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return payload(LOW_DOOR_OPS)
+    }
+    const doc = await generateWorld('测试世界', 'mist-manor', { complete })
+    expect(calls).toHaveLength(1)
+    expect(getBlock(doc, { x: 8, y: 2, z: 8 })).toBe('air')
+    expect(validateDocument(doc)).toEqual([])
+    expect(validateWalkability(doc)).toEqual([])
+  })
+
+  it('maxAttempts 耗尽 → WorldGeneratorError 携带结构 issue 与归一修复记录', async () => {
+    const complete: CompleteFn = async () => JSON.stringify({ ops: OVERLAPPING_HOUSES })
     let error: unknown
     try {
       await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })
@@ -43,7 +80,8 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
       error = e
     }
     expect(error).toBeInstanceOf(WorldGeneratorError)
-    expect((error as WorldGeneratorError).issues.some((i) => i.code === 'walk-clearance')).toBe(true)
+    expect((error as WorldGeneratorError).issues.some((i) => i.code === 'object-overlap')).toBe(true)
+    expect((error as WorldGeneratorError).normalizationFixes).toEqual(['size:inferred->8x4x8'])
   })
 
   it('结构校验失败时跳过可行走性(先修结构)', async () => {
@@ -121,32 +159,26 @@ describe('assembleWorld invalid dimensions', () => {
     }
   })
 
-  it('retries invalid or missing provider sizes with a stable terminal error', async () => {
-    const invalidPayloads = [
-      JSON.stringify({ size: { width: 7, height: 16, depth: 16 }, ops: NOOP_OPS }),
-      JSON.stringify({ ops: NOOP_OPS }),
-    ]
-
-    for (const response of invalidPayloads) {
-      const errors: string[] = []
-      for (let run = 0; run < 2; run++) {
-        let calls = 0
-        const complete: CompleteFn = async () => {
-          calls += 1
-          return response
-        }
-        let error: unknown
-        try {
-          await generateWorld('固定输入', 'mist-manor', { complete, id: 'fixed-size', maxAttempts: 2 })
-        } catch (caught) {
-          error = caught
-        }
-        expect(error).toBeInstanceOf(WorldGeneratorError)
-        expect(calls).toBe(2)
-        errors.push((error as Error).message)
+  it('retries malformed sizes that cannot be inferred with a stable terminal error', async () => {
+    const invalidPayload = JSON.stringify({ size: { width: 'wide', height: 16, depth: 16 }, ops: [] })
+    const errors: string[] = []
+    for (let run = 0; run < 2; run++) {
+      let calls = 0
+      const complete: CompleteFn = async () => {
+        calls += 1
+        return invalidPayload
       }
-      expect(errors[0]).toBe(errors[1])
+      let error: unknown
+      try {
+        await generateWorld('固定输入', 'mist-manor', { complete, id: 'fixed-size', maxAttempts: 2 })
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toBeInstanceOf(WorldGeneratorError)
+      expect(calls).toBe(2)
+      errors.push((error as Error).message)
     }
+    expect(errors[0]).toBe(errors[1])
   })
 })
 

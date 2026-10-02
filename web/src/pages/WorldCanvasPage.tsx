@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearToken, lifeApi, mapApi, publicApi, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
   ForkScenario, ForkScenarioInput, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
@@ -33,7 +33,7 @@ import MapSelectionCard from '../components/map/MapSelectionCard'
  */
 export default function WorldCanvasPage({ worldId, readonly = false, guest = false }: { worldId: string; readonly?: boolean; guest?: boolean }) {
   const [search, setSearch] = useSearchParams(); const timelineId = search.get('timeline'); const navigate = useNavigate()
-  const [worldChoices, setWorldChoices] = useState<{ id: string; name: string }[]>([])
+  const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
   const [sceneMissing, setSceneMissing] = useState(false)
@@ -112,7 +112,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (readonly || guest) return
     let active = true
     void worldsApi.list().then(result => {
-      if (active) setWorldChoices(result.worlds.map(world => ({ id: world.id, name: world.name })))
+      if (active) setWorldChoices(result.worlds.map(world => ({ id: world.id, name: world.name, hasScene: world.hasScene })))
     }).catch(() => {})
     return () => { active = false }
   }, [readonly, guest])
@@ -537,14 +537,24 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
   if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} editable={canEditScene} />
-  if (!voxelDoc) return (
-    <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4">
-      <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-white p-6 text-center shadow-sm" data-testid="world-canvas-missing">
-        <p className="text-sm text-[#526558]">{sceneMissing ? '场景暂时不可用，请重试。' : '这方天地还没有可渲染的场景。'}</p>
-        <button onClick={() => void read()} className="mt-4 rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-sm text-[#536558]">重试</button>
+  if (!voxelDoc) {
+    const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
+    const rebuildHref = personId
+      ? `/worlds/new?person=${encodeURIComponent(personId)}&fromWorld=${encodeURIComponent(worldId)}`
+      : null
+    return (
+      <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4">
+        <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-white p-6 text-center shadow-sm" data-testid="world-canvas-missing">
+          <p className="text-sm text-[#526558]">{sceneMissing ? '场景暂时不可用，请重试。' : '待创建场景'}</p>
+          {!sceneMissing && <p className="mt-2 text-sm text-[#718075]">为这个世界创建场景后，即可继续进入。</p>}
+          {rebuildHref && !sceneMissing && !readonly && !guest
+            ? <Link to={rebuildHref} className="mt-4 inline-flex rounded-lg bg-[#315641] px-4 py-2 text-sm text-white">补建场景</Link>
+            : !sceneMissing && <p className="mt-3 text-xs text-[#718075]">当前没有可用于补建场景的居民，或此世界为只读。</p>}
+          <button onClick={() => void read()} className="mt-4 rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-sm text-[#536558]">重试</button>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   const worldStatus = snapshot.world.status
   const running = worldStatus === 'running'
@@ -578,8 +588,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   return <main className="flex min-h-screen flex-col gap-3 bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
     {revisionList && <SceneHistoryPanel revisions={revisionList} currentVersion={revisionCurrent} busy={busy} onRestore={version => void restoreVersion(version)} onClose={() => setRevisionList(null)} />}
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#849183]">{snapshot.world.name}{snapshot.world.isDemo ? ' · 演示世界' : ''}</p><h1 className="font-story text-xl text-[#2d4435]">{mode === 'possibility' ? '另一种可能' : '这里正在生活'}</h1></div><div className="flex flex-wrap items-center gap-2">
-      <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => event.target.value === '__new__' ? navigate('/worlds/new') : navigate(`/worlds/${encodeURIComponent(event.target.value)}`)} className="max-w-44 rounded-full border border-[#d7ded3] bg-white/90 px-3 py-2 text-xs text-[#536558]">
-        {worldChoices.map(world => <option key={world.id} value={world.id}>{world.name}</option>)}<option value="__new__">＋ 创建世界</option>
+      <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => {
+        const selectedWorld = worldChoices.find(world => world.id === event.target.value)
+        if (event.target.value === '__new__') navigate('/worlds/new')
+        else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
+      }} className="max-w-44 rounded-full border border-[#d7ded3] bg-white/90 px-3 py-2 text-xs text-[#536558]">
+        {worldChoices.map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined}>{world.name}{world.hasScene ? '' : ' · 待创建场景'}</option>)}<option value="__new__">＋ 创建世界</option>
       </select>
       <TimelineSwitcher
         timelines={snapshot.timelines}

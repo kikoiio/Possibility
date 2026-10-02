@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, type EditOperation, type VoxelDocument } from '@possibility/voxel-contract'
 import { createTestDb } from '../test/db'
-import { persons, users } from '../db/schema'
+import { llmCallLog, persons, users } from '../db/schema'
 import { buildVoxelSceneDescription, createVoxelSceneDraft } from './voxel-draft'
 import { WorldGeneratorError } from '../voxel/generate'
 import type { WorldDraft } from '../worlds/draft'
@@ -41,6 +41,12 @@ function docWithLocations(names: string[]): VoxelDocument {
   return { ...doc, locations: names.map((name, i) => ({ name, objectId: `spot-${i}` })) }
 }
 
+function modelResponse(content: string) {
+  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })
+}
+
 describe('buildVoxelSceneDescription', () => {
   it('枚举全部地点并给出逐字绑定硬约束', () => {
     const desc = buildVoxelSceneDescription(WORLD, '湖边的庄园')
@@ -51,31 +57,80 @@ describe('buildVoxelSceneDescription', () => {
 })
 
 describe('createVoxelSceneDraft(S1 体素创建)', () => {
-  const deps = (doc: VoxelDocument, capture?: { desc?: string }) => ({
-    draftWorldFn: (async () => WORLD) as never,
-    generateWorldFn: (async (desc: string) => { if (capture) capture.desc = desc; return doc }) as never,
+  const deps = (doc: VoxelDocument, capture?: { desc?: string }, sceneCalls = 0) => ({
+    generateWorldFn: (async (desc: string, _theme: string, options: { complete: (messages: never[]) => Promise<string> }) => {
+      if (capture) capture.desc = desc
+      for (let i = 0; i < sceneCalls; i++) await options.complete([])
+      return doc
+    }) as never,
   })
 
-  it('骨架 → 体素草稿:信封可序列化回读、世界透传、生成描述含绑定指令', async () => {
+  it('骨架 → 体素草稿:信封可序列化回读、世界透传、生成描述含绑定指令且准确报告调用数', async () => {
     await setup()
     const capture: { desc?: string } = {}
+    let providerCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      providerCalls++
+      return modelResponse(providerCalls === 1 ? JSON.stringify(WORLD) : '{}')
+    }))
+    const sceneCalls = 3
     const result = await createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
       { requestId: 'req-1', prompt: '湖边的庄园', personIds: ['p1', 'p2'] },
-      deps(docWithLocations(WORLD.locations.map(l => l.name)), capture))
+      deps(docWithLocations(WORLD.locations.map(l => l.name)), capture, sceneCalls))
     expect(result.world).toEqual(WORLD)
     expect(isSerializedVoxelDocument(result.document)).toBe(true)
     expect(result.document.locations.map(l => l.name).sort()).toEqual(WORLD.locations.map(l => l.name).sort())
     expect(capture.desc).toContain('「湖畔庄园」')
     expect(capture.desc).toContain('「码头」')
     expect(result.explanation).toContain('湖畔庄园')
+    expect(result.callsUsed).toBe(providerCalls)
+    expect(result.callsUsed).toBe(1 + sceneCalls)
+    expect(await fixture!.db.select().from(llmCallLog)).toHaveLength(result.callsUsed)
+  })
+
+  it('场景生成失败时错误保留骨架与场景调用数', async () => {
+    await setup()
+    let providerCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      providerCalls++
+      return modelResponse(providerCalls === 1 ? JSON.stringify(WORLD) : '{}')
+    }))
+    const sceneCalls = 2
+    const error = new WorldGeneratorError('场景生成失败')
+    const failedDeps = {
+      generateWorldFn: (async (_desc: string, _theme: string, options: { complete: (messages: never[]) => Promise<string> }) => {
+        for (let i = 0; i < sceneCalls; i++) await options.complete([])
+        throw error
+      }) as never,
+    }
+    await expect(createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
+      { requestId: 'req-failed', prompt: '湖边的庄园', personIds: ['p1'] }, failedDeps))
+      .rejects.toBe(error)
+    expect(error).toMatchObject({ callsUsed: providerCalls })
+    expect(error).toMatchObject({ callsUsed: 1 + sceneCalls })
+    expect(await fixture!.db.select().from(llmCallLog)).toHaveLength((error as WorldGeneratorError & { callsUsed: number }).callsUsed)
+  })
+
+  it('骨架失败时错误带重试后的实际调用数', async () => {
+    await setup()
+    const provider = vi.fn(async () => modelResponse('{invalid'))
+    vi.stubGlobal('fetch', provider)
+    const error = await createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
+      { requestId: 'req-skeleton-failed', prompt: '湖边的庄园', personIds: ['p1'] }, deps(docWithLocations(WORLD.locations.map(l => l.name))))
+      .catch((failure: Error & { callsUsed?: number }) => failure)
+    expect(error).toMatchObject({ callsUsed: provider.mock.calls.length })
+    expect(error).toMatchObject({ callsUsed: 2 })
+    expect(await fixture!.db.select().from(llmCallLog)).toHaveLength(error.callsUsed!)
   })
 
   it('地点绑定覆盖缺失 → WorldGeneratorError(创建端 502)', async () => {
     await setup()
     const doc = docWithLocations(WORLD.locations.slice(1).map(l => l.name)) // 缺「主楼」
+    vi.stubGlobal('fetch', vi.fn(async () => modelResponse(JSON.stringify(WORLD))))
     await expect(createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
       { requestId: 'req-2', prompt: '湖边的庄园', personIds: ['p1'] }, deps(doc)))
       .rejects.toThrowError(WorldGeneratorError)
+    vi.stubGlobal('fetch', vi.fn(async () => modelResponse(JSON.stringify(WORLD))))
     await expect(createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
       { requestId: 'req-2', prompt: '湖边的庄园', personIds: ['p1'] }, deps(doc)))
       .rejects.toThrow('主楼')

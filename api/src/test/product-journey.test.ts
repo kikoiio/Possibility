@@ -26,22 +26,6 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   const personResponse = await request('/api/persons', 'POST', { name: 'Mina', model: { identity: ['A neighborhood baker'] } })
   expect(personResponse.status).toBe(200)
   const { id: personId } = await personResponse.json() as { id: string }
-  const personDetail = await request(`/api/persons/${personId}`, 'GET')
-  const personData = await personDetail.json() as { world: { id: string }; timelines: { id: string; parentTimelineId: string | null }[] }
-  const defaultMain = personData.timelines.find(timeline => timeline.parentTimelineId === null)!
-  const personRevision = await f.db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, defaultMain.id)).get()
-  const personModel = await f.db.select().from(worldModelVersions).where(eq(worldModelVersions.worldId, personData.world.id)).get()
-  expect(await f.db.select().from(universeEvidence).where(eq(universeEvidence.timelineId, defaultMain.id)).get())
-    .toMatchObject({ level: 'complete', assessedVersion: 0, baselineVersion: 0 })
-  expect(JSON.parse(personModel!.modelJson).projectionBaseline).toMatchObject({
-    source: 'root', version: 0, simTime: personRevision!.simTime,
-    completeDomains: expect.arrayContaining(['clock', 'states', 'schedules', 'events', 'commitments', 'memories',
-      'dialogues', 'dialogueTurns', 'personaMessages', 'knowledge']),
-    rows: { states: [expect.objectContaining({ personId, timelineId: defaultMain.id })], schedules: [], events: [],
-      commitments: [], memories: [], dialogues: [], dialogueTurns: [], personaMessages: [] },
-  })
-  expect(await auditUniverse(f.db, personData.world.id, defaultMain.id)).toEqual([])
-
   const worldRequest = {
     name: 'Harbor Town', description: 'A small town by the sea.', personIds: [personId],
     locations: [
@@ -268,33 +252,33 @@ it('rolls back person and world creation if the immutable baseline cannot be wri
   const rejectRevision = () => f.sqlite.exec("CREATE TRIGGER reject_universe_baseline BEFORE INSERT ON universe_revisions BEGIN SELECT RAISE(ABORT, 'forced baseline failure'); END")
 
   rejectRevision()
-  expect((await request('/api/persons', 'POST', { name: 'Atomic Person', model: {} })).status).toBe(500)
-  expect(count('persons')).toBe(0)
-  expect(count('world_model_versions')).toBe(0)
-  expect(count('worlds')).toBe(2) // only the fixture's preexisting worlds remain
-  expect(count('timelines')).toBe(2)
-
-  f.sqlite.exec('DROP TRIGGER reject_universe_baseline')
-  f.sqlite.exec("CREATE TRIGGER reject_universe_evidence BEFORE INSERT ON universe_evidence BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END")
-  expect((await request('/api/persons', 'POST', { name: 'Atomic Evidence Person', model: {} })).status).toBe(500)
-  expect(count('persons')).toBe(0)
-  expect(count('world_model_versions')).toBe(0)
-  expect(count('worlds')).toBe(2)
-  expect(count('timelines')).toBe(2)
-  f.sqlite.exec('DROP TRIGGER reject_universe_evidence')
   const person = await request('/api/persons', 'POST', { name: 'Atomic Person', model: {} })
   expect(person.status).toBe(200)
   const personId = (await person.json() as { id: string }).id
-  f.sqlite.exec("CREATE TRIGGER reject_universe_evidence BEFORE INSERT ON universe_evidence BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END")
+  expect(count('persons')).toBe(1)
+  expect(count('worlds')).toBe(2) // person creation does not create a world
+  expect(count('timelines')).toBe(2)
+
   expect((await request('/api/worlds', 'POST', {
     name: 'Atomic Universe', description: 'Must not be half-created', personIds: [personId],
     locations: ['Cafe', 'Harbor', 'Market', 'Library', 'Square'].map(name => ({ name, description: '' })),
   })).status).toBe(500)
-  expect(count('worlds')).toBe(3) // the person's default world remains; failed new world is absent
-  expect(count('timelines')).toBe(3)
-  expect(count('world_model_versions')).toBe(1)
-  expect(count('world_persons')).toBe(1)
-  expect(count('universe_evidence')).toBe(2) // fixture root and the person's default world remain
+  expect(count('worlds')).toBe(2)
+  expect(count('timelines')).toBe(2)
+  expect(count('world_model_versions')).toBe(0)
+  expect(count('world_persons')).toBe(0)
+
+  f.sqlite.exec('DROP TRIGGER reject_universe_baseline')
+  f.sqlite.exec("CREATE TRIGGER reject_universe_evidence BEFORE INSERT ON universe_evidence BEGIN SELECT RAISE(ABORT, 'forced evidence failure'); END")
+  expect((await request('/api/worlds', 'POST', {
+    name: 'Atomic Evidence Universe', description: 'Must not be half-created', personIds: [personId],
+    locations: ['Cafe', 'Harbor', 'Market', 'Library', 'Square'].map(name => ({ name, description: '' })),
+  })).status).toBe(500)
+  expect(count('worlds')).toBe(2)
+  expect(count('timelines')).toBe(2)
+  expect(count('world_model_versions')).toBe(0)
+  expect(count('world_persons')).toBe(0)
+  expect(count('universe_evidence')).toBe(1) // only the fixture root remains
 })
 
 it('advances the selected world, completes ordinary chat, and forks from the resulting history', async () => {
