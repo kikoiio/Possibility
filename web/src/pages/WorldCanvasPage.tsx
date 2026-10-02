@@ -25,6 +25,7 @@ import EvidenceNotice from '../components/world/EvidenceNotice'
 import GlobalCapBanner from '../components/GlobalCapBanner'
 import WorldLlmConfigPanel from '../components/WorldLlmConfigPanel'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
+import MapSelectionCard from '../components/map/MapSelectionCard'
 
 /**
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
@@ -63,6 +64,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [compareOpen, setCompareOpen] = useState(false)
   const [llmConfigOpen, setLlmConfigOpen] = useState(false)
   const [presenceOpen, setPresenceOpen] = useState(false)
+  // S3/F1:单空间 owner 路径的地图选中(居民/地点卡)与 ScenePanel 预选地点
+  const [mapSelected, setMapSelected] = useState<string | null>(null)
+  const [mapPersonId, setMapPersonId] = useState<string | null>(null)
+  const [presenceLocation, setPresenceLocation] = useState<string | null>(null)
   const [injectOpen, setInjectOpen] = useState(false)
   const [actionError, setActionError] = useState('')
   const [forkHint, setForkHint] = useState<{ sourceId: string; newId: string } | null>(null)
@@ -214,6 +219,17 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   // 体素文档(S2 起唯一形态):单空间信封 → 视口;多空间包 → GuestWorldMap
   const voxelDoc = useMemo(() => parseVoxelDocument(sceneDoc), [sceneDoc])
   const voxelSpaces = useMemo(() => parseVoxelSpaces(sceneDoc), [sceneDoc])
+  // S3/F1:单空间 owner 路径选中派生(镜像 GuestWorldMap,不含导览)
+  const mapVoxelObject = mapSelected ? voxelDoc?.objects.find(object => object.id === mapSelected) ?? null : null
+  const mapLocationName = mapVoxelObject?.binding?.kind === 'location'
+    ? mapVoxelObject.binding.locationName
+    : voxelDoc?.locations.find(item => item.objectId === mapSelected)?.name ?? null
+  const mapBoundPersonId = mapVoxelObject?.binding?.kind === 'person' ? mapVoxelObject.binding.personId : mapPersonId
+  const mapPerson = mapBoundPersonId
+    ? snapshot?.locationBoard.flatMap(row => row.persons.map(item => ({ ...item, location: row.location }))).find(item => item.id === mapBoundPersonId) ?? null
+    : null
+  const mapLocation = mapLocationName ? snapshot?.world.locations.find(item => item.name === mapLocationName) ?? null : null
+  const mapPeople = mapLocationName ? snapshot?.locationBoard.find(row => row.location === mapLocationName)?.persons ?? [] : []
   // S1 分屏:轴模型(纯函数) + 拖档截断;拖档只过滤事件流,视口始终渲染当前状态
   const splitActive = mode === 'possibility' && voxelDoc !== null
   const axis = useMemo(() => splitActive && comparison ? buildAlignedAxis(comparison) : null, [splitActive, comparison])
@@ -547,7 +563,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     finally { setRegeneratingDemo(false) }
   }
 
-  if (readonly) return <main className="relative h-full min-h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
+  if (readonly) return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
     <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} />
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-[#23382f]/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
@@ -623,13 +639,24 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         <InjectBox onInject={handleInject} />
       </div>
     )}
-    <div className="flex min-h-[500px] flex-1 gap-3"><div className="flex min-w-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-[500px] flex-1 gap-3"><div className="relative flex min-w-0 flex-1 flex-col gap-3">
       {mode === 'possibility' && !isSmall ? renderSplitView() : mode === 'possibility' ? renderSmallSplit()
-        : <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} editable planEdits={planEditsViaApi} onSave={saveVoxel} />}
+        : <div className="flex min-h-0 flex-1 flex-col"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} editable planEdits={planEditsViaApi} onSave={saveVoxel}
+            onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
+            onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
+      {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard
+        person={mapPerson}
+        locationName={mapLocationName}
+        locationDescription={mapLocation?.description ?? null}
+        peopleHere={mapPeople}
+        fallbackLabel={mapVoxelObject?.label ?? null}
+        onClose={() => { setMapSelected(null); setMapPersonId(null) }}
+        onEnter={(name) => { setPresenceLocation(name); setPresenceOpen(true) }}
+      />}
       {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{new Date(snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })}</span></div>}
     </div></div>
     {lifeOpen && activeTimelineId && <LifePanel worldId={worldId} timelineId={activeTimelineId} onClose={() => setLifeOpen(false)} />}
     {compareOpen && activeTimelineId && snapshot.timelines.length > 1 && <ComparePanel worldId={worldId} currentTimelineId={activeTimelineId} timelines={snapshot.timelines} onClose={() => setCompareOpen(false)} />}
-    {presenceOpen && activeTimelineId && <ScenePanel key={`${worldId}:${activeTimelineId}`} worldId={worldId} timelineId={activeTimelineId} locations={snapshot.world.locations} onClose={() => setPresenceOpen(false)} />}
+    {presenceOpen && activeTimelineId && <ScenePanel key={`${worldId}:${activeTimelineId}`} worldId={worldId} timelineId={activeTimelineId} locations={snapshot.world.locations} initialLocation={presenceLocation ?? ''} onClose={() => { setPresenceOpen(false); setPresenceLocation(null) }} />}
   </main>
 }

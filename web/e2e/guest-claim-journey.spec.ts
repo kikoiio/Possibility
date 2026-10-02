@@ -50,8 +50,8 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   await clickGreenhouse(page)
   await page.getByRole('button', { name: '进入此地点' }).click()
   await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
-  // ScenePanel 默认停在 persona 当前地点(大厅),先选温室花房再「移动」
-  await page.getByRole('combobox').selectOption('温室花房')
+  // S3/F2:从地点卡进入时面板预选该地点(此前被 persona 记忆地点静默覆盖,须先手选)
+  await expect(page.getByLabel('进入地点')).toHaveValue('温室花房')
   await page.getByRole('button', { name: '移动', exact: true }).click()
   await expect(page.getByText('你在 温室花房')).toBeVisible({ timeout: 15000 })
   await page.getByRole('button', { name: '关闭', exact: true }).click()
@@ -71,9 +71,12 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   await page.getByRole('button', { name: '注册', exact: true }).click()
   await expect(page).toHaveURL(/\/worlds\//, { timeout: 60000 })
 
-  // 6. 重开保存世界:画布可用,访客进度(平行宇宙 + 位置)可见
+  // 6. 重开保存世界:画布可用,访客进度(平行宇宙 + 位置)可见;地图铺满视窗(S3/F4,问题 19)
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 60_000 })
   await skipTour(page)
+  const canvasBox = await page.getByTestId('voxel-viewport-canvas').boundingBox()
+  const viewportHeight = page.viewportSize()?.height ?? 0
+  expect(canvasBox?.height ?? 0).toBeGreaterThanOrEqual(viewportHeight * 0.9)
   const switcher = page.getByTestId('timeline-switcher')
   await expect(switcher).toBeVisible({ timeout: 30000 })
   await expect(switcher.locator('option')).toHaveCount(2)

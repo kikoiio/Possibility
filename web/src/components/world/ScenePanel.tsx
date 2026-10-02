@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, personaApi, sceneApi, worldsApi } from '../../api/client'
 import type { Persona, PersonaMention, PersonaMessage, SceneEvent } from '../../api/types'
+import { resolveSceneEntryLocation } from '../../scene/entry-location'
 
 interface Props {
   worldId: string
@@ -79,7 +80,8 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
-  const [location, setLocation] = useState(initialLocation)
+  // S3/F2:初始地点经校验后传入优先;persona 载回后同样按纯函数裁定
+  const [location, setLocation] = useState(() => resolveSceneEntryLocation(initialLocation, null, locations).location)
   const [moving, setMoving] = useState(false)
   const [dialogueId, setDialogueId] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
@@ -114,7 +116,9 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
         if (d.persona) {
           setName(d.persona.name)
           setDescription(d.persona.description)
-          setLocation(d.persona.location ?? (initialLocation || locations[0]?.name || ''))
+          const entry = resolveSceneEntryLocation(initialLocation, d.persona.location ?? null, locations)
+          setLocation(entry.location)
+          if (entry.notice) setError(entry.notice)
           const pendingIntent = readPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona.id))
           if (pendingIntent) {
             setIntentProposal(pendingIntent.result)
@@ -527,6 +531,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
             <div className="flex items-center gap-2 border-b border-ink-line/60 px-5 py-2.5">
               <span className="text-xs text-ink-faint">{persona.location ? `你在 ${persona.location} · 前往` : '选择进入地点'}</span>
               <select
+                aria-label="进入地点"
                 value={location}
                 disabled={busy || moving}
                 onChange={(e) => setLocation(e.target.value)}
