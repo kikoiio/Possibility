@@ -19,7 +19,9 @@ engineRoutes.post('/tick', async (c) => {
   try { summary = await runTick(c.env, db) }
   catch (error) {
     if (error instanceof TickLeaseLostError) return c.json({ error: error.message }, 409)
-    throw error
+    // S2/F2：整拍异常只记录、不向上抛——pinger 消化 500 后继续循环,进程不被拖垮
+    console.error('[tick] 整拍失败:', error)
+    return c.json({ error: '引擎节拍失败', detail: error instanceof Error ? error.message.slice(0, 120) : '未知错误' }, 500)
   }
   if (summary === null) return c.json({ error: '上一拍仍在进行' }, 409)
   return c.json(summary)

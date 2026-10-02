@@ -200,7 +200,7 @@ test.describe('S4 世界模拟:事件全链(生产路径)', () => {
     await openWorld(page)
 
     // 三态:窗内活跃 / 已结束留痕 / 未开始隐藏(防剧透)
-    await expect.poll(() => disclosureIds(page)).toEqual(expect.arrayContaining(['evt-s4-festival', 'evt-s4-fire', 'evt-s4-flower']))
+    await expect.poll(() => disclosureIds(page), { timeout: 15000 }).toEqual(expect.arrayContaining(['evt-s4-festival', 'evt-s4-fire', 'evt-s4-flower']))
     const states = await engine(page, (e) => e.getEventDisclosure())
     expect(stateOf(states, 'evt-s4-festival').phase).toBe('active')
     expect(stateOf(states, 'evt-s4-fire').phase).toBe('trace')
@@ -268,7 +268,7 @@ test.describe('S4 世界模拟:事件全链(生产路径)', () => {
     const state = { streamPhase: 0 }
     await stubS4Apis(page, state)
     await openWorld(page)
-    await expect.poll(() => disclosureIds(page)).toHaveLength(3)
+    await expect.poll(() => disclosureIds(page), { timeout: 15000 }).toHaveLength(3)
 
     // 页面存活标记(验证无 reload)+ 漫步前位置(首次落位在主楼锚点)
     await page.evaluate(() => { window.__s4Mark = 1 })

@@ -215,7 +215,8 @@ export default function VoxelViewport({
     if (eventRouting.routeAt(x, y)) return
     interactRef.current(x, y)
   }, [eventRouting.routeAt])
-  useCanvasClick(engineRef.current, ready && !controller && cameraMode === 'orbit', handleObserveClick)
+  // S2:只有编辑器 UI 真正渲染(controller + planEdits)时才让位编辑;owner 无编辑器时观察点击必须可用
+  useCanvasClick(engineRef.current, ready && !(controller && planEdits) && cameraMode === 'orbit', handleObserveClick)
   // 第一视角:点击 = 屏幕中心(准星)射线(F4,只读选中;编辑入口不渲染)
   const handleWalkClick = useCallback(() => {
     const canvas = engineRef.current?.renderer.canvas

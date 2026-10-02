@@ -2,8 +2,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import {
-  chapters, commitments, conversations, dialogueTurns, dialogues, events, memories, messages, personaMessages,
-  persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts,
+  chapters, commitments, conversations, dialogueTurns, dialogues, events, forkSnapshots, memories, messages, personaMessages,
+  persons, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts,
   worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits,
 } from '../db/schema'
 
@@ -19,6 +19,8 @@ export interface CloneWorldGraphResult {
   mainTimelineId: string
   personIds: Map<string, string>
   timelineIds: Map<string, string>
+  eventIds: Map<string, string>
+  commandIds: Map<string, string>
 }
 
 async function stableId(scope: string, kind: string, source: string): Promise<string> {
@@ -76,11 +78,10 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   for (const timeline of sourceTimelines) timelineIds.set(timeline.id, await stableId(input.requestId, 'timeline', timeline.id))
   const mainTimeline = sourceTimelines.find(row => !row.parentTimelineId) ?? sourceTimelines[0]
   if (!mainTimeline) throw new Error('复制源世界没有时间线')
-  if (existing) return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds }
-
   const sourceTimelineIds = sourceTimelines.map(row => row.id)
   const [dialogueRows, stateRows, scheduleRows, evidenceRows, revisionRows, commandRows, factRows, eventRows,
-    memoryRows, conversationRows, chapterRows, personaMessageRows, commitmentRows, visitRows, modelRows, universeRows, sceneRows, sceneRevisionRows] = await Promise.all([
+    memoryRows, conversationRows, chapterRows, personaMessageRows, commitmentRows, visitRows, modelRows, universeRows, sceneRows, sceneRevisionRows,
+    projectionRows, forkSnapshotRows] = await Promise.all([
     sourceTimelineIds.length ? db.select().from(dialogues).where(inArray(dialogues.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(personStates).where(inArray(personStates.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(schedules).where(inArray(schedules.timelineId, sourceTimelineIds)).all() : [],
@@ -99,16 +100,33 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     sourceTimelineIds.length ? db.select().from(universeRevisions).where(inArray(universeRevisions.timelineId, sourceTimelineIds)).all() : [],
     db.select().from(worldScenes).where(eq(worldScenes.worldId, source.id)).all(),
     db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, source.id)).all(),
+    // S2/F5：体素事件投影与分叉快照随克隆复制;日界锚点不复制(可全量回放兜住,日界翻转时再捕获)
+    sourceTimelineIds.length ? db.select().from(voxelEventProjections).where(inArray(voxelEventProjections.timelineId, sourceTimelineIds)).all() : [],
+    sourceTimelineIds.length ? db.select().from(forkSnapshots).where(inArray(forkSnapshots.timelineId, sourceTimelineIds)).all() : [],
   ])
 
   const dialogueIds = new Map<string, string>()
   const commandIds = new Map<string, string>()
   const factIds = new Map<string, string>()
   const conversationIds = new Map<string, string>()
+  const eventIds = new Map<string, string>()
   for (const row of dialogueRows) dialogueIds.set(row.id, await stableId(input.requestId, 'dialogue', row.id))
   for (const row of commandRows) commandIds.set(row.id, await stableId(input.requestId, 'command', row.id))
   for (const row of factRows) factIds.set(row.id, await stableId(input.requestId, 'fact', row.id))
   for (const row of conversationRows) conversationIds.set(row.id, await stableId(input.requestId, 'conversation', row.id))
+  for (const row of eventRows) eventIds.set(row.id, await stableId(input.requestId, 'event', row.id))
+
+  // 世界已克隆过(同 requestId 重放):直接返回全量映射,调用方据此做幂等/核验
+  if (existing) return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds, eventIds, commandIds }
+
+  // S2/F3(D1 修复)：历史指令的 expected_version 重定基到该线证据当前已评版本。
+  // 0021 触发器要求插入 world_commands 时 evidence level='complete' 且 assessed_version = expected_version;
+  // 源世界里指令落库后 evidence 会被后续提交重评,原样重放必然版本失配 → 克隆重定基,线上新写门禁不变。
+  // 无 complete 证据的时间线保持原值(源世界本不该存在此状态,让触发器拒绝并走核验失败路径)。
+  const evidenceVersionByTimeline = new Map<string, number>()
+  for (const row of evidenceRows) {
+    if (row.level === 'complete') evidenceVersionByTimeline.set(row.timelineId, row.assessedVersion ?? 0)
+  }
   const messageRows = conversationRows.length
     ? await db.select().from(messages).where(inArray(messages.conversationId, conversationRows.map(row => row.id))).all() : []
   const turnRows = dialogueRows.length
@@ -138,6 +156,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   if (universeRows.length && !revisionRows.length) pushInChunks(statements, universeRows.map(row => ({ ...row, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(universeRevisions).values(chunk))
   pushInChunks(statements, commandRows.map(row => ({
     ...row, id: commandIds.get(row.id)!, worldId, timelineId: timelineIds.get(row.timelineId)!,
+    expectedVersion: evidenceVersionByTimeline.get(row.timelineId) ?? row.expectedVersion,
     actorId: row.actorId ? personIds.get(row.actorId) ?? row.actorId : null, tickLeaseToken: null,
   })), chunk => db.insert(worldCommands).values(chunk))
   pushInChunks(statements, factRows.map(row => ({
@@ -149,7 +168,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     ...row, id: await stableId(input.requestId, 'turn', row.id), dialogueId: dialogueIds.get(row.dialogueId)!, personId: personIds.get(row.personId)!,
   }))), chunk => db.insert(dialogueTurns).values(chunk))
   pushInChunks(statements, await Promise.all(eventRows.map(async row => ({
-    ...row, id: await stableId(input.requestId, 'event', row.id), timelineId: timelineIds.get(row.timelineId)!,
+    ...row, id: eventIds.get(row.id)!, timelineId: timelineIds.get(row.timelineId)!,
     actorPersonId: row.actorPersonId ? personIds.get(row.actorPersonId) ?? null : null,
     dialogueId: row.dialogueId ? dialogueIds.get(row.dialogueId) ?? null : null,
   }))), chunk => db.insert(events).values(chunk))
@@ -181,7 +200,65 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     id: await stableId(input.requestId, 'scene-revision', row.id), worldId,
     requestId: await stableId(input.requestId, 'scene-request', row.requestId), documentJson: remapSceneJson(row.documentJson, personIds),
   }))), chunk => db.insert(worldSceneRevisions).values(chunk))
+  // S2/F5：体素事件投影(ID 重键 vep:{新时间线}:{clusterKey})与分叉快照,载荷内人物/时间线/事件引用统一重映射
+  const refIds = new Map<string, string>([...personIds, ...timelineIds, ...eventIds])
+  pushInChunks(statements, projectionRows.map(row => ({
+    ...row,
+    id: `vep:${timelineIds.get(row.timelineId)!}:${row.id.split(':').slice(2).join(':')}`,
+    timelineId: timelineIds.get(row.timelineId)!,
+    payloadJson: remapSceneJson(row.payloadJson, refIds),
+  })), chunk => db.insert(voxelEventProjections).values(chunk))
+  pushInChunks(statements, forkSnapshotRows.map(row => ({
+    ...row,
+    timelineId: timelineIds.get(row.timelineId)!,
+    payloadJson: remapSceneJson(row.payloadJson, refIds),
+  })), chunk => db.insert(forkSnapshots).values(chunk))
 
   await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
-  return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds }
+  return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds, eventIds, commandIds }
+}
+
+/**
+ * S2/F4：核验失败时删除半成品克隆图。稳定 ID 下不删除会让同 requestId 重试幂等早退到坏世界;
+ * 删除后重试可干净重建同一 worldId。先子后父删除(外键),会话/源世界行不在删除范围。
+ */
+export async function deleteClonedWorldGraph(db: Db, cloned: CloneWorldGraphResult): Promise<void> {
+  const worldId = cloned.worldId
+  const personIdList = [...cloned.personIds.values()]
+  const timelineIdList = [...cloned.timelineIds.values()]
+  const conversationIdList = timelineIdList.length
+    ? (await db.select({ id: conversations.id }).from(conversations).where(inArray(conversations.timelineId, timelineIdList)).all()).map(row => row.id)
+    : []
+  const dialogueIdList = timelineIdList.length
+    ? (await db.select({ id: dialogues.id }).from(dialogues).where(inArray(dialogues.timelineId, timelineIdList)).all()).map(row => row.id)
+    : []
+
+  const statements: BatchItem<'sqlite'>[] = []
+  const del = (condition: boolean, statement: BatchItem<'sqlite'>) => { if (condition) statements.push(statement) }
+  del(conversationIdList.length > 0, db.delete(messages).where(inArray(messages.conversationId, conversationIdList)))
+  del(dialogueIdList.length > 0, db.delete(dialogueTurns).where(inArray(dialogueTurns.dialogueId, dialogueIdList)))
+  del(timelineIdList.length > 0, db.delete(events).where(inArray(events.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(worldFacts).where(inArray(worldFacts.timelineId, timelineIdList)))
+  del(true, db.delete(commitments).where(eq(commitments.worldId, worldId)))
+  del(true, db.delete(personaMessages).where(eq(personaMessages.worldId, worldId)))
+  del(personIdList.length > 0, db.delete(memories).where(inArray(memories.personId, personIdList)))
+  del(timelineIdList.length > 0, db.delete(conversations).where(inArray(conversations.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(dialogues).where(inArray(dialogues.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(worldVisits).where(inArray(worldVisits.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(schedules).where(inArray(schedules.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(personStates).where(inArray(personStates.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(universeEvidence).where(inArray(universeEvidence.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(universeRevisions).where(inArray(universeRevisions.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(forkSnapshots).where(inArray(forkSnapshots.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(voxelEventProjections).where(inArray(voxelEventProjections.timelineId, timelineIdList)))
+  del(true, db.delete(worldCommands).where(eq(worldCommands.worldId, worldId)))
+  del(true, db.delete(chapters).where(eq(chapters.worldId, worldId)))
+  del(true, db.delete(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)))
+  del(true, db.delete(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, worldId)))
+  del(true, db.delete(worldScenes).where(eq(worldScenes.worldId, worldId)))
+  del(true, db.delete(worldPersons).where(eq(worldPersons.worldId, worldId)))
+  del(true, db.delete(timelines).where(eq(timelines.worldId, worldId)))
+  del(personIdList.length > 0, db.delete(persons).where(inArray(persons.id, personIdList)))
+  del(true, db.delete(worlds).where(eq(worlds.id, worldId)))
+  if (statements.length) await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
 }

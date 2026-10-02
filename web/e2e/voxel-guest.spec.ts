@@ -64,15 +64,16 @@ async function toScreen(page: Page, at: { x: number; y: number; z: number }) {
   }).worldToScreen(cell)!, at)
 }
 
-async function residentScreen(page: Page): Promise<{ x: number; y: number }> {
+async function residentScreen(page: Page): Promise<{ x: number; y: number } | null> {
   return page.evaluate(() => {
-    const engine = window.__voxelEngine as never as {
-      residents: { snapshot(): { personId: string; position: { x: number; y: number; z: number } }[] }
+    const probe = window.__voxelEngine as never as {
+      residents: { snapshot(): { personId: string; position: { x: number; y: number; z: number } }[] } | null
       worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
-    }
-    const resident = engine.residents.snapshot()[0]!
+    } | undefined
+    const resident = probe?.residents?.snapshot().find(item => item.personId === 'person-host')
+    if (!probe || !resident) return null
     const at = { x: Math.floor(resident.position.x), y: Math.floor(resident.position.y) + 1, z: Math.floor(resident.position.z) }
-    return engine.worldToScreen(at)!
+    return probe.worldToScreen(at)
   })
 }
 
@@ -94,7 +95,8 @@ test('guest voxel sandbox: multi-space navigation and full onboarding tour (AC16
   // 步骤 2 认识居民：点击行走的居民
   await expect(async () => {
     const at = await residentScreen(page)
-    await page.mouse.click(at.x, at.y)
+    expect(at).not.toBeNull()
+    await page.mouse.click(at!.x, at!.y)
     await expect(page.getByText('体验指引 3/8')).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: 10000 })
   await expect(page.getByRole('heading', { name: '主人' })).toBeVisible()
@@ -128,6 +130,11 @@ test('guest voxel sandbox: multi-space navigation and full onboarding tour (AC16
   // 步骤 8 返回地图 → 导览完成
   await page.getByRole('button', { name: '返回地图' }).click()
   await expect(page.getByText('导览已完成')).toBeVisible()
+
+  // The selected resident detail matches the location/activity supplied by bootstrap.
+  await expect(page.getByRole('heading', { name: '主人' })).toBeVisible()
+  await expect(page.getByText('现在在主楼 · 独自在书房读信')).toBeVisible()
+  await page.getByRole('button', { name: '关闭信息' }).click()
 
   // AC16：点击空间入口（主楼门前的触发点）→ 进入主楼；按钮返回外景
   const entry = await toScreen(page, { x: 23, y: 0, z: 24 })

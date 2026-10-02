@@ -5,7 +5,8 @@ import { demoSandboxes, guestSessions, persons, personStates, timelines, users, 
 import { buildUserPersonaModel } from '../persona/routes'
 import { hashGuestToken } from '../access/middleware'
 import { readActiveBaseline } from './baseline-repository'
-import { cloneWorldGraph } from './world-graph-cloner'
+import { cloneWorldGraph, deleteClonedWorldGraph } from './world-graph-cloner'
+import { verifyClonedWorld } from './clone-verification'
 import type { GuestSessionResult } from './types'
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
@@ -121,6 +122,12 @@ export async function resetGuestSession(db: Db, token: string, requestId: string
   return sessionResult(db, session.id)
 }
 
+export class ClaimVerificationError extends Error {
+  constructor(readonly issues: { code: string; detail: string }[]) {
+    super(`演示世界保存核验未通过: ${issues.map(issue => issue.code).join(', ')}`)
+  }
+}
+
 export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; now?: Date }): Promise<{ worldId: string } | null> {
   const now = input.now ?? new Date()
   const session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
@@ -132,6 +139,16 @@ export async function claimGuestSession(db: Db, input: { token: string; userId: 
     sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId,
     requestId: `claim:${session.id}:${input.requestId}`, name: '雾影庄 · 保存的可能',
   })
+  // S2/F4：核验通过才落 claimed;失败删半成品克隆图,访客会话与副本原样保留,同 requestId 可干净重试
+  const verification = await verifyClonedWorld(db, {
+    sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId, worldId: cloned.worldId,
+    mainTimelineId: cloned.mainTimelineId, personIds: cloned.personIds, timelineIds: cloned.timelineIds,
+    commandIds: cloned.commandIds,
+  })
+  if (!verification.ok) {
+    await deleteClonedWorldGraph(db, cloned)
+    throw new ClaimVerificationError(verification.issues)
+  }
   await db.batch([
     db.update(demoSandboxes).set({ status: 'claimed', claimedWorldId: cloned.worldId }).where(eq(demoSandboxes.id, active.id)),
     db.update(guestSessions).set({ status: 'claimed', updatedAt: now.toISOString() }).where(eq(guestSessions.id, session.id)),

@@ -10,7 +10,7 @@ import { forkTimeline } from '../life/fork'
 import { compareTimelines } from '../life/compare'
 import { timelines } from '../db/schema'
 import { and, eq } from 'drizzle-orm'
-import { claimGuestSession, createGuestSession, resetGuestSession, resumeGuestSession } from './session-service'
+import { claimGuestSession, ClaimVerificationError, createGuestSession, resetGuestSession, resumeGuestSession } from './session-service'
 
 export const demoRoutes = new Hono<{ Bindings: Env }>()
 
@@ -41,8 +41,17 @@ claimRoutes.post('/', async c => {
   const token = c.req.header(GUEST_TOKEN_HEADER)?.trim()
   const body = await c.req.json<{ requestId?: string }>().catch(() => null)
   if (!token || !body?.requestId?.trim()) return c.json({ error: '访客凭证和 requestId 必填' }, 400)
-  const result = await claimGuestSession(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim() })
-  return result ? c.json(result) : c.json({ error: '访客体验无法认领' }, 409)
+  try {
+    const result = await claimGuestSession(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim() })
+    return result ? c.json(result) : c.json({ error: '访客体验无法认领' }, 409)
+  } catch (error) {
+    // S2/F4/N5：核验失败返回可理解类别,访客副本保留可重试;内部 issue 只记服务端日志
+    if (error instanceof ClaimVerificationError) {
+      console.error('[claim] 保存核验未通过:', JSON.stringify(error.issues))
+      return c.json({ error: '演示世界暂时无法保存，请稍后重试' }, 500)
+    }
+    throw error
+  }
 })
 demoRoutes.route('/session/claim', claimRoutes)
 

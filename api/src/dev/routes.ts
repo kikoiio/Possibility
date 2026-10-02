@@ -28,8 +28,11 @@ async function createUser(db: Db, username: string, password: string) {
 /** 仅本地环境可用的种子数据路由（T6） */
 export const devRoutes = new Hono<{ Bindings: Env }>()
 
+// 种子路由额外放行 e2e 自举环境（T8 主链 E2E 需要灌基线）;memory-debug 仍只限 local
+const SEED_ENVS = new Set(['local', 's02-e2e'])
+
 devRoutes.post('/seed', async (c) => {
-  if (c.env.ENVIRONMENT !== 'local') {
+  if (!SEED_ENVS.has(c.env.ENVIRONMENT)) {
     return c.json({ error: '仅本地环境可用' }, 403)
   }
   const body = await c.req.json<{ random?: number }>().catch(() => ({}) as { random?: number })
@@ -61,7 +64,7 @@ devRoutes.post('/seed', async (c) => {
 
 /** 演示世界「雾影庄」种子（按世界名幂等；需先 npm run seed 建 admin） */
 devRoutes.post('/seed-demo', async (c) => {
-  if (c.env.ENVIRONMENT !== 'local') {
+  if (!SEED_ENVS.has(c.env.ENVIRONMENT)) {
     return c.json({ error: '仅本地环境可用' }, 403)
   }
   const db = createDb(c.env.DB)

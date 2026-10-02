@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
-
 /** 与 fixture 体素文档地点绑定一致的世界骨架(主楼/温室/庭院) */
 const world = {
   name: '雾影庄', description: '白雾町的旧宅与庭院。',
@@ -28,7 +27,7 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   await page.route('**/api/worlds/world-1**', route => {
     const url = route.request().url()
     if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
-      access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
+      access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
       world: snapshot,
       scene: { status: 'ready', document: voxelDoc },
       presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
@@ -55,7 +54,66 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   // 创建载荷是体素信封(归一化后仍带 format 标识)
   expect((createdScene as { format?: string } | null)?.format).toBe('voxel-document')
 
-  // 进入世界地图:单空间体素文档无 ?voxel=1 开关也直渲(S1 解除门控)
+  // 进入已创建世界地图:单文档场景无 ?voxel=1 开关也能直渲
   await page.getByTestId('enter-world-map').click()
-  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
+})
+
+test('authenticated voxel-spaces world supports independent location interaction', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: world.name }] } }))
+  await page.route('**/api/worlds/world-1**', route => {
+    const url = route.request().url()
+    if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
+      access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
+      world: snapshot,
+      scene: { status: 'ready', document: { format: 'voxel-spaces', version: 1, defaultSpaceId: 'exterior',
+        spaces: [{ id: 'exterior', name: '山间外景', document: voxelDoc }] } },
+      presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
+      theme: { id: 'mist-manor', assetVersion: 'fixture' },
+      resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
+    } })
+    if (url.includes('/map/resume')) return route.fulfill({ json: { ok: true } })
+    return route.fulfill({ json: snapshot })
+  })
+
+  await page.goto('/worlds/world-1?timeline=timeline-1')
+  await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
+  await expect(page.getByText('雾影庄 · 山间外景 · 正在生活')).toBeVisible()
+  // 首帧/相机未稳定时一次性点击会落空,沿用 voxel-guest 的重试点击模式
+  await expect(async () => {
+    const location = await page.evaluate(() => (window.__voxelEngine as never as {
+      worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
+    } | undefined)?.worldToScreen({ x: 8, y: 4, z: 11 }))
+    expect(location).not.toBeNull()
+    await page.mouse.click(location!.x, location!.y)
+    await expect(page.getByRole('heading', { name: '温室' })).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 15000 })
+  await expect(page.getByText('此刻在这里：暂时没有居民')).toBeVisible()
+  await expect(page.getByRole('button', { name: '进入此地点' })).toBeVisible()
+})
+
+test('unavailable scene shows the world page retry state', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: world.name }] } }))
+  await page.route('**/api/worlds/world-1**', route => {
+    const url = route.request().url()
+    if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
+      access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
+      world: snapshot,
+      scene: { status: 'unavailable', document: null },
+      presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
+      theme: { id: 'mist-manor', assetVersion: 'fixture' },
+      resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
+    } })
+    return route.fulfill({ json: snapshot })
+  })
+
+  await page.goto('/worlds/world-1?timeline=timeline-1')
+  const missing = page.getByTestId('world-canvas-missing')
+  await expect(missing).toBeVisible()
+  await expect(missing).toContainText('场景暂时不可用，请重试。')
+  await expect(missing.getByRole('button', { name: '重试' })).toBeVisible()
 })

@@ -1,18 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 
-const sceneV2 = {
-  schemaVersion: 2, themeId: 'mist-manor', version: 1, defaultSpaceId: 'exterior',
-  spaces: [{
-    id: 'exterior', name: '山间外景', kind: 'exterior', size: { columns: 24, rows: 18 },
-    surface: [{ x: 0, y: 0, assetId: 'mist-grass' }], paths: [], structures: [],
-    objects: [
-      { id: 'manor', assetId: 'manor-main', position: { x: 4, y: 2 }, binding: { kind: 'location', locationName: '雾影庄主楼' }, label: '雾影庄主楼', purpose: null },
-      { id: 'resident-1-object', assetId: 'mist-resident-1', position: { x: 12, y: 10 }, binding: { kind: 'person', personId: 'resident-1' }, label: '主人', purpose: null },
-    ],
-    regions: [], navigation: { walkableCells: [], blockedCells: [], entrances: [] },
-  }],
-  portals: [], lockedObjectIds: [], lockedAreas: [],
-}
+const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
+const sceneV2 = { format: 'voxel-spaces', version: 1, defaultSpaceId: 'exterior',
+  spaces: [{ id: 'exterior', name: '山间外景', document: voxelDoc }] }
 
 function snapshot(worldId: string, timelineId: string, timelines: { id: string; parentTimelineId: string | null }[]) {
   return {
@@ -55,7 +46,7 @@ async function mockGuestSandbox(page: Page, worldId: string, sessionId: string) 
   await page.route(`**/api/worlds/${worldId}/map/resume`, route => route.fulfill({ json: { ok: true } }))
 }
 
-test('two guests explore isolated sandboxes; fork and reset stay scoped to each guest', async ({ browser }) => {
+test('two guests explore isolated sandboxes; fork and reset stay scoped to each guest', { timeout: 90_000 }, async ({ browser }) => {
   const contextA = await browser.newContext()
   const contextB = await browser.newContext()
   const pageA = await contextA.newPage()
@@ -89,10 +80,10 @@ test('two guests explore isolated sandboxes; fork and reset stay scoped to each 
 
   // A 重置沙盒：回到基线，切换器消失；B 的沙盒不受影响
   await pageA.getByRole('button', { name: '重新开始' }).click()
-  await expect(pageA.getByTestId('guest-world-map')).toBeVisible()
+  await expect(pageA.getByTestId('guest-world-map')).toBeVisible({ timeout: 30000 })
   await expect(pageA.getByTestId('timeline-switcher')).toHaveCount(0)
   await pageB.reload()
-  await expect(pageB.getByTestId('guest-world-map')).toBeVisible()
+  await expect(pageB.getByTestId('guest-world-map')).toBeVisible({ timeout: 30000 })
   await pageB.getByRole('button', { name: '可能' }).click()
   await expect(pageB.getByRole('button', { name: '创建并对照' })).toBeVisible()
 

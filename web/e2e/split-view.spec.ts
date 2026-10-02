@@ -4,10 +4,10 @@ import { events, FORK_AT, stubSplitApis, watchErrors } from './split-view-stubs'
 
 /**
  * S1 分屏平行视口与对齐时间轴 e2e(T7,AC1/AC2/AC4/AC5/AC7)。
- * 截图输出 docs/spec_docs/fork-compare-upgrade/s01-split-view-aligned-time/walkthrough/(gitignored)。
+ * 截图输出 /tmp/possibility-walkthrough/s01-split-view/(本地临时目录,随 Playwright outputDir 惯例放 /tmp,不入库)。
  */
 
-const SHOTS = '../docs/spec_docs/fork-compare-upgrade/s01-split-view-aligned-time/walkthrough'
+const SHOTS = '/tmp/possibility-walkthrough/s01-split-view'
 mkdirSync(SHOTS, { recursive: true })
 
 // 双 SwiftShader WebGL 上下文 + 并行负载,整体放宽;文件内串行,避免两个双上下文页面互抢资源

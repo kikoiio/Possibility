@@ -103,6 +103,53 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
   })
 })
 
+describe('assembleWorld invalid dimensions', () => {
+  it('rejects dimensions outside the supported range without provider calls', () => {
+    const invalidSizes = [
+      { width: 7, height: 16, depth: 16 },
+      { width: 16, height: 3, depth: 16 },
+      { width: 16, height: 16, depth: 7 },
+      { width: 257, height: 16, depth: 16 },
+      { width: 16, height: 65, depth: 16 },
+      { width: 16, height: 16, depth: 257 },
+      { width: 16.5, height: 16, depth: 16 },
+    ]
+
+    for (const size of invalidSizes) {
+      expect(() => assembleWorld({ size, ops: NOOP_OPS }, 'mist-manor', 'invalid-size'))
+        .toThrow(WorldGeneratorError)
+    }
+  })
+
+  it('retries invalid or missing provider sizes with a stable terminal error', async () => {
+    const invalidPayloads = [
+      JSON.stringify({ size: { width: 7, height: 16, depth: 16 }, ops: NOOP_OPS }),
+      JSON.stringify({ ops: NOOP_OPS }),
+    ]
+
+    for (const response of invalidPayloads) {
+      const errors: string[] = []
+      for (let run = 0; run < 2; run++) {
+        let calls = 0
+        const complete: CompleteFn = async () => {
+          calls += 1
+          return response
+        }
+        let error: unknown
+        try {
+          await generateWorld('固定输入', 'mist-manor', { complete, id: 'fixed-size', maxAttempts: 2 })
+        } catch (caught) {
+          error = caught
+        }
+        expect(error).toBeInstanceOf(WorldGeneratorError)
+        expect(calls).toBe(2)
+        errors.push((error as Error).message)
+      }
+      expect(errors[0]).toBe(errors[1])
+    }
+  })
+})
+
 describe('assembleWorld × S3b 地形与风格包', () => {
   it('带 terrain+style 负载:地形格存在、元数据落盘、建筑落在地形之上', () => {
     const doc = assembleWorld({

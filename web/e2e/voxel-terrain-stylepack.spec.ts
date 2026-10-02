@@ -3,11 +3,11 @@ import { mkdirSync } from 'node:fs'
 
 /**
  * S3b 参数化地形 + 风格包 · AC12 端到端走查 + 探针断言(N6:探针为主力,截图目检收尾)。
- * 截图输出 docs/spec_docs/voxel-visual-upgrade/s03b-parametric-terrain-stylepack/walkthrough/(gitignored)。
+ * 截图输出 /tmp/possibility-walkthrough/s03b-terrain-stylepack/(本地临时目录,随 Playwright outputDir 惯例放 /tmp,不入库)。
  * 探针走 window.__voxelWorld(EditController 真实链路)+ window.__voxelEngine;截图前一律 waitFrames。
  */
 
-const SHOTS = '../docs/spec_docs/voxel-visual-upgrade/s03b-parametric-terrain-stylepack/walkthrough'
+const SHOTS = '/tmp/possibility-walkthrough/s03b-terrain-stylepack'
 mkdirSync(SHOTS, { recursive: true })
 
 interface WorldProbe {

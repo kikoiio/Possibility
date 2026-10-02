@@ -1,15 +1,19 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { llmCallLog, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons } from '../db/schema'
+import { demoBaselines, demoSandboxes, guestSessions, llmCallLog, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
+import { scheduleExecutor } from './steps/schedule'
 import { auditUniverse } from '../world-state/invariants'
 import app from '../index'
 import { runTick } from './tick'
 import { acquireEngineTickLease, releaseEngineTickLease } from './tick-lease'
 import { createRootProjectionBaseline } from '../world-state/model'
+import * as worldStateSystem from '../world-state/system'
+import * as budgetModule from './budget'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.useRealTimers()
   fixture?.close()
   fixture = null
@@ -19,6 +23,198 @@ async function markMainComplete() {
   await fixture!.db.insert(universeEvidence).values({ timelineId: 'home-main', level: 'complete', assessedVersion: 0,
     baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME }).onConflictDoNothing()
 }
+
+it('skips an active read-only baseline world while advancing guest and regular worlds', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.insert(worlds).values({ id: 'baseline-world', userId: 'other', name: 'Read-only baseline',
+    description: 'Active public baseline', status: 'running' })
+  await f.db.insert(timelines).values({ id: 'baseline-main', worldId: 'baseline-world', simNow: WORLD_TIME,
+    createdAt: WORLD_TIME, lastRealTickAt: realAnchor.toISOString() })
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() })
+    .where(eq(timelines.id, 'home-main'))
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() })
+    .where(eq(timelines.id, 'other-main'))
+  await f.db.insert(universeEvidence).values([
+    { timelineId: 'home-main', level: 'complete', assessedVersion: 0, baselineVersion: 0,
+      reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME },
+    { timelineId: 'other-main', level: 'complete', assessedVersion: 0, baselineVersion: 0,
+      reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME },
+    { timelineId: 'baseline-main', level: 'complete', assessedVersion: 0, baselineVersion: 0,
+      reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME },
+  ]).onConflictDoNothing()
+  await f.db.insert(demoBaselines).values({ id: 'active-baseline', worldId: 'baseline-world', sceneVersion: 1,
+    contentHash: 'baseline-hash', status: 'active', createdAt: WORLD_TIME })
+  await f.db.insert(worlds).values({ id: 'guest-world', userId: 'other', name: 'Guest sandbox',
+    description: 'Isolated guest world', status: 'running' })
+  await f.db.insert(timelines).values({ id: 'guest-main', worldId: 'guest-world', simNow: WORLD_TIME,
+    createdAt: WORLD_TIME, lastRealTickAt: realAnchor.toISOString() })
+  await f.db.insert(universeEvidence).values({ timelineId: 'guest-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME })
+  await f.db.insert(guestSessions).values({ id: 'guest-session', tokenHash: 'guest-token-hash', ownerUserId: 'other',
+    currentSandboxWorldId: 'guest-world', generation: 0, status: 'active', resumeTimelineId: 'guest-main',
+    resumeSpaceId: 'exterior', resumeMode: 'life', expiresAt: '2099-01-01T00:00:00.000Z',
+    createdAt: WORLD_TIME, updatedAt: WORLD_TIME })
+  await f.db.insert(demoSandboxes).values({ id: 'guest-sandbox', sessionId: 'guest-session', baselineId: 'active-baseline',
+    worldId: 'guest-world', generation: 0, status: 'active', requestId: 'guest-request', claimedWorldId: null,
+    createdAt: WORLD_TIME, expiresAt: '2099-01-01T00:00:00.000Z' })
+  const env = { ...f.env, DIRECTOR_LLM: '0', WORLD_SPEED: '6' }
+
+  // S2/F1：基线按 active 登记精确排除——不推进、不出现在结果中；其余世界正常推进,整拍不抛错
+  const result = await runTick(env, f.db)
+
+  expect(result?.worlds.some(world => world.id === 'baseline-world')).toBe(false)
+  expect((await f.db.select().from(timelines).where(eq(timelines.id, 'baseline-main')).get())?.simNow).toBe(WORLD_TIME)
+  expect(result?.worlds.find(world => world.id === 'guest-world')?.timelines.map(timeline => timeline.id))
+    .toEqual(['guest-main'])
+  expect((await f.db.select().from(timelines).where(eq(timelines.id, 'guest-main')).get())?.simNow)
+    .toBe('2026-09-21T08:01:30.000Z')
+})
+
+it('advances an eligible guest timeline when the active baseline timeline is ineligible', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.insert(worlds).values({ id: 'baseline-world', userId: 'other', name: 'Read-only baseline',
+    description: 'Active public baseline', status: 'running' })
+  await f.db.insert(timelines).values({ id: 'baseline-main', worldId: 'baseline-world', simNow: WORLD_TIME,
+    createdAt: WORLD_TIME, lastRealTickAt: realAnchor.toISOString() })
+  await f.db.insert(universeEvidence).values({ timelineId: 'baseline-main', level: 'incomplete', assessedVersion: 0,
+    baselineVersion: null, reasonCodesJson: '["test_incomplete"]', assessedAt: WORLD_TIME })
+  await f.db.insert(demoBaselines).values({ id: 'active-baseline', worldId: 'baseline-world', sceneVersion: 1,
+    contentHash: 'baseline-hash', status: 'active', createdAt: WORLD_TIME })
+  await f.db.insert(worlds).values({ id: 'guest-world', userId: 'other', name: 'Guest sandbox',
+    description: 'Isolated guest world', status: 'running' })
+  await f.db.insert(timelines).values({ id: 'guest-main', worldId: 'guest-world', simNow: WORLD_TIME,
+    createdAt: WORLD_TIME, lastRealTickAt: realAnchor.toISOString() })
+  await f.db.insert(universeEvidence).values({ timelineId: 'guest-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME })
+  await f.db.insert(guestSessions).values({ id: 'guest-session', tokenHash: 'guest-token-hash', ownerUserId: 'other',
+    currentSandboxWorldId: 'guest-world', generation: 0, status: 'active', resumeTimelineId: 'guest-main',
+    resumeSpaceId: 'exterior', resumeMode: 'life', expiresAt: '2099-01-01T00:00:00.000Z',
+    createdAt: WORLD_TIME, updatedAt: WORLD_TIME })
+  await f.db.insert(demoSandboxes).values({ id: 'guest-sandbox', sessionId: 'guest-session', baselineId: 'active-baseline',
+    worldId: 'guest-world', generation: 0, status: 'active', requestId: 'guest-request', claimedWorldId: null,
+    createdAt: WORLD_TIME, expiresAt: '2099-01-01T00:00:00.000Z' })
+  const env = { ...f.env, DIRECTOR_LLM: '0', WORLD_SPEED: '6' }
+  const result = await runTick(env, f.db)
+
+  // S2/F1：基线世界在世界选择阶段即被排除,不进入结果集
+  expect(result?.worlds.some(world => world.id === 'baseline-world')).toBe(false)
+  expect(result?.worlds.find(world => world.id === 'guest-world')?.timelines.map(timeline => timeline.id))
+    .toEqual(['guest-main'])
+  expect((await f.db.select().from(timelines).where(eq(timelines.id, 'baseline-main')).get())?.simNow).toBe(WORLD_TIME)
+  expect((await f.db.select().from(timelines).where(eq(timelines.id, 'guest-main')).get())?.simNow)
+    .toBe('2026-09-21T08:01:30.000Z')
+})
+
+it('isolates a world clock failure and advances later worlds', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() })
+  await f.db.insert(universeEvidence).values({ timelineId: 'other-main', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME })
+  const runningWorldIds = (await f.db.select().from(worlds).all()).filter(world => world.status === 'running')
+    .map(world => world.id)
+  const homeWorldIndex = runningWorldIds.indexOf('home-world')
+  const laterWorldId = runningWorldIds.slice(homeWorldIndex + 1).find(id => id === 'other-world')
+  expect(homeWorldIndex).toBeGreaterThanOrEqual(0)
+  expect(laterWorldId).toBeDefined()
+  const advanceWorldClock = worldStateSystem.advanceWorldClock
+  const advanceSpy = vi.spyOn(worldStateSystem, 'advanceWorldClock').mockImplementation(async (db, params) => {
+    if (params.worldId === 'home-world') throw new Error('controlled world clock failure')
+    return advanceWorldClock(db, params)
+  })
+
+  // S2/F2：单世界失败隔离——失败世界带诊断,后续世界照常推进,整拍正常返回
+  const result = await runTick({ ...f.env, DIRECTOR_LLM: '0' }, f.db)
+
+  expect(result?.worlds.find(world => world.id === 'home-world')?.timelines[0]?.error)
+    .toBe('controlled world clock failure')
+  expect(advanceSpy.mock.calls.map(([_, params]) => params.worldId)).toEqual(['home-world', 'other-world'])
+  const laterTimeline = result?.worlds.find(world => world.id === 'other-world')?.timelines[0]
+  expect(laterTimeline?.error).toBeUndefined()
+  expect(laterTimeline?.simNow).not.toBe(WORLD_TIME)
+})
+
+it('isolates a failed timeline and advances the sibling timeline in the same world', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() }).where(eq(timelines.id, 'home-main'))
+  await markMainComplete()
+  await f.db.insert(timelines).values({ id: 'home-fork', worldId: 'home-world', parentTimelineId: 'home-main',
+    simNow: WORLD_TIME, createdAt: WORLD_TIME, lastRealTickAt: realAnchor.toISOString() })
+  await f.db.insert(universeEvidence).values({ timelineId: 'home-fork', level: 'complete', assessedVersion: 0,
+    baselineVersion: 0, reasonCodesJson: '["test_complete"]', assessedAt: WORLD_TIME })
+  const advanceWorldClock = worldStateSystem.advanceWorldClock
+  vi.spyOn(worldStateSystem, 'advanceWorldClock').mockImplementation(async (db, params) => {
+    if (params.timelineId === 'home-main') throw new Error('controlled timeline clock failure')
+    return advanceWorldClock(db, params)
+  })
+
+  // S2/F2：单时间线失败不阻塞同世界其他时间线
+  const result = await runTick({ ...f.env, DIRECTOR_LLM: '0', WORLD_SPEED: '6' }, f.db)
+  const tls = result?.worlds.find(world => world.id === 'home-world')?.timelines
+
+  expect(tls?.find(timeline => timeline.id === 'home-main')?.error).toBe('controlled timeline clock failure')
+  const fork = tls?.find(timeline => timeline.id === 'home-fork')
+  expect(fork?.error).toBeUndefined()
+  expect(fork?.simNow).toBe('2026-09-21T08:01:30.000Z')
+})
+
+it('isolates a failed schedule step and attempts the next schedule step', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  await markMainComplete()
+  const realAnchor = new Date()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(realAnchor.getTime() + 15_000))
+  await f.db.update(timelines).set({ lastRealTickAt: realAnchor.toISOString() })
+  const emptyModel = JSON.stringify({ identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [],
+    boundaries: [], unknowns: [] })
+  await f.db.insert(persons).values([
+    { id: 'resident-fails', userId: 'owner', name: 'Fails', modelJson: emptyModel, createdAt: WORLD_TIME },
+    { id: 'resident-next', userId: 'owner', name: 'Next', modelJson: emptyModel, createdAt: WORLD_TIME },
+  ])
+  await f.db.insert(worldPersons).values([
+    { worldId: 'home-world', personId: 'resident-fails', joinedAt: WORLD_TIME },
+    { worldId: 'home-world', personId: 'resident-next', joinedAt: WORLD_TIME },
+  ])
+  await f.db.insert(personStates).values([
+    { personId: 'resident-fails', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe', activity: 'Reading',
+      mood: 'Calm', goal: 'Continue', lastBeatSimTime: WORLD_TIME, updatedRealAt: WORLD_TIME },
+    { personId: 'resident-next', timelineId: 'home-main', simTime: WORLD_TIME, location: 'Cafe', activity: 'Reading',
+      mood: 'Calm', goal: 'Continue', lastBeatSimTime: WORLD_TIME, updatedRealAt: WORLD_TIME },
+  ])
+  const attempted: string[] = []
+  vi.spyOn(scheduleExecutor, 'decide').mockImplementation(async (_env, input) => {
+    attempted.push(input.step.personId!)
+    if (input.step.personId === 'resident-fails') throw new Error('controlled schedule decision failure')
+    return { value: null, llmCalls: 0 }
+  })
+
+  const result = await runTick({ ...f.env, DIRECTOR_LLM: '0' }, f.db)
+  const steps = result?.worlds.find(world => world.id === 'home-world')?.timelines
+    .find(timeline => timeline.id === 'home-main')?.steps
+
+  expect(attempted, JSON.stringify(result)).toEqual(expect.arrayContaining(['resident-fails', 'resident-next']))
+  expect(steps).toEqual(expect.arrayContaining([
+    expect.objectContaining({ kind: 'schedule', personId: 'resident-fails', ok: false,
+      note: 'controlled schedule decision failure' }),
+    expect.objectContaining({ kind: 'schedule', personId: 'resident-next', ok: false }),
+  ]))
+})
 
 it('skips active timelines whose evidence is not complete without changing history', async () => {
   fixture = await createWorldFixture()
@@ -323,4 +519,26 @@ it('returns 409 without side effects when another Worker owns the D1 tick lease'
   expect(await f.db.select().from(worldFacts).all()).toEqual([])
   expect(await f.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()).toMatchObject({ simNow: WORLD_TIME })
   await releaseEngineTickLease(f.db, ownerToken)
+})
+
+it('rejects a tick call with a wrong engine secret', async () => {
+  fixture = await createWorldFixture()
+  const response = await app.request('/api/engine/tick', { method: 'POST',
+    headers: { 'x-engine-secret': 'wrong' } }, { ...fixture.env, ENGINE_TICK_SECRET: 'engine-secret' })
+  expect(response.status).toBe(403)
+})
+
+it('returns a structured 500 without rethrowing when the whole tick run fails', async () => {
+  fixture = await createWorldFixture()
+  const f = fixture
+  // 整拍级故障(世界循环之前):路由只记录并返回结构化 500,不向上抛(S2/F2)
+  vi.spyOn(budgetModule, 'recoverCappedWorlds').mockRejectedValue(new Error('controlled whole-tick failure'))
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  const response = await app.request('/api/engine/tick', { method: 'POST',
+    headers: { 'x-engine-secret': 'engine-secret' } }, { ...f.env, ENGINE_TICK_SECRET: 'engine-secret' })
+
+  expect(response.status).toBe(500)
+  expect(await response.json()).toEqual({ error: '引擎节拍失败', detail: 'controlled whole-tick failure' })
+  expect(consoleSpy).toHaveBeenCalled()
 })

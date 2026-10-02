@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { dialogues, events, personStates, timelines, universeEvidence, worlds } from '../db/schema'
+import { demoBaselines, dialogues, events, personStates, timelines, universeEvidence, worlds } from '../db/schema'
 import type { Env } from '../index'
 import {
   buildWorldSnapshot,
@@ -55,7 +55,9 @@ export interface TickSummary {
     id: string
     capped: boolean
     tickCalls: number
-    timelines: { id: string; simNow: string; steps: StepReport[] }[]
+    /** S2/F2：本世界本拍中止原因（截断）；正常推进时缺省 */
+    error?: string
+    timelines: { id: string; simNow: string; error?: string; steps: StepReport[] }[]
   }[]
 }
 
@@ -72,6 +74,10 @@ async function refreshStates(db: Db, snapshot: WorldSnapshot): Promise<void> {
   const rows = await db.select().from(personStates).where(eq(personStates.timelineId, snapshot.timeline.id)).all()
   snapshot.states.clear()
   for (const s of rows) snapshot.states.set(s.personId, s)
+}
+
+function tickErrorNote(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 120) : '未知错误'
 }
 
 /**
@@ -123,36 +129,60 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
   await assertLease()
   await archiveIdleWorlds(db, cfg)
 
-  const runningWorlds = await db.select().from(worlds).where(eq(worlds.status, 'running')).all()
+  // S2/F1：按 active 演示基线登记精确排除只读基线世界（不以 isDemo 单字段代替）；
+  // 基线不推进、不记账、不出现在本拍结果中
+  const activeBaselines = await db.select({ worldId: demoBaselines.worldId }).from(demoBaselines)
+    .where(eq(demoBaselines.status, 'active')).all()
+  const baselineWorldIds = new Set(activeBaselines.map(row => row.worldId))
+  const runningWorlds = (await db.select().from(worlds).where(eq(worlds.status, 'running')).all())
+    .filter(world => !baselineWorldIds.has(world.id))
 
   for (const world of runningWorlds) {
     await assertLease()
-    let currentWorld: World = world
-    let tickCalls = 0
-    const tickBudget: TickBudget = { used: 0, limit: cfg.tickCallCap }
-    const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0, timelines: [] }
+    try {
+      summary.worlds.push(await runWorldTick(env, db, assertLease, cfg, world))
+    } catch (error) {
+      // S2/F2：单世界失败隔离——记录诊断并继续其余世界；租约失效不可隔离,必须停拍
+      if (error instanceof TickLeaseLostError) throw error
+      console.warn(`[tick] 世界 ${world.id} 本拍中止:`, error instanceof Error ? error.message : error)
+      summary.worlds.push({ id: world.id, capped: false, tickCalls: 0, timelines: [], error: tickErrorNote(error) })
+    }
+  }
 
-    const activeTimelines = (await db
-      .select({ timeline: timelines })
-      .from(timelines)
-      .innerJoin(universeEvidence, eq(universeEvidence.timelineId, timelines.id))
-      .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active'), eq(universeEvidence.level, 'complete')))
-      .all()).map(row => row.timeline)
+  return summary
+}
 
-    // F5/S3:BYOK 逐字段解析(世界覆盖 > 用户全局 > env),本世界全部 decide/导演共用
-    const llmResolution = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id })
-    const llmFields = { baseUrl: llmResolution.config.baseUrl, apiKey: llmResolution.config.apiKey,
-      model: llmResolution.config.model, source: llmResolution.source }
-    // S4 世界模拟:体素披露文案每世界每拍 ≤1 次 LLM(机械蒸馏零 LLM)
-    let voxelCopyUsed = false
+async function runWorldTick(env: Env, db: Db, assertLease: () => Promise<void>, cfg: BudgetConfig,
+  world: World): Promise<TickSummary['worlds'][number]> {
+  let currentWorld: World = world
+  let tickCalls = 0
+  const tickBudget: TickBudget = { used: 0, limit: cfg.tickCallCap }
+  const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0, timelines: [] }
 
-    for (const tl of activeTimelines) {
-      await assertLease()
+  const activeTimelines = (await db
+    .select({ timeline: timelines })
+    .from(timelines)
+    .innerJoin(universeEvidence, eq(universeEvidence.timelineId, timelines.id))
+    .where(and(eq(timelines.worldId, world.id), eq(timelines.status, 'active'), eq(universeEvidence.level, 'complete')))
+    .all()).map(row => row.timeline)
+
+  // F5/S3:BYOK 逐字段解析(世界覆盖 > 用户全局 > env),本世界全部 decide/导演共用
+  const llmResolution = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id })
+  const llmFields = { baseUrl: llmResolution.config.baseUrl, apiKey: llmResolution.config.apiKey,
+    model: llmResolution.config.model, source: llmResolution.source }
+  // S4 世界模拟:体素披露文案每世界每拍 ≤1 次 LLM(机械蒸馏零 LLM)
+  let voxelCopyUsed = false
+
+  for (const tl of activeTimelines) {
+    await assertLease()
+    const tlReport: TickSummary['worlds'][number]['timelines'][number] = { id: tl.id, simNow: tl.simNow, steps: [] }
+    try {
       // 1. 时钟推进：真实经过 × 倍速，单拍钳制；模拟时间变化作为版本化事实提交。
       const nowReal = new Date()
       const simNow = await advanceWorldClock(db, { worldId: world.id, timelineId: tl.id, observedAt: nowReal,
         worldSpeed: cfg.worldSpeed, maxElapsedSeconds: MAX_REAL_ELAPSED_SEC,
         engineTickLeaseToken: env.ENGINE_TICK_LEASE_TOKEN })
+      tlReport.simNow = simNow
 
       // S4/F6:世界日翻转 → 捕获日界核心锚点。best-effort:失败只记日志,
       // 缺锚点的日子由更早锚点或全量回放兜住,正确性不依赖锚点存在。
@@ -166,7 +196,7 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
 
       const snapshot = await buildWorldSnapshot(db, world.id, tl.id, retrievalConfig(env))
       if (!snapshot) {
-        worldReport.timelines.push({ id: tl.id, simNow, steps: [] })
+        worldReport.timelines.push(tlReport)
         continue
       }
 
@@ -310,7 +340,6 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
       // 4. 导演层仲裁（注入扇入 + 人物轮转），再按序在预算内执行；花不完的活留到下拍
       const plan = planTickSteps(steps, cfg)
       for (const step of plan.steps) step.engineTickLeaseToken = env.ENGINE_TICK_LEASE_TOKEN
-      const tlReport: TickSummary['worlds'][number]['timelines'][number] = { id: tl.id, simNow, steps: [] }
 
       for (const step of plan.steps) {
         await assertLease()
@@ -372,13 +401,16 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
         // 蒸馏失败不阻塞整拍:下拍重试,事件随后补上线
         console.warn(`[tick] 体素事件蒸馏失败 ${tl.id}:`, error instanceof Error ? error.message : error)
       }
-
-      worldReport.timelines.push(tlReport)
-      worldReport.tickCalls = tickCalls
+    } catch (error) {
+      // S2/F2：单时间线失败隔离——记录诊断并继续同世界其余时间线；租约失效不可隔离
+      if (error instanceof TickLeaseLostError) throw error
+      console.warn(`[tick] 时间线 ${tl.id} 本拍中止:`, error instanceof Error ? error.message : error)
+      tlReport.error = tickErrorNote(error)
     }
 
-    summary.worlds.push(worldReport)
+    worldReport.timelines.push(tlReport)
+    worldReport.tickCalls = tickCalls
   }
 
-  return summary
+  return worldReport
 }
