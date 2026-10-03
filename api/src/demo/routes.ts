@@ -7,6 +7,7 @@ import { accessMiddleware } from '../access/middleware'
 import type { AccessVariables } from '../access/types'
 import { resolveWorldScope } from '../access/world-scope'
 import { forkTimeline } from '../life/fork'
+import { normalizeForkFields } from '../life/fork-fields'
 import { compareTimelines } from '../life/compare'
 import { timelines } from '../db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -63,16 +64,27 @@ guestWorldRoutes.post('/:worldId/fork', async c => {
   const db = createDb(c.env.DB)
   const scope = await resolveWorldScope(db, access, c.req.param('worldId'))
   if (!scope?.capabilities.fork) return c.json({ error: '世界不存在' }, 404)
-  const body = await c.req.json<{ timelineId?: string; requestId?: string; whatIf?: string; changedVariable?: string }>().catch(() => null)
-  if (!body?.timelineId || !body.requestId || !body.whatIf?.trim() || !body.changedVariable?.trim()) return c.json({ error: '分叉条件不完整' }, 400)
+  const body = await c.req.json<{ timelineId?: string; requestId?: string; name?: string; whatIf?: string; changedVariable?: string }>().catch(() => null)
+  const fields = body && normalizeForkFields(body as Record<string, unknown>)
+  if (!body?.timelineId || !body.requestId || !fields) return c.json({ error: '请填写名称（1–80 字）、假设（1–500 字）及改变条件（1–200 字）。' }, 400)
   const source = await db.select().from(timelines).where(and(eq(timelines.id, body.timelineId), eq(timelines.worldId, scope.world.id))).get()
   if (!source) return c.json({ error: '时间线不存在' }, 404)
+  const existing = await db.select().from(timelines).where(eq(timelines.id, body.requestId)).get()
+  if (existing) {
+    let stored: Record<string, unknown> | null = null
+    try { stored = JSON.parse(existing.forkScenarioJson ?? 'null') as Record<string, unknown> | null } catch { /* Legacy malformed data cannot match a new request. */ }
+    if (existing.worldId !== scope.world.id || existing.parentTimelineId !== source.id ||
+      stored?.name !== fields.name || stored.whatIf !== fields.whatIf || stored.changedVariable !== fields.changedVariable) {
+      return c.json({ error: '分叉请求已用于其他时间线或不同条件，请核对后重试。' }, 409)
+    }
+    return c.json({ id: existing.id, sourceTimelineId: source.id, simNow: existing.simNow, name: fields.name, whatIf: fields.whatIf })
+  }
   try {
     const result = await forkTimeline(db, scope.world.id, source.id, {
-      whatIf: body.whatIf.trim(), changedVariable: body.changedVariable.trim(), startTime: source.simNow,
+      ...fields, startTime: source.simNow,
       participants: [], invariants: ['共同过去保持不变', '比较结果只表示记录到的差异'],
     }, body.requestId)
-    return c.json({ id: result.id, simNow: result.simNow })
+    return c.json({ id: result.id, sourceTimelineId: source.id, simNow: result.simNow, name: fields.name, whatIf: fields.whatIf })
   } catch (error) { return c.json({ error: error instanceof Error ? error.message : '创建平行宇宙失败' }, 409) }
 })
 guestWorldRoutes.get('/:worldId/compare', async c => {

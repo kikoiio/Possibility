@@ -8,7 +8,8 @@ import { dialogues, events, llmCallLog, memories, persons, personStates, timelin
 
 const SIM_NOW = '2026-10-15T17:00:00.000Z'
 const CFG: BudgetConfig = budgetFromEnv({})
-const LLM = { baseUrl: 'https://llm.invalid', apiKey: 'test', model: 'test', source: 'env' as const }
+const LLM = { baseUrl: 'https://llm.invalid', apiKey: 'test', model: 'test', source: 'env' as const,
+  apiKeySource: 'platform_fallback' as const, apiKeyVerified: false }
 
 const VOXEL_DOC = {
   size: { width: 48, height: 24, depth: 48 },

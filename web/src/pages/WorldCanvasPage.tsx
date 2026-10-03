@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearToken, lifeApi, mapApi, publicApi, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  ForkScenario, ForkScenarioInput, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
+  ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
 import { SceneHistoryPanel, type SceneRevisionItem } from '../components/scene/SceneHistoryPanel'
 import { buildSceneOverlay } from '../scene/life/overlay'
@@ -26,6 +26,9 @@ import GlobalCapBanner from '../components/GlobalCapBanner'
 import WorldLlmConfigPanel from '../components/WorldLlmConfigPanel'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 import MapSelectionCard from '../components/map/MapSelectionCard'
+import { formatWorldTime } from '../lib/world-time'
+import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
+import { timelineDisplayName } from '../world/timeline-display'
 
 /**
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
@@ -70,7 +73,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [presenceLocation, setPresenceLocation] = useState<string | null>(null)
   const [injectOpen, setInjectOpen] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [forkHint, setForkHint] = useState<{ sourceId: string; newId: string } | null>(null)
+  const [forkHint, setForkHint] = useState<(ForkResult & { sourceId: string; newId: string }) | null>(null)
+  const [forkRefreshError, setForkRefreshError] = useState('')
+  const [compareInitial, setCompareInitial] = useState<{ left: string; right: string } | null>(null)
+  const timelineSwitching = useRef(false)
+  const forking = useRef(false)
+  const forkInputRef = useRef('')
   // S4/F6:分叉弹窗打开时按线加载历史可回溯范围;失败保持 undefined(时刻区不渲染)
   const [historyRange, setHistoryRange] = useState<{ tid: string; range: HistoryRange } | null>(null)
   const forkRequestIdRef = useRef<string | null>(null)
@@ -249,7 +257,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     return () => { active = false; clearTimeout(timer) }
   }, [scrubAt, snapshot, otherSnapshot, worldId])
   const linkActive = cameraLinked && !splitWalk.left && !splitWalk.right
-  const fmtSim = (iso: string) => new Date(iso).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   const splitEvents = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
     if (!snap) return []
     let list = snap.events
@@ -282,33 +289,68 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
 
   // ── 时间线/世界生命周期(原文字视图顶栏能力,S2 再安家) ──
-  const selectTimeline = useCallback((next: string | null) => {
-    const params = new URLSearchParams(search)
-    if (next) params.set('timeline', next); else params.delete('timeline')
-    setSearch(params, { replace: true })
-  }, [search, setSearch])
+  const selectTimeline = useCallback(async (next: string | null): Promise<boolean> => {
+    if (timelineSwitching.current) return false
+    timelineSwitching.current = true
+    setActionError('')
+    try {
+      const bootstrap = await mapApi.bootstrap(worldId, next ?? undefined)
+      if (next && bootstrap.world.currentTimelineId !== next) throw new Error('时间线暂时不可用，请重试。')
+      setSnapshot(bootstrap.world)
+      const params = new URLSearchParams(search)
+      if (next) params.set('timeline', next); else params.delete('timeline')
+      setSearch(params, { replace: true })
+      setActionError('已切换时间线；当前时间和居民数量可能随各自记录的状态变化。')
+      return true
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '时间线切换失败；原选择已保留，可重试。')
+      return false
+    } finally { timelineSwitching.current = false }
+  }, [worldId, search, setSearch])
 
   const refreshSnapshot = useCallback(async () => {
     const snap = await worldsApi.snapshot(worldId, timelineId ?? undefined).catch(() => null)
     if (snap) setSnapshot(current => current?.currentTimelineId === snap.currentTimelineId && current.stateVersion > snap.stateVersion ? current : snap)
   }, [worldId, timelineId])
 
+  const refreshForkResult = async (result: ForkResult): Promise<boolean> => {
+    try {
+      const bootstrap = await mapApi.bootstrap(worldId, result.id)
+      if (bootstrap.world.currentTimelineId !== result.id ||
+        ![result.sourceTimelineId, result.id].every(id => bootstrap.world.timelines.some(t => t.id === id))) {
+        throw new Error('新分支列表暂未更新，请重试刷新。')
+      }
+      setSnapshot(bootstrap.world)
+      const params = new URLSearchParams(search)
+      params.set('timeline', result.id)
+      setSearch(params, { replace: true })
+      setForkRefreshError('')
+      return true
+    } catch {
+      setForkRefreshError('分支已创建；时间线列表刷新失败，请重试刷新后比较。')
+      return false
+    }
+  }
+
   const handleFork = async (scenario: ForkScenarioInput): Promise<boolean> => {
     const sourceTimelineId = activeTimelineId
-    if (!sourceTimelineId) return false
+    if (!sourceTimelineId || forking.current) return false
+    forking.current = true
     setActionError('')
     try {
+      const inputKey = JSON.stringify(scenario)
+      if (inputKey !== forkInputRef.current) { forkRequestIdRef.current = null; forkInputRef.current = inputKey }
       const requestId = forkRequestIdRef.current ?? crypto.randomUUID()
       forkRequestIdRef.current = requestId
       const fork = await worldsApi.fork(worldId, sourceTimelineId, requestId, scenario)
       forkRequestIdRef.current = null
-      selectTimeline(fork.id)
-      setForkHint({ sourceId: sourceTimelineId, newId: fork.id })
+      setForkHint({ ...fork, sourceId: fork.sourceTimelineId, newId: fork.id })
+      await refreshForkResult(fork)
       return true
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Fork 失败')
+      setActionError(e instanceof Error ? e.message : '分支创建失败；输入已保留，可重试。')
       return false
-    }
+    } finally { forking.current = false }
   }
   /** 一句话预览(S2/F1):LLM 起草五字段场景,不落库;S4/F6 可带已吸附的历史时刻 */
   const handleForkPreview = async (whatIf: string, startTime?: string): Promise<ForkScenario> => {
@@ -414,7 +456,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           {scrubAt && snap && scrubAt < snap.simNow && (
             <span data-testid={`split-current-badge-${side}`} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800">视口为当前状态</span>
           )}
-          <span data-testid={`split-clock-${side}`} className="text-[#849184]">{snap ? fmtSim(snap.simNow) : '读取中…'}</span>
+          <span data-testid={`split-clock-${side}`} className="text-[#849184]">{snap ? formatWorldTime(snap.simNow, snap.world.timeZone) : '读取中…'}</span>
           <button type="button" data-testid={`split-close-${side}`} onClick={() => closeSplit(side)} className="rounded-full border border-[#d7ded3] bg-white px-2 py-0.5 text-[10px] text-[#536558]">关闭分屏</button>
         </div>
       </div>
@@ -433,7 +475,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
               data-testid="split-event" data-event-id={event.id}
               className={`rounded px-1 py-0.5 ${selectedSplitEvent === key ? 'bg-amber-100' : ''}`}>
               <span className="font-medium">{event.title}</span>
-              <span className="ml-1 text-[#849184]">{event.simTime.slice(0, 16).replace('T', ' ')}</span>
+              <span className="ml-1 text-[#849184]">{formatWorldTime(event.simTime, side === 'left' ? snapshot?.world.timeZone : otherSnapshot?.world.timeZone)}</span>
             </li>
           )
         })}
@@ -448,7 +490,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-left">
             {renderSplitSideHeader('left', snapshot)}
             <div className="min-h-0 flex-1">
-              <VoxelViewport document={voxelDoc!} overlay={overlay} events={snapshot!.voxelEvents ?? null} personNames={personNames} instanceId="left" probePrimary
+              <VoxelViewport document={voxelDoc!} overlay={overlay} events={snapshot!.voxelEvents ?? null} personNames={personNames} timeZone={snapshot!.world.timeZone} instanceId="left" probePrimary
                 cameraPose={linkActive ? sharedPose : undefined}
                 onCameraChange={setSharedPose}
                 onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, left: m === 'walk' }))} />
@@ -463,7 +505,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
                 className="max-w-64 rounded-full border border-[#d7ded3] bg-white/90 px-3 py-1.5 text-xs text-[#536558]">
                 {rightChoices.map(t => (
                   <option key={t.id} value={t.id}>
-                    {t.parentTimelineId ? '分叉' : '主线'} · {t.simNow.slice(0, 16).replace('T', ' ')}{t.forkScenario?.whatIf ? ` · 如果${t.forkScenario.whatIf}` : ''}
+                    {timelineDisplayName(t)} · {formatWorldTime(t.simNow, t.timeZone)}{t.forkScenario?.whatIf ? ` · 如果${t.forkScenario.whatIf}` : ''}
                   </option>
                 ))}
               </select>
@@ -471,7 +513,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
             </div>
             <div className="min-h-0 flex-1">
               {otherSnapshot
-                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} events={otherSnapshot.voxelEvents ?? null} personNames={personNames} instanceId="right"
+                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} events={otherSnapshot.voxelEvents ?? null} personNames={personNames} timeZone={otherSnapshot.world.timeZone} instanceId="right"
                     cameraPose={linkActive ? sharedPose : undefined}
                     onCameraChange={setSharedPose}
                     onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, right: m === 'walk' }))} />
@@ -480,7 +522,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
             {renderSplitEvents('right', otherSnapshot)}
           </section>
         </div>
-        {axis && <AlignedTimeline axis={axis} at={scrubAt} onScrub={setScrubAt} onSelect={handleSelectMarker} />}
+        {axis && <AlignedTimeline axis={axis}
+          leftTimeZone={snapshot!.timelines.find(t => t.id === snapshot!.currentTimelineId)?.timeZone ?? snapshot!.world.timeZone ?? 'UTC'}
+          rightTimeZone={otherSnapshot?.timelines.find(t => t.id === otherSnapshot.currentTimelineId)?.timeZone ?? otherSnapshot?.world.timeZone ?? snapshot!.world.timeZone ?? 'UTC'}
+          at={scrubAt} onScrub={setScrubAt} onSelect={handleSelectMarker} />}
         {compareSummary && <p className="text-xs text-[#687a6b]" data-testid="split-compare-summary">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs text-[#526558]">
           <label className="flex items-center gap-1.5">
@@ -507,7 +552,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <p className="font-medium text-[#405447]" data-testid="split-small-title">
             {smallSide === 'left' ? '原来的发展' : '另一种发展'} · {info ? (info.parentTimelineId ? '分叉' : '主线') : '…'}
-            <span className="ml-1 font-normal text-[#849184]">{snap ? fmtSim(snap.simNow) : '读取中…'}</span>
+            <span className="ml-1 font-normal text-[#849184]">{snap ? formatWorldTime(snap.simNow, snap.world.timeZone) : '读取中…'}</span>
           </p>
           <div className="flex items-center gap-2">
             <button type="button" data-testid="split-small-toggle" onClick={() => setSmallSide(s => (s === 'left' ? 'right' : 'left'))} disabled={!otherSnapshot}
@@ -520,6 +565,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         {snap
           ? <VoxelViewport document={voxelDoc!} overlay={smallSide === 'left' ? overlay : otherOverlay}
               events={(smallSide === 'left' ? snapshot!.voxelEvents : otherSnapshot?.voxelEvents) ?? null}
+              timeZone={snap.world.timeZone}
               instanceId={smallSide === 'left' ? 'left' : 'right'} probePrimary={smallSide === 'left'} personNames={personNames} />
           : <div className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
         <p className="text-[10px] text-[#849184]">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
@@ -574,7 +620,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
 
   if (readonly) return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
-    <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} />
+    <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} />
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-[#23382f]/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
@@ -598,7 +644,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       <TimelineSwitcher
         timelines={snapshot.timelines}
         currentTimelineId={activeTimelineId}
-        onSwitch={(next) => selectTimeline(next)}
+        onSwitch={selectTimeline}
         onFork={handleFork}
         onPreview={handleForkPreview}
         onArchive={(tid) => void handleArchiveTimeline(tid)}
@@ -612,7 +658,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       {canInteract && <button onClick={() => setInjectOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">干预</button>}
       {canInteract && <button onClick={() => setPresenceOpen(true)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">在场</button>}
       <button onClick={() => setLifeOpen(true)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">你不在时</button>
-      {snapshot.timelines.length > 1 && <button onClick={() => setCompareOpen(true)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">对照宇宙</button>}
+      {snapshot.timelines.length > 1 && <button onClick={() => { setCompareInitial(null); setCompareOpen(true) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">对照宇宙</button>}
       <button onClick={() => setLlmConfigOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">LLM</button>
       {(running || !evidenceReadonly) && <button onClick={() => void handlePauseResume()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">{running ? '暂停' : '继续'}</button>}
       <button onClick={() => void loadRevisionList()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
@@ -620,11 +666,15 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       <button onClick={() => void handleArchiveWorld()} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#849184]">归档</button>
       <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#536558]">退出</button>
     </div></header>
-    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {canInteract && !snapshot.world.isDemo && <WorldTimeZoneSetting worldId={worldId} timeZone={snapshot.world.timeZone} onSaved={zone => {
+        setSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
+        setOtherSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
+      }} />}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
         {running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停'}
       </span>
-      <span className="text-[#849184]">世界时间 {fmtSim(snapshot.simNow)} · 今日调用 {snapshot.world.callsToday}</span>
+      <span className="text-[#849184]">世界时间 {formatWorldTime(snapshot.simNow, snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
     </div>
     {capped && snapshot.world.pauseReason === 'global_daily_cap' && <GlobalCapBanner />}
     {capped && snapshot.world.pauseReason !== 'global_daily_cap' && (
@@ -641,12 +691,18 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         worldId={worldId}
         sourceId={(forkHint ?? { sourceId: search.get('forkFrom')! }).sourceId}
         newId={forkHint?.newId ?? activeTimelineId}
+        name={forkHint?.name}
+        whatIf={forkHint?.whatIf}
+        refreshError={forkRefreshError}
+        onRetry={forkHint ? () => void refreshForkResult(forkHint) : undefined}
+        onCompare={forkHint ? () => { if (!forkRefreshError) { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) } } : undefined}
         onDismiss={() => {
           setForkHint(null)
           if (search.get('forkFrom')) { const params = new URLSearchParams(search); params.delete('forkFrom'); setSearch(params, { replace: true }) }
         }}
       />
     )}
+    {forkHint && <p role="status" className="text-xs text-ink-soft sm:hidden">已创建分支「{forkHint.name}」：{forkHint.whatIf}{forkRefreshError && <button onClick={() => void refreshForkResult(forkHint)}>重试刷新</button>}{!forkRefreshError && <button onClick={() => { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) }}>比较本次分支</button>}</p>}
     {injectOpen && canInteract && (
       <div className="rounded-2xl bg-white/85 px-4 py-3" data-testid="inject-overlay">
         <p className="mb-2 text-xs text-[#849184]">叙事干预会写入当前宇宙历史，并由居民在后续生活中自行感知和回应；它不等同于直接改变环境事实。</p>
@@ -655,7 +711,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     )}
     <div className="flex min-h-[500px] flex-1 gap-3"><div className="relative flex min-w-0 flex-1 flex-col gap-3">
       {mode === 'possibility' && !isSmall ? renderSplitView() : mode === 'possibility' ? renderSmallSplit()
-        : <div className="flex min-h-0 flex-1 flex-col"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} editable planEdits={planEditsViaApi} onSave={saveVoxel}
+        : <div className="flex min-h-[480px] flex-1 flex-col [&>div]:min-h-[480px]"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable planEdits={planEditsViaApi} onSave={saveVoxel}
             onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
             onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
       {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard
@@ -667,10 +723,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         onClose={() => { setMapSelected(null); setMapPersonId(null) }}
         onEnter={(name) => { setPresenceLocation(name); setPresenceOpen(true) }}
       />}
-      {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{new Date(snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })}</span></div>}
+      {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{formatWorldTime(snapshot.simNow, snapshot.world.timeZone)}</span></div>}
     </div></div>
-    {lifeOpen && activeTimelineId && <LifePanel worldId={worldId} timelineId={activeTimelineId} onClose={() => setLifeOpen(false)} />}
-    {compareOpen && activeTimelineId && snapshot.timelines.length > 1 && <ComparePanel worldId={worldId} currentTimelineId={activeTimelineId} timelines={snapshot.timelines} onClose={() => setCompareOpen(false)} />}
-    {presenceOpen && activeTimelineId && <ScenePanel key={`${worldId}:${activeTimelineId}`} worldId={worldId} timelineId={activeTimelineId} locations={snapshot.world.locations} initialLocation={presenceLocation ?? ''} onClose={() => { setPresenceOpen(false); setPresenceLocation(null) }} />}
+    {lifeOpen && activeTimelineId && <LifePanel worldId={worldId} timelineId={activeTimelineId} timeZone={snapshot.world.timeZone} onClose={() => setLifeOpen(false)} />}
+    {compareOpen && activeTimelineId && snapshot.timelines.length > 1 && <ComparePanel worldId={worldId} currentTimelineId={activeTimelineId} timelines={snapshot.timelines} initialLeftTimelineId={compareInitial?.left} initialRightTimelineId={compareInitial?.right} onClose={() => setCompareOpen(false)} />}
+    {presenceOpen && activeTimelineId && <ScenePanel key={`${worldId}:${activeTimelineId}`} worldId={worldId} timelineId={activeTimelineId} timeZone={snapshot.world.timeZone} worldStatus={snapshot.world.status} readOnly={snapshot.evidence.level !== 'complete'} locations={snapshot.world.locations} initialLocation={presenceLocation ?? ''} onClose={() => { setPresenceOpen(false); setPresenceLocation(null) }} />}
   </main>
 }

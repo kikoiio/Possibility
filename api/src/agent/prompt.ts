@@ -1,5 +1,6 @@
 import type { AgentContextData } from './context'
 import type { ModelItem } from './types'
+import { formatWorldTime } from '../worlds/time-zone'
 
 function items(title: string, list: ModelItem[]): string {
   if (!list.length) return ''
@@ -57,7 +58,7 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
   const sourceMem = items('源记忆（来自你人生的底色）', model.memories)
   const settled = ctx.memories.length
     ? `## 后来的记忆（按时间先后）\n${ctx.memories
-        .map((m) => `- ${m.simTime ? `[${m.simTime.slice(0, 16).replace('T', ' ')}] ` : ''}${m.content}`)
+        .map((m) => `- ${m.simTime ? `[${formatWorldTime(m.simTime, world.timeZone)}] ` : ''}${m.content}`)
         .join('\n')}`
     : ''
   const memorySection = [sourceMem, settled].filter(Boolean).join('\n\n')
@@ -94,7 +95,7 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
     [
       '## 当前状态与世界',
       `世界：${world.name}——${world.description}`,
-      `现在的时间：${state.simTime}`,
+      `现在的时间：${formatWorldTime(timeline.simNow, world.timeZone)}`,
       `地点：${state.location}；活动：${state.activity}；情绪：${state.mood}；近期目标：${state.goal}`,
       timeline.parentTimelineId
         ? `你所在的是一条 what-if 分叉时间线（分叉设定见下），分叉点之前的主线记忆你同样拥有。\n分叉设定：${timeline.forkScenarioJson ?? ''}`

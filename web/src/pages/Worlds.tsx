@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { worldsApi } from '../api/client'
 import type { WorldSummary } from '../api/types'
+import { formatWorldTime } from '../lib/world-time'
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   running: { text: '运行中', cls: 'bg-emerald-100 text-emerald-700' },
@@ -59,7 +60,7 @@ export default function Worlds() {
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-soft">{w.description}</p>
                 <p className="mt-1 text-xs text-ink-faint">
-                  {w.simNow ? `世界时间 ${w.simNow.slice(0, 16).replace('T', ' ')}` : ''} · 今日调用 {w.callsToday}
+                  {w.simNow ? `世界时间 ${formatWorldTime(w.simNow, w.timeZone)}` : ''} · 今日调用 {w.callsToday}
                 </p>
               </Link>
               {!w.hasScene && (() => {

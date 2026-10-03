@@ -115,7 +115,7 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
   const rootFactsAtFork = await f.db.select().from(worldFacts).where(eq(worldFacts.timelineId, timelineId)).all()
   expect(Date.parse(rootFactsAtFork.at(-1)?.simTime ?? journeyStart) - Date.parse(journeyStart)).toBeGreaterThanOrEqual(24 * 60 * 60_000)
   const forkResponse = await request(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, 'POST', {
-    requestId: 'full-day-child', scenario: { whatIf: 'A different evening', changedVariable: 'evening weather' },
+    requestId: 'full-day-child', scenario: { name: '测试分支', whatIf: 'A different evening', changedVariable: 'evening weather' },
   })
   expect(forkResponse.status).toBe(200)
   const { id: childId } = await forkResponse.json() as { id: string }
@@ -131,7 +131,7 @@ it('completes a structured full-day journey, forks, and keeps later root/child c
     expectedVersion: 0, action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'clear' } })
   expect(childChange.status).toBe(200)
   const grandchildResponse = await request(`/api/worlds/${worldId}/timelines/${childId}/fork`, 'POST', {
-    requestId: 'full-day-grandchild', scenario: { whatIf: 'A different morning', changedVariable: 'morning weather' },
+    requestId: 'full-day-grandchild', scenario: { name: '测试分支', whatIf: 'A different morning', changedVariable: 'morning weather' },
   })
   expect(grandchildResponse.status).toBe(200)
   const { id: grandchildId } = await grandchildResponse.json() as { id: string }
@@ -232,7 +232,7 @@ describe('small world journey without an LLM', () => {
     const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers, body: JSON.stringify(body) }, f.env)
     const fork = async (requestId: string) => {
       const response = await post('/api/worlds/home-world/timelines/home-main/fork', {
-        requestId, scenario: { whatIf: `Message branch ${requestId}`, changedVariable: 'message delivery' },
+        requestId, scenario: { name: '测试分支', whatIf: `Message branch ${requestId}`, changedVariable: 'message delivery' },
       })
       expect(response.status).toBe(200)
       return (await response.json() as { id: string }).id
@@ -294,7 +294,7 @@ describe('small world journey without an LLM', () => {
 
     const entered = await post('/api/worlds/home-world/scene/position', { timelineId: 'home-main', commandId: 'visitor-enters', expectedVersion: 0, location: 'Cafe' })
     expect(entered.status).toBe(200)
-    const forkScenario = { whatIf: 'What if the storm never reaches the town?', changedVariable: 'storm arrival' }
+    const forkScenario = { name: '测试分支', whatIf: 'What if the storm never reaches the town?', changedVariable: 'storm arrival' }
     const forkResponse = await post('/api/worlds/home-world/timelines/home-main/fork', {
       requestId: 'child-fork', scenario: forkScenario,
     })

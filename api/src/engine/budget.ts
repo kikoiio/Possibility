@@ -82,12 +82,18 @@ export interface CallMeta {
   purpose: CallPurpose
   requestId?: string | null
   contractVersion?: string | null
+  apiKeySource?: 'personal_global' | 'world_override' | 'platform_fallback'
+  verifiedPersonalKey?: boolean
+  verifiedPersonalFingerprint?: string | null
 }
 
 export interface ReceiptDetails {
   requestId?: string | null
   contextHash?: string | null
   contractVersion?: string | null
+  apiKeySource?: 'personal_global' | 'world_override' | 'platform_fallback'
+  verifiedPersonalKey?: boolean
+  verifiedPersonalFingerprint?: string | null
 }
 
 export type ReceiptStatus = 'completed' | 'failed' | 'cancelled'
@@ -107,6 +113,32 @@ function globalCapSql(userRef: unknown) {
 function globalCountSql(userRef: unknown, day: string) {
   return sql`(select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userRef}
     and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'} and ${llmCallLog.createdAt} < ${day + 'T24:00:00'})`
+}
+
+/** Non-personal history stays charged when switching from finite to unlimited mode. */
+function fallbackCountSql(userRef: unknown, day: string) {
+  return sql`(select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userRef}
+    and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'} and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}
+    and (${llmCallLog.apiKeySource} is null or ${llmCallLog.apiKeySource} <> 'personal_global'
+      or ${llmCallLog.budgetBucket} = 'fallback_unlimited'))`
+}
+
+function sourceBudgetSql(userRef: unknown, day: string, source: string, verified: boolean, fingerprint: string | null) {
+  const cap = globalCapSql(userRef)
+  // Bind exemption to the current saved verification in the admission statement.
+  // A configuration changed after resolution cannot reuse its former exemption.
+  const personal = sql`${source} = 'personal_global' and ${verified ? 1 : 0} = 1
+    and exists(select 1 from ${userLlmConfigs} where ${userLlmConfigs.userId} = ${userRef}
+      and ${userLlmConfigs.verificationFingerprint} = ${fingerprint}
+      and ${userLlmConfigs.verifiedAt} is not null
+      and length(trim(${userLlmConfigs.baseUrl})) > 0 and length(trim(${userLlmConfigs.model})) > 0
+      and length(${userLlmConfigs.apiKey}) > 0)`
+  return {
+    bucket: sql`case when ${cap} is not null then 'finite_global'
+      when ${personal} then 'personal_unlimited' else 'fallback_unlimited' end`,
+    admitted: sql`case when ${cap} is not null then ${globalCountSql(userRef, day)} < ${cap}
+      when ${personal} then 1 else ${fallbackCountSql(userRef, day)} < 400 end`,
+  }
 }
 
 /** JS 侧同一语义(门禁/端点用;准入判定永远走 SQL,不用本函数的结果写库)。 */
@@ -131,7 +163,6 @@ export async function resumeGlobalCappedWorlds(db: Db, userId: string): Promise<
 
 /** D1 batch is transactional: the conditional insert and counter increment commit together.
  * Admission reads the live row in SQL; never write a counter derived from a caller's snapshot.
- * 全局预算(F5):准入与计数在同一语句,并发不超卖;触顶同事务停该用户全部 running 世界。
  * Failed/uncertain provider attempts remain charged. Settlement changes observability only,
  * never the already-consumed budget counter.
  */
@@ -147,23 +178,25 @@ export async function reserveWorldCall(
   const day = now.slice(0, 10)
   const used = sql<number>`case when ${worlds.callsDay} = ${day} then ${worlds.callsToday} else 0 end`
   const owner = sql`(select ${worlds.userId} from ${worlds} where ${worlds.id} = ${worldId})`
-  const cap = globalCapSql(owner)
-  const calls = globalCountSql(owner, day)
+  const source = details.apiKeySource ?? meta.apiKeySource ?? 'platform_fallback'
+  const verifiedPersonal = details.verifiedPersonalKey ?? meta.verifiedPersonalKey ?? false
+  const fingerprint = details.verifiedPersonalFingerprint ?? meta.verifiedPersonalFingerprint ?? null
+  const { bucket, admitted: admittedSql } = sourceBudgetSql(owner, day, source, verifiedPersonal, fingerprint)
   const [admitted] = await db.batch([
     db.insert(llmCallLog).select(sql`select ${id}, ${details.requestId ?? meta.requestId ?? null}, ${worlds.id}, ${worlds.userId},
       ${meta.timelineId}, ${meta.personId}, ${meta.purpose}, ${details.contextHash ?? null},
-      ${details.contractVersion ?? meta.contractVersion ?? null}, 'reserved', null, ${now}, null
+      ${details.contractVersion ?? meta.contractVersion ?? null}, ${source}, ${bucket},
+      'reserved', null, ${now}, null
       from ${worlds} where ${worlds.id} = ${worldId}
-      and ${worlds.status} = 'running' and (${cap} is null or ${calls} < ${cap})`)
+      and ${worlds.status} = 'running' and ${admittedSql}`)
       .returning({ id: llmCallLog.id }),
     db.update(worlds).set({
       callsToday: sql`${used} + 1`,
       callsDay: day,
     }).where(and(eq(worlds.id, worldId), sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`)),
-    // 全局触顶:该用户全部 running 世界同停(仅本次准入成功后才可能达成)
+    // Finite budget retains the existing global pause; fallback 400 never pauses worlds.
     db.update(worlds).set({ status: 'capped', pauseReason: GLOBAL_CAP_REASON }).where(and(
-      sql`${worlds.userId} = (select ${worlds.userId} from ${worlds} where ${worlds.id} = ${worldId})`,
-      eq(worlds.status, 'running'),
+      sql`${worlds.userId} = ${owner}`, eq(worlds.status, 'running'),
       sql`${globalCapSql(worlds.userId)} is not null and ${globalCountSql(worlds.userId, day)} >= ${globalCapSql(worlds.userId)}`,
       sql`exists (select 1 from ${llmCallLog} where ${llmCallLog.id} = ${id})`,
     )),
@@ -182,15 +215,17 @@ export async function reserveUserCall(
 ): Promise<string | null> {
   const now = new Date().toISOString()
   const day = now.slice(0, 10)
-  const cap = globalCapSql(userId)
-  const calls = globalCountSql(userId, day)
+  const source = details.apiKeySource ?? 'platform_fallback'
+  const { bucket, admitted } = sourceBudgetSql(userId, day, source,
+    details.verifiedPersonalKey ?? false, details.verifiedPersonalFingerprint ?? null)
+  // A connection test consumes the daily budget, not the creation allowance.
+  const creationAdmitted = purpose === 'connection_test' ? sql`1`
+    : sql`${globalCountSql(userId, day)} < ${cfg.preworldDailyCap}`
   const rows = await db.insert(llmCallLog).select(sql`select ${crypto.randomUUID()}, ${details.requestId ?? null}, null,
     ${userId}, null, null, ${purpose}, ${details.contextHash ?? null}, ${details.contractVersion ?? null},
-    'reserved', null, ${now}, null
-    where (${cap} is null or ${calls} < ${cap})
-    and (select count(*) from ${llmCallLog} where ${llmCallLog.userId} = ${userId}
-      and ${llmCallLog.createdAt} >= ${day + 'T00:00:00'}
-    and ${llmCallLog.createdAt} < ${day + 'T24:00:00'}) < ${cfg.preworldDailyCap}`)
+    ${source}, ${bucket}, 'reserved', null, ${now}, null
+    where ${admitted}
+    and ${creationAdmitted}`)
     .returning({ id: llmCallLog.id })
   return rows[0]?.id ?? null
 }
@@ -224,6 +259,17 @@ export async function userCallsToday(db: Db, userId: string, day: string = today
     .from(llmCallLog)
     .where(and(eq(llmCallLog.userId, userId), gte(llmCallLog.createdAt, `${day}T00:00:00`), lt(llmCallLog.createdAt, `${day}T24:00:00`)))
     .get()
+  return row?.n ?? 0
+}
+
+/** Non-exempt usage displayed by settings in unlimited mode. */
+export async function fallbackCallsToday(db: Db, userId: string, day: string = today()): Promise<number> {
+  const row = await db.select({ n: count() }).from(llmCallLog).where(and(
+    eq(llmCallLog.userId, userId), gte(llmCallLog.createdAt, `${day}T00:00:00`),
+    lt(llmCallLog.createdAt, `${day}T24:00:00`),
+    or(isNull(llmCallLog.apiKeySource), ne(llmCallLog.apiKeySource, 'personal_global'),
+      eq(llmCallLog.budgetBucket, 'fallback_unlimited')),
+  )).get()
   return row?.n ?? 0
 }
 

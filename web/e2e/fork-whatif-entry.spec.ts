@@ -10,6 +10,7 @@ import { NOW, stubSplitApis, stubTimelines, watchErrors } from './split-view-stu
 const MAIN_AND_FORK = stubTimelines.slice(0, 2)
 
 const SCENARIO = {
+  name: '信件提前送达',
   whatIf: '如果那封信在暴雨前送达',
   startTime: NOW,
   changedVariable: '信件是否送达',
@@ -24,14 +25,14 @@ async function stubForkApis(page: Page, opts: { onPreview?: () => void; onFork?:
   })
   await page.route('**/api/worlds/world-1/timelines/*/fork', (route) => {
     opts.onFork?.(route.request().postDataJSON())
-    return route.fulfill({ json: { id: 'timeline-fork', simNow: NOW } })
+    return route.fulfill({ json: { id: 'timeline-fork', sourceTimelineId: 'timeline-main', simNow: NOW, name: SCENARIO.name, whatIf: SCENARIO.whatIf } })
   })
 }
 
 async function openForkDialog(page: Page) {
   await page.goto('/worlds/world-1?timeline=timeline-main')
   // 画布头部按钮在渲染帧中可能被重建;dispatchEvent 绕过可动性检查
-  await page.getByRole('button', { name: /主宇宙 ▾|平行宇宙 ▾/ }).dispatchEvent('click')
+  await page.getByRole('button', { name: /主宇宙 ▾/ }).dispatchEvent('click')
   await page.getByTestId('fork-entry').dispatchEvent('click')
   await expect(page.getByRole('dialog', { name: '创建平行宇宙' })).toBeVisible()
 }
@@ -57,7 +58,7 @@ test.describe('S2 一句话分叉入口', () => {
     await expect(dialog.getByText('起始时刻在确认后不可更改')).toBeVisible()
     expect(await dialog.locator('input[type="datetime-local"]').count()).toBe(0)
     // 微调 participants(确认卡内唯一的 input)
-    await dialog.locator('input').fill('小夜，阿澄')
+    await dialog.getByLabel('参与人物（逗号分隔）').fill('小夜，阿澄')
 
     await dialog.getByTestId('fork-confirm').click()
     // 分叉请求带上五字段(AC3 前端半)
@@ -69,6 +70,8 @@ test.describe('S2 一句话分叉入口', () => {
     // 落点(AC5):横幅出现,点击进分屏左源右新
     await expect(page.getByTestId('fork-compare-hint')).toBeVisible()
     await page.getByTestId('fork-compare-hint-go').dispatchEvent('click')
+    await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible()
+    await page.getByTestId('compare-split-entry').click()
     await expect(page).toHaveURL(/mode=possibility/)
     await expect(page).toHaveURL(/timeline=timeline-main/)
     await expect(page).toHaveURL(/right=timeline-fork/)
@@ -87,6 +90,7 @@ test.describe('S2 一句话分叉入口', () => {
     const dialog = page.getByRole('dialog', { name: '创建平行宇宙' })
     await dialog.getByRole('button', { name: '高级：手动设定条件' }).click()
     await dialog.locator('textarea').fill('手动假设')
+    await dialog.locator('#fork-name-advanced').fill('手动分支')
     await dialog.locator('#fork-changed-variable').fill('手动条件')
     await dialog.getByRole('button', { name: '记录条件并分叉' }).click()
 
@@ -135,7 +139,7 @@ test('预览失败:错误文案展示且可重试,无分叉副作用(AC7 前端�
   })
   await page.route('**/api/worlds/world-1/timelines/*/fork', (route) => {
     forkCalled = true
-    return route.fulfill({ json: { id: 'timeline-fork', simNow: NOW } })
+    return route.fulfill({ json: { id: 'timeline-fork', sourceTimelineId: 'timeline-main', simNow: NOW, name: SCENARIO.name, whatIf: SCENARIO.whatIf } })
   })
   await openForkDialog(page)
 

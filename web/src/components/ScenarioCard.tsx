@@ -1,7 +1,10 @@
+import { useId } from 'react'
 import type { ForkScenario } from '../api/types'
+import { formatWorldTime } from '../lib/world-time'
 
 interface ScenarioCardProps {
   scenario: ForkScenario
+  timeZone?: string | null
   onChange?: (s: ForkScenario) => void
   onConfirm?: () => void
   onCancel?: () => void
@@ -9,8 +12,9 @@ interface ScenarioCardProps {
 }
 
 /** What-if 场景设定卡：起始时间/改变变量/参与人物/不变条件（F10），可编辑确认 */
-export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, confirming }: ScenarioCardProps) {
+export default function ScenarioCard({ scenario, timeZone, onChange, onConfirm, onCancel, confirming }: ScenarioCardProps) {
   const editable = !!onChange
+  const fieldId = useId()
   const patch = (p: Partial<ForkScenario>) => onChange?.({ ...scenario, ...p })
 
   return (
@@ -18,9 +22,16 @@ export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, 
       <h3 className="text-sm font-medium text-woad-deep">分叉场景设定</h3>
 
       <div>
-        <label className="mb-1 block text-xs text-woad-deep">What-if</label>
+        <label htmlFor={`${fieldId}-name`} className="mb-1 block text-xs text-woad-deep">分支名称</label>
+        {editable ? <input id={`${fieldId}-name`} maxLength={80} value={scenario.name ?? ''} onChange={e => patch({ name: e.target.value })} className="w-full rounded-lg border border-woad/30 bg-sheet px-3 py-2 text-sm outline-none focus:border-woad" /> : <p className="text-sm text-ink">{scenario.name || scenario.whatIf}</p>}
+      </div>
+
+      <div>
+        <label htmlFor={`${fieldId}-hypothesis`} className="mb-1 block text-xs text-woad-deep">What-if</label>
         {editable ? (
           <textarea
+            id={`${fieldId}-hypothesis`}
+            maxLength={500}
             className="w-full rounded-lg border border-woad/30 bg-sheet px-3 py-2 text-sm outline-none focus:border-woad"
             rows={2}
             value={scenario.whatIf}
@@ -33,14 +44,16 @@ export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, 
 
       <div>
         <label className="mb-1 block text-xs text-woad-deep">起始时间</label>
-        <p className="text-sm text-ink">{scenario.startTime.slice(0, 16).replace('T', ' ')}</p>
+        <p className="text-sm text-ink">{formatWorldTime(scenario.startTime, timeZone)}</p>
         <p className="mt-0.5 text-[11px] text-ink-faint">起始时刻在确认后不可更改</p>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-woad-deep">改变的变量</label>
+        <label htmlFor={`${fieldId}-condition`} className="mb-1 block text-xs text-woad-deep">改变的变量</label>
         {editable ? (
           <textarea
+            id={`${fieldId}-condition`}
+            maxLength={200}
             className="w-full rounded-lg border border-woad/30 bg-sheet px-3 py-2 text-sm outline-none focus:border-woad"
             rows={2}
             value={scenario.changedVariable}
@@ -52,9 +65,10 @@ export default function ScenarioCard({ scenario, onChange, onConfirm, onCancel, 
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-woad-deep">参与人物（逗号分隔）</label>
+        <label htmlFor={`${fieldId}-participants`} className="mb-1 block text-xs text-woad-deep">参与人物（逗号分隔）</label>
         {editable ? (
           <input
+            id={`${fieldId}-participants`}
             className="w-full rounded-lg border border-woad/30 bg-sheet px-3 py-2 text-sm outline-none focus:border-woad"
             value={scenario.participants.join('，')}
             onChange={(e) => patch({ participants: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean) })}

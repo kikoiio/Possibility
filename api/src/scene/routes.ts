@@ -334,6 +334,12 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
       contractVersion: LLM_CONTRACT_VERSIONS.sceneIntent,
       parse: raw => resolveIntentOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneIntent), intentContext),
     })
+    let recovery: 'refresh_state' | undefined
+    const latestRevision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timeline.id)).get()
+    if ((latestRevision?.version ?? 0) !== (revision?.version ?? 0)) {
+      resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请先刷新，再重新生成行动提议。' }
+      recovery = 'refresh_state'
+    }
     if (resolution.status === 'proposal') {
       try {
         const proposal = resolution.proposal
@@ -346,10 +352,11 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
       } catch (error) {
         if (!(error instanceof WorldStateError)) throw error
         resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请重新描述这个行动。' }
+        recovery = 'refresh_state'
       }
     }
     const result = { requestId, timelineId: timeline.id, expectedVersion: revision?.version ?? 0,
-      currentLocation: state.location, ...resolution }
+      currentLocation: state.location, ...resolution, ...(recovery ? { recovery } : {}) }
     const [resolvedReservation] = await db.update(sceneIntentProposals).set({
       status: result.status === 'proposal' ? 'pending' : 'resolved', resolutionJson: JSON.stringify(result),
       expectedVersion: result.expectedVersion, expiresAt: Date.now() + (result.status === 'proposal' ? 30 * 60_000 : 0),

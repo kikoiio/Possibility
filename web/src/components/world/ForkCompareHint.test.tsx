@@ -32,3 +32,15 @@ describe('ForkCompareHint（S2/F6 分叉成功横幅）', () => {
     expect(html).toContain('sm:flex')
   })
 })
+
+it('本次创建摘要包含名称和假设，刷新失败时保留摘要并提供重试', () => {
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(ForkCompareHint, {
+    worldId: 'world', sourceId: 'source', newId: 'new', name: '准时的信', whatIf: '如果信提前到达',
+    refreshError: '列表尚未更新', onRetry: () => {}, onCompare: () => {}, onDismiss: () => {},
+  })))
+  expect(html).toContain('准时的信')
+  expect(html).toContain('假设：如果信提前到达')
+  expect(html).toContain('重试刷新时间线')
+  expect(html).toContain('disabled=""')
+  expect(html).not.toContain('Checkpoint')
+})

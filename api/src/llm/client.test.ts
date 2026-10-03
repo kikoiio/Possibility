@@ -29,9 +29,21 @@ describe('LLM 流式客户端', () => {
       { role: 'user', content: 'private prompt text' },
     ], { requestId: 'request-1', contractVersion: 'test/v1' })).resolves.toBe('A safe answer.')
     expect(reserve).toHaveBeenCalledWith({ requestId: 'request-1', contextHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      contractVersion: 'test/v1' })
+      contractVersion: 'test/v1', apiKeySource: undefined, verifiedPersonalKey: false, verifiedPersonalFingerprint: undefined })
     expect(JSON.stringify(reserveMock.mock.calls)).not.toContain('private prompt text')
     expect(settle).toHaveBeenCalledWith('receipt-success', 'completed', null)
+  })
+
+  it('provider HTTP errors retain status without exposing reflected credentials', async () => {
+    const apiKey = 'sk-reflected-canary-9876'
+    const settle = vi.fn(async () => {})
+    const reserve = Object.assign(vi.fn(async () => 'receipt-error'), { settle }) as ReceiptReservation
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(`invalid key ${apiKey}`, { status: 401 })))
+    const error = await complete({ baseUrl: 'https://llm.invalid', apiKey, model: 'm', reserve }, []).catch(error => error)
+    expect(error).toMatchObject({ code: 'provider_http_error', httpStatus: 401 })
+    expect(String(error)).not.toContain(apiKey)
+    expect(error.cause).toBeUndefined()
+    expect(settle).toHaveBeenCalledWith('receipt-error', 'failed', 'provider_http_error')
   })
 
   it('passes JSON output mode when requested by a structured caller', async () => {

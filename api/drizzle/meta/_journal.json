@@ -225,6 +225,20 @@
       "when": 1790958000001,
       "tag": "0031_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1790961600000,
+      "tag": "0032_s4a_provider_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1790965200000,
+      "tag": "0033_s4b_world_timezone",
+      "breakpoints": true
     }
   ]
 }

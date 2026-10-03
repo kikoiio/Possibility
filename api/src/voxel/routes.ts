@@ -3,7 +3,7 @@ import { deserialize } from '@possibility/voxel-contract'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { createDb } from '../db/client'
 import { budgetFromEnv } from '../engine/budget'
-import { BudgetRefusal, gateUser, userReservation } from '../engine/guard'
+import { BudgetRefusal, userReservation } from '../engine/guard'
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import type { Env } from '../index'
@@ -27,8 +27,6 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
     return c.json({ error: `世界文档无效：${error instanceof Error ? error.message : String(error)}` }, 400)
   }
   const db = createDb(c.env.DB)
-  const gate = await gateUser(db, c.get('user').id, budgetFromEnv(c.env))
-  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   const { config } = await resolveLlmConfig(db, c.env, { userId: c.get('user').id },
     userReservation(db, c.get('user').id, budgetFromEnv(c.env), 'scene'))
   try {

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
+import { comparisonFor } from './split-view-stubs'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
 const sceneV2 = { format: 'voxel-spaces', version: 1, defaultSpaceId: 'exterior',
@@ -27,9 +28,9 @@ async function mockGuestSandbox(page: Page, worldId: string, sessionId: string) 
   })
   await page.route(`**/api/demo/worlds/${worldId}/fork`, route => {
     state.forked = true
-    return route.fulfill({ json: { id: 'fork-a', simNow: '2026-09-28T12:00:00.000Z' } })
+    return route.fulfill({ json: { id: 'fork-a', sourceTimelineId: 'main', name: '匿名信提前被发现', whatIf: '三田村千鹤今天提前发现那封匿名信', simNow: '2026-09-28T12:00:00.000Z' } })
   })
-  await page.route(`**/api/demo/worlds/${worldId}/compare**`, route => route.fulfill({ json: { differences: { facts: [{ key: 'letter-found-at' }], states: [{ personId: 'resident-1' }], events: { leftOnly: [], rightOnly: [{ id: 'event-fork' }] } }, limitations: [] } }))
+  await page.route(`**/api/demo/worlds/${worldId}/compare**`, route => route.fulfill({ json: comparisonFor('main', 'fork-a') }))
   await page.route(`**/api/worlds/${worldId}/map/bootstrap**`, route => {
     const requested = new URL(route.request().url()).searchParams.get('timelineId')
     const timelines = state.forked ? [{ id: 'main', parentTimelineId: null }, { id: 'fork-a', parentTimelineId: 'main' }] : [{ id: 'main', parentTimelineId: null }]
@@ -63,8 +64,11 @@ test('two guests explore isolated sandboxes; fork and reset stay scoped to each 
   // 访客 A 创建平行宇宙并对照
   await pageA.getByRole('button', { name: '可能' }).click()
   await pageA.getByRole('button', { name: '创建并对照' }).click()
-  await expect(pageA.getByText('已创建平行宇宙')).toBeVisible()
-  await expect(pageA.getByText(/1 项事实差异/)).toBeVisible()
+  await pageA.getByTestId('guest-fork-confirm').click()
+  await expect(pageA.getByTestId('guest-fork-summary')).toBeVisible()
+  await pageA.getByRole('button', { name: '直接比较来源与新分支' }).click()
+  await expect(pageA.getByRole('heading', { name: '两种人生' })).toBeVisible()
+  await pageA.getByRole('button', { name: '关闭', exact: true }).click()
 
   // 访客 B 看不到 A 的分叉，也没有时间线切换器
   await pageB.getByRole('button', { name: '可能' }).click()

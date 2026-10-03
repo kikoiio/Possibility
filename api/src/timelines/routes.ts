@@ -17,6 +17,8 @@ import { WorldStateError } from '../world-state/types'
 import type { ForkScenario } from '../agent/types'
 import type { Env } from '../index'
 import { readPublicUniverseEvidence } from '../world-state/evidence-status'
+import { normalizeForkFields } from '../life/fork-fields'
+import { effectiveTimeZone } from '../worlds/time-zone'
 
 /** 活跃时间线上限（与世界级 fork 一致）：超出需先归档 */
 const MAX_ACTIVE_TIMELINES = 3
@@ -28,6 +30,7 @@ const PREVIEW_SYSTEM = `你是「可能性设定师」。用户要为一个人�
 根据人物背景与用户的 what-if，给出明确的分叉场景设定。
 只输出一个 JSON 对象（不要任何其他文字，不要代码块）：
 {
+  "name": "简短可读的分支名称，80 字以内",
   "whatIf": "用户的原话",
   "startTime": "分叉起始时间，ISO 8601（如 2024-06-01T09:00:00Z），不晚于当前时间",
   "changedVariable": "被改变的那一个条件，一句话",
@@ -49,6 +52,7 @@ export function normalizeScenario(raw: unknown, whatIf: string, fallbackStart: s
   const startRaw = String(r.startTime ?? '')
   const startTime = Number.isNaN(Date.parse(startRaw)) ? fallbackStart : new Date(startRaw).toISOString()
   return {
+    name: (typeof r.name === 'string' ? r.name.trim() : '').slice(0, 80) || whatIf.trim().slice(0, 80),
     whatIf: String(r.whatIf ?? whatIf).trim() || whatIf,
     startTime,
     changedVariable: String(r.changedVariable ?? '').trim() || whatIf,
@@ -118,13 +122,13 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
 timelineRoutes.post('/persons/:id/fork', async (c) => {
   const body = await c.req.json<{ scenario?: Partial<ForkScenario> }>().catch(() => null)
   const s = body?.scenario
-  if (!s?.whatIf?.trim() || !s.startTime || Number.isNaN(Date.parse(s.startTime))) {
-    return c.json({ error: '场景设定不完整（whatIf / startTime 必填）' }, 400)
+  const fields = s && normalizeForkFields(s as Record<string, unknown>)
+  if (!fields || typeof s?.startTime !== 'string' || Number.isNaN(Date.parse(s.startTime))) {
+    return c.json({ error: '请填写名称（1–80 字）、假设（1–500 字）、改变条件（1–200 字）及有效起始时刻。' }, 400)
   }
   const scenario: ForkScenario = {
-    whatIf: s.whatIf.trim(),
+    ...fields,
     startTime: new Date(s.startTime).toISOString(),
-    changedVariable: s.changedVariable?.trim() || s.whatIf.trim(),
     participants: Array.isArray(s.participants) ? s.participants.map(String).filter(Boolean) : [],
     invariants: Array.isArray(s.invariants) ? s.invariants.map(String).filter(Boolean) : [],
   }
@@ -196,7 +200,9 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
     }
     try {
       for await (const ev of runAgentTurn(c.env, db, forkCtx, input, [], { signal: controller.signal, runId: `fork:${forkId}` })) {
-        await stream.writeSSE({ data: JSON.stringify(ev) })
+        await stream.writeSSE({ data: JSON.stringify(ev.type === 'done' && !ev.error
+          ? { ...ev, fork: { id: forkId, sourceTimelineId: base.timeline.id, simNow: fork.simNow, name: fields.name, whatIf: fields.whatIf } }
+          : ev) })
         if (ev.type === 'done') {
           break
         }
@@ -313,6 +319,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
   return c.json({
     timeline: {
       id: timeline.id,
+      timeZone: effectiveTimeZone(world.timeZone),
       worldId: timeline.worldId,
       parentTimelineId: timeline.parentTimelineId,
       forkScenario: timeline.forkScenarioJson ? (JSON.parse(timeline.forkScenarioJson) as unknown) : null,
@@ -327,7 +334,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
         } : null
       })(),
     },
-    world: { id: world.id, name: world.name, description: world.description },
+    world: { id: world.id, name: world.name, description: world.description, timeZone: effectiveTimeZone(world.timeZone) },
     person: person ? { id: person.id, name: person.name } : null,
     events: eventList,
     state: state ?? null,

@@ -1,15 +1,18 @@
 import { useMemo } from 'react'
 import type { AlignedAxis, AxisMarker } from '../../world/alignedTimeline'
+import { formatWorldTime } from '../../lib/world-time'
 
 export interface AlignedTimelineProps {
   axis: AlignedAxis
+  leftTimeZone: string
+  rightTimeZone: string
   /** 拖档对齐时刻;null = 自由模式(各看各的当前) */
   at: string | null
   onScrub?: (at: string | null) => void
   onSelect?: (marker: AxisMarker) => void
 }
 
-const fmt = (iso: string) => iso.slice(0, 16).replace('T', ' ')
+const fmt = (iso: string, timeZone: string) => formatWorldTime(iso, timeZone)
 const SIDE_STYLE: Record<AxisMarker['side'], string> = {
   shared: 'bg-zinc-400',
   left: 'bg-woad-deep',
@@ -21,7 +24,7 @@ const SIDE_LABEL: Record<AxisMarker['side'], string> = { shared: '共同', left:
  * S1 共同时间轴:以分叉点为原点,共同过去 + 两线各自延伸。
  * 只渲染不计算(轴模型见 world/alignedTimeline.ts);拖档只回放事件记录。
  */
-export default function AlignedTimeline({ axis, at, onScrub, onSelect }: AlignedTimelineProps) {
+export default function AlignedTimeline({ axis, leftTimeZone, rightTimeZone, at, onScrub, onSelect }: AlignedTimelineProps) {
   const domain = useMemo(() => {
     const times = [
       ...axis.markers.map((m) => m.simTime),
@@ -51,8 +54,8 @@ export default function AlignedTimeline({ axis, at, onScrub, onSelect }: Aligned
         <p>
           共同时间轴
           {axis.origin
-            ? <span className="ml-2 text-[#849184]">分叉点 {fmt(axis.origin)} · 左线 {fmt(axis.leftNow)} · 右线 {fmt(axis.rightNow)}</span>
-            : <span className="ml-2 text-[#849184]">无法确认共同分叉来源;仅展示两线各自当前时刻 · 左线 {fmt(axis.leftNow)} · 右线 {fmt(axis.rightNow)}</span>}
+            ? <span className="ml-2 text-[#849184]">分叉点 {fmt(axis.origin, leftTimeZone)} · 左线 {fmt(axis.leftNow, leftTimeZone)} · 右线 {fmt(axis.rightNow, rightTimeZone)}</span>
+            : <span className="ml-2 text-[#849184]">无法确认共同分叉来源;仅展示两线各自当前时刻 · 左线 {fmt(axis.leftNow, leftTimeZone)} · 右线 {fmt(axis.rightNow, rightTimeZone)}</span>}
         </p>
         <div className="flex items-center gap-2">
           {reviewing && (
@@ -86,7 +89,7 @@ export default function AlignedTimeline({ axis, at, onScrub, onSelect }: Aligned
             <button
               key={`${marker.side}:${marker.eventId}`}
               type="button"
-              title={`${SIDE_LABEL[marker.side]} · ${marker.title} · ${fmt(marker.simTime)}`}
+              title={`${SIDE_LABEL[marker.side]} · ${marker.title} · ${fmt(marker.simTime, marker.side === 'right' ? rightTimeZone : leftTimeZone)}`}
               onClick={() => onSelect?.(marker)}
               data-testid="aligned-timeline-marker"
               data-event-id={marker.eventId}
@@ -107,10 +110,10 @@ export default function AlignedTimeline({ axis, at, onScrub, onSelect }: Aligned
         )}
         {/* 两线 simNow 常驻 */}
         <span className="absolute bottom-0 -translate-x-1/2 whitespace-nowrap text-[10px] text-woad-deep" style={{ left: pos(axis.leftNow) }} data-testid="aligned-timeline-left-now">
-          左线 {fmt(axis.leftNow)}
+          左线 {fmt(axis.leftNow, leftTimeZone)}
         </span>
         <span className="absolute bottom-0 -translate-x-1/2 whitespace-nowrap text-[10px] text-cinnabar-deep" style={{ left: pos(axis.rightNow) }} data-testid="aligned-timeline-right-now">
-          右线 {fmt(axis.rightNow)}
+          右线 {fmt(axis.rightNow, rightTimeZone)}
         </span>
       </div>
       <input

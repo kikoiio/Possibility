@@ -147,6 +147,7 @@ import type {
   DialogueDetail,
   ForkScenario,
   ForkScenarioInput,
+  ForkResult,
   HistoryRange,
   PersonFocus,
   Persona,
@@ -205,9 +206,11 @@ export const chatApi = {
 
 export const worldsApi = {
   draft: (prompt: string) => apiFetch<WorldDraft>('/api/worlds/draft', { method: 'POST', body: JSON.stringify({ prompt }) }),
-  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[]; scene?: SerializedVoxelDocument | SerializedVoxelSpaces; sceneRequestId?: string }) =>
+  create: (payload: { name: string; description: string; locations: { name: string; description: string }[]; personIds: string[]; timeZone?: string; scene?: SerializedVoxelDocument | SerializedVoxelSpaces; sceneRequestId?: string }) =>
     apiFetch<{ id: string; timelineId: string }>('/api/worlds', { method: 'POST', body: JSON.stringify(payload) }),
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
+  timeZone: (worldId: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`),
+  updateTimeZone: (worldId: string, timeZone: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`, { method: 'PUT', body: JSON.stringify({ timeZone }) }),
   snapshot: (worldId: string, timelineId?: string) =>
     apiFetch<WorldSnapshot>(`/api/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
   state: (worldId: string, timelineId: string) =>
@@ -225,7 +228,7 @@ export const worldsApi = {
       body: JSON.stringify({ text, timelineId, requestId, expectedVersion }),
     }),
   fork: (worldId: string, timelineId: string, requestId: string, scenario: ForkScenarioInput) =>
-    apiFetch<{ id: string; simNow: string }>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, {
+    apiFetch<ForkResult>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, {
       method: 'POST',
       body: JSON.stringify({ requestId, scenario }),
     }),
@@ -273,7 +276,7 @@ export const demoApi = {
     headers: getGuestToken() ? { 'X-Possibility-Guest': getGuestToken()! } : undefined,
     body: JSON.stringify({ requestId: crypto.randomUUID() }),
   }),
-  fork: (worldId: string, timelineId: string, input: { whatIf: string; changedVariable: string }) => apiFetch<{ id: string; simNow: string }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId: crypto.randomUUID() }) }),
+  fork: (worldId: string, timelineId: string, input: Pick<ForkScenarioInput, 'name' | 'whatIf' | 'changedVariable'>, requestId: string = crypto.randomUUID()) => apiFetch<ForkResult>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId }) }),
   compare: (worldId: string, left: string, right: string) => apiFetch<{ differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } }; limitations: string[] }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
 }
 
@@ -312,8 +315,14 @@ export const chaptersApi = {
 }
 
 /** 设置(F5/S3):全局 BYOK 配置与日预算;Key 只写不读,回显仅掩码 */
-export interface LlmSettings { baseUrl: string | null; model: string | null; hasKey: boolean; keyPreview: string | null }
-export interface BudgetSettings { dailyCallCap: number | null; usedToday: number }
+export interface LlmSettings {
+  baseUrl: string | null
+  model: string | null
+  hasKey: boolean
+  keyPreview: string | null
+  verification: { status: 'incomplete' | 'unverified' | 'verified'; verifiedAt: string | null }
+}
+export interface BudgetSettings { dailyCallCap: number | null; usedToday: number; fallbackUsedToday?: number; unlimitedEligible?: boolean }
 export interface WorldLlmConfig { baseUrl: string | null; model: string | null; hasKey: boolean; keyPreview: string | null }
 
 export const settingsApi = {
@@ -321,6 +330,7 @@ export const settingsApi = {
   putLlm: (patch: { baseUrl?: string | null; apiKey?: string | null; model?: string | null }) =>
     apiFetch<LlmSettings>('/api/settings/llm', { method: 'PUT', body: JSON.stringify(patch) }),
   deleteLlm: () => apiFetch<{ ok: true }>('/api/settings/llm', { method: 'DELETE' }),
+  testLlm: () => apiFetch<{ ok: true; verifiedAt: string }>('/api/settings/llm/test', { method: 'POST' }),
   getBudget: () => apiFetch<BudgetSettings>('/api/settings/budget'),
   putBudget: (dailyCallCap: number | null) =>
     apiFetch<BudgetSettings>('/api/settings/budget', { method: 'PUT', body: JSON.stringify({ dailyCallCap }) }),
@@ -358,7 +368,7 @@ export type SceneIntentResolution = {
   requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
   status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
   proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
-  question?: string; reason?: string;
+  question?: string; reason?: string; recovery?: 'refresh_state';
 }
 
 export const sceneApi = {
@@ -373,7 +383,7 @@ export const sceneApi = {
       requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
       status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
       proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
-      question?: string; reason?: string;
+      question?: string; reason?: string; recovery?: 'refresh_state';
     }>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }),
   pendingIntent: (worldId: string, timelineId: string) =>
     apiFetch<{ text: string; result: SceneIntentResolution } | { proposal: null }>(

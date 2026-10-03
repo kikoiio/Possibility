@@ -7,6 +7,7 @@ import VoxelViewport from '../voxel/VoxelViewport'
 import { planEditsViaApi } from '../voxel/plan-edits'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { createCreateDraftStore } from '../scene/create-draft-store'
+import { browserTimeZone, formatWorldTime } from '../lib/world-time'
 
 const GEN_STAGES = ['正在构思世界骨架…', '正在铺设地形…', '正在建造建筑与道路…', '正在校验新世界…']
 const createDraftStore = createCreateDraftStore<CreatePageContext, CreatePageSavedDraft>()
@@ -136,7 +137,8 @@ export default function WorldCreate() {
       const finalDoc = latestDoc.current ?? doc!
       const result = await worldsApi.create({
         name: draft.world.name, description: draft.world.description, locations: draft.world.locations,
-        personIds: selected, scene: JSON.parse(serialize(finalDoc)), sceneRequestId: crypto.randomUUID(),
+        personIds: selected, timeZone: browserTimeZone(),
+        scene: JSON.parse(serialize(finalDoc)), sceneRequestId: crypto.randomUUID(),
       })
       const fromWorld = searchParams.get('fromWorld')
       if (fromWorld) {
@@ -225,7 +227,7 @@ export default function WorldCreate() {
       {live && <section className="pointer-events-auto absolute bottom-4 left-3 max-w-[min(26rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:left-5" data-testid="create-live-banner">
         <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">这里已经开始生活</p>
         <p className="mt-1 text-xs leading-relaxed text-[#68796d]">居民会按照自己的处境继续生活。你可以直接进入世界地图观察、交谈、改变条件或创建平行宇宙。</p>
-        <p className="mt-2 text-[10px] text-[#849184]">{new Date(live.snapshot.simNow).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', weekday: 'short' })} · {live.snapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</p>
+        <p className="mt-2 text-[10px] text-[#849184]">{formatWorldTime(live.snapshot.simNow, live.snapshot.world.timeZone)} · {live.snapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</p>
       </section>}
     </div>
   </main>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { createTestDb } from '../test/db'
 import { userLlmConfigs, users, worlds } from '../db/schema'
@@ -7,6 +7,8 @@ import { byokFailureHint, resolveLlmConfig } from './resolve'
 const NOW = '2026-10-01T00:00:00.000Z'
 const env = { LLM_BASE_URL: 'https://platform.example.com/', LLM_API_KEY: 'env-key', LLM_MODEL: 'env-model' }
 let fixture: ReturnType<typeof createTestDb>
+
+afterEach(() => fixture?.close())
 
 async function setWorldOverride(override: string | null) {
   await fixture.db.update(worlds).set({ llmConfigJson: override }).where(eq(worlds.id, 'w'))
@@ -55,13 +57,57 @@ describe('resolveLlmConfig', () => {
     expect(source).toBe('user')
   })
 
-  it('无 worldId(预世界调用)只看用户配置', async () => {
+  it('验证资格仅在当前个人配置指纹匹配时成立,混合端点/模型仍按实际 Key 来源计费', async () => {
+    const { verificationFingerprint } = await import('../settings/connection-test')
+    const personal = { baseUrl: 'https://user.example.com', apiKey: 'user-key', model: 'user-model' }
     await fixture.db.insert(userLlmConfigs).values({
-      userId: 'u', baseUrl: null, apiKey: 'user-key', model: 'user-model', updatedAt: NOW,
+      userId: 'u', ...personal,
+      verificationFingerprint: await verificationFingerprint('u', personal), verifiedAt: NOW, updatedAt: NOW,
     })
-    const { config, source } = await resolveLlmConfig(fixture.db, env, { userId: 'u' })
-    expect(config).toMatchObject({ apiKey: 'user-key', model: 'user-model', baseUrl: 'https://platform.example.com' })
-    expect(source).toBe('user')
+    await setWorldOverride(JSON.stringify({ baseUrl: 'https://world.example.com', model: 'world-model' }))
+    let result = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })
+    expect(result).toMatchObject({ apiKeySource: 'personal_global', verificationValid: true,
+      config: { apiKey: 'user-key', apiKeyVerified: true } })
+
+    await setWorldOverride(JSON.stringify({ apiKey: 'world-key', baseUrl: 'https://world.example.com' }))
+    result = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })
+    expect(result).toMatchObject({ apiKeySource: 'world_override', verificationValid: true,
+      config: { apiKey: 'world-key', apiKeyVerified: true } })
+
+    await fixture.db.update(userLlmConfigs).set({ model: 'changed-model' }).where(eq(userLlmConfigs.userId, 'u'))
+    await setWorldOverride(null)
+    result = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })
+    expect(result).toMatchObject({ apiKeySource: 'personal_global', verificationValid: false,
+      config: { apiKeyVerified: false } })
+  })
+
+  it('包装 reservation 自动传最终 Key 来源与已验证指纹，世界 Key 不继承个人豁免', async () => {
+    const { verificationFingerprint } = await import('../settings/connection-test')
+    const personal = { baseUrl: 'https://personal.example/v1', model: 'm', apiKey: 'personal-key' }
+    const fingerprint = await verificationFingerprint('u', personal)
+    await fixture.db.insert(userLlmConfigs).values({ userId: 'u', ...personal,
+      verificationFingerprint: fingerprint, verifiedAt: NOW, updatedAt: NOW })
+    const reserve = Object.assign(vi.fn(async () => 'receipt'), { settle: vi.fn(async () => {}) })
+    const details = { requestId: 'r', contextHash: 'h', contractVersion: 'test/v1' }
+    const resolved = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' }, reserve)
+    await resolved.config.reserve!(details)
+    expect(reserve).toHaveBeenLastCalledWith({ ...details, apiKeySource: 'personal_global',
+      verifiedPersonalKey: true, verifiedPersonalFingerprint: fingerprint })
+    expect(resolved.config.reserve!.settle).toBe(reserve.settle)
+    await setWorldOverride(JSON.stringify({ apiKey: 'world-key' }))
+    const world = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' }, reserve)
+    await world.config.reserve!(details)
+    expect(reserve).toHaveBeenLastCalledWith({ ...details, apiKeySource: 'world_override',
+      verifiedPersonalKey: false, verifiedPersonalFingerprint: fingerprint })
+  })
+
+  it('世界 Key、个人 Key 和平台兜底来源按最终实际 Key 分类', async () => {
+    const { apiKeySource: platform } = await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })
+    expect(platform).toBe('platform_fallback')
+    await fixture.db.insert(userLlmConfigs).values({ userId: 'u', apiKey: 'user-key', updatedAt: NOW })
+    expect((await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })).apiKeySource).toBe('personal_global')
+    await setWorldOverride(JSON.stringify({ apiKey: 'world-key' }))
+    expect((await resolveLlmConfig(fixture.db, env, { userId: 'u', worldId: 'w' })).apiKeySource).toBe('world_override')
   })
 })
 

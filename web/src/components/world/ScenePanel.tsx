@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, personaApi, sceneApi, worldsApi } from '../../api/client'
-import type { Persona, PersonaMention, PersonaMessage, SceneEvent } from '../../api/types'
+import type { Persona, PersonaMention, PersonaMessage, SceneEvent, WorldSummary } from '../../api/types'
+import { formatWorldTime } from '../../lib/world-time'
 import { resolveSceneEntryLocation } from '../../scene/entry-location'
+import { actionAvailability, actionExample, refreshedActionLocation } from '../../scene/action-guidance'
 
 interface Props {
   worldId: string
   timelineId: string
+  timeZone?: string | null
+  worldStatus?: WorldSummary['status']
+  readOnly?: boolean
   locations: { name: string; description: string }[]
   initialLocation?: string
   onClose: () => void
@@ -74,7 +79,10 @@ function clearPendingIntentProposal(key: string) {
  * 你在世界里：用户以登记过的在场身份来到某地点说话，
  * 在场的人物依次回应。这场相遇会写进世界史（事件流）与每个人的记忆。
  */
-export default function ScenePanel({ worldId, timelineId, locations, initialLocation = '', onClose, onMilestone }: Props) {
+export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus = 'running', readOnly = false, locations, initialLocation = '', onClose, onMilestone }: Props) {
+  const [actionLocations, setActionLocations] = useState(locations)
+  const [actionWorldStatus, setActionWorldStatus] = useState(worldStatus)
+  const [actionReadOnly, setActionReadOnly] = useState(readOnly)
   const [persona, setPersona] = useState<Persona | null>(null)
   const [personaLoading, setPersonaLoading] = useState(true)
   const [name, setName] = useState('')
@@ -104,7 +112,17 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
   const [intentBusy, setIntentBusy] = useState(false)
   const [intentNotice, setIntentNotice] = useState('')
   const [intentProposal, setIntentProposal] = useState<ResolvedIntent | null>(null)
+  const [intentNeedsRetry, setIntentNeedsRetry] = useState(false)
+  const [intentRetryError, setIntentRetryError] = useState('')
+  const intentInFlight = useRef(false)
+  const latestActionVersion = useRef<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setActionLocations(locations) }, [locations])
+  useEffect(() => { setActionWorldStatus(worldStatus) }, [worldStatus])
+  useEffect(() => { setActionReadOnly(readOnly) }, [readOnly])
+  const actionBlocked = actionAvailability(actionWorldStatus, actionReadOnly, actionLocations, !!persona?.location && persona.location === location)
+  const example = actionExample(actionLocations, persona?.location ?? null, peopleByLocation[location] ?? [])
 
   useEffect(() => {
     let active = true
@@ -128,9 +146,10 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
           void sceneApi.pendingIntent(worldId, timelineId).then(pending => {
             if (!active) return
             if ('result' in pending && pending.result.status === 'proposal') {
+              const originalText = pendingIntent?.result.requestId === pending.result.requestId ? pendingIntent.text : pending.text
               setIntentProposal(pending.result)
-              setIntentText(pending.text)
-              savePendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona!.id), { text: pending.text, result: pending.result })
+              setIntentText(originalText)
+              savePendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona!.id), { text: originalText, result: pending.result })
               setIntentNotice('已从服务器恢复尚未确认的行动提议；确认前会再次检查世界版本。')
             } else if (pendingIntent) {
               clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, d.persona!.id))
@@ -302,30 +321,84 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
     finally { setInfoBusy(false) }
   }
 
+  const refreshActionState = async () => {
+    if (!persona) return false
+    try {
+      const [currentState, recovered, currentBoard, snapshot] = await Promise.all([
+        worldsApi.state(worldId, timelineId),
+        personaApi.get(worldId, timelineId),
+        sceneApi.board(worldId, timelineId),
+        worldsApi.snapshot(worldId, timelineId),
+      ])
+      latestActionVersion.current = currentState.version
+      setPersona(recovered.persona)
+      setActionLocations(snapshot.world.locations)
+      setActionWorldStatus(snapshot.world.status)
+      setActionReadOnly(current => current || readOnly || snapshot.evidence.level !== 'complete')
+      setLocation(refreshedActionLocation(recovered.persona?.location ?? null, snapshot.world.locations))
+      setInfoRecipient('')
+      setBoard(Object.fromEntries(currentBoard.board.map(item => [item.location, item.count])))
+      setPeopleByLocation(Object.fromEntries(currentBoard.board.map(item => [item.location, item.people])))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const recoverIntent = async (confirming = false) => {
+    if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+    setIntentProposal(null)
+    setIntentNeedsRetry(true)
+    const refreshed = await refreshActionState()
+    setIntentRetryError(refreshed ? '' : '状态或地点刷新失败；保留原行动描述，可再次尝试刷新或手动重新生成。')
+    setIntentNotice(refreshed
+      ? confirming ? '世界状态和地点已刷新；这项命令没有自动重放。确认最新情况后，可重新生成提议。' : '世界状态和地点已刷新。原行动描述已保留；请确认后再重新生成提议。'
+      : '世界状态可能已变化。原行动描述已保留，请重新打开面板或重试。')
+  }
+
+  const handleRefreshIntent = async () => {
+    if (intentInFlight.current) return
+    intentInFlight.current = true
+    setIntentBusy(true)
+    try {
+      const refreshed = await refreshActionState()
+      setIntentRetryError(refreshed ? '' : '状态或地点刷新失败；原行动描述已保留，请稍后再次刷新。')
+      setIntentNotice(refreshed ? '世界状态和地点已刷新。请检查最新情况，再显式生成提议。' : '刷新失败，原行动描述已保留。')
+    } finally { intentInFlight.current = false; setIntentBusy(false) }
+  }
+
   const handleResolveIntent = async () => {
     const content = intentText.trim()
-    if (!persona?.location || persona.location !== location || !content || intentBusy || busy) return
+    if (!persona?.location || persona.location !== location || !content || intentInFlight.current || busy || actionBlocked || intentRetryError) return
+    intentInFlight.current = true
     setIntentBusy(true)
     setIntentNotice('')
+    setIntentNeedsRetry(false)
+    setIntentRetryError('')
     if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
     setIntentProposal(null)
     try {
       const result = await sceneApi.resolveIntent(worldId, { timelineId, content, requestId: crypto.randomUUID() })
       setIntentProposal(result)
       const key = pendingIntentStorageKey(worldId, timelineId, persona.id)
-      if (result.status === 'proposal') savePendingIntentProposal(key, { text: content, result })
+      if (result.recovery === 'refresh_state') { await recoverIntent(); return }
+      if (result.status === 'proposal') savePendingIntentProposal(key, { text: intentText, result })
       else clearPendingIntentProposal(key)
       if (result.status === 'clarification') setIntentNotice(result.question ?? '请再说具体一些。')
       else if (result.status === 'rejected') setIntentNotice(result.reason ?? '这个行动不在当前范围内。')
     } catch (e) {
-      setIntentNotice(e instanceof Error ? e.message : '暂时无法解析行动；世界状态未改变。')
-    } finally { setIntentBusy(false) }
+      if (e instanceof ApiError && e.status === 409) {
+        if (e.message.includes('只读') || e.message.includes('仅可读取')) setActionReadOnly(true)
+        await recoverIntent()
+      } else setIntentNotice(e instanceof Error ? e.message : '暂时无法解析行动；世界状态未改变。')
+    } finally { intentInFlight.current = false; setIntentBusy(false) }
   }
 
   const handleConfirmIntent = async () => {
     const result = intentProposal
     const proposal = result?.proposal
-    if (!result || result.status !== 'proposal' || !proposal || intentBusy || !persona?.location || persona.location !== location) return
+    if (!result || result.status !== 'proposal' || !proposal || intentInFlight.current || actionBlocked || !persona?.location || persona.location !== location) return
+    intentInFlight.current = true
     setIntentBusy(true)
     setIntentNotice('')
     const storageKey = pendingIntentStorageKey(worldId, timelineId, persona.id)
@@ -354,11 +427,9 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
         if (!(e instanceof ApiError) || e.status !== 404) throw e
       }
       const state = await worldsApi.state(worldId, timelineId)
-      if (state.version !== result.expectedVersion) {
+      if (state.version !== result.expectedVersion || (latestActionVersion.current ?? 0) > result.expectedVersion) {
         void sceneApi.cancelIntent(worldId, result.requestId).catch(() => {})
-        clearPendingIntentProposal(storageKey)
-        setIntentProposal(null)
-        setIntentNotice('提议后世界状态已经变化，请重新描述并生成提议。')
+        await recoverIntent()
         return
       }
       if (proposal.type === 'move') {
@@ -380,14 +451,13 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
       setIntentText('')
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        clearPendingIntentProposal(storageKey)
-        setIntentProposal(null)
-        setIntentNotice('世界状态已变化，这项提议未执行；请重新描述并生成提议。')
+        if (e.message.includes('只读') || e.message.includes('仅可读取')) setActionReadOnly(true)
+        await recoverIntent(true)
       } else {
         // Keep the same command/request ID so a retry can recover the committed result.
         setIntentNotice('暂时无法确认提交结果；提议已保留，再次确认会先查询是否已提交。')
       }
-    } finally { setIntentBusy(false) }
+    } finally { intentInFlight.current = false; setIntentBusy(false) }
   }
 
   const handleSend = useCallback(async () => {
@@ -528,7 +598,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
         ) : (
           <>
             {/* 已落籍：到场交谈 */}
-            <div className="flex items-center gap-2 border-b border-ink-line/60 px-5 py-2.5">
+            <div className="flex flex-wrap items-center gap-2 border-b border-ink-line/60 px-5 py-2.5">
               <span className="text-xs text-ink-faint">{persona.location ? `你在 ${persona.location} · 前往` : '选择进入地点'}</span>
               <select
                 aria-label="进入地点"
@@ -538,7 +608,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
                 className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs text-ink-soft outline-none"
               >
                 <option value="" disabled>选择地点</option>
-                {locations.map((l) => {
+                {actionLocations.map((l) => {
                   const count = board?.[l.name]
                   return (
                     <option key={l.name} value={l.name}>
@@ -561,7 +631,7 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
                   {notes.messages.map((m) => (
                     <div key={m.id} className="mb-2 last:mb-0">
                       <p className="text-[11px] text-ink-faint">
-                        {m.fromName} 在{m.location ? ` ${m.location} ` : ''}给你留了话 · {m.simTime.slice(5, 16).replace('T', ' ')}
+                        {m.fromName} 在{m.location ? ` ${m.location} ` : ''}给你留了话 · {formatWorldTime(m.simTime, timeZone)}
                       </p>
                       <p className="font-story mt-0.5 text-sm leading-relaxed text-ink">{m.content}</p>
                     </div>
@@ -608,7 +678,36 @@ export default function ScenePanel({ worldId, timelineId, locations, initialLoca
             </div>
 
             <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">明确告诉现场某人一条消息</summary><p className="mt-1 text-[11px] text-ink-faint">这是可追踪的当面传话；对方会记为传闻。普通聊天不会自动变成已证实事实。</p><div className="mt-2 flex flex-wrap gap-2"><select aria-label="消息接收者" value={infoRecipient} onChange={e => setInfoRecipient(e.target.value)} className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs"><option value="">选择现场的人</option>{(peopleByLocation[location] ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="消息主题" value={infoTopic} onChange={e => setInfoTopic(e.target.value)} placeholder="消息主题" maxLength={80} className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><input aria-label="消息内容" value={infoContent} onChange={e => setInfoContent(e.target.value)} placeholder="你要告诉 TA 什么" maxLength={500} className="min-w-0 flex-[2] rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleInform()} disabled={infoBusy || !persona.location || persona.location !== location || !infoRecipient || !infoTopic.trim() || !infoContent.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">告诉 TA</button></div>{infoNotice && <p className="mt-2 text-xs text-ink-soft">{infoNotice}</p>}</details>
-            <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">尝试一个行动</summary><p className="mt-1 text-[11px] text-ink-faint">先把自然语言整理成有限提议；只有你确认后才会执行。普通聊天不会自动改变世界。</p><div className="mt-2 flex gap-2"><input aria-label="行动描述" value={intentText} onChange={e => { if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {}); setIntentText(e.target.value); setIntentProposal(null); setIntentNotice(''); if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)) }} maxLength={1000} placeholder="例如：带我去图书馆，或告诉 Ada 暴雨开始了" className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleResolveIntent()} disabled={intentBusy || busy || !persona.location || persona.location !== location || !intentText.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{intentBusy && !intentProposal ? '整理中…' : '生成提议'}</button></div>{intentProposal?.status === 'proposal' && intentProposal.proposal && <div className="mt-2 rounded-lg border border-ink-line bg-sheet p-3 text-xs"><p className="text-ink-soft">提议（世界状态 v{intentProposal.expectedVersion}）</p><p className="mt-1 text-ink">{intentProposal.proposal.type === 'move' ? `前往${intentProposal.proposal.to}` : `告诉${intentProposal.proposal.recipientName}：「${intentProposal.proposal.content}」`}</p><div className="mt-2 flex gap-2"><button onClick={() => void handleConfirmIntent()} disabled={intentBusy} className="rounded-lg bg-ink px-3 py-1 text-white disabled:opacity-50">{intentBusy ? '提交中…' : '确认执行'}</button><button onClick={() => { if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {}); if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id)); setIntentProposal(null); setIntentNotice('已取消提议。') }} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-ink-soft">取消</button></div></div>}{intentNotice && <p className="mt-2 text-xs text-ink-soft">{intentNotice}</p>}</details>
+            <details className="max-h-[45vh] shrink-0 overflow-y-auto border-t border-ink-line/60 px-4 py-2">
+              <summary className="cursor-pointer text-xs text-ink-soft">尝试一个行动</summary>
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">可以前往当前有效地点，或告诉现场居民一条消息。系统会先生成提议，只有你确认后才会执行。普通聊天不会自动改变世界。</p>
+              <p className="mt-1 text-[11px] text-ink-faint">当前有效地点：{actionLocations.length ? actionLocations.map(item => item.name).join('、') : '暂无'}</p>
+              {example ? <p className="mt-1 text-[11px] text-ink-faint">示例：{example}</p> : <p className="mt-1 text-[11px] text-ink-faint">暂时没有可用的行动示例。请进入其他有效地点，或等待现场出现可交谈的居民后刷新。</p>}
+              {actionBlocked && <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">{actionBlocked}</p>}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input aria-label="行动描述" value={intentText} disabled={intentBusy} onChange={e => {
+                  if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
+                  setIntentText(e.target.value); setIntentProposal(null); setIntentNeedsRetry(false); setIntentNotice('')
+                  if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+                }} maxLength={1000} placeholder={example ?? '描述你想去的地点或要告诉现场居民的消息'} className="min-w-0 flex-[1_1_12rem] rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" />
+                <button onClick={() => void handleResolveIntent()} disabled={intentBusy || busy || !!actionBlocked || !!intentRetryError || !intentText.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{intentBusy && !intentProposal ? '整理中…' : intentNeedsRetry ? '重新生成提议' : '生成提议'}</button>
+                {(intentNeedsRetry || actionBlocked || intentRetryError) && <button onClick={() => void handleRefreshIntent()} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-xs text-ink-soft disabled:opacity-50">刷新行动状态</button>}
+              </div>
+              {intentRetryError && <p role="alert" className="mt-2 text-xs text-red-600">{intentRetryError}</p>}
+              {intentProposal?.status === 'proposal' && intentProposal.proposal && <div className="mt-2 rounded-lg border border-ink-line bg-sheet p-3 text-xs">
+                <p className="text-ink-soft">提议（世界状态 v{intentProposal.expectedVersion}）</p>
+                <p className="mt-1 text-ink">{intentProposal.proposal.type === 'move' ? `前往${intentProposal.proposal.to}` : `告诉${intentProposal.proposal.recipientName}：「${intentProposal.proposal.content}」`}</p>
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => void handleConfirmIntent()} disabled={intentBusy || !!actionBlocked} className="rounded-lg bg-ink px-3 py-1 text-white disabled:opacity-50">{intentBusy ? '提交中…' : '确认执行'}</button>
+                  <button onClick={() => {
+                    if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
+                    if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+                    setIntentProposal(null); setIntentNotice('已取消提议。')
+                  }} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-ink-soft">取消</button>
+                </div>
+              </div>}
+              {intentNotice && <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">{intentNotice}</p>}
+            </details>
             <div className="flex items-end gap-2 border-t border-ink-line/60 px-4 py-3">
               <textarea
                 value={input}

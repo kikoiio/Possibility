@@ -39,10 +39,6 @@ export async function gateWorld(
   if (world.status !== 'running') {
     return { ok: false, status: 409, error: `世界${STATUS_LABEL[world.status] ?? world.status}，恢复后才能继续` }
   }
-  if (await globalBudgetExceeded(db, world.userId)) {
-    await capGlobalWorlds(db, world.userId)
-    return { ok: false, status: 429, error: '已达今日全局调用预算，可在设置页提高预算' }
-  }
   return { ok: true, world }
 }
 
@@ -144,9 +140,9 @@ export function worldReservation(db: Db, worldId: string, cfg: BudgetConfig, met
     if (!universe.ok) throw new BudgetRefusal(universe.error, universe.status)
     const receiptId = await reserveWorldCall(db, worldId, cfg, meta, details)
     if (receiptId) return receiptId
-    const gate = await gateWorld(db, worldId, cfg)
-    if (!gate.ok) throw new BudgetRefusal(gate.error, gate.status)
-    throw new BudgetRefusal('世界调用预算不足，请稍后再试')
+    const world = await db.select({ userId: worlds.userId }).from(worlds).where(eq(worlds.id, worldId)).get()
+    if (world && await globalBudgetExceeded(db, world.userId)) await capGlobalWorlds(db, world.userId)
+    throw new BudgetRefusal('已达当前调用预算，请调整预算或配置后重试')
   }, tick)
 }
 
@@ -154,7 +150,8 @@ export function userReservation(db: Db, userId: string, cfg: BudgetConfig, purpo
   return reservation(db, async (details) => {
     const receiptId = await reserveUserCall(db, userId, cfg, purpose, details)
     if (!receiptId) {
-      throw new BudgetRefusal(`创建类调用已达今日上限（${cfg.preworldDailyCap} 次），次日自动恢复`)
+      throw new BudgetRefusal(purpose === 'connection_test' ? '连接测试已达当前日预算'
+        : `创建类调用或全局日预算已达上限（创建类 ${cfg.preworldDailyCap} 次），请检查预算或次日重试`)
     }
     return receiptId
   })

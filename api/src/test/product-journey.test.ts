@@ -108,7 +108,7 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
     action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'storm' },
   })
   expect(changed.status).toBe(200)
-  const forkScenario = { whatIf: 'What if the storm clears before dawn?', changedVariable: 'weather after the fork' }
+  const forkScenario = { name: '晴天分支', whatIf: 'What if the storm clears before dawn?', changedVariable: 'weather after the fork' }
   const missingForkScenario = await request(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, 'POST', { requestId: 'journey-missing-fork-scenario' })
   expect(missingForkScenario.status).toBe(400)
   const forkResponse = await request(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, 'POST', {
@@ -332,7 +332,7 @@ it('advances the selected world, completes ordinary chat, and forks from the res
 
   vi.useRealTimers()
   const forked = await app.request('/api/worlds/home-world/timelines/home-main/fork', { method: 'POST', headers,
-    body: JSON.stringify({ requestId: 'run-chat-fork', scenario: { whatIf: 'What if a letter arrived?', changedVariable: 'letter arrival' } }) }, f.env)
+    body: JSON.stringify({ requestId: 'run-chat-fork', scenario: { name: '来信分支', whatIf: 'What if a letter arrived?', changedVariable: 'letter arrival' } }) }, f.env)
   expect(forked.status).toBe(200)
   const fork = await forked.json() as { id: string }
   const compare = await app.request(`/api/worlds/home-world/compare?left=home-main&right=${fork.id}`, { headers }, f.env)

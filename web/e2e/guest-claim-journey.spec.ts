@@ -59,8 +59,11 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   // 4. 创建分叉并对照
   await page.getByRole('button', { name: '可能' }).click()
   await page.getByRole('button', { name: '创建并对照' }).click()
-  await expect(page.getByText('已创建平行宇宙')).toBeVisible({ timeout: 30000 })
-  await expect(page.getByText(/项事实差异/)).toBeVisible()
+  await page.getByTestId('guest-fork-confirm').click()
+  await expect(page.getByTestId('guest-fork-summary')).toBeVisible({ timeout: 30000 })
+  await page.getByRole('button', { name: '直接比较来源与新分支' }).click()
+  await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
 
   // 5. 登录并保存:注册新账号 → 自动真实 claim → 落在保存后的世界
   await page.getByRole('link', { name: '登录并保存' }).click()

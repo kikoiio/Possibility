@@ -6,7 +6,9 @@ import StateBar from '../components/StateBar'
 import ChatStream from '../components/ChatStream'
 import PersonCard from '../components/PersonCard'
 import { timelineHref } from '../lib/timelineUrl'
+import { timelineDisplayName, timelineOptionLabel } from '../world/timeline-display'
 import EvidenceNotice from '../components/world/EvidenceNotice'
+import { formatWorldTime } from '../lib/world-time'
 
 type Tab = 'chat' | 'card' | 'timelines'
 
@@ -123,7 +125,7 @@ export default function PersonDetail() {
               {detail.world?.name}
               {currentTimeline?.parentTimelineId && (
                 <span className="ml-2 rounded-full bg-woad-soft px-2 py-0.5 text-woad-deep">
-                  What-if：{currentTimeline.forkScenario?.whatIf ?? '分叉'}
+                  What-if：{timelineOptionLabel(currentTimeline)}
                 </span>
               )}
             </p>
@@ -139,7 +141,7 @@ export default function PersonDetail() {
           </div>
         ) : state && (
           <div className="mt-2">
-            <StateBar state={state} />
+            <StateBar state={state} timeZone={detail.world?.timeZone} />
           </div>
         )}
         {evidence && <EvidenceNotice evidence={evidence} />}
@@ -257,9 +259,9 @@ export default function PersonDetail() {
                     <span className="rounded-full bg-woad-soft px-2 py-0.5 text-xs text-woad-deep">What-if</span>
                   )}
                   <p className="mt-1 truncate text-sm text-ink">
-                    {t.parentTimelineId === null ? '现实这条线' : t.forkScenario?.whatIf}
+                    {timelineDisplayName(t)}
                   </p>
-                  <p className="mt-0.5 text-xs text-ink-faint">时间：{t.simNow.slice(0, 16).replace('T', ' ')}</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">{t.forkScenario?.whatIf && `假设：${t.forkScenario.whatIf} · `}时间：{formatWorldTime(t.simNow, t.timeZone)}</p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
                   {detail.world ? (

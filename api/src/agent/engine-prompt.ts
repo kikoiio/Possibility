@@ -2,6 +2,7 @@ import type { EngineContext, ScheduleItem } from './engine-context'
 import { renderModelItems } from './prompt'
 import type { Memory } from './memory'
 import type { ModelItem } from './types'
+import { formatWorldTime } from '../worlds/time-zone'
 
 /** 引擎模式的提示词（五种 step 各一段指令；全部要求只输出 JSON，由 extractJson 解析容错） */
 
@@ -31,7 +32,7 @@ function buildEngineSystem(ctx: EngineContext): string {
   const sourceMem = items('源记忆（来自你人生的底色）', model.memories)
   const settled = ctx.memories.length
     ? `## 后来的记忆（按时间先后）\n${ctx.memories
-        .map((m) => `- ${m.simTime ? `[${m.simTime.slice(0, 16).replace('T', ' ')}] ` : ''}${m.content}`)
+        .map((m) => `- ${m.simTime ? `[${formatWorldTime(m.simTime, ctx.snapshot.world.timeZone)}] ` : ''}${m.content}`)
         .join('\n')}`
     : ''
   const memorySection = [sourceMem, settled].filter(Boolean).join('\n\n')
@@ -85,7 +86,7 @@ function buildEngineSystem(ctx: EngineContext): string {
       '## 你生活的世界',
       `世界：${world.name}——${world.description}`,
       `地点：\n${locations.map((l) => `- ${l.name}：${l.description}`).join('\n')}`,
-      `现在的时间：${timeline.simNow}`,
+      `现在的时间：${formatWorldTime(timeline.simNow, world.timeZone)}`,
       timeline.parentTimelineId
         ? `你所在的是一条 what-if 分叉时间线，分叉点之前的主线记忆你同样拥有。\n分叉设定：${timeline.forkScenarioJson ?? ''}`
         : '',
@@ -127,7 +128,7 @@ export function buildSchedulePrompt(ctx: EngineContext): PromptPair {
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,
-    user: `现在时间 ${ctx.snapshot.timeline.simNow}，请安排从此刻开始的日程。`,
+    user: `现在时间 ${formatWorldTime(ctx.snapshot.timeline.simNow, ctx.snapshot.world.timeZone)}，请安排从此刻开始的日程。`,
   }
 }
 
@@ -161,7 +162,7 @@ export function buildBeatPrompt(ctx: EngineContext, finishedItem: ScheduleItem |
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,
-    user: `现在时间 ${ctx.snapshot.timeline.simNow}。开始生成。`,
+    user: `现在时间 ${formatWorldTime(ctx.snapshot.timeline.simNow, ctx.snapshot.world.timeZone)}。开始生成。`,
   }
 }
 
@@ -218,7 +219,7 @@ export function buildDialoguePrompt(
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,
-    user: `现在时间 ${ctx.snapshot.timeline.simNow}。请开口。`,
+    user: `现在时间 ${formatWorldTime(ctx.snapshot.timeline.simNow, ctx.snapshot.world.timeZone)}。请开口。`,
   }
 }
 
@@ -264,14 +265,14 @@ export function buildScenePrompt(
   ].join('\n')
   return {
     system: `${buildEngineSystem(ctx)}\n\n${instruction}`,
-    user: `现在时间 ${ctx.snapshot.timeline.simNow}。请开口。`,
+    user: `现在时间 ${formatWorldTime(ctx.snapshot.timeline.simNow, ctx.snapshot.world.timeZone)}。请开口。`,
   }
 }
 
 /** summary：把一批老记忆（或老摘要）蒸馏为一条摘要（S2 契约 v2：只产正文，重要性由应用侧聚合） */
 export function buildSummaryPrompt(ctx: EngineContext, batch: Memory[]): PromptPair {
   const list = batch
-    .map((m) => `- ${m.simTime ? `[${m.simTime.slice(0, 16).replace('T', ' ')}] ` : ''}${m.content}`)
+    .map((m) => `- ${m.simTime ? `[${formatWorldTime(m.simTime, ctx.snapshot.world.timeZone)}] ` : ''}${m.content}`)
     .join('\n')
   const instruction = [
     '## 任务：整理记忆',

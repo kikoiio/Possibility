@@ -139,6 +139,7 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
       theme: { id: 'mist-manor', assetVersion: 'e2e' },
       resume: { worldId: 'world-1', timelineId: 'timeline-main', spaceId: 'exterior', mode: 'life', updatedAt: ownerSnapshot.simNow },
     } }))
+    await page.route(/\/api\/worlds\/world-1(?:\?|$)/, route => route.fulfill({ json: ownerSnapshot }))
     await page.route('**/api/worlds/world-1/map/resume', (route) => route.fulfill({ json: { ok: true } }))
     await page.route('**/api/worlds/world-1/persona?**', (route) => route.fulfill({ json: { persona: { id: 'p-visitor', name: '访客', description: '旅人', location: '主楼' }, unread: 0 } }))
     await page.route('**/api/worlds/world-1/persona/messages**', (route) => route.fulfill({ json: { messages: [], mentions: [] } }))
@@ -196,6 +197,155 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
     await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
     await expect(page.getByText(/「温室」已不在当前地点列表中/)).toBeVisible()
     await expect(page.getByLabel('进入地点')).toHaveValue('主楼')
+  })
+
+  test('所有者保存世界时区后即时更新时钟,绝对 instant 不变', async ({ page }) => {
+    await mockOwnerSingleSpace(page)
+    let updatePayload: Record<string, unknown> | null = null
+    await page.route('**/api/worlds/world-1/time-zone', async (route) => {
+      if (route.request().method() === 'PUT') {
+        updatePayload = route.request().postDataJSON()
+        return route.fulfill({ json: { timeZone: 'Asia/Tokyo' } })
+      }
+      return route.fulfill({ json: { timeZone: 'UTC' } })
+    })
+
+    await page.goto('/worlds/world-1')
+    await canvasReady(page)
+    await expect(page.getByText('世界时间 2026-09-19 12:00 (UTC)')).toBeVisible()
+    await page.getByLabel('世界时区').selectOption('Asia/Tokyo')
+    await page.getByRole('button', { name: '保存时区' }).click()
+    await expect(page.getByText('世界时区已更新。')).toBeVisible()
+    await expect(page.getByText('世界时间 2026-09-19 21:00 (Asia/Tokyo)')).toBeVisible()
+    expect(updatePayload).toEqual({ timeZone: 'Asia/Tokyo' })
+  })
+
+
+  test('行动确认遇到版本冲突:保留原文、刷新状态且不自动重放', async ({ page }) => {
+    await mockOwnerSingleSpace(page)
+    let personaReads = 0
+    let boardReads = 0
+    let stateReads = 0
+    let intentCalls = 0
+    let positionCalls = 0
+
+    // Later handlers intentionally override the baseline owner fixture for this scenario.
+    await page.route('**/api/worlds/world-1/persona?**', (route) => {
+      personaReads += 1
+      return route.fulfill({ json: {
+        persona: { id: 'p-visitor', name: '访客', description: '旅人', location: personaReads > 1 ? '温室' : '主楼' }, unread: 0,
+      } })
+    })
+    await page.route('**/api/worlds/world-1/scene/board**', (route) => {
+      boardReads += 1
+      return route.fulfill({ json: {
+        board: [{ location: '主楼', count: boardReads > 1 ? 0 : 1, people: boardReads > 1 ? [] : [{ id: 'person-1', name: '小夜' }] },
+          { location: '温室', count: boardReads > 1 ? 2 : 0, people: boardReads > 1 ? [{ id: 'person-1', name: '小夜' }, { id: 'person-2', name: '阿芙' }] : [] }],
+      } })
+    })
+    await page.route('**/api/worlds/world-1/state**', (route) => {
+      stateReads += 1
+      return route.fulfill({ json: { version: 2 } })
+    })
+    await page.route('**/api/worlds/world-1/scene/intent', (route) => {
+      intentCalls += 1
+      const body = route.request().postDataJSON() as { requestId: string }
+      return route.fulfill({ json: {
+        requestId: body.requestId, timelineId: 'timeline-main', expectedVersion: 1, currentLocation: '主楼',
+        status: 'proposal', confirmationRequired: true, proposal: { type: 'move', to: '温室' },
+      } })
+    })
+    await page.route('**/api/worlds/world-1/actions/*', (route) => route.fulfill({ status: 404, json: { error: '命令不存在' } }))
+    await page.route('**/api/worlds/world-1/scene/intent/*/cancel', (route) => route.fulfill({ json: { status: 'cancelled' } }))
+    await page.route('**/api/worlds/world-1/scene/position', (route) => {
+      positionCalls += 1
+      return route.fulfill({ json: { commandId: 'unexpected', version: 3, location: '温室' } })
+    })
+
+    await page.goto('/worlds/world-1')
+    await canvasReady(page)
+    await page.getByRole('button', { name: '在场' }).click()
+    await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
+    await page.getByText('尝试一个行动').click()
+
+    const action = page.getByLabel('行动描述')
+    await action.fill('带我去温室')
+    await page.getByRole('button', { name: '生成提议' }).click()
+    await expect(page.getByText('提议（世界状态 v1）')).toBeVisible()
+    await expect(page.getByText('前往温室')).toBeVisible()
+
+    await page.getByRole('button', { name: '确认执行' }).click()
+    await expect(page.getByText('世界状态和地点已刷新。原行动描述已保留；请确认后再重新生成提议。')).toBeVisible()
+    await expect(action).toHaveValue('带我去温室')
+    await expect(page.getByRole('button', { name: '重新生成提议' })).toBeVisible()
+    await expect(page.getByLabel('进入地点')).toHaveValue('温室')
+    await expect(page.getByLabel('进入地点').locator('option[value="温室"]')).toContainText('温室（2 人可交谈）')
+    await expect(page.getByRole('button', { name: '确认执行' })).toHaveCount(0)
+
+    expect(personaReads).toBeGreaterThanOrEqual(2)
+    expect(boardReads).toBeGreaterThanOrEqual(2)
+    expect(stateReads).toBeGreaterThanOrEqual(2)
+    expect(intentCalls).toBe(1)
+    expect(positionCalls).toBe(0)
+
+    await page.getByRole('button', { name: '重新生成提议' }).click()
+    await expect(page.getByText('提议（世界状态 v1）')).toBeVisible()
+    expect(intentCalls).toBe(2)
+    expect(positionCalls).toBe(0)
+  })
+
+  test('行动冲突刷新失败:保留原文并提供可理解的恢复路径', async ({ page }) => {
+    await mockOwnerSingleSpace(page)
+    let intentCalls = 0
+    let positionCalls = 0
+    let personaReads = 0
+    let boardReads = 0
+    let failRefresh = false
+    await page.route('**/api/worlds/world-1/state**', route => route.fulfill({ json: { version: 2 } }))
+    await page.route('**/api/worlds/world-1/scene/intent', route => {
+      intentCalls += 1
+      const body = route.request().postDataJSON() as { requestId: string }
+      return route.fulfill({ json: {
+        requestId: body.requestId, timelineId: 'timeline-main', expectedVersion: 1, currentLocation: '主楼',
+        status: 'proposal', confirmationRequired: true, proposal: { type: 'move', to: '温室' },
+      } })
+    })
+    await page.route('**/api/worlds/world-1/actions/*', route => route.fulfill({ status: 404, json: { error: '命令不存在' } }))
+    await page.route('**/api/worlds/world-1/scene/intent/*/cancel', route => route.fulfill({ json: { status: 'cancelled' } }))
+    await page.route('**/api/worlds/world-1/persona?**', route => {
+      personaReads += 1
+      if (failRefresh) return route.fulfill({ status: 503, json: { error: '暂不可用' } })
+      return route.fulfill({ json: { persona: { id: 'p-visitor', name: '访客', description: '旅人', location: '主楼' }, unread: 0 } })
+    })
+    await page.route('**/api/worlds/world-1/scene/board**', route => {
+      boardReads += 1
+      if (failRefresh) return route.fulfill({ status: 503, json: { error: '暂不可用' } })
+      return route.fulfill({ json: { board: [{ location: '主楼', count: 1, people: [{ id: 'person-1', name: '小夜' }] }] } })
+    })
+    await page.route('**/api/worlds/world-1/scene/position', route => {
+      positionCalls += 1
+      return route.fulfill({ json: { commandId: 'unexpected', version: 3, location: '温室' } })
+    })
+
+    await page.goto('/worlds/world-1')
+    await canvasReady(page)
+    await page.getByRole('button', { name: '在场' }).click()
+    await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
+    await page.getByText('尝试一个行动').click()
+    const action = page.getByLabel('行动描述')
+    await action.fill('带我去温室')
+    await page.getByRole('button', { name: '生成提议' }).click()
+    await expect(page.getByText('提议（世界状态 v1）')).toBeVisible()
+    failRefresh = true
+    await page.getByRole('button', { name: '确认执行' }).click()
+
+    await expect(page.getByText('世界状态可能已变化。原行动描述已保留，请重新打开面板或重试。')).toBeVisible()
+    await expect(action).toHaveValue('带我去温室')
+    await expect(page.getByText('状态或地点刷新失败；保留原行动描述，可再次尝试刷新或手动重新生成。')).toBeVisible()
+    await expect(page.getByRole('button', { name: '重新生成提议' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '确认执行' })).toHaveCount(0)
+    expect(intentCalls).toBe(1)
+    expect(positionCalls).toBe(0)
   })
 })
 

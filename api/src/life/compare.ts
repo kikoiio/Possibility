@@ -11,10 +11,11 @@ import { publicUniverseEvidence } from '../world-state/evidence-status'
 function forkEvidence(child: Timeline | undefined) {
   if (!child) return null
   const snapshot = readForkSnapshot(child)
-  let scenario: { whatIf: string | null; startTime: string | null; changedVariable: string | null; participants: string[]; invariants: string[] } | null = null
+  let scenario: { name?: string; whatIf: string | null; startTime: string | null; changedVariable: string | null; participants: string[]; invariants: string[] } | null = null
   try {
     const raw = JSON.parse(child.forkScenarioJson ?? 'null') as Record<string, unknown> | null
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) scenario = {
+      ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
       whatIf: typeof raw.whatIf === 'string' ? raw.whatIf : null,
       startTime: typeof raw.startTime === 'string' ? raw.startTime : null,
       changedVariable: typeof raw.changedVariable === 'string' ? raw.changedVariable : null,

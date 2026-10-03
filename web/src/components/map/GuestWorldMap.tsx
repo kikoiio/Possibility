@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
 import { deserialize, serialize, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
-import type { WorldSnapshot } from '../../api/types'
+import type { ForkResult, ForkScenario, WorldSnapshot } from '../../api/types'
 import { clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
+import ScenarioCard from '../ScenarioCard'
+import ComparePanel from '../world/ComparePanel'
+import WorldTimeZoneSetting from '../world/WorldTimeZoneSetting'
+import { forkFieldsError, timelineDisplayName, timelineOptionLabel } from '../../world/timeline-display'
 import { buildSceneOverlay } from '../../scene/life/overlay'
 import VoxelViewport from '../../voxel/VoxelViewport'
 import MapSelectionCard from './MapSelectionCard'
+import { formatWorldTime } from '../../lib/world-time'
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
 
 /** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
@@ -26,9 +31,17 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<'observe' | 'life' | 'possibility'>(initialMode === 'create' ? 'life' : initialMode)
   const [forkId, setForkId] = useState<string | null>(liveSnapshot.timelines.find(item => item.parentTimelineId)?.id ?? null)
-  const [compare, setCompare] = useState<{ facts: number; states: number; events: number } | null>(null)
+  const [compareOpen, setCompareOpen] = useState(false)
+  const [forkResult, setForkResult] = useState<ForkResult | null>(null)
+  const [forkRefreshError, setForkRefreshError] = useState('')
+  const [forkConfirmOpen, setForkConfirmOpen] = useState(false)
+  const [forkDraft, setForkDraft] = useState<ForkScenario>({ name: '匿名信提前被发现', whatIf: '三田村千鹤今天提前发现那封匿名信', changedVariable: '匿名信被发现的时间', startTime: liveSnapshot.simNow, participants: [], invariants: ['共同过去保持不变', '比较结果只表示记录到的差异'] })
+  const forkPending = useRef(false)
+  const forkRequestId = useRef<string | null>(null)
+  const [switchTarget, setSwitchTarget] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [timelineBusy, setTimelineBusy] = useState(false)
+  const timelinePending = useRef(false)
   const [editDoc, setEditDoc] = useState<import('@possibility/voxel-contract').VoxelDocument | null>(null)
   const [editVersion, setEditVersion] = useState<number | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
@@ -60,16 +73,18 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     finally { setSaveBusy(false) }
   }
   async function switchTimeline(nextId: string) {
-    if (nextId === liveSnapshot.currentTimelineId || timelineBusy) return
-    setTimelineBusy(true); setActionError('')
+    if (nextId === liveSnapshot.currentTimelineId || timelinePending.current) return
+    timelinePending.current = true
+    setSwitchTarget(nextId); setTimelineBusy(true); setActionError('')
     try {
       const data = await mapApi.bootstrap(liveSnapshot.world.id, nextId)
       setLiveSnapshot(data.world)
-      setForkId(data.world.timelines.find(item => item.parentTimelineId)?.id ?? null)
-      setCompare(null)
+      setForkId(forkResult && data.world.timelines.some(item => item.id === forkResult.id)
+        ? forkResult.id : data.world.timelines.find(item => item.id === nextId && item.parentTimelineId)?.id ?? data.world.timelines.find(item => item.parentTimelineId)?.id ?? null)
+      setCompareOpen(false)
       void mapApi.saveResume(liveSnapshot.world.id, { timelineId: nextId, spaceId, mode: mode === 'observe' ? 'life' : mode })
-    } catch { setActionError('时间线切换失败；当前宇宙仍可继续浏览。') }
-    finally { setTimelineBusy(false) }
+    } catch { setActionError('时间线切换失败；当前宇宙和原选择已保留，可重试切换。') }
+    finally { timelinePending.current = false; setTimelineBusy(false) }
   }
   useEffect(() => {
     if (guest) return
@@ -158,29 +173,48 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     setBusy(true)
     try { await demoApi.reset(); try { localStorage.removeItem(tourStorageKey(liveSnapshot.world.id)) } catch { /* Ignore unavailable storage. */ }; window.location.reload() } finally { setBusy(false) }
   }
+  async function refreshFork(result: ForkResult) {
+    try {
+      const data = await mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)
+      setLiveSnapshot(data.world)
+      if (!data.world.timelines.some(t => t.id === result.sourceTimelineId) || !data.world.timelines.some(t => t.id === result.id)) throw new Error('新分支尚未出现在时间线列表中。')
+      setForkRefreshError('')
+    } catch {
+      setForkRefreshError('分支已创建，时间线列表暂未更新。请重试刷新后再比较。')
+    }
+  }
   async function createPossibility() {
+    if (forkPending.current) return
+    const invalid = forkFieldsError(forkDraft)
+    if (invalid) { setActionError(invalid); return }
+    forkPending.current = true
     setBusy(true); setActionError('')
     try {
-      const input = { whatIf: '三田村千鹤今天提前发现那封匿名信', changedVariable: '匿名信被发现的时间' }
+      const requestId = forkRequestId.current ?? crypto.randomUUID()
+      forkRequestId.current = requestId
+      const input = { ...forkDraft, name: forkDraft.name!.trim(), whatIf: forkDraft.whatIf.trim(), changedVariable: forkDraft.changedVariable.trim() }
       const fork = guest
-        ? await demoApi.fork(liveSnapshot.world.id, liveSnapshot.currentTimelineId, input)
-        : await worldsApi.fork(liveSnapshot.world.id, liveSnapshot.currentTimelineId, crypto.randomUUID(), input)
-      setForkId(fork.id)
+        ? await demoApi.fork(liveSnapshot.world.id, liveSnapshot.currentTimelineId, input, requestId)
+        : await worldsApi.fork(liveSnapshot.world.id, liveSnapshot.currentTimelineId, requestId, input)
+      forkRequestId.current = null
+      setForkId(fork.id); setForkResult(fork); setForkConfirmOpen(false)
       markTour('fork')
-      const result = guest
-        ? await demoApi.compare(liveSnapshot.world.id, liveSnapshot.currentTimelineId, fork.id)
-        : await lifeApi.compare(liveSnapshot.world.id, liveSnapshot.currentTimelineId, fork.id) as { differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } } }
-      setCompare({ facts: result.differences.facts.length, states: result.differences.states.length, events: result.differences.events.leftOnly.length + result.differences.events.rightOnly.length })
-      markTour('compare')
-    } catch (error) { setActionError(error instanceof Error ? error.message : '平行宇宙创建失败') }
-    finally { setBusy(false) }
+      await refreshFork(fork)
+    } catch (error) { setActionError(error instanceof Error ? error.message : '平行宇宙创建失败，输入已保留，请重试。') }
+    finally { forkPending.current = false; setBusy(false) }
   }
+  const loadComparison = useCallback((left: string, right: string) => guest
+    ? demoApi.compare(liveSnapshot.world.id, left, right)
+    : lifeApi.compare(liveSnapshot.world.id, left, right), [guest, liveSnapshot.world.id])
+  const existingFork = liveSnapshot.timelines.find(t => t.id === forkId)
+  const compareSourceId = forkResult?.sourceTimelineId ?? existingFork?.parentTimelineId
   return <main className="relative h-screen overflow-hidden bg-[#dfe8df]" data-testid="guest-world-map">
     {voxelDoc
       ? <VoxelViewport
           document={editDoc ?? voxelDoc}
           overlay={currentOverlay}
           editable={editable}
+          timeZone={liveSnapshot.world.timeZone}
           onSave={saveSpace}
           events={liveSnapshot.voxelEvents ?? null}
           personNames={Object.fromEntries(liveSnapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name])))}
@@ -192,7 +226,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
-        {guest ? <div className="flex items-center gap-2"><button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button><a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">登录并保存</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">{nextTourStep ? '继续导览' : '重新开启导览'}</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
+        {guest ? <div className="flex items-center gap-2"><button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button><a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">登录并保存</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">{nextTourStep ? '继续导览' : '重新开启导览'}</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
           const selectedWorld = worldChoices.find(world => world.id === event.target.value)
           if (event.target.value === '__new__') navigate('/worlds/new')
           else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
@@ -200,14 +234,16 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
           <option value={liveSnapshot.world.id}>{liveSnapshot.world.name}</option>
           {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name}{world.hasScene ? '' : ' · 待创建场景'}</option>)}
           <option value="__new__" className="text-[#263a31]">创建世界</option>
-        </select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
+        </select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg">{!liveSnapshot.world.isDemo && <div className="p-2"><WorldTimeZoneSetting worldId={liveSnapshot.world.id} timeZone={liveSnapshot.world.timeZone} onSaved={timeZone => setLiveSnapshot(current => ({ ...current, world: { ...current.world, timeZone }, timelines: current.timelines.map(t => ({ ...t, timeZone })) }))} /></div>}<button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
       </header>
-      <div className="pointer-events-auto absolute left-3 top-24 flex gap-2 sm:left-5">
+      <div className="pointer-events-auto absolute left-3 top-24 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5">
         {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (
           <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-white/70 bg-[#f8faf6]/92 px-4 py-2 text-xs font-medium text-[#385142] shadow-md backdrop-blur-md">{space.name} →</button>
         ))}
-        <span className="rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-2 text-[10px] text-[#5a6e61] shadow-sm">{new Date(liveSnapshot.simNow).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-        {liveSnapshot.timelines.length > 1 && <label className="flex items-center gap-1 rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-1 text-[10px] text-[#5a6e61] shadow-sm">宇宙<select aria-label="切换时间线" data-testid="timeline-switcher" disabled={timelineBusy} value={liveSnapshot.currentTimelineId} onChange={event => void switchTimeline(event.target.value)} className="bg-transparent text-[#385142] outline-none">{liveSnapshot.timelines.map(timeline => <option key={timeline.id} value={timeline.id}>{timeline.parentTimelineId ? `分支 ${timeline.id.slice(0, 6)}` : '原来的发展'}{timeline.id === forkId ? ' · 新' : ''}</option>)}</select>{timelineBusy && <span>切换中…</span>}</label>}
+        <span className="rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-2 text-[10px] text-[#5a6e61] shadow-sm">{formatWorldTime(liveSnapshot.simNow, liveSnapshot.world.timeZone)}</span>
+        {liveSnapshot.timelines.length > 1 && <label className="flex min-w-0 max-w-full items-center gap-1 rounded-full border border-white/70 bg-[#f8faf6]/85 px-3 py-1 text-[10px] text-[#5a6e61] shadow-sm">宇宙<select aria-label="切换时间线" data-testid="timeline-switcher" disabled={timelineBusy} value={switchTarget ?? liveSnapshot.currentTimelineId} onChange={event => void switchTimeline(event.target.value)} className="min-w-0 max-w-[45vw] bg-transparent text-[#385142] outline-none">{liveSnapshot.timelines.map(timeline => <option key={timeline.id} value={timeline.id}>{timelineOptionLabel(timeline)}{timeline.id === forkId ? ' · 新' : ''}</option>)}</select>{timelineBusy && <span>切换中…</span>}</label>}
+        {switchTarget && actionError && <p role="status" className="w-full rounded-lg bg-white/95 p-2 text-xs text-red-700">{actionError}<button onClick={() => void switchTimeline(switchTarget)} className="ml-1 underline">重试切换</button></p>}
+        {liveSnapshot.timelines.length > 1 && <p className="w-full rounded-lg bg-white/85 p-2 text-[10px] text-[#5a6e61]">当前为{timelineDisplayName(liveSnapshot.timelines.find(t => t.id === liveSnapshot.currentTimelineId) ?? { parentTimelineId: null })}；时间和居民数量属于各自时间线，切换后可能变化，未必处于同一时刻。</p>}
       </div>
       <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 rounded-full border border-white/40 bg-[#253b31]/60 p-1 text-[11px] text-white shadow-md backdrop-blur-md">
         {([['observe', '观察'], ['life', '在场'], ['possibility', '可能']] as const).map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => setMapMode(value)} className={`rounded-full px-3 py-1.5 ${mode === value ? 'bg-white text-[#30483a]' : 'text-white/80'}`}>{label}</button>)}
@@ -223,8 +259,9 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
       />}
       {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
         <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">改变一个条件</p><h2 className="mt-1 font-story text-lg">如果匿名信更早被发现</h2><p className="mt-2 text-xs leading-relaxed text-[#68796d]">共同过去保持不变，从当前世界时刻创建另一条真实时间线。对照只说明两个宇宙记录到的差异。</p>
-        {!forkId && <button disabled={busy} onClick={() => void createPossibility()} className="mt-4 w-full rounded-full bg-[#315641] px-4 py-2.5 text-xs text-white disabled:opacity-60">{busy ? '正在建立平行宇宙…' : '创建并对照'}</button>}
-        {forkId && <div className="mt-4 rounded-xl bg-[#eaf0eb] p-3 text-xs"><p className="font-medium">已创建平行宇宙</p><p className="mt-1 font-mono text-[10px] text-[#6e7c73]">{forkId.slice(0, 18)}…</p><p className="mt-2">{compare ? `${compare.facts} 项事实差异 · ${compare.states} 组状态差异 · ${compare.events} 条事件差异` : '共同起点已冻结，可以继续体验后再比较。'}</p></div>}
+        {!forkId && !forkConfirmOpen && <button disabled={busy} onClick={() => { setActionError(''); setForkDraft(current => ({ ...current, startTime: liveSnapshot.simNow })); setForkConfirmOpen(true) }} className="mt-4 w-full rounded-full bg-[#315641] px-4 py-2.5 text-xs text-white disabled:opacity-60">创建并对照</button>}
+        {!forkId && forkConfirmOpen && <div className="mt-3 max-h-[60vh] overflow-y-auto" role="dialog" aria-label="确认平行宇宙"><ScenarioCard scenario={forkDraft} timeZone={liveSnapshot.world.timeZone} onChange={setForkDraft} /><div className="mt-3 flex gap-2"><button disabled={busy} onClick={() => { setForkConfirmOpen(false); setActionError('') }} className="flex-1 rounded-lg border px-3 py-2 text-xs">取消</button><button data-testid="guest-fork-confirm" disabled={busy} onClick={() => void createPossibility()} className="flex-1 rounded-lg bg-[#315641] px-3 py-2 text-xs text-white disabled:opacity-60">{busy ? '正在建立平行宇宙…' : '确认创建'}</button></div></div>}
+        {forkId && <div data-testid="guest-fork-summary" className="mt-4 rounded-xl bg-[#eaf0eb] p-3 text-xs"><p className="font-medium">已创建平行宇宙 · {forkResult?.name || (existingFork ? timelineDisplayName(existingFork) : '平行宇宙')}</p><p className="mt-1">假设：{forkResult?.whatIf || existingFork?.forkScenario?.whatIf || '未记录'}</p><p className="mt-2">共同起点已冻结，比较仅展示各自时间线的记录差异。</p>{forkRefreshError && <p role="status" className="mt-2 text-red-700">{forkRefreshError}<button onClick={() => forkResult && void refreshFork(forkResult)} className="ml-1 underline">重试刷新时间线</button></p>}<button disabled={!!forkRefreshError || !compareSourceId} onClick={() => { setCompareOpen(true); markTour('compare') }} className="mt-3 rounded-lg bg-[#315641] px-3 py-2 text-xs text-white disabled:opacity-60">直接比较来源与新分支</button></div>}
         {forkId && <button onClick={() => { setMode('life'); markTour('return') }} className="mt-3 w-full rounded border border-[#ccd7cf] px-3 py-2 text-xs">返回地图</button>}
         {actionError && <p role="status" className="mt-3 text-xs text-red-700">{actionError}</p>}
       </section>}
@@ -235,7 +272,8 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
       <div className="absolute bottom-4 right-3 hidden rounded-full border border-white/80 bg-[#f8faf6]/90 px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
     {saveError && <p role="status" className="pointer-events-auto absolute bottom-16 left-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 shadow sm:left-5">{saveError}</p>}
-    {sceneLocation && <ScenePanel worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
+    {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
+    {sceneLocation && <ScenePanel timeZone={liveSnapshot.world.timeZone} worldStatus={liveSnapshot.world.status} readOnly={liveSnapshot.evidence?.level !== 'complete'} worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
       setSceneLocation(null)
       void mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId).then(data => setLiveSnapshot(data.world)).catch(() => {})
     }} />}

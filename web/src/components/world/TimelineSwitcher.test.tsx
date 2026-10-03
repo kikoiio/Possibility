@@ -27,3 +27,12 @@ describe('TimelineSwitcher 分叉弹窗（S2/F1/F5）', () => {
     expect(html).not.toContain('role="dialog"')
   })
 })
+
+it('当前分支名称优先，旧分支以假设作为名称', () => {
+  for (const [scenario, expected] of [[{ name: '可读名称', whatIf: '假设' }, '可读名称'], [{ whatIf: '旧分支假设' }, '旧分支假设']] as const) {
+    const branch = { ...timelines[0], id: 'branch', parentTimelineId: 'timeline-main', forkScenario: scenario } as TimelineInfo
+    const html = renderToStaticMarkup(createElement(TimelineSwitcher, { timelines: [...timelines, branch], currentTimelineId: 'branch', onSwitch: () => {}, onFork: async () => true, onPreview: async () => { throw new Error('unused') }, onArchive: () => {} }))
+    expect(html).toContain(`${expected} ▾`)
+    expect(html).not.toContain('branch ▾')
+  }
+})

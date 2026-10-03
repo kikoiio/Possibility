@@ -43,7 +43,7 @@ function worldEndpointRequests() {
     () => app.request('/api/worlds/home-world/timelines/home-main/fork/preview', { method: 'POST', headers: owner,
       body: JSON.stringify({ whatIf: '咖啡馆提前开门' }) }, current!.env),
     () => app.request('/api/persons/resident/fork', { method: 'POST', headers: owner,
-      body: JSON.stringify({ scenario: { whatIf: '咖啡馆提前开门', startTime: WORLD_TIME } }) }, current!.env),
+      body: JSON.stringify({ scenario: { name: '咖啡馆提前开门', changedVariable: '开门时间', whatIf: '咖啡馆提前开门', startTime: WORLD_TIME } }) }, current!.env),
     () => app.request('/api/worlds/home-world/chapters', { method: 'POST', headers: owner,
       body: JSON.stringify({ timelineId: 'home-main' }) }, current!.env),
   ]
@@ -53,7 +53,7 @@ let current: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { vi.unstubAllGlobals(); current?.close(); current = null })
 
 describe('LLM 路由权限和预算门禁矩阵', () => {
-  it('世界级模型入口在调用额度耗尽后全部拒绝，且不会写消息、Fork、章节或再记一次调用', async () => {
+  it('有限预算触顶暂停世界，所有世界模型入口在副作用前拒绝', async () => {
     current = await createWorldFixture()
     await seedModelRoutes(current)
     const fetchSpy = vi.fn(async () => new Response('unexpected provider call', { status: 500 }))
@@ -67,7 +67,7 @@ describe('LLM 路由权限和预算门禁矩阵', () => {
     expect(results.map(result => result.status)).toEqual([409, 409, 409, 409, 409, 409, 409, 409])
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(await current.db.select().from(llmCallLog)).toHaveLength(1)
-    expect(await current.db.select().from(messages)).toHaveLength(0)
+    expect(await current.db.select().from(messages)).toHaveLength(0) // paused world's rejected input is not accepted
     expect((await current.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())?.status).toBe('capped')
   })
 

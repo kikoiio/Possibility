@@ -10,7 +10,7 @@ import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { createDb } from '../db/client'
 import { demoBaselines, worlds } from '../db/schema'
-import { BudgetRefusal, gateUser } from '../engine/guard'
+import { BudgetRefusal } from '../engine/guard'
 import { budgetFromEnv } from '../engine/budget'
 import type { Env } from '../index'
 import { LlmContractError } from '../llm/contracts'
@@ -52,8 +52,7 @@ const err = (c: Context<{ Bindings: Env; Variables: AuthVariables }>, error: unk
 scenesRoutes.post('/scene-drafts/voxel', async c => {
   const body = await c.req.json<{ requestId?: string; prompt?: string; personIds?: string[] }>().catch(() => null)
   if (!body || !body.requestId || !body.prompt?.trim() || !Array.isArray(body.personIds)) return c.json({ error: '请提供 requestId、场景描述和居民' }, 400)
-  const db = createDb(c.env.DB); const gate = await gateUser(db, c.get('user').id, budgetFromEnv(c.env))
-  if (!gate.ok) return c.json({ error: gate.error, kind: 'budget', callsUsed: 0, requestId: body.requestId }, gate.status)
+  const db = createDb(c.env.DB)
   try {
     return c.json(await createVoxelSceneDraft(c.env, db, c.get('user').id, { requestId: body.requestId, prompt: body.prompt, personIds: body.personIds }))
   } catch (error) {
@@ -133,8 +132,6 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
   if (!world || !world.isDemo || user.role !== 'admin') return c.json({ error: '仅演示世界管理员可重新生成' }, 404)
   const body = await c.req.json<{ expectedVersion?: number; requestId?: string }>().catch(() => null)
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion)) return c.json({ error: '重新生成参数不完整' }, 400)
-  const gate = await gateUser(db, user.id, budgetFromEnv(c.env))
-  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
     const activeScene = await readCurrentScene(db, world.id)
     const source = activeScene?.document

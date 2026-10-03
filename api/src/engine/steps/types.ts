@@ -41,11 +41,17 @@ export interface ResolvedLlmFields {
   apiKey: string
   model: string
   source: 'world' | 'user' | 'env'
+  apiKeySource: 'personal_global' | 'world_override' | 'platform_fallback'
+  apiKeyVerified: boolean
+  apiKeyVerificationFingerprint?: string | null
 }
 
 /** 解析字段 + 调用点各自的 reserve/provider 组装 LlmConfig(provider 是绑定,不开放用户配置)。 */
 export function llmConfigFor(env: Env, fields: ResolvedLlmFields, reserve?: ReceiptReservation): LlmConfig {
-  return { baseUrl: fields.baseUrl, apiKey: fields.apiKey, model: fields.model, provider: env.LLM_PROVIDER, reserve }
+  return { baseUrl: fields.baseUrl, apiKey: fields.apiKey, model: fields.model,
+    apiKeySource: fields.apiKeySource, apiKeyVerified: fields.apiKeyVerified,
+    apiKeyVerificationFingerprint: fields.apiKeyVerificationFingerprint,
+    provider: env.LLM_PROVIDER, reserve }
 }
 
 /**
@@ -72,3 +78,4 @@ export type CallPurpose =
   | 'chapter'
   | 'director'
   | 'scene'
+  | 'connection_test'

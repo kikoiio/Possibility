@@ -121,7 +121,8 @@ describe('与全量回放的对照一致性', () => {
     const mini = applyCoreCommands(emptyCore, commands, T0)
     const projection = full.projection!
     expect(mini.simTime).toBe(projection.simTime)
-    const key = (rows: unknown[]) => JSON.stringify(rows)
+    // Projection domains are sets of records; SQL/replay insertion order is not semantic.
+    const key = (rows: unknown[]) => JSON.stringify(rows.map(row => JSON.stringify(row)).sort())
     expect(key(mini.states)).toBe(key(projection.states))
     expect(key(mini.schedules)).toBe(key(projection.schedules))
     expect(key(mini.commitments)).toBe(key(projection.commitments))

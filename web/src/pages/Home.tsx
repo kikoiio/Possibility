@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 import type { HomeData } from '../api/types'
 import GlobalCapBanner from '../components/GlobalCapBanner'
+import { formatWorldTime } from '../lib/world-time'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -69,7 +70,7 @@ export default function Home() {
                   <span className="ml-auto text-xs text-ink-faint">{w.personCount} 人</span>
                 </div>
                 <p className="mt-1 text-xs text-ink-faint">
-                  {w.simNow ? `世界时间 ${w.simNow.slice(0, 16).replace('T', ' ')}` : '尚未启动'} · 今日 {w.todayEventCount} 条事件
+                  {w.simNow ? `世界时间 ${formatWorldTime(w.simNow, w.timeZone)}` : '尚未启动'} · 今日 {w.todayEventCount} 条事件
                 </p>
               </Link>
             ))}
@@ -97,7 +98,7 @@ export default function Home() {
                   <span className="text-xs text-ink-faint">{t.personName}</span>
                 </div>
                 <p className="mt-1 text-xs text-ink-faint">
-                  {t.eventCount} 条事件 · 世界时间 {t.simNow.slice(0, 16).replace('T', ' ')}
+                  {t.eventCount} 条事件 · 世界时间 {formatWorldTime(t.simNow, t.timeZone)}
                 </p>
               </Link>
             ))}

@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { archiveIdleWorlds, budgetFromEnv, bumpCalls, GLOBAL_CAP_REASON, GLOBAL_DAILY_CAP_DEFAULT, globalBudgetExceeded, isIdleActivity, recoverCappedWorlds, reserveWorldCall, rolloverCalls, tickBudgetOk, type BudgetConfig } from './budget'
 import { llmCallLog, timelines, userLlmConfigs, users, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
+import { verificationFingerprint } from '../settings/connection-test'
 
 type World = typeof worlds.$inferSelect
 
@@ -37,6 +38,7 @@ function world(patch: Partial<World>): World {
     callsDay: null,
     llmConfigJson: null,
     lastUserActivityAt: null,
+    timeZone: null,
     createdAt: '',
     ...patch,
   }
@@ -76,7 +78,9 @@ describe('全局日预算(F5)', () => {
     ])
     await fixture.db.insert(timelines).values({ id: 't1', worldId: 'w1', simNow: NOW, createdAt: NOW })
     if (cap !== undefined) {
-      await fixture.db.insert(userLlmConfigs).values({ userId: 'u1', dailyCallCap: cap, updatedAt: NOW })
+      const config = { baseUrl: 'https://personal.example/v1', apiKey: 'personal-key', model: 'model' }
+      await fixture.db.insert(userLlmConfigs).values({ userId: 'u1', dailyCallCap: cap, updatedAt: NOW, ...config,
+        verificationFingerprint: await verificationFingerprint('u1', config), verifiedAt: NOW })
     }
     return fixture
   }
@@ -104,7 +108,7 @@ describe('全局日预算(F5)', () => {
     expect(await globalBudgetExceeded(unlimited.db, 'u1')).toBe(false)
   })
 
-  it('reserveWorldCall 全局准入:触顶拒入 + 该用户全部 running 世界同停', async () => {
+  it('有限预算保留触顶暂停全部世界的规则', async () => {
     const fixture = await seedOwner(2)
     const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const }
     expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toEqual(expect.any(String))
@@ -116,12 +120,82 @@ describe('全局日预算(F5)', () => {
     }
   })
 
-  it('不限(null)时 reserve 不触顶、用量照计', async () => {
+  it('不限时已验证个人 Key 豁免;世界 Key、平台 Key 与旧来源共用 fallback 400 桶', async () => {
     const fixture = await seedOwner(null)
+    const personal = { timelineId: 't1', personId: null, purpose: 'chat' as const,
+      apiKeySource: 'personal_global' as const, verifiedPersonalKey: true,
+      verifiedPersonalFingerprint: (await fixture.db.select().from(userLlmConfigs).get())!.verificationFingerprint }
+    const worldKey = { ...personal, apiKeySource: 'world_override' as const, verifiedPersonalKey: false }
+    const platform = { ...personal, apiKeySource: 'platform_fallback' as const, verifiedPersonalKey: false }
+    const personalReceipt = await reserveWorldCall(fixture.db, 'w1', CFG, personal)
+    const worldReceipt = await reserveWorldCall(fixture.db, 'w1', CFG, worldKey)
+    expect(personalReceipt).toEqual(expect.any(String))
+    expect(worldReceipt).toEqual(expect.any(String))
+    await logCalls(fixture, 400, NOW)
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, platform)).toBeNull()
+    const rows = await fixture.db.select({ apiKeySource: llmCallLog.apiKeySource, budgetBucket: llmCallLog.budgetBucket })
+      .from(llmCallLog).all()
+    expect(rows.slice(0, 2)).toEqual([
+      { apiKeySource: 'personal_global', budgetBucket: 'personal_unlimited' },
+      { apiKeySource: 'world_override', budgetBucket: 'fallback_unlimited' },
+    ])
+  })
+
+  it('回退桶中来源未知的旧账本调用保守计数', async () => {
+    const fixture = await seedOwner(null)
+    await fixture.db.insert(llmCallLog).values(Array.from({ length: 400 }, (_, i) => ({
+      id: `legacy-${i}`, userId: 'u1', purpose: 'chat' as const, createdAt: NOW,
+    })))
+    const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const,
+      apiKeySource: 'platform_fallback' as const }
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toBeNull()
+  })
+
+  it('预世界不限模式仅个人验证 Key 豁免 fallback 桶,仍受创建类上限约束', async () => {
+    const fixture = await seedOwner(null)
+    const { reserveUserCall } = await import('./budget')
+    const personal = await reserveUserCall(fixture.db, 'u1', CFG, 'world_draft', {
+      apiKeySource: 'personal_global', verifiedPersonalKey: true,
+      verifiedPersonalFingerprint: (await fixture.db.select().from(userLlmConfigs).get())!.verificationFingerprint,
+    })
+    expect(personal).toEqual(expect.any(String))
+    expect(await reserveUserCall(fixture.db, 'u1', CFG, 'world_draft', {
+      apiKeySource: 'platform_fallback', verifiedPersonalKey: false,
+    })).toEqual(expect.any(String))
+    const rows = await fixture.db.select({ budgetBucket: llmCallLog.budgetBucket }).from(llmCallLog).all()
+    expect(rows.map(row => row.budgetBucket)).toEqual(['personal_unlimited', 'fallback_unlimited'])
+  })
+
+  it('有限模式的非个人历史调用仍占不限回退桶，触顶不暂停个人世界', async () => {
+    const fixture = await seedOwner(null)
+    await fixture.db.insert(llmCallLog).values(Array.from({ length: 400 }, (_, i) => ({
+      id: `finite-fallback-${i}`, userId: 'u1', purpose: 'chat' as const, createdAt: NOW,
+      apiKeySource: 'world_override', budgetBucket: 'finite_global',
+    })))
+    const details = { apiKeySource: 'personal_global' as const, verifiedPersonalKey: true,
+      verifiedPersonalFingerprint: (await fixture.db.select().from(userLlmConfigs).get())!.verificationFingerprint }
     const meta = { timelineId: 't1', personId: null, purpose: 'chat' as const }
-    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta)).toEqual(expect.any(String))
-    expect((await fixture.db.select().from(worlds).where(eq(worlds.id, 'w1')).get())?.status).toBe('running')
-    expect(await fixture.db.select({ id: llmCallLog.id }).from(llmCallLog).all()).toHaveLength(1)
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta, { apiKeySource: 'platform_fallback' })).toBeNull()
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta, details)).toEqual(expect.any(String))
+    expect((await fixture.db.select().from(worlds).where(eq(worlds.id, 'w2')).get())?.status).toBe('running')
+    // Resolving before a configuration change does not retain its old exemption.
+    await fixture.db.update(userLlmConfigs).set({ verificationFingerprint: null, verifiedAt: null })
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG, meta, details)).toBeNull()
+  })
+
+  it('连接测试只受日预算限制，创建类 40 次额度保持独立规则', async () => {
+    const fixture = await seedOwner(100)
+    const { reserveUserCall } = await import('./budget')
+    await logCalls(fixture, 40, NOW)
+    expect(await reserveUserCall(fixture.db, 'u1', CFG, 'world_draft')).toBeNull()
+    expect(await reserveUserCall(fixture.db, 'u1', CFG, 'connection_test')).toEqual(expect.any(String))
+  })
+
+  it('未传验证指纹不能借个人来源或布尔值绕过回退上限', async () => {
+    const fixture = await seedOwner(null)
+    await logCalls(fixture, 400, NOW)
+    expect(await reserveWorldCall(fixture.db, 'w1', CFG,
+      { timelineId: 't1', personId: null, purpose: 'chat', apiKeySource: 'personal_global', verifiedPersonalKey: true })).toBeNull()
   })
 
   it('并发准入不超卖:cap=1 时两个并发 reserve 只进一个', async () => {

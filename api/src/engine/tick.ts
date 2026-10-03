@@ -169,7 +169,9 @@ async function runWorldTick(env: Env, db: Db, assertLease: () => Promise<void>, 
   // F5/S3:BYOK 逐字段解析(世界覆盖 > 用户全局 > env),本世界全部 decide/导演共用
   const llmResolution = await resolveLlmConfig(db, env, { userId: world.userId, worldId: world.id })
   const llmFields = { baseUrl: llmResolution.config.baseUrl, apiKey: llmResolution.config.apiKey,
-    model: llmResolution.config.model, source: llmResolution.source }
+    model: llmResolution.config.model, source: llmResolution.source,
+    apiKeySource: llmResolution.apiKeySource, apiKeyVerified: llmResolution.verificationValid,
+    apiKeyVerificationFingerprint: llmResolution.config.apiKeyVerificationFingerprint }
   // S4 世界模拟:体素披露文案每世界每拍 ≤1 次 LLM(机械蒸馏零 LLM)
   let voxelCopyUsed = false
 

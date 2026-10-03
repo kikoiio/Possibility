@@ -1,4 +1,5 @@
 import type { WorldEvent } from '@possibility/voxel-contract'
+import { formatWorldTime } from '../../lib/world-time'
 
 /**
  * S3b 事件披露(F4):close 档点击事件打开的侧边详情面板。
@@ -16,17 +17,16 @@ export interface EventPanelProps {
   /** 'trace' = 已落幕留痕;事件被关闭/缺失传 null event */
   phase: 'active' | 'trace'
   onClose: () => void
+  timeZone?: string | null
   /** S4 身份统一:personId → 显示名(缺省显示原 id) */
   personNames?: Record<string, string>
   /** S4 身份统一:点击参与者 = 选中居民(与渲染拾取同一联动出口) */
   onSelectPerson?: (personId: string) => void
 }
 
-export default function EventPanel({ event, phase, onClose, personNames, onSelectPerson }: EventPanelProps) {
+export default function EventPanel({ event, phase, onClose, timeZone, personNames, onSelectPerson }: EventPanelProps) {
   if (!event) return null
-  const start = new Date(event.timeWindow.start)
-  const end = new Date(event.timeWindow.end)
-  const fmt = (d: Date) => d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fmt = (instant: string) => formatWorldTime(instant, timeZone)
   return (
     <aside
       className="absolute right-3 top-3 flex w-72 flex-col gap-2 rounded bg-black/70 p-4 text-xs leading-5 text-zinc-200 shadow-lg"
@@ -73,7 +73,7 @@ export default function EventPanel({ event, phase, onClose, personNames, onSelec
         </div>
       )}
       <div className="text-zinc-400" data-testid="event-panel-time">
-        {fmt(start)} — {fmt(end)}
+        {fmt(event.timeWindow.start)} — {fmt(event.timeWindow.end)}
       </div>
     </aside>
   )

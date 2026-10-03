@@ -11,6 +11,7 @@ const EARLIEST = '2026-09-19T08:00:00.000Z'
 const SNAPPED = '2026-09-19T09:00:00.000Z'
 
 const SCENARIO = {
+  name: '信件提前送达',
   whatIf: '如果那封信在暴雨前送达',
   changedVariable: '信件是否送达',
   participants: ['小夜'],
@@ -44,7 +45,7 @@ async function stubHistoryApis(page: Page, opts: { checkOk?: boolean } = {}): Pr
   })
   await page.route('**/api/worlds/world-1/timelines/*/fork', (route) => {
     forks.push(route.request().postDataJSON() as { scenario?: Record<string, unknown> })
-    return route.fulfill({ json: { id: 'timeline-fork', simNow: SNAPPED } })
+    return route.fulfill({ json: { id: 'timeline-fork', sourceTimelineId: 'timeline-main', simNow: SNAPPED, name: SCENARIO.name, whatIf: SCENARIO.whatIf } })
   })
   return { checkBodies: () => checks, previewBodies: () => previews, forkBodies: () => forks }
 }
@@ -52,7 +53,7 @@ async function stubHistoryApis(page: Page, opts: { checkOk?: boolean } = {}): Pr
 async function openForkDialog(page: Page) {
   await page.goto('/worlds/world-1?timeline=timeline-main')
   // 画布头部按钮在渲染帧中可能被重建;dispatchEvent 绕过可动性检查
-  await page.getByRole('button', { name: /主宇宙 ▾|平行宇宙 ▾/ }).dispatchEvent('click')
+  await page.getByRole('button', { name: /主宇宙 ▾/ }).dispatchEvent('click')
   await page.getByTestId('fork-entry').dispatchEvent('click')
   await expect(page.getByRole('dialog', { name: '创建平行宇宙' })).toBeVisible()
 }
@@ -71,7 +72,7 @@ test.describe('S4 历史时刻分叉', () => {
     await dialog.getByTestId('fork-moment-custom').click()
     const input = dialog.getByTestId('fork-moment-input')
     await expect(input).toBeVisible()
-    await expect(dialog.getByText('可回溯 2026-09-19 08:00 ～ 2026-09-19 12:00')).toBeVisible()
+    await expect(dialog.getByText('可回溯 2026-09-19 08:00 (UTC) ～ 2026-09-19 12:00 (UTC)')).toBeVisible()
 
     // 失焦触发 check:请求携带所选时刻(UTC 墙钟),吸附结果显示
     await input.fill('2026-09-19T09:30')
@@ -93,6 +94,8 @@ test.describe('S4 历史时刻分叉', () => {
     // 落点并排比较:横幅 → 分屏左源右新
     await expect(page.getByTestId('fork-compare-hint')).toBeVisible()
     await page.getByTestId('fork-compare-hint-go').dispatchEvent('click')
+    await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible()
+    await page.getByTestId('compare-split-entry').click()
     await expect(page).toHaveURL(/mode=possibility/)
     await expect(page).toHaveURL(/timeline=timeline-main/)
     await expect(page).toHaveURL(/right=timeline-fork/)

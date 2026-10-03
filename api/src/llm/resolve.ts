@@ -2,16 +2,21 @@
  * 用户/世界提供了某字段即锁定来源,fail-closed——调用失败不回落 env(F8)。
  */
 import { eq } from 'drizzle-orm'
+import { isVerificationValid } from '../settings/connection-test'
 import type { Db } from '../db/client'
 import { userLlmConfigs, worlds } from '../db/schema'
 import type { LlmConfig, ReceiptReservation } from './client'
 
 export type LlmConfigSource = 'world' | 'user' | 'env'
 
+export type ApiKeySource = 'personal_global' | 'world_override' | 'platform_fallback'
+
 export interface LlmResolution {
   config: LlmConfig
   /** 三个字段中最高优先级的来源,用于错误文案(「用户 Key」「世界覆盖」)。 */
   source: LlmConfigSource
+  apiKeySource: ApiKeySource
+  verificationValid: boolean
 }
 
 interface PartialLlmFields {
@@ -53,19 +58,36 @@ export async function resolveLlmConfig(
 
   const pick = (world: string | null | undefined, user: string | null | undefined, fallback: string) =>
     world ?? user ?? fallback
-  const config: LlmConfig = {
-    baseUrl: pick(worldOverride.baseUrl, userRow?.baseUrl, env.LLM_BASE_URL).replace(/\/+$/, ''),
-    apiKey: pick(worldOverride.apiKey, userRow?.apiKey, env.LLM_API_KEY),
-    model: pick(worldOverride.model, userRow?.model, env.LLM_MODEL),
-    provider: env.LLM_PROVIDER,
-    reserve,
-  }
+  const apiKeySource: ApiKeySource = worldOverride.apiKey
+    ? 'world_override'
+    : userRow?.apiKey
+      ? 'personal_global'
+      : 'platform_fallback'
+  const verificationValid = await isVerificationValid(opts.userId, userRow ?? {
+    baseUrl: null, model: null, apiKey: null,
+  })
   const source: LlmConfigSource = worldOverride.baseUrl || worldOverride.apiKey || worldOverride.model
     ? 'world'
     : userRow?.baseUrl || userRow?.apiKey || userRow?.model
       ? 'user'
       : 'env'
-  return { config, source }
+  const resolvedReserve: ReceiptReservation | undefined = reserve && Object.assign(
+    (details: Parameters<ReceiptReservation>[0]) => reserve({ ...details, apiKeySource,
+      verifiedPersonalKey: apiKeySource === 'personal_global' && verificationValid,
+      verifiedPersonalFingerprint: verificationValid ? userRow?.verificationFingerprint : null }),
+    { settle: reserve.settle },
+  )
+  const config: LlmConfig = {
+    baseUrl: pick(worldOverride.baseUrl, userRow?.baseUrl, env.LLM_BASE_URL).replace(/\/+$/, ''),
+    apiKey: pick(worldOverride.apiKey, userRow?.apiKey, env.LLM_API_KEY),
+    model: pick(worldOverride.model, userRow?.model, env.LLM_MODEL),
+    apiKeySource,
+    apiKeyVerified: verificationValid,
+    apiKeyVerificationFingerprint: verificationValid ? userRow?.verificationFingerprint : null,
+    provider: env.LLM_PROVIDER,
+    reserve: resolvedReserve,
+  }
+  return { config, source, apiKeySource, verificationValid }
 }
 
 /** 用户/世界来源的失败文案(F8):不静默回落,指向设置页。 */

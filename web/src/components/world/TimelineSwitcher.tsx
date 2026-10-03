@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ForkScenario, ForkScenarioInput, HistoryRange, TimelineInfo } from '../../api/types'
 import ScenarioCard from '../ScenarioCard'
 import { planMomentCheck, toLocalInputValue } from './forkMoment'
+import { formatWorldTime } from '../../lib/world-time'
+import { forkFieldsError, timelineDisplayName } from '../../world/timeline-display'
 
 interface Props {
   timelines: TimelineInfo[]
   currentTimelineId: string
-  onSwitch: (timelineId: string) => void
+  onSwitch: (timelineId: string) => Promise<boolean | void> | boolean | void
   onFork: (scenario: ForkScenarioInput) => Promise<boolean>
   /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库；S4/F6 可带已吸附的历史时刻 */
   onPreview: (whatIf: string, startTime?: string) => Promise<ForkScenario>
@@ -30,10 +32,24 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   const [forkOpen, setForkOpen] = useState(false)
   const [step, setStep] = useState<ForkStep>('input')
   const [whatIf, setWhatIf] = useState('')
+  const [name, setName] = useState('')
   const [changedVariable, setChangedVariable] = useState('')
   const [scenario, setScenario] = useState<ForkScenario | null>(null)
   const [forkError, setForkError] = useState('')
   const [forking, setForking] = useState(false)
+  const forkPending = useRef(false)
+  const [switchError, setSwitchError] = useState('')
+  const [switchTarget, setSwitchTarget] = useState<string | null>(null)
+  const [switching, setSwitching] = useState(false)
+  const switchTimeline = async (id: string) => {
+    if (switching) return
+    setSwitchTarget(id); setSwitching(true); setSwitchError('')
+    try {
+      if (await onSwitch(id) === false) throw new Error('切换暂未完成，请重试；当前时间线已保留。')
+      setOpen(false)
+    } catch (e) { setSwitchError(e instanceof Error ? e.message : '切换失败，请重试；当前时间线已保留。') }
+    finally { setSwitching(false) }
+  }
   // S4/F6 时刻选择:默认当前时刻;custom=过去时刻,失焦/提交前经 checkMoment 吸附
   const [momentMode, setMomentMode] = useState<'current' | 'custom'>('current')
   const [momentInput, setMomentInput] = useState('')
@@ -109,49 +125,62 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   }
 
   const preview = async () => {
+    if (forkPending.current) return
     const text = whatIf.trim()
     if (!text) {
       setForkError('先用一句话说说这条线要探索什么可能。')
       return
     }
     setForkError('')
+    forkPending.current = true
     setForking(true)
     try {
       const startTime = await resolveStartTime()
-      setScenario(await onPreview(text, startTime))
+      const draft = await onPreview(text, startTime)
+      setScenario({ ...draft, name: draft.name || text.slice(0, 80) })
       setStep('confirm')
     } catch (e) {
       setForkError(e instanceof Error ? e.message : '场景生成失败，请重试')
     } finally {
+      forkPending.current = false
       setForking(false)
     }
   }
 
   const forkDirect = async () => {
-    const input: ForkScenarioInput = { whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
-    if (!input.whatIf || !input.changedVariable) {
-      setForkError('请说明这条线的假设和唯一改变的条件。')
+    if (forkPending.current) return
+    const input: ForkScenarioInput = { name: name.trim(), whatIf: whatIf.trim(), changedVariable: changedVariable.trim() }
+    const invalid = forkFieldsError(input)
+    if (invalid) {
+      setForkError(invalid)
       return
     }
     setForkError('')
+    forkPending.current = true
     setForking(true)
     try {
       const startTime = await resolveStartTime()
       if (startTime) input.startTime = startTime
       if (await onFork(input)) { setForkOpen(false); resetFork() }
+      else setForkError('创建未完成，输入已保留，请重试。')
     } catch (e) {
       setForkError(e instanceof Error ? e.message : '该时刻无法完整重建')
     } finally {
+      forkPending.current = false
       setForking(false)
     }
   }
 
   const forkConfirmed = async () => {
-    if (!scenario) return
+    if (!scenario || forkPending.current) return
+    const invalid = forkFieldsError(scenario)
+    if (invalid) { setForkError(invalid); return }
     setForkError('')
+    forkPending.current = true
     setForking(true)
     try {
       const input: ForkScenarioInput = {
+        name: scenario.name!.trim(),
         whatIf: scenario.whatIf.trim(),
         changedVariable: scenario.changedVariable.trim(),
         participants: scenario.participants,
@@ -160,7 +189,11 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
         startTime: scenario.startTime,
       }
       if (await onFork(input)) { setForkOpen(false); resetFork() }
+      else setForkError('创建未完成，输入已保留，请重试。')
+    } catch (e) {
+      setForkError(e instanceof Error ? e.message : '创建失败，输入已保留，请重试。')
     } finally {
+      forkPending.current = false
       setForking(false)
     }
   }
@@ -177,7 +210,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
           onChange={() => { setMomentMode('current'); setMomentError('') }}
           data-testid="fork-moment-current"
         />
-        当前时刻（{(historyRange?.simNow ?? current?.simNow ?? '').slice(0, 16).replace('T', ' ')}）
+        当前时刻（{formatWorldTime(historyRange?.simNow ?? current?.simNow, current?.timeZone)}）
       </label>
       {historyRange?.earliest ? (
         <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft">
@@ -207,11 +240,11 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
             className="w-full rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft focus:border-ink-faint focus:outline-none"
           />
           <p className="mt-1 text-[11px] text-ink-faint">
-            可回溯 {historyRange.earliest.slice(0, 16).replace('T', ' ')} ～ {historyRange.simNow.slice(0, 16).replace('T', ' ')}
+            可回溯 {formatWorldTime(historyRange.earliest, current?.timeZone)} ～ {formatWorldTime(historyRange.simNow, current?.timeZone)}
           </p>
           {momentChecking && <p className="mt-1 text-[11px] text-ink-faint">正在校验这个时刻…</p>}
           {!momentChecking && effectiveMoment && !momentError && (
-            <p className="mt-1 text-[11px] text-woad-deep" data-testid="fork-moment-effective">将从 {effectiveMoment.slice(0, 16).replace('T', ' ')} 分叉</p>
+            <p className="mt-1 text-[11px] text-woad-deep" data-testid="fork-moment-effective">将从 {formatWorldTime(effectiveMoment, current?.timeZone)} 分叉</p>
           )}
           {momentError && <p role="alert" className="mt-1 text-[11px] text-red-600" data-testid="fork-moment-error">{momentError}</p>}
         </div>
@@ -225,7 +258,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
         onClick={() => setOpen((v) => !v)}
         className="rounded-lg border border-ink-faint px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-deep"
       >
-        {current?.parentTimelineId === null ? '主宇宙' : '平行宇宙'} ▾
+        {current ? timelineDisplayName(current) : '主宇宙'} ▾
       </button>
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-72 rounded-xl border border-ink-line bg-sheet p-2 shadow-lg">
@@ -238,19 +271,18 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
                   }`}
                 >
                   <button
+                    disabled={switching}
+                    aria-pressed={t.id === switchTarget}
                     className="min-w-0 flex-1 text-left"
                     style={{ paddingLeft: `${depth(t.id) * 12}px` }}
-                    onClick={() => {
-                      onSwitch(t.id)
-                      setOpen(false)
-                    }}
+                    onClick={() => void switchTimeline(t.id)}
                   >
                     <span className={`mr-1 rounded-full px-1.5 py-0.5 ${t.parentTimelineId === null ? 'bg-paper-deep text-ink-soft' : 'bg-woad-soft text-woad-deep'}`}>
-                      {t.parentTimelineId === null ? '主宇宙' : '↳ 平行宇宙'}
+                      {t.parentTimelineId === null ? '主宇宙' : `↳ ${timelineDisplayName(t)}`}
                     </span>
-                    <span className="text-ink-faint">{t.simNow.slice(0, 16).replace('T', ' ')}</span>
+                    <span className="text-ink-faint">{formatWorldTime(t.simNow, t.timeZone)}</span>
                     {t.status === 'archived' && <span className="ml-1 text-ink-faint">（已归档）</span>}
-                    {t.parentTimelineId && <span className="block pt-1 text-[10px] text-ink-faint">源自 {t.parentTimelineId.slice(0, 8)} · {t.forkScenario?.whatIf ?? '在子宇宙中改变条件'}</span>}
+                    {t.parentTimelineId && <span className="block pt-1 text-[10px] text-ink-faint">源自 {timelines.find(source => source.id === t.parentTimelineId) ? timelineDisplayName(timelines.find(source => source.id === t.parentTimelineId)!) : '来源时间线'} · {t.forkScenario?.whatIf ?? '未记录假设'}</span>}
                   </button>
                   {t.status === 'active' && active.length > 1 && (
                     <button
@@ -268,6 +300,8 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-[10px] text-ink-faint">当前时间和居民数量属于所选时间线，切换后可能变化；不同时间线未必处于同一时刻。</p>
+          {switchError && <p role="alert" className="mt-2 text-xs text-red-600">{switchError}<button onClick={() => switchTarget && void switchTimeline(switchTarget)} className="ml-1 underline">重试切换</button></p>}
           <div className="mt-2 space-y-1 border-t border-ink-line/60 pt-2">
             {onSplitView && (
               <button
@@ -338,6 +372,8 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
 
           {step === 'advanced' && (
             <>
+              <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-name-advanced">分支名称</label>
+              <input id="fork-name-advanced" value={name} onChange={event => setName(event.target.value)} maxLength={80} className="mt-1 w-full rounded-lg border border-ink-line px-3 py-2 text-sm text-ink-soft" />
               <label className="mt-3 block text-xs text-ink-soft" htmlFor="fork-what-if-advanced">这条线要探索什么可能？</label>
               <textarea
                 id="fork-what-if-advanced"
@@ -377,7 +413,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
           {step === 'confirm' && scenario && (
             <>
               <div className="mt-3">
-                <ScenarioCard scenario={scenario} onChange={setScenario} />
+                <ScenarioCard scenario={scenario} timeZone={current?.timeZone} onChange={setScenario} />
               </div>
               {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
               <div className="mt-3 flex items-center justify-between gap-2">

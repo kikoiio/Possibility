@@ -69,6 +69,31 @@ describe('scene intent proposal endpoint', () => {
     } finally { fixture.close() }
   })
 
+  it('requests an explicit state refresh when the world changes during resolution, with one provider receipt', async () => {
+    const fixture = await setup()
+    try {
+      const fetch = vi.fn(async () => {
+        const changed = await app.request('/api/worlds/home-world/actions', { method: 'POST', headers,
+          body: JSON.stringify({ id: 'during-resolution', timelineId: 'home-main', expectedVersion: 0,
+            action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } }) }, fixture.env)
+        expect(changed.status).toBe(200)
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'move', to: 'Library' }) } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } })
+      })
+      vi.stubGlobal('fetch', fetch)
+      const response = await postIntent(fixture, '带我去图书馆')
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ status: 'clarification', recovery: 'refresh_state' })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      const receipts = await fixture.db.select().from(llmCallLog).all()
+      expect(receipts).toHaveLength(1)
+      expect(receipts[0]).toMatchObject({ requestId: 'intent-1', status: 'completed' })
+      expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(1)
+      expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(1)
+      expect((await fixture.db.select().from(sceneIntentProposals).get())?.status).toBe('resolved')
+    } finally { fixture.close() }
+  })
+
   it('clarifies an inform proposal for a resident who is not present', async () => {
     const fixture = await setup()
     try {

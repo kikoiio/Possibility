@@ -43,6 +43,7 @@ function fakeCtx(): EngineContext {
         callsDay: null,
         llmConfigJson: null,
         lastUserActivityAt: null,
+        timeZone: null,
         createdAt: '',
       },
       locations: [],
@@ -73,6 +74,15 @@ function fakeCtx(): EngineContext {
 }
 
 describe('buildScenePrompt（你在世界里：到场交谈提示）', () => {
+  it('gives new dialogue the world local clock and zone, independently of stale resident state', () => {
+    const ctx = fakeCtx()
+    ctx.snapshot.world.timeZone = 'Asia/Tokyo'
+    ctx.state.simTime = '2026-09-01T00:00:00Z'
+    const prompt = buildScenePrompt(ctx, { name: '访客', profile: '旅人' }, '图书室', [])
+    expect(prompt.system).toContain('现在的时间：2026-09-17 21:00 (Asia/Tokyo)')
+    expect(prompt.user).toContain('2026-09-17 21:00 (Asia/Tokyo)')
+  })
+
   it('包含来访者身份、地点与对话记录，且禁止点破第四面墙', () => {
     const { system } = buildScenePrompt(
       fakeCtx(),

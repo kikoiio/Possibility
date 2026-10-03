@@ -12,6 +12,7 @@ export const WORLD_PREVIEW_SYSTEM = `你是「可能性设定师」。用户要�
 根据世界背景、居民近况与用户的 what-if，给出明确的分叉场景设定。
 只输出一个 JSON 对象（不要任何其他文字，不要代码块）：
 {
+  "name": "简短可读的分支名称，80 字以内",
   "whatIf": "用户的原话",
   "startTime": "分叉起始时间，ISO 8601，必须是给定的当前时刻，不得早于或晚于它",
   "changedVariable": "被改变的那一个条件，一句话",

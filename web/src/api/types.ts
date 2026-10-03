@@ -43,11 +43,20 @@ export interface ForkScenario {
   changedVariable: string
   participants: string[]
   invariants: string[]
+  name?: string
 }
 
 /** 世界级 fork 提交入参（S2/F4）：两字段必填，participants/invariants 可选；S4/F6 startTime 可选=过去时刻分叉 */
-export type ForkScenarioInput = Pick<ForkScenario, 'whatIf' | 'changedVariable'>
+export type ForkScenarioInput = Pick<ForkScenario, 'whatIf' | 'changedVariable'> & { name: string }
   & Partial<Pick<ForkScenario, 'participants' | 'invariants' | 'startTime'>>
+
+export interface ForkResult {
+  id: string
+  sourceTimelineId: string
+  simNow: string
+  name: string
+  whatIf: string
+}
 
 /** S4/F6:历史可回溯范围（earliest=null 表示该线不支持历史分叉） */
 export interface HistoryRange {
@@ -61,11 +70,12 @@ export interface TimelineSummary {
   forkScenario: ForkScenario | null
   simNow: string
   createdAt: string
+  timeZone?: string
 }
 
 export interface PersonDetail {
   person: { id: string; name: string; model: PersonModel; createdAt: string }
-  world: { id: string; name: string; description: string } | null
+  world: { id: string; name: string; description: string; timeZone?: string } | null
   state: (PersonState & { updatedRealAt: string }) | null
   timelines: TimelineSummary[]
 }
@@ -114,7 +124,7 @@ export interface TimelineEvent {
 
 export interface TimelineDetail {
   timeline: TimelineSummary & { worldId: string }
-  world: { id: string; name: string; description: string }
+  world: { id: string; name: string; description: string; timeZone?: string }
   person: { id: string; name: string } | null
   events: TimelineEvent[]
   state: PersonState | null
@@ -131,6 +141,7 @@ export interface HomeData {
     personName: string
     parentTimelineId: string | null
     simNow: string
+    timeZone?: string
     eventCount: number
   }[]
   worlds: {
@@ -140,6 +151,7 @@ export interface HomeData {
     pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
     isDemo: boolean
     simNow: string | null
+    timeZone?: string
     personCount: number
     todayEventCount: number
   }[]
@@ -154,7 +166,7 @@ export type AgentStreamEvent =
   | { type: 'timeline'; timelineId: string }
   | { type: 'skipped' }
   | { type: 'error'; message: string }
-  | { type: 'done'; llmCalls?: number }
+  | { type: 'done'; llmCalls?: number; fork?: ForkResult; error?: string }
 
 /* ===== 阶段二：活的世界 ===== */
 
@@ -175,6 +187,7 @@ export interface WorldSummary {
   callsToday: number
   personCount: number
   simNow: string | null
+  timeZone?: string
   createdAt: string
 }
 
@@ -191,6 +204,7 @@ export interface TimelineInfo {
   simNow: string
   createdAt: string
   forkScenario: ForkScenario | null
+  timeZone?: string
 }
 
 export interface WorldEventItem {
@@ -259,10 +273,12 @@ export interface WorldSnapshot {
     isDemo: boolean
     callsToday: number
     locations: LocationDef[]
+    timeZone?: string
   }
   timelines: TimelineInfo[]
   currentTimelineId: string
   simNow: string
+  timeZone?: string
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'

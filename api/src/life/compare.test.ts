@@ -21,7 +21,7 @@ import { timelineRoutes } from '../timelines/routes'
 
 const SIM = '2026-09-19T09:00:00.000Z'
 const REAL = '2026-09-18T09:00:00.000Z'
-const forkScenario = { whatIf: 'A different possibility', changedVariable: 'message delivery' }
+const forkScenario = { name: '测试分支', whatIf: 'A different possibility', changedVariable: 'message delivery' }
 let fixture: ReturnType<typeof createTestDb>
 
 async function seed() {
@@ -100,7 +100,7 @@ describe('owner-only, read-only comparison API', () => {
   })
 
   it('returns deterministic evidence and makes no writes, including in a paused world', async () => {
-    const fork = await forkTimeline(fixture.db, 'world', 'main', { whatIf: 'The message never arrives', startTime: SIM,
+    const fork = await forkTimeline(fixture.db, 'world', 'main', { name: '测试分支', whatIf: 'The message never arrives', startTime: SIM,
       changedVariable: 'message delivery', participants: ['npc'], invariants: ['The weather remains unchanged'] })
     await fixture.db.update(worlds).set({ status: 'paused' }).where(eq(worlds.id, 'world'))
     await fixture.db.update(personStates).set({ mood: 'Excited', goal: 'Meet a friend' })
@@ -123,7 +123,7 @@ describe('owner-only, read-only comparison API', () => {
     expect(body.differences.events.rightOnly.map((e) => e.id)).toEqual(['branch-event'])
     expect(body.sharedForkOrigin).toMatchObject({ timelineId: 'main', leftFork: null, rightFork: {
       forkTimelineId: fork.id, sourceSimTime: SIM, provenance: 'snapshot', eventIds: ['original'],
-      sourceStateVersion: 0, scenario: { whatIf: 'The message never arrives', changedVariable: 'message delivery',
+      sourceStateVersion: 0, scenario: { name: '测试分支', whatIf: 'The message never arrives', changedVariable: 'message delivery',
         participants: ['npc'], invariants: ['The weather remains unchanged'] },
     } })
     expect(await (await request(`/worlds/world/compare?left=main&right=${fork.id}`)).json()).toEqual(body)
@@ -782,7 +782,7 @@ describe('fork snapshots', () => {
     await fixture.db.update(worlds).set({ status: 'running' }).where(eq(worlds.id, 'world'))
     const response = await timelineRoutes.request('/persons/npc/fork', {
       method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario: { whatIf: 'Stay home', startTime: REAL } }),
+      body: JSON.stringify({ scenario: { name: '测试分支', whatIf: 'Stay home', changedVariable: '居家', startTime: REAL } }),
     }, fixture.env)
     expect(response.status).toBe(409)
     expect(await fixture.db.select().from(timelines).where(eq(timelines.worldId, 'world')).all()).toHaveLength(1)

@@ -58,7 +58,8 @@ it('does not expose one resident’s private knowledge to another resident’s o
     expect(input?.speakerId).toBe(personId)
     const reserve = Object.assign(async () => 'test-receipt', { calls: 1, settle: async () => {} })
     const decision = await dialogueExecutor.decide(fixture.env, input!, { maxCalls: 1, reserve,
-      llm: { baseUrl: 'https://stub.example.com', apiKey: 'k', model: 'm', source: 'env' } })
+      llm: { baseUrl: 'https://stub.example.com', apiKey: 'k', model: 'm', source: 'env',
+        apiKeySource: 'platform_fallback', apiKeyVerified: false } })
     expect(decision.value).not.toBeNull()
     await dialogueExecutor.act(fixture.db, fixture.env, input!, decision.value!)
   }

@@ -39,7 +39,7 @@ describe('世界级 fork 五字段扩展（S2/F4）', () => {
     const f = await createWorldFixture()
     const res = await fork(f.env, {
       requestId: 'req-five', scenario: {
-        whatIf: '如果信送到了', changedVariable: '信件是否送达',
+        name: '测试分支', whatIf: '如果信送到了', changedVariable: '信件是否送达',
         participants: ['Resident', 'Visitor'], invariants: ['共同历史不变', '地理不变'],
       },
     }, )
@@ -56,7 +56,7 @@ describe('世界级 fork 五字段扩展（S2/F4）', () => {
 
   it('仅两字段的旧调用方成功且回落现状默认', async () => {
     const f = await createWorldFixture()
-    const res = await fork(f.env, { requestId: 'req-two', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    const res = await fork(f.env, { requestId: 'req-two', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c' } })
     expect(res.status).toBe(200)
     const { id } = await res.json() as { id: string }
     const row = await f.db.select().from(timelines).where(eq(timelines.id, id)).get()
@@ -67,7 +67,7 @@ describe('世界级 fork 五字段扩展（S2/F4）', () => {
 
   it('同 requestId 同五字段重放返回同一时间线；不同 participants → 409', async () => {
     const f = await createWorldFixture()
-    const scenario = { whatIf: 'w', changedVariable: 'c', participants: ['A'], invariants: ['i'] }
+    const scenario = { name: '测试分支', whatIf: 'w', changedVariable: 'c', participants: ['A'], invariants: ['i'] }
     const first = await fork(f.env, { requestId: 'req-replay', scenario })
     expect(first.status).toBe(200)
     const { id } = await first.json() as { id: string }
@@ -81,24 +81,24 @@ describe('世界级 fork 五字段扩展（S2/F4）', () => {
 
   it('两字段重放命中两字段记录；五字段重放同一 requestId → 409', async () => {
     const f = await createWorldFixture()
-    const first = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    const first = await fork(f.env, { requestId: 'req-legacy', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c' } })
     expect(first.status).toBe(200)
-    const replay = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c' } })
+    const replay = await fork(f.env, { requestId: 'req-legacy', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c' } })
     expect(replay.status).toBe(200)
     // 显式传入与默认值相同的 invariants 也命中（归一化后四项全等）
-    const explicit = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c', invariants: ['分叉前的共同历史与设定版本保持不变'] } })
+    const explicit = await fork(f.env, { requestId: 'req-legacy', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', invariants: ['分叉前的共同历史与设定版本保持不变'] } })
     expect(explicit.status).toBe(200)
-    const conflict = await fork(f.env, { requestId: 'req-legacy', scenario: { whatIf: 'w', changedVariable: 'c', participants: ['A'] } })
+    const conflict = await fork(f.env, { requestId: 'req-legacy', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', participants: ['A'] } })
     expect(conflict.status).toBe(409)
   })
 
   it('participants/invariants 超限 → 400', async () => {
     const f = await createWorldFixture()
-    const tooMany = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', participants: Array(21).fill('a') } })
+    const tooMany = await fork(f.env, { scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', participants: Array(21).fill('a') } })
     expect(tooMany.status).toBe(400)
-    const tooLong = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', invariants: ['x'.repeat(201)] } })
+    const tooLong = await fork(f.env, { scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', invariants: ['x'.repeat(201)] } })
     expect(tooLong.status).toBe(400)
-    const notArray = await fork(f.env, { scenario: { whatIf: 'w', changedVariable: 'c', participants: 'nope' } })
+    const notArray = await fork(f.env, { scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', participants: 'nope' } })
     expect(notArray.status).toBe(400)
   })
 })
@@ -274,7 +274,7 @@ describe('历史范围与单点判定端点(S4/F6)', () => {
     await buildHistoryWorld(f)
     const res = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
       method: 'POST', headers: owner,
-      body: JSON.stringify({ requestId: 'req-hist', scenario: { whatIf: '如果那天没下雨', changedVariable: '天气',
+      body: JSON.stringify({ requestId: 'req-hist', scenario: { name: '测试分支', whatIf: '如果那天没下雨', changedVariable: '天气',
         startTime: '2026-09-21T09:30:00.000Z' } }),
     }, f.env)
     expect(res.status, await res.clone().text()).toBe(200)
@@ -285,7 +285,7 @@ describe('历史范围与单点判定端点(S4/F6)', () => {
 
     const rejected = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
       method: 'POST', headers: owner,
-      body: JSON.stringify({ scenario: { whatIf: 'w', changedVariable: 'c', startTime: '2020-01-01T00:00:00.000Z' } }),
+      body: JSON.stringify({ scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', startTime: '2020-01-01T00:00:00.000Z' } }),
     }, f.env)
     expect(rejected.status).toBe(400)
     expect(await rejected.json()).toMatchObject({ error: expect.stringContaining('早于这条线可回溯的起点') })
@@ -302,7 +302,7 @@ describe('历史范围与单点判定端点(S4/F6)', () => {
     expect(await res.json()).toMatchObject({ startTime: T1 })
   })
 
-  it('AC10:预算触顶时历史分叉 preview/创建与现时刻同样 409,不调用模型、不建线', async () => {
+  it('AC10:有限预算触顶暂停世界，历史预览和确认均拒绝且不调用模型', async () => {
     const { reserveWorldCall } = await import('../engine/budget')
     const { worlds } = await import('../db/schema')
     const f = await createWorldFixture()
@@ -320,12 +320,12 @@ describe('历史范围与单点判定端点(S4/F6)', () => {
     }, f.env)
     const fork = await app.request('/api/worlds/home-world/timelines/home-main/fork', {
       method: 'POST', headers: owner,
-      body: JSON.stringify({ requestId: 'req-capped-hist', scenario: { whatIf: 'w', changedVariable: 'c', startTime: T1 } }),
+      body: JSON.stringify({ requestId: 'req-capped-hist', scenario: { name: '测试分支', whatIf: 'w', changedVariable: 'c', startTime: T1 } }),
     }, f.env)
     expect(preview.status, await preview.clone().text()).toBe(409)
     expect(fork.status, await fork.clone().text()).toBe(409)
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(await f.db.select().from(llmCallLog)).toHaveLength(1) // 仅触顶那笔预留
+    expect(await f.db.select().from(llmCallLog)).toHaveLength(1) // 仅触顶的一笔预留；已暂停世界不再创建分支
     expect(await f.db.select().from(timelines)).toHaveLength(timelineCount)
     expect((await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())?.status).toBe('capped')
   })

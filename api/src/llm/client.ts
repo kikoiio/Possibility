@@ -30,6 +30,9 @@ export interface LlmConfig {
   baseUrl: string
   apiKey: string
   model: string
+  apiKeySource?: 'personal_global' | 'world_override' | 'platform_fallback'
+  apiKeyVerified?: boolean
+  apiKeyVerificationFingerprint?: string | null
   provider?: { fetch(request: Request): Promise<Response> }
   reserve?: ReceiptReservation
 }
@@ -39,6 +42,9 @@ export type ReceiptReservation = ((details: {
   requestId: string | null
   contextHash: string
   contractVersion: string
+  apiKeySource?: 'personal_global' | 'world_override' | 'platform_fallback'
+  verifiedPersonalKey?: boolean
+  verifiedPersonalFingerprint?: string | null
 }) => Promise<string | void>) & {
   settle?: (receiptId: string, status: ReceiptOutcome, errorCode?: string | null) => Promise<void>
 }
@@ -55,6 +61,13 @@ export function configFromEnv(env: {
     model: env.LLM_MODEL,
     provider: env.LLM_PROVIDER,
     reserve,
+  }
+}
+
+/** Provider response bodies may reflect credentials; keep them out of errors and logs. */
+export class LlmProviderError extends LlmContractError {
+  constructor(readonly httpStatus: number, readonly modelNotFound: boolean = false) {
+    super('provider_http_error', `LLM 请求失败（${httpStatus}），请检查提供方配置`)
   }
 }
 
@@ -166,6 +179,9 @@ async function postChat(
     requestId: opts.requestId ?? null,
     contextHash: await sha256(body),
     contractVersion: opts.contractVersion ?? 'chat-completions/v1',
+    apiKeySource: config.apiKeySource,
+    verifiedPersonalKey: config.apiKeySource === 'personal_global' && config.apiKeyVerified,
+    verifiedPersonalFingerprint: config.apiKeyVerificationFingerprint,
   }) ?? null
   try {
     scope.signal.throwIfAborted()
@@ -187,7 +203,7 @@ async function postChat(
     const res = await scope.wait(pending)
     if (!res.ok) {
       const text = await readText(res, scope)
-      throw new LlmContractError('provider_http_error', `LLM 请求失败（${res.status}）：${text.slice(0, 500)}`)
+      throw new LlmProviderError(res.status, /model[_ -]?not[_ -]?found|invalid[_ -]?model|model.*(?:not exist|not found|does not exist)/i.test(text))
     }
     return { response: res, receiptId }
   } catch (error) {

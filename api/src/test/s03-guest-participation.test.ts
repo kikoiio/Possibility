@@ -51,7 +51,7 @@ describe('S03 guest participation API', () => {
       headers: { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         timelineId: guest.timelineId, requestId: 'claim-api-fork',
-        whatIf: '访客提前到达花房', changedVariable: '抵达时间',
+        name: '提前抵达', whatIf: '访客提前到达花房', changedVariable: '抵达时间',
       }),
     }, fixture.env)
     expect(forkResponse.status, await forkResponse.clone().text()).toBe(200)
@@ -112,4 +112,33 @@ describe('S03 guest participation API', () => {
     expect(clonedTimelines.some(row => row.parentTimelineId === fork.id)).toBe(false)
     fixture.close()
   })
+})
+
+it('S4C 访客分支名称校验无副作用，时钟推进后的重试仍返回本次来源和新分支', async () => {
+  const fixture = createTestDb()
+  try {
+    await fixture.db.insert(users).values({ id: 'admin', username: 'admin', passwordHash: 'x', createdAt: new Date().toISOString() })
+    await seedDemoWorld(fixture.db)
+    const guest = await createGuestSession(fixture.db, 'guest-s4c-replay')
+    const headers = { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' }
+    const input = { timelineId: guest.timelineId, requestId: 'guest-s4c-fork', name: '提前抵达', whatIf: '访客提前到达花房', changedVariable: '抵达时间' }
+    const fork = (body: unknown) => app.request(`/api/demo/worlds/${guest.worldId}/fork`, { method: 'POST', headers, body: JSON.stringify(body) }, fixture.env)
+    const before = await fixture.db.select().from(timelines).all()
+    const snapshots = await fixture.db.select().from(forkSnapshots).all()
+    for (const [key, value] of [['name', undefined], ['name', ' '], ['name', '字'.repeat(81)], ['whatIf', ''], ['changedVariable', '']] as const) {
+      expect((await fork({ ...input, [key]: value })).status).toBe(400)
+    }
+    expect(await fixture.db.select().from(timelines).all()).toEqual(before)
+    expect(await fixture.db.select().from(forkSnapshots).all()).toEqual(snapshots)
+    const response = await fork(input)
+    expect(response.status, await response.clone().text()).toBe(200)
+    const created = await response.json()
+    expect(created).toMatchObject({ id: input.requestId, sourceTimelineId: guest.timelineId, name: input.name, whatIf: input.whatIf })
+    await fixture.db.update(timelines).set({ simNow: '2026-10-03T12:00:00.000Z' }).where(eq(timelines.id, guest.timelineId))
+    const replay = await fork(input)
+    expect(replay.status, await replay.clone().text()).toBe(200)
+    expect(await replay.json()).toEqual(created)
+    expect((await fork({ ...input, name: '其他名称' })).status).toBe(409)
+    expect(await fixture.db.select().from(timelines)).toHaveLength(before.length + 1)
+  } finally { fixture.close() }
 })

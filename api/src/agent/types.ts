@@ -26,6 +26,7 @@ export interface InitialState {
 }
 
 export interface ForkScenario {
+  name?: string
   whatIf: string
   startTime: string
   changedVariable: string

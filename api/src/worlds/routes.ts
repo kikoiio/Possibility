@@ -22,13 +22,15 @@ import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
 import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
-import { BudgetRefusal, gateUniverseWrite, gateUser, gateWorld, worldReservation } from '../engine/guard'
+import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { commitWorldCommand } from '../world-state/commit'
 import { checkMoment, historyRange, type HistoryRejectCode } from '../world-state/reconstruct'
 import { createRootProjectionBaseline, ensureUniverseRevision } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
+import { effectiveTimeZone, isValidTimeZone } from './time-zone'
 import { WorldStateError, type WorldAction } from '../world-state/types'
 import type { ForkScenario } from '../agent/types'
+import { normalizeForkFields } from '../life/fork-fields'
 import type { Env } from '../index'
 
 type World = typeof worlds.$inferSelect
@@ -36,7 +38,7 @@ type World = typeof worlds.$inferSelect
 export const worldsRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 worldsRoutes.use('*', scopedUserMiddleware((method, path, worldId) => {
   const base = `/api/worlds/${encodeURIComponent(worldId)}`
-  return method === 'GET' && (path === `${base}/state` || new RegExp(`^${base}/actions/[^/]+$`).test(path))
+  return method === 'GET' && (path === `${base}/state` || path === `${base}/time-zone` || new RegExp(`^${base}/actions/[^/]+$`).test(path))
 }))
 
 async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<World | null> {
@@ -55,8 +57,6 @@ worldsRoutes.post('/draft', async (c) => {
   if (!prompt) return c.json({ error: '请提供一句话描述' }, 400)
   const db = createDb(c.env.DB)
   const cfg = budgetFromEnv(c.env)
-  const gate = await gateUser(db, c.get('user').id, cfg)
-  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
     return c.json(await draftWorld(c.env, db, c.get('user').id, prompt))
   } catch (e) {
@@ -68,7 +68,7 @@ worldsRoutes.post('/draft', async (c) => {
 /** 确认创建世界：骨架 + 选定 1-6 人物 → 世界/关联/主线/初始状态，直接开跑 */
 worldsRoutes.post('/', async (c) => {
   const body = await c.req
-    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; scene?: SerializedVoxelDocument; sceneRequestId?: string }>()
+    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; timeZone?: string; scene?: SerializedVoxelDocument; sceneRequestId?: string }>()
     .catch(() => null)
   const name = body?.name?.trim()
   const description = body?.description?.trim()
@@ -77,6 +77,7 @@ worldsRoutes.post('/', async (c) => {
     : []
   const personIds = [...new Set((body?.personIds ?? []).map(String).filter(Boolean))]
   if (!body || !name || !description) return c.json({ error: 'name 与 description 必填' }, 400)
+  if (body.timeZone !== undefined && !isValidTimeZone(body.timeZone)) return c.json({ error: 'timeZone 必须是有效的 IANA 时区' }, 400)
   if (locations.length < 5 || locations.length > 8) return c.json({ error: '地点需 5-8 个' }, 400)
   if (personIds.length < 1 || personIds.length > 6) return c.json({ error: '人物需 1-6 个' }, 400)
   if (body.scene) {
@@ -119,6 +120,7 @@ worldsRoutes.post('/', async (c) => {
     userId,
     name,
     description,
+    timeZone: effectiveTimeZone(body.timeZone),
     locationsJson: JSON.stringify(locations),
     status: 'running',
     callsToday: 0,
@@ -218,6 +220,7 @@ worldsRoutes.get('/', async (c) => {
       personIds: pc.map(person => person.personId),
       hasScene: sceneWorldId !== null,
       simNow: main?.simNow ?? null,
+      timeZone: effectiveTimeZone(w.timeZone),
       createdAt: w.createdAt,
     })
   }
@@ -249,6 +252,24 @@ worldsRoutes.get('/:id/state', async (c) => {
     if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
     throw error
   }
+})
+
+worldsRoutes.get('/:id/time-zone', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  return c.json({ timeZone: effectiveTimeZone(world.timeZone) })
+})
+
+worldsRoutes.put('/:id/time-zone', async (c) => {
+  const db = createDb(c.env.DB)
+  const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  if (world.isDemo) return c.json({ error: '演示世界为只读，不能更改时区' }, 403)
+  const body = await c.req.json<{ timeZone?: unknown }>().catch(() => null)
+  if (!body || !isValidTimeZone(body.timeZone)) return c.json({ error: 'timeZone 必须是有效的 IANA 时区' }, 400)
+  await db.update(worlds).set({ timeZone: body.timeZone }).where(eq(worlds.id, world.id))
+  return c.json({ timeZone: body.timeZone })
 })
 
 worldsRoutes.get('/:id/actions/:commandId', async (c) => {
@@ -557,11 +578,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   const value = body?.scenario
   if (!value || typeof value !== 'object' || Array.isArray(value)) return c.json({ error: '请说明分叉假设与改变条件' }, 400)
   const record = value as Record<string, unknown>
-  const whatIf = typeof record.whatIf === 'string' ? record.whatIf.trim() : ''
-  const changedVariable = typeof record.changedVariable === 'string' ? record.changedVariable.trim() : ''
-  if (!whatIf || whatIf.length > 500 || !changedVariable || changedVariable.length > 200) {
-    return c.json({ error: '请提供有效的假设和唯一改变条件' }, 400)
-  }
+  const fields = normalizeForkFields(record)
+  if (!fields) return c.json({ error: '分支名称、假设和改变条件必填，分别限 80、500、200 字。' }, 400)
   // 五字段扩展（S2/F4）：participants/invariants 可选，归一化后缺省回落现状默认
   const normalizeList = (input: unknown, maxItems: number, maxLen: number): string[] | null => {
     if (input == null) return []
@@ -576,8 +594,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
     return c.json({ error: '参与人物或不变条件格式无效（人物 ≤20 条每条 ≤100 字；条件 ≤10 条每条 ≤200 字）' }, 400)
   }
   const DEFAULT_INVARIANTS = ['分叉前的共同历史与设定版本保持不变']
-  const scenarioDraft: Pick<ForkScenario, 'whatIf' | 'changedVariable'> & { participants: string[]; invariants: string[] } = {
-    whatIf, changedVariable,
+  const scenarioDraft: Pick<ForkScenario, 'name' | 'whatIf' | 'changedVariable'> & { participants: string[]; invariants: string[] } = {
+    ...fields,
     participants,
     invariants: invariants.length ? invariants : DEFAULT_INVARIANTS,
   }
@@ -596,9 +614,9 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
       const storedInvariantsRaw = (stored?.invariants ?? []).map(String).map((s) => s.trim()).filter(Boolean)
       const storedInvariants = storedInvariantsRaw.length ? storedInvariantsRaw : DEFAULT_INVARIANTS
       const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
-      const sameScenario = stored?.whatIf === scenarioDraft.whatIf && stored.changedVariable === scenarioDraft.changedVariable
+      const sameScenario = stored !== null && stored.name === scenarioDraft.name && stored.whatIf === scenarioDraft.whatIf && stored.changedVariable === scenarioDraft.changedVariable
         && sameList(storedParticipants, scenarioDraft.participants) && sameList(storedInvariants, scenarioDraft.invariants)
-      if (sameScenario) return c.json({ id: existing.id, simNow: existing.simNow })
+      if (sameScenario) return c.json({ id: existing.id, sourceTimelineId: c.req.param('tid'), simNow: existing.simNow, name: stored!.name, whatIf: stored!.whatIf })
       return c.json({ error: '分叉请求 ID 已用于不同条件' }, 409)
     }
     if (existing) return c.json({ error: '分叉请求 ID 已用于另一条时间线' }, 409)
@@ -635,7 +653,7 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
 
   let fork: Awaited<ReturnType<typeof forkTimeline>>
   fork = await forkTimeline(db, world.id, source.id, scenario, requestId)
-  return c.json({ id: fork.id, simNow: fork.simNow, snapshot: {
+  return c.json({ id: fork.id, sourceTimelineId: source.id, simNow: fork.simNow, name: scenario.name, whatIf: scenario.whatIf, snapshot: {
     version: fork.snapshot.version, sourceTimelineId: source.id,
     sourceSimTime: fork.snapshot.sourceSimTime, capturedAt: fork.snapshot.capturedAt,
   } })

@@ -211,14 +211,31 @@ test('person without a world has a creation guide and disabled world-dependent a
   await expect(page.getByRole('button', { name: person.name })).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('world list has a direct world-creation entry', async ({ page }) => {
-  await authenticate(page)
-  await stubPersons(page)
-  await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [] } }))
+test.describe('S4B 世界时区创建旅程', () => {
+  test.use({ timezoneId: 'Asia/Tokyo' })
 
-  await page.goto('/worlds')
-  await page.getByRole('link', { name: '创建世界' }).click()
-  await expect(page).toHaveURL(/\/worlds\/new$/)
-  await expect(page.getByTestId('scene-prompt')).toBeVisible()
-  await expect(page.getByRole('link', { name: '创建一位人物' })).toBeVisible()
+  test('创建请求携带浏览器 IANA zone,创建后世界时钟按该 zone 显示', async ({ page }) => {
+    await authenticate(page)
+    await stubPersons(page, [person])
+    const routes = await stubSuccessfulWorldCreate(page)
+    await page.route('**/api/worlds/new-world/map/bootstrap**', route => route.fulfill({ json: {
+      access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
+      world: { ...snapshot, world: { ...snapshot.world, timeZone: 'Asia/Tokyo' }, timelines: snapshot.timelines.map(timeline => ({ ...timeline, timeZone: 'Asia/Tokyo' })) },
+      scene: { status: 'ready', document: voxelDoc },
+      presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
+      theme: { id: 'mist-manor', assetVersion: 'fixture' },
+      resume: { worldId: 'new-world', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
+    } }))
+
+    await page.goto('/worlds/new?person=person-1')
+    await page.getByTestId('scene-prompt').fill(prompt)
+    await expect(page.getByRole('button', { name: person.name })).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('generate-scene').click()
+    await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
+    await page.getByTestId('start-life').click()
+
+    await expect(page.getByTestId('create-live-banner')).toBeVisible()
+    expect(routes.getCreatePayload()).toMatchObject({ timeZone: 'Asia/Tokyo' })
+    await expect(page.getByTestId('create-live-banner')).toContainText('2026-10-02 21:00 (Asia/Tokyo)')
+  })
 })

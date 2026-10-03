@@ -9,6 +9,7 @@ import { hydrateTimelines } from '../life/snapshot-store'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { readPublicUniverseEvidence, type PublicUniverseEvidence } from '../world-state/evidence-status'
+import { effectiveTimeZone } from './time-zone'
 
 type World = typeof worlds.$inferSelect
 
@@ -22,6 +23,7 @@ export interface WorldSnapshotDto {
     pauseReason: string | null
     isDemo: boolean
     callsToday: number
+    timeZone: string
     locations: LocationDef[]
   }
   timelines: {
@@ -31,6 +33,7 @@ export interface WorldSnapshotDto {
     simNow: string
     createdAt: string
     forkScenario: unknown | null
+    timeZone: string
   }[]
   currentTimelineId: string
   simNow: string
@@ -164,6 +167,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
       pauseReason: world.pauseReason,
       isDemo: world.isDemo,
       callsToday: world.callsToday,
+      timeZone: effectiveTimeZone(world.timeZone),
       locations,
     },
     timelines: tls.map((t) => ({
@@ -173,6 +177,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
       simNow: t.simNow,
       createdAt: t.createdAt,
       forkScenario: t.forkScenarioJson ? (JSON.parse(t.forkScenarioJson) as unknown) : null,
+      timeZone: effectiveTimeZone(world.timeZone),
     })),
     currentTimelineId: current.id,
     simNow: current.simNow,

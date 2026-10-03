@@ -4,8 +4,7 @@ import { createDb } from '../db/client'
 import { persons, personStates, timelines, universeEvidence, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { distillPerson, normalizeModel } from '../agent/distill'
-import { budgetFromEnv } from '../engine/budget'
-import { BudgetRefusal, gateUser } from '../engine/guard'
+import { BudgetRefusal } from '../engine/guard'
 import type { Env } from '../index'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -17,9 +16,6 @@ personRoutes.post('/distill', async (c) => {
   const description = body.description?.trim()
   if (!description) return c.json({ error: '请提供人物描述' }, 400)
   const db = createDb(c.env.DB)
-  const cfg = budgetFromEnv(c.env)
-  const gate = await gateUser(db, c.get('user').id, cfg)
-  if (!gate.ok) return c.json({ error: gate.error }, gate.status)
   try {
     const draft = await distillPerson(c.env, db, c.get('user').id, description)
     return c.json(draft)
@@ -118,6 +114,7 @@ personRoutes.get('/:id', async (c) => {
       forkScenario: t.forkScenarioJson ? (JSON.parse(t.forkScenarioJson) as unknown) : null,
       simNow: t.simNow,
       createdAt: t.createdAt,
+      timeZone: world?.timeZone ?? 'UTC',
     })),
   })
 })

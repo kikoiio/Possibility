@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
+import { comparisonFor } from './split-view-stubs'
 
 const exteriorDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
 const interiorDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-interior.json', import.meta.url), 'utf8'))
@@ -27,6 +28,7 @@ const guestSession = {
 }
 
 async function mockGuestVoxel(page: Page) {
+  let forked = false
   await page.addInitScript(() => localStorage.setItem('possibility:flag:voxel', '1'))
   await page.route('**/api/demo/session', (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { sessionId: guestSession.sessionId, worldId: 'demo', timelineId: 'main', generation: 1, expiresAt: guestSession.expiresAt } })
@@ -34,7 +36,7 @@ async function mockGuestVoxel(page: Page) {
   })
   await page.route('**/api/worlds/demo/map/bootstrap**', (route) => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: false, resetDemo: true },
-    world: snapshot,
+    world: forked ? { ...snapshot, timelines: [...snapshot.timelines, { id: 'fork-a', parentTimelineId: 'main', simNow: snapshot.simNow, forkScenario: { name: '匿名信提前被发现', whatIf: '三田村千鹤今天提前发现那封匿名信' } }] } : snapshot,
     scene: { status: 'ready', document: voxelSpaces },
     presentation: { timelineId: 'main', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
     theme: { id: 'mist-manor', assetVersion: 'fixture' },
@@ -54,8 +56,8 @@ async function mockGuestVoxel(page: Page) {
     status: 200, contentType: 'text/event-stream',
     body: 'data: {"type":"turn","personId":"person-host","name":"主人","utterance":"欢迎。"}\n\ndata: {"type":"done"}\n\n',
   }))
-  await page.route('**/api/demo/worlds/demo/fork', (route) => route.fulfill({ json: { id: 'fork-a', simNow: snapshot.simNow } }))
-  await page.route('**/api/demo/worlds/demo/compare**', (route) => route.fulfill({ json: { differences: { facts: [{ key: 'letter' }], states: [{ personId: 'person-host' }], events: { leftOnly: [], rightOnly: [{ id: 'ev-fork' }] } }, limitations: [] } }))
+  await page.route('**/api/demo/worlds/demo/fork', route => { forked = true; const input = route.request().postDataJSON(); return route.fulfill({ json: { id: 'fork-a', sourceTimelineId: 'main', simNow: snapshot.simNow, name: input.name, whatIf: input.whatIf } }) })
+  await page.route('**/api/demo/worlds/demo/compare**', route => route.fulfill({ json: comparisonFor('main', 'fork-a') }))
 }
 
 async function toScreen(page: Page, at: { x: number; y: number; z: number }) {
@@ -123,8 +125,11 @@ test('guest voxel sandbox: multi-space navigation and full onboarding tour (AC16
   // 步骤 6/7 创建分支并查看对照
   await page.getByRole('button', { name: '可能' }).click()
   await page.getByRole('button', { name: '创建并对照' }).click()
-  await expect(page.getByText('已创建平行宇宙')).toBeVisible()
-  await expect(page.getByText(/1 项事实差异/)).toBeVisible()
+  await page.getByTestId('guest-fork-confirm').click()
+  await expect(page.getByTestId('guest-fork-summary')).toBeVisible()
+  await page.getByRole('button', { name: '直接比较来源与新分支' }).click()
+  await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(page.getByText('体验指引 8/8')).toBeVisible()
 
   // 步骤 8 返回地图 → 导览完成

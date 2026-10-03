@@ -49,6 +49,8 @@ export const worlds = sqliteTable('worlds', {
   callsDay: text('calls_day'),
   // 最近一次用户交互（聊天/注入/章节等）；闲置自动归档以此为据（null = 不归档）
   lastUserActivityAt: text('last_user_activity_at'),
+  // IANA time zone; null is legacy data interpreted as UTC
+  timeZone: text('time_zone'),
   createdAt: text('created_at').notNull().default(''),
 })
 
@@ -153,6 +155,8 @@ export const userLlmConfigs = sqliteTable('user_llm_configs', {
   model: text('model'),
   // null = 不限;行不存在时按代码缺省 400
   dailyCallCap: integer('daily_call_cap'),
+  verificationFingerprint: text('verification_fingerprint'),
+  verifiedAt: text('verified_at'),
   updatedAt: text('updated_at').notNull(),
 })
 
@@ -358,6 +362,8 @@ export const llmCallLog = sqliteTable('llm_call_log', {
   purpose: text('purpose').notNull(),
   contextHash: text('context_hash'),
   contractVersion: text('contract_version'),
+  apiKeySource: text('api_key_source'),
+  budgetBucket: text('budget_bucket'),
   // Existing rows predate receipts and keep null as an explicit unknown legacy outcome.
   status: text('status'),
   errorCode: text('error_code'),

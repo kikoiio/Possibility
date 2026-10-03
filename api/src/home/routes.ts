@@ -4,6 +4,7 @@ import { createDb } from '../db/client'
 import { conversations, events, messages, persons, timelines, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { Env } from '../index'
+import { effectiveTimeZone } from '../worlds/time-zone'
 
 export const homeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 homeRoutes.use('*', authMiddleware)
@@ -95,6 +96,7 @@ homeRoutes.get('/', async (c) => {
         personName: personName.get(pid) ?? '',
         parentTimelineId: r.timeline.parentTimelineId,
         simNow: r.timeline.simNow,
+        timeZone: effectiveTimeZone(r.world.timeZone),
         eventCount: countMap.get(r.timeline.id) ?? 0,
       }
     })
@@ -118,6 +120,7 @@ homeRoutes.get('/', async (c) => {
       pauseReason: w.pauseReason,
       isDemo: w.isDemo,
       simNow: mainTl?.simNow ?? null,
+      timeZone: effectiveTimeZone(w.timeZone),
       personCount: personCountByWorld.get(w.id) ?? 0,
       todayEventCount: todayEvents,
     })
