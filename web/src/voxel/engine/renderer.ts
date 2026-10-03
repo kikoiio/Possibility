@@ -236,6 +236,15 @@ export class VoxelRenderer {
     }
   }
 
+  setSkyVisible(visible: boolean): void {
+    this.sky?.setVisible(visible)
+  }
+
+  get skyVisible(): boolean {
+    return this.sky?.visible ?? false
+  }
+
+  /** 环境雾在外景/室内均保留；天空穹顶由空间上下文单独控制。 */
   setEnvironment(env: EnvironmentState): void {
     // 雾色兜底：穹顶未覆盖/失败时背景与雾一致，不出现断层
     this.scene.background = new THREE.Color(env.fogColor)
@@ -260,7 +269,7 @@ export class VoxelRenderer {
   private directDir: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 }
 
   /** 每帧直射光分发：光色/强度/方位 + 阴影配置;enabled=false 或强度≈0 → 灯灭关阴影 */
-  setDirectLight(direct: ResolvedPalette['direct'], shadowCfg: ShadowConfig, ambientLift: number): void {
+  setDirectLight(direct: ResolvedPalette['direct'], shadowCfg: ShadowConfig, ambientLift: number, ambientScale = 1): void {
     if (!this.three || !this.directLight || !this.ambientLight) return
     this.directDir = direct.dir
     const light = this.directLight
@@ -268,7 +277,7 @@ export class VoxelRenderer {
     light.intensity = direct.intensity
     // 环境光基底：阴影开启时按 ambientScale 压低，给直射光让出明暗差余量（否则阴影被削顶抹平）;
     // 阴影关闭/直射熄灭时回满 ambientLift → N1「关阴影=S1 观感」
-    this.ambientLight.intensity = ambientLift * (shadowCfg.enabled && direct.intensity > 0.001 ? shadowCfg.ambientScale : 1)
+    this.ambientLight.intensity = ambientLift * ambientScale * (shadowCfg.enabled && direct.intensity > 0.001 ? shadowCfg.ambientScale : 1)
     if (this.three.shadowMap.enabled !== shadowCfg.enabled) {
       this.three.shadowMap.enabled = shadowCfg.enabled
       // 运行时切换阴影管线需要重编译材质

@@ -169,6 +169,15 @@ export class SkyDome {
     this.mesh.renderOrder = -1000 // 先画穹顶，世界几何按深度覆盖
   }
 
+  /** 控制外部天空穹顶；空间切换时可逆。 */
+  setVisible(visible: boolean): void {
+    this.mesh.visible = visible
+  }
+
+  get visible(): boolean {
+    return this.mesh.visible
+  }
+
   /** 每帧跟随相机位置，并把半径缩放到远裁剪面以内 */
   follow(camera: THREE.Camera): void {
     this.mesh.position.copy(camera.position)

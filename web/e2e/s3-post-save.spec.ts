@@ -46,17 +46,51 @@ async function seedTour(page: Page, done: string[]) {
   await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [TOUR_KEY, JSON.stringify(done)] as const)
 }
 
-async function residentScreen(page: Page): Promise<{ x: number; y: number } | null> {
-  return page.evaluate(() => {
+async function residentScreen(page: Page, personId = 'person-host'): Promise<{ x: number; y: number } | null> {
+  return page.evaluate((id) => {
     const probe = window.__voxelEngine as never as {
       residents: { snapshot(): { personId: string; position: { x: number; y: number; z: number } }[] } | null
       worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
     } | undefined
-    const resident = probe?.residents?.snapshot().find(item => item.personId === 'person-host')
+    const resident = probe?.residents?.snapshot().find(item => item.personId === id)
     if (!probe || !resident) return null
     const at = { x: Math.floor(resident.position.x), y: Math.floor(resident.position.y) + 1, z: Math.floor(resident.position.z) }
     return probe.worldToScreen(at)
-  })
+  }, personId)
+}
+
+async function clickLocationObject(page: Page, objectId: string, locationName: string) {
+  const cells = (exteriorDoc.objectCells as { objectId: string; cells: { x: number; y: number; z: number }[] }[])
+    .find(item => item.objectId === objectId)?.cells ?? []
+  const roofY = Math.max(...cells.map(cell => cell.y))
+  const roofCells = cells.filter(cell => cell.y === roofY)
+  const canvas = await page.getByTestId('voxel-viewport-canvas').boundingBox()
+  if (!canvas || roofCells.length === 0) throw new Error(`No roof cells for ${objectId}`)
+
+  const points = await page.evaluate(({ roofCells, canvas }) => {
+    const engine = window.__voxelEngine as never as {
+      worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
+    } | undefined
+    const element = document.querySelector('[data-testid="voxel-viewport-canvas"]')
+    if (!engine || !element) return []
+    return roofCells.map(cell => engine.worldToScreen(cell)).filter((point): point is { x: number; y: number } => {
+      if (!point || point.x < canvas.x || point.x > canvas.x + canvas.width || point.y < canvas.y || point.y > canvas.y + canvas.height) return false
+      return document.elementFromPoint(point.x, point.y) === element
+    }).sort((a, b) => {
+      const centerX = canvas.x + canvas.width / 2
+      const centerY = canvas.y + canvas.height / 2
+      return Math.hypot(a.x - centerX, a.y - centerY) - Math.hypot(b.x - centerX, b.y - centerY)
+    })
+  }, { roofCells, canvas })
+
+  const heading = page.getByRole('heading', { name: locationName, exact: true })
+  for (const point of points) {
+    await page.mouse.click(point.x, point.y)
+    if (await heading.isVisible().catch(() => false)) return
+    const card = page.getByTestId('map-selection-card')
+    if (await card.isVisible()) await card.getByRole('button', { name: '关闭信息' }).click()
+  }
+  throw new Error(`Could not select ${locationName} from visible roof cells`)
 }
 
 async function canvasReady(page: Page) {
@@ -161,15 +195,28 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
     await page.goto('/worlds/world-1')
     await canvasReady(page)
 
-    // F4:owner 路径地图行不塌缩(塌缩基线为 min-h 430px)
-    const canvasBox = await page.getByTestId('voxel-viewport-canvas').boundingBox()
-    expect(canvasBox?.height ?? 0).toBeGreaterThanOrEqual(480)
+    // AC4:owner 地图阶段延伸至页面可用视窗底部,没有固定 430px 条带后的空白。
+    const geometry = await page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>('[data-testid="world-canvas-page"]')
+      const stage = document.querySelector<HTMLElement>('[data-testid="owner-map-stage"]')
+      if (!main || !stage) return null
+      const mainRect = main.getBoundingClientRect()
+      const stageRect = stage.getBoundingClientRect()
+      const paddingBottom = Number.parseFloat(getComputedStyle(main).paddingBottom) || 0
+      return {
+        viewportHeight: window.innerHeight,
+        mainHeight: mainRect.height,
+        stageBottom: stageRect.bottom,
+        contentBottom: mainRect.bottom - paddingBottom,
+      }
+    })
+    expect(geometry).not.toBeNull()
+    expect(geometry!.mainHeight).toBe(geometry!.viewportHeight)
+    expect(Math.abs(geometry!.stageBottom - geometry!.contentBottom)).toBeLessThanOrEqual(1)
+    await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
 
     // 点击温室(地点绑定物体;fixture 屋顶锚点,沿用 voxel-guest 坐标)
-    const roof = await page.evaluate(() => (window.__voxelEngine as never as {
-      worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
-    }).worldToScreen({ x: 8, y: 4, z: 11 })!)
-    await page.mouse.click(roof.x, roof.y)
+    await clickLocationObject(page, 'greenhouse', '温室')
     await expect(page.getByTestId('map-selection-card')).toBeVisible()
     await expect(page.getByRole('heading', { name: '温室' })).toBeVisible()
 
@@ -177,6 +224,19 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
     await page.getByRole('button', { name: '进入此地点' }).click()
     await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
     await expect(page.getByLabel('进入地点')).toHaveValue('温室')
+
+    // AC1:单空间 owner 观察点击居民同样得到访客路径的居民卡。
+    await page.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.getByRole('button', { name: '关闭信息' }).click()
+    const resident = await residentScreen(page, 'person-1')
+    expect(resident).not.toBeNull()
+    await page.mouse.click(resident!.x, resident!.y)
+    await expect(page.getByTestId('map-selection-card')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '小夜' })).toBeVisible()
+    await expect(page.getByText('现在在主楼 · 读书')).toBeVisible()
+    await page.getByRole('button', { name: '以访客身份进入' }).click()
+    await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()
+    await expect(page.getByLabel('进入地点')).toHaveValue('主楼')
   })
 
   test('进入地点已失效:面板明确提示并回退到可选地点', async ({ page }) => {
@@ -193,10 +253,7 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
     await page.goto('/worlds/world-1')
     await canvasReady(page)
 
-    const roof = await page.evaluate(() => (window.__voxelEngine as never as {
-      worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
-    }).worldToScreen({ x: 8, y: 4, z: 11 })!)
-    await page.mouse.click(roof.x, roof.y)
+    await clickLocationObject(page, 'greenhouse', '温室')
     await expect(page.getByTestId('map-selection-card')).toBeVisible()
     await page.getByRole('button', { name: '进入此地点' }).click()
     await expect(page.getByRole('heading', { name: '进入世界' })).toBeVisible()

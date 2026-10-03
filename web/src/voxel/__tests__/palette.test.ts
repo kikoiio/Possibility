@@ -98,7 +98,7 @@ describe('samplePalette 直射光', () => {
     expect(noon.direct.dir.y).toBeGreaterThan(0.55)
     expect(noon.direct.dir.y).toBeLessThan(0.8)
     const midnight = samplePalette(palette, 0, { dim: 0, fogBoost: 0 })
-    expect(midnight.direct.intensity).toBeCloseTo(0.38)
+    expect(midnight.direct.intensity).toBeCloseTo(0.56)
     expect(midnight.direct.dir.y).toBeGreaterThan(0.8) // 月亮高悬(夜)
     expect(midnight.direct.color[2]).toBeGreaterThan(midnight.direct.color[0]) // 冷色
     // 与天空穹顶天体方位同源

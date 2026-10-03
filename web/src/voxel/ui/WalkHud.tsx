@@ -13,7 +13,7 @@ export default function WalkHud({ mode, onToggle, notice }: WalkHudProps) {
         type="button"
         onClick={onToggle}
         data-testid="voxel-mode-toggle"
-        className="absolute right-3 top-3 z-10 rounded-full bg-zinc-900/70 px-3 py-1.5 text-xs text-zinc-100 shadow ring-1 ring-zinc-700 hover:bg-zinc-800"
+        className="absolute right-3 top-28 z-10 rounded-full bg-zinc-900/70 px-3 py-1.5 text-xs text-zinc-100 shadow ring-1 ring-zinc-700 hover:bg-zinc-800"
       >
         {mode === 'orbit' ? '🚶 进入第一视角' : '🗺 返回上帝视角'}
       </button>

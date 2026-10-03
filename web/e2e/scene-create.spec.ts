@@ -60,8 +60,9 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
 })
 
-test('authenticated voxel-spaces world supports independent location interaction', async ({ page }) => {
+test('authenticated voxel-spaces world supports resident and location interaction', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/persons', route => route.fulfill({ json: { persons: [{ id: 'person-1', name: 'Ada', createdAt: '2026-01-01T00:00:00Z' }] } }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: world.name }] } }))
   await page.route('**/api/worlds/world-1**', route => {
     const url = route.request().url()
@@ -93,6 +94,39 @@ test('authenticated voxel-spaces world supports independent location interaction
   }).toPass({ timeout: 15000 })
   await expect(page.getByText('此刻在这里：暂时没有居民')).toBeVisible()
   await expect(page.getByRole('button', { name: '进入此地点' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭信息' }).click()
+
+  // S0 G2:登录保存地图也能点选居民；关闭面板后继续点选地点。
+  await expect(async () => {
+    const at = await page.evaluate(() => {
+      const probe = window.__voxelEngine as never as {
+        residents: { snapshot(): { personId: string; position: { x: number; y: number; z: number } }[] } | null
+        worldToScreen(coord: { x: number; y: number; z: number }): { x: number; y: number } | null
+      } | undefined
+      const resident = probe?.residents?.snapshot().find(item => item.personId === 'person-1')
+      if (!probe || !resident) return null
+      return probe.worldToScreen({
+        x: Math.floor(resident.position.x),
+        y: Math.floor(resident.position.y) + 1,
+        z: Math.floor(resident.position.z),
+      })
+    })
+    expect(at).not.toBeNull()
+    await page.mouse.click(at!.x, at!.y)
+    await expect(page.getByTestId('map-selection-card').getByRole('heading', { name: 'Ada' })).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 15000 })
+  await expect(page.getByText('现在在主楼 · 正在安顿')).toBeVisible()
+  await expect(page.getByRole('button', { name: '以访客身份进入' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭信息' }).click()
+
+  await expect(async () => {
+    const location = await page.evaluate(() => (window.__voxelEngine as never as {
+      worldToScreen(coord: { x: number; y: number; z: number }): { x: number; y: number } | null
+    } | undefined)?.worldToScreen({ x: 8, y: 4, z: 11 }))
+    expect(location).not.toBeNull()
+    await page.mouse.click(location!.x, location!.y)
+    await expect(page.getByRole('heading', { name: '温室' })).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 15000 })
 })
 
 test('unavailable scene shows the world page retry state', async ({ page }) => {

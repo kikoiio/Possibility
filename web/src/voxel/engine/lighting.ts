@@ -21,6 +21,7 @@ export class LightingEngine {
   private sky: Uint8Array
   private block: Uint8Array
   private skyLevel = 15
+  private skyLightEnabled = true
   /**
    * 衰减缓存：0=不透明（光不穿过），1=空气，2=半透明。
    * 每次 computeAll/computeSection 前按区域构建一次，BFS 内层零函数调用（N2）。
@@ -43,6 +44,17 @@ export class LightingEngine {
   setSkyLevel(level: number): void {
     this.skyLevel = Math.max(0, Math.min(15, Math.round(level)))
     this.computeAll()
+  }
+
+  /** 封闭室内关闭外景天空光；方块灯火通道仍照常计算。 */
+  setSkyLightEnabled(enabled: boolean): void {
+    if (this.skyLightEnabled === enabled) return
+    this.skyLightEnabled = enabled
+    this.computeAll()
+  }
+
+  isSkyLightEnabled(): boolean {
+    return this.skyLightEnabled
   }
 
   private index(x: number, y: number, z: number): number {
@@ -92,6 +104,14 @@ export class LightingEngine {
   computeAll(): void {
     this.sky.fill(0)
     this.block.fill(0)
+    if (!this.skyLightEnabled) {
+      const { width, height, depth } = this.world.doc.size
+      const region: Region = { x0: 0, y0: 0, z0: 0, x1: width - 1, y1: height - 1, z1: depth - 1 }
+      this.buildAttenCache(region)
+      this.collectBlockSources(region)
+      this.floodChannel(this.block, region)
+      return
+    }
     const { width, height, depth } = this.world.doc.size
     const region: Region = { x0: 0, y0: 0, z0: 0, x1: width - 1, y1: height - 1, z1: depth - 1 }
     this.buildAttenCache(region)

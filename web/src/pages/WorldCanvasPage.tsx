@@ -487,17 +487,17 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="split-view">
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
-          <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-left">
+          <section className="flex min-h-0 flex-col gap-2" data-testid="split-left">
             {renderSplitSideHeader('left', snapshot)}
             <div className="min-h-0 flex-1">
-              <VoxelViewport document={voxelDoc!} overlay={overlay} events={snapshot!.voxelEvents ?? null} personNames={personNames} timeZone={snapshot!.world.timeZone} instanceId="left" probePrimary
+              <VoxelViewport document={voxelDoc!} overlay={overlay} events={snapshot!.voxelEvents ?? null} personNames={personNames} timeZone={snapshot!.world.timeZone} instanceId="left" probePrimary fitContainer
                 cameraPose={linkActive ? sharedPose : undefined}
                 onCameraChange={setSharedPose}
                 onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, left: m === 'walk' }))} />
             </div>
             {renderSplitEvents('left', snapshot)}
           </section>
-          <section className="flex min-h-[430px] flex-col gap-2" data-testid="split-right">
+          <section className="flex min-h-0 flex-col gap-2" data-testid="split-right">
             {renderSplitSideHeader('right', otherSnapshot)}
             <div className="flex items-center gap-2 text-xs">
               <select aria-label="右侧时间线" data-testid="split-right-selector" value={otherSnapshot?.currentTimelineId ?? rightTimelineId ?? ''}
@@ -513,11 +513,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
             </div>
             <div className="min-h-0 flex-1">
               {otherSnapshot
-                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} events={otherSnapshot.voxelEvents ?? null} personNames={personNames} timeZone={otherSnapshot.world.timeZone} instanceId="right"
+                ? <VoxelViewport document={voxelDoc!} overlay={otherOverlay} events={otherSnapshot.voxelEvents ?? null} personNames={personNames} timeZone={otherSnapshot.world.timeZone} instanceId="right" fitContainer
                     cameraPose={linkActive ? sharedPose : undefined}
                     onCameraChange={setSharedPose}
                     onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, right: m === 'walk' }))} />
-                : <div className="grid h-full min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+                : <div className="grid h-full min-h-0 place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
             </div>
             {renderSplitEvents('right', otherSnapshot)}
           </section>
@@ -582,7 +582,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     </div>
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
-  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} editable={canEditScene} />
+  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} editable={canEditScene} planEdits={planEditsViaApi} />
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
     const rebuildHref = personId
@@ -631,7 +631,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     </div>
   </main>
 
-  return <main className="flex min-h-screen flex-col gap-3 bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
+  return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
     {revisionList && <SceneHistoryPanel revisions={revisionList} currentVersion={revisionCurrent} busy={busy} onRestore={version => void restoreVersion(version)} onClose={() => setRevisionList(null)} />}
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#849183]">{snapshot.world.name}{snapshot.world.isDemo ? ' · 演示世界' : ''}</p><h1 className="font-story text-xl text-[#2d4435]">{mode === 'possibility' ? '另一种可能' : '这里正在生活'}</h1></div><div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => {
@@ -709,9 +709,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         <InjectBox onInject={handleInject} />
       </div>
     )}
-    <div className="flex min-h-[500px] flex-1 gap-3"><div className="relative flex min-w-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 gap-3"><div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="owner-map-stage">
       {mode === 'possibility' && !isSmall ? renderSplitView() : mode === 'possibility' ? renderSmallSplit()
-        : <div className="flex min-h-[480px] flex-1 flex-col [&>div]:min-h-[480px]"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable planEdits={planEditsViaApi} onSave={saveVoxel}
+        : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable planEdits={planEditsViaApi} onSave={saveVoxel}
             onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
             onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
       {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
-import { deserialize, serialize, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { deserialize, serialize, type EditOperation, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import type { ForkResult, ForkScenario, PersonListItem, WorldSnapshot } from '../../api/types'
 import { apiFetch, clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
@@ -11,13 +11,14 @@ import WorldTimeZoneSetting from '../world/WorldTimeZoneSetting'
 import { forkFieldsError, timelineDisplayName, timelineOptionLabel } from '../../world/timeline-display'
 import { buildSceneOverlay } from '../../scene/life/overlay'
 import VoxelViewport from '../../voxel/VoxelViewport'
+import type { VoxelEngine } from '../../voxel/engine'
 import MapSelectionCard from './MapSelectionCard'
 import { formatWorldTime } from '../../lib/world-time'
 import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../../lib/world-disambiguation'
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
 
 /** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
-export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, editable = false }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; editable?: boolean }) {
+export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, editable = false, planEdits }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; editable?: boolean; planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditOperation[]> }) {
   const navigate = useNavigate()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
   const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
@@ -215,8 +216,10 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     {voxelDoc
       ? <VoxelViewport
           document={editDoc ?? voxelDoc}
+          spaceId={spaceId}
           overlay={currentOverlay}
           editable={editable}
+          planEdits={planEdits}
           timeZone={liveSnapshot.world.timeZone}
           onSave={saveSpace}
           events={liveSnapshot.voxelEvents ?? null}
@@ -239,7 +242,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
           <option value="__new__" className="text-[#263a31]">创建世界</option>
         </select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg">{!liveSnapshot.world.isDemo && <div className="p-2"><WorldTimeZoneSetting worldId={liveSnapshot.world.id} timeZone={liveSnapshot.world.timeZone} onSaved={timeZone => setLiveSnapshot(current => ({ ...current, world: { ...current.world, timeZone }, timelines: current.timelines.map(t => ({ ...t, timeZone })) }))} /></div>}<button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
       </header>
-      <div className="pointer-events-auto absolute left-3 top-24 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5">
+      <div className="pointer-events-auto absolute left-3 top-32 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5 sm:top-24">
         {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (
           <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-white/70 bg-[#f8faf6]/92 px-4 py-2 text-xs font-medium text-[#385142] shadow-md backdrop-blur-md">{space.name} →</button>
         ))}
@@ -248,7 +251,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
         {switchTarget && actionError && <p role="status" className="w-full rounded-lg bg-white/95 p-2 text-xs text-red-700">{actionError}<button onClick={() => void switchTimeline(switchTarget)} className="ml-1 underline">重试切换</button></p>}
         {liveSnapshot.timelines.length > 1 && <p className="w-full rounded-lg bg-white/85 p-2 text-[10px] text-[#5a6e61]">当前为{timelineDisplayName(liveSnapshot.timelines.find(t => t.id === liveSnapshot.currentTimelineId) ?? { parentTimelineId: null })}；时间和居民数量属于各自时间线，切换后可能变化，未必处于同一时刻。</p>}
       </div>
-      <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 rounded-full border border-white/40 bg-[#253b31]/60 p-1 text-[11px] text-white shadow-md backdrop-blur-md">
+      <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-20 flex -translate-x-1/2 rounded-full border border-white/40 bg-[#253b31]/60 p-1 text-[11px] text-white shadow-md backdrop-blur-md sm:top-4">
         {([['observe', '观察'], ['life', '在场'], ['possibility', '可能']] as const).map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => setMapMode(value)} className={`rounded-full px-3 py-1.5 ${mode === value ? 'bg-white text-[#30483a]' : 'text-white/80'}`}>{label}</button>)}
       </nav>
       {(voxelObject || locationName || person) && <MapSelectionCard
@@ -260,7 +263,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
         onClose={() => setSelected(null)}
         onEnter={name => setSceneLocation(name)}
       />}
-      {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
+      {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
         <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">改变一个条件</p><h2 className="mt-1 font-story text-lg">如果匿名信更早被发现</h2><p className="mt-2 text-xs leading-relaxed text-[#68796d]">共同过去保持不变，从当前世界时刻创建另一条真实时间线。对照只说明两个宇宙记录到的差异。</p>
         {!forkId && !forkConfirmOpen && <button disabled={busy} onClick={() => { setActionError(''); setForkDraft(current => ({ ...current, startTime: liveSnapshot.simNow })); setForkConfirmOpen(true) }} className="mt-4 w-full rounded-full bg-[#315641] px-4 py-2.5 text-xs text-white disabled:opacity-60">创建并对照</button>}
         {!forkId && forkConfirmOpen && <div className="mt-3 max-h-[60vh] overflow-y-auto" role="dialog" aria-label="确认平行宇宙"><ScenarioCard scenario={forkDraft} timeZone={liveSnapshot.world.timeZone} onChange={setForkDraft} /><div className="mt-3 flex gap-2"><button disabled={busy} onClick={() => { setForkConfirmOpen(false); setActionError('') }} className="flex-1 rounded-lg border px-3 py-2 text-xs">取消</button><button data-testid="guest-fork-confirm" disabled={busy} onClick={() => void createPossibility()} className="flex-1 rounded-lg bg-[#315641] px-3 py-2 text-xs text-white disabled:opacity-60">{busy ? '正在建立平行宇宙…' : '确认创建'}</button></div></div>}

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { BlockRegistry, VoxelCoord } from '@possibility/voxel-contract'
 import type { CameraStrategy } from './camera'
 import { isStandable } from './pathfinding'
+import { isSpawnClearOfObjects } from '../interior-closure'
 import { PlayerBody, PLAYER, type MoveInput } from './player'
 import type { WorldModel } from './world-model'
 
@@ -23,7 +24,8 @@ export function findSpawnNear(
   // 一柱内自底向上找最低可站立格(「向地面投影」:落在地面层而非屋顶)
   const columnSpawn = (x: number, z: number): VoxelCoord | null => {
     for (let y = 1; y <= height - 2; y++) {
-      if (isStandable(world, registry, { x, y, z })) return { x, y, z }
+      const at = { x, y, z }
+      if (isStandable(world, registry, at) && isSpawnClearOfObjects(world.doc, at)) return at
     }
     return null
   }

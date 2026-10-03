@@ -120,6 +120,26 @@ describe('全局日预算(F5)', () => {
     }
   })
 
+  it('有限预算下三种 Key 来源统一记入 finite_global 并共享日上限', async () => {
+    const fixture = await seedOwner(3)
+    const { reserveUserCall } = await import('./budget')
+    const sources = ['personal_global', 'world_override', 'platform_fallback'] as const
+    for (const apiKeySource of sources) {
+      const receiptId = await reserveUserCall(fixture.db, 'u1', CFG, 'connection_test', { apiKeySource })
+      expect(receiptId).toEqual(expect.any(String))
+    }
+    expect(await reserveUserCall(fixture.db, 'u1', CFG, 'connection_test', {
+      apiKeySource: 'platform_fallback',
+    })).toBeNull()
+    const rows = await fixture.db.select({ apiKeySource: llmCallLog.apiKeySource, budgetBucket: llmCallLog.budgetBucket })
+      .from(llmCallLog).all()
+    expect(rows).toEqual([
+      { apiKeySource: 'personal_global', budgetBucket: 'finite_global' },
+      { apiKeySource: 'world_override', budgetBucket: 'finite_global' },
+      { apiKeySource: 'platform_fallback', budgetBucket: 'finite_global' },
+    ])
+  })
+
   it('不限时已验证个人 Key 豁免;世界 Key、平台 Key 与旧来源共用 fallback 400 桶', async () => {
     const fixture = await seedOwner(null)
     const personal = { timelineId: 't1', personId: null, purpose: 'chat' as const,

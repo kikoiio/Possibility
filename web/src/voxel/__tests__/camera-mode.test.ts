@@ -20,6 +20,14 @@ describe('findSpawnNear 落点搜索(T10)', () => {
     expect(spawn).toEqual(at(10, 1, 10))
   })
 
+  it('避开不参与体素碰撞的家具对象落点', () => {
+    const world = flatWorld()
+    world.doc.objects.push({ id: 'table', objectType: 'bench', anchor: at(10, 1, 10), rotation: 0 })
+    const spawn = findSpawnNear(world, registry, at(10, 3, 10))
+    expect(spawn).not.toBeNull()
+    expect(Math.max(Math.abs(spawn!.x - 10), Math.abs(spawn!.z - 10))).toBeGreaterThan(2)
+  })
+
   it('注视点在全实心柱:螺旋外扩找到邻近空地', () => {
     const world = flatWorld()
     for (let y = 1; y <= 30; y++) setBlockMut(world.doc, at(10, y, 10), 'stone') // 顶到天的实心柱

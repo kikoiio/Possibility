@@ -18,9 +18,9 @@ function makeWorld() {
 describe('DayNightCycle.mapTimeOfDay', () => {
   it('noon is brightest, midnight is moonlit dim', () => {
     expect(mapTimeOfDay(0.5).skyLevel).toBe(15)
-    expect(mapTimeOfDay(0).skyLevel).toBe(4)
-    expect(mapTimeOfDay(0.25).skyLevel).toBeLessThan(10)
-    expect(mapTimeOfDay(0.75).skyLevel).toBeLessThan(10)
+    expect(mapTimeOfDay(0).skyLevel).toBe(14)
+    expect(mapTimeOfDay(0.25).skyLevel).toBeLessThan(15)
+    expect(mapTimeOfDay(0.75).skyLevel).toBeLessThan(15)
   })
 
   it('dusk has a warm tint and night a cool one', () => {

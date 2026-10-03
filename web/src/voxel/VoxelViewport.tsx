@@ -15,6 +15,8 @@ import { useCanvasClick } from './ui/use-canvas-click'
 
 export interface VoxelViewportProps {
   document: VoxelDocument
+  /** 空间包中的稳定空间 ID；用于解析室内/外景渲染语义 */
+  spaceId?: string
   /** 生活覆盖层（时间 / 天气 / 居民活动），变化时驱动引擎 */
   overlay?: SceneLifeOverlay | null
   /** S4 世界模拟:生产路径事件源(蒸馏投影);undefined = 文档事件驱动(dev fixture/存档) */
@@ -41,6 +43,8 @@ export interface VoxelViewportProps {
   onCameraChange?: (pose: OrbitPose) => void
   /** 视角模式切换回调(分屏联动需要在 walk 时失效) */
   onCameraModeChange?: (mode: 'orbit' | 'walk') => void
+  /** 受限高度容器（如并排分屏）填满父容器，不强制最小画布高度 */
+  fitContainer?: boolean
 }
 
 interface LoadProgress { percent: number; label: string }
@@ -61,12 +65,15 @@ function poseNearlyEqual(a: OrbitPose, b: OrbitPose): boolean {
  * 引擎装配 + N4 分阶段加载进度 + 覆盖层/交互/编辑的桥接。
  */
 export default function VoxelViewport({
-  document: doc, overlay, events, editable = false, planEdits, onSave,
+  document: doc, spaceId, overlay, events, editable = false, planEdits, onSave,
   onEnterSpace, onSelectPerson, onSelectLocation, personNames, timeZone,
-  instanceId = 'main', probePrimary, cameraPose, onCameraChange, onCameraModeChange,
+  instanceId = 'main', probePrimary, cameraPose, onCameraChange, onCameraModeChange, fitContainer = false,
 }: VoxelViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<VoxelEngine | null>(null)
+  const loadedEngineRef = useRef<VoxelEngine | null>(null)
+  const eventsRef = useRef(events)
+  eventsRef.current = events
   const driverRef = useRef<OverlayDriver | null>(null)
   const interactRef = useRef<(x: number, y: number) => boolean>(() => false)
   const callbacksRef = useRef({ onEnterSpace, onSelectPerson, onSelectLocation })
@@ -91,6 +98,8 @@ export default function VoxelViewport({
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    setReady(false)
+    loadedEngineRef.current = null
     const engine = new VoxelEngine()
     engineRef.current = engine
     // S3a:滚轮/pinch 驱动的落地/升空不经过 toggle——引擎补间完成后主动推送,
@@ -115,9 +124,19 @@ export default function VoxelViewport({
         if (cancelled) return
         setProgress({ percent: 60, label: '正在搭建世界、烘焙光照…' })
         await new Promise((resolve) => requestAnimationFrame(resolve))
-        engine.loadDocument(doc)
+        engine.loadDocument(doc, spaceId)
         if (cancelled) return
+        // The world snapshot may arrive before or during renderer setup. Apply its event
+        // projection after loadDocument (which resets document-owned events) and before
+        // the first frame, so a remount cannot send events to a half-built engine.
+        const initialEvents = eventsRef.current
+        if (initialEvents) {
+          engine.setEvents(initialEvents)
+          const key = initialEvents.map(e => `${e.id}:${e.timeWindow.end}:${e.label}`).join('|')
+          lastEventsKeyRef.current = { engine, key }
+        }
         engine.start()
+        loadedEngineRef.current = engine
 
         driverRef.current = new OverlayDriver({
           engine,
@@ -159,6 +178,7 @@ export default function VoxelViewport({
     })()
     return () => {
       cancelled = true
+      if (loadedEngineRef.current === engine) loadedEngineRef.current = null
       driverRef.current = null
       interactRef.current = () => false
       engine.dispose()
@@ -166,7 +186,7 @@ export default function VoxelViewport({
       unregisterEngineProbe(probes, instanceId, engine)
     }
     // editable/onSave/gate 装配一次；doc 变化时整体重挂载
-  }, [doc, editable, gate, onSave, instanceId, primary])
+  }, [doc, spaceId, editable, gate, onSave, instanceId, primary])
 
   // 生活覆盖层 → 引擎（时间 / 天气 / 居民）
   useEffect(() => {
@@ -175,14 +195,16 @@ export default function VoxelViewport({
 
   // S4 世界模拟:生产路径事件下发(bootstrap/SSE 刷新 → 无 reload 更新披露层)
   // 快照刷新频繁(每拍),事件集未变时跳过披露层重建;文档重载(引擎重建)后强制重放
-  const lastEventsKeyRef = useRef<string | null>(null)
-  useEffect(() => { lastEventsKeyRef.current = null }, [doc])
+  const lastEventsKeyRef = useRef<{ engine: object; key: string } | null>(null)
   useEffect(() => {
-    if (!ready || !events) return
+    const engine = engineRef.current
+    if (!ready || !events || !engine || loadedEngineRef.current !== engine) return
     const key = events.map(e => `${e.id}:${e.timeWindow.end}:${e.label}`).join('|')
-    if (key === lastEventsKeyRef.current) return
-    lastEventsKeyRef.current = key
-    engineRef.current?.setEvents(events)
+    // Include engine identity: a StrictMode/doc/controller remount can replace the engine
+    // without changing the event payload, and the replacement still needs the initial set.
+    if (lastEventsKeyRef.current?.engine === engine && key === lastEventsKeyRef.current.key) return
+    engine.setEvents(events)
+    lastEventsKeyRef.current = { engine, key }
   }, [ready, events])
 
   // 受控相机(S1 分屏联动):外部 pose 变化 → 写入引擎(回显由近似相等抑制)
@@ -262,7 +284,7 @@ export default function VoxelViewport({
   }, [modeNotice])
 
   return (
-    <div className="relative h-full min-h-[430px] w-full overflow-hidden rounded-2xl bg-zinc-950" data-testid="voxel-viewport" data-voxel-instance={instanceId}>
+    <div className={`relative h-full ${fitContainer ? 'min-h-0' : 'min-h-[430px]'} w-full overflow-hidden rounded-2xl bg-zinc-950`} data-testid="voxel-viewport" data-voxel-instance={instanceId}>
       {/* absolute 撑满 relative 容器：h-full 在仅靠 min-height 撑高的容器里会塌成 0，引擎按画布自身尺寸渲染 */}
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" data-testid="voxel-viewport-canvas" />
       {progress && !error && (

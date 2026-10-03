@@ -76,6 +76,12 @@ export const mistManorObjectTemplates: ObjectTemplate[] = [
   { objectType: 'tree', name: '山樱', cells: tree() },
   { objectType: 'fence-run', name: '木栅栏段', cells: [cell(0, 0, 0, 'wood-fence'), cell(1, 0, 0, 'wood-fence'), cell(2, 0, 0, 'wood-fence')] },
   { objectType: 'bench', name: '木长凳', cells: [cell(0, 0, 0, 'wood-plank'), cell(1, 0, 0, 'wood-plank')] },
+  // 书架保留开放格，两层木板由原木侧柱支撑，与低矮长凳有明显高度和轮廓差异。
+  { objectType: 'bookshelf', name: '木书架', cells: [
+    cell(0, 0, 0, 'wood-plank'), cell(1, 0, 0, 'wood-plank'), cell(2, 0, 0, 'wood-plank'),
+    cell(0, 1, 0, 'wood-log'), cell(2, 1, 0, 'wood-log'),
+    cell(0, 2, 0, 'wood-plank'), cell(1, 2, 0, 'wood-plank'), cell(2, 2, 0, 'wood-plank'),
+  ] },
   { objectType: 'well', name: '水井', cells: [...box(2, 1, 2, 'stone'), cell(0, 1, 0, 'wood-log'), cell(1, 1, 0, 'wood-log'), cell(0, 1, 1, 'roof-tile'), cell(1, 1, 1, 'roof-tile')] },
   { objectType: 'flower-bed', name: '花坛', cells: [cell(0, 0, 0, 'flower'), cell(1, 0, 0, 'flower'), cell(0, 0, 1, 'flower'), cell(1, 0, 1, 'flower')] },
 ]

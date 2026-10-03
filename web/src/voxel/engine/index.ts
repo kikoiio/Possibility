@@ -33,6 +33,8 @@ import { Z_AFTER_LIFT, ZoomAxis } from './zoom-axis'
 import { ZoomInput } from './zoom-input'
 import { ZoomLod, type TierParams, type ZoomTier } from './zoom-lod'
 import type { VoxelCoord } from '@possibility/voxel-contract'
+import { inspectInteriorClosure, type InteriorClosureReport } from '../interior-closure'
+import { resolveSpaceContext, type VoxelSpaceContext } from '../space-context'
 
 function rgbToHex(c: RGB): number {
   return (Math.round(Math.min(1, c[0]) * 255) << 16)
@@ -46,6 +48,17 @@ const mixRGB = (a: RGB, b: RGB, t: number): RGB => [
 ]
 
 export interface FrameUpdatable { update(dt: number): void }
+
+export interface VoxelSceneProbe {
+  spaceContext: VoxelSpaceContext
+  cameraMode: 'orbit' | 'walk'
+  walkPosition: { x: number; y: number; z: number } | null
+  worldSize: { width: number; height: number; depth: number } | null
+  skyVisible: boolean
+  skyExposedAtPlayer: boolean | null
+  visibleObjectIds: string[]
+  viewport: { width: number; height: number }
+}
 
 /**
  * VoxelEngine 门面：文档进、画面出、编辑事件出。
@@ -75,6 +88,8 @@ export class VoxelEngine {
   private pendingSkyLevel = 15
   private currentTimeOfDay = 0.5
   private weatherMod = { fogBoost: 0, dim: 0 }
+  private spaceContext: VoxelSpaceContext = resolveSpaceContext()
+  private interiorReport: InteriorClosureReport | null = null
   /** 入水强度 0~1（平滑后；e2e 探针读此值） */
   private underwaterStrengthValue = 0
   private tmpDir = new THREE.Vector3()
@@ -171,10 +186,14 @@ export class VoxelEngine {
     try { this.assetManifest = await this.assets.loadManifest() } catch { this.assetManifest = null }
   }
 
-  loadDocument(doc: VoxelDocument): void {
+  loadDocument(doc: VoxelDocument, spaceId?: string): void {
     if (!this.registry) throw new Error('loadAssets must be called before loadDocument')
     // S2b:旧存档摆放无 id,加载边界幂等补齐(ops 按 id 寻址的前置)
     doc = ensureAssetPlacementIds(doc)
+    this.setSpaceContext(resolveSpaceContext(doc, spaceId ?? doc.id))
+    this.interiorReport = this.spaceContext.kind === 'interior'
+      ? inspectInteriorClosure(doc, this.spaceContext, { registry: this.registry })
+      : null
     // S3a:文档重载——补间直切回 orbit 稳定态,刻度随后按 fit 构图重置(N4)
     const prevMode = this.cameraRig.mode
     this.continuum.cancel()
@@ -199,11 +218,27 @@ export class VoxelEngine {
     this.world = new WorldModel(doc)
     if (this.assetManifest) this.assets.sync(doc.assetPlacements ?? [], this.assetManifest)
     this.lighting = new LightingEngine(this.world, this.registry)
+    this.lighting.setSkyLightEnabled(this.spaceContext.skyLightEnabled)
     this.lighting.computeAll()
     this.mesher = new Mesher(this.world, this.registry, this.atlas, this.lighting)
     this.renderer.removeSections([...this.allSectionKeys()])
     this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv, this.aoParams))
     this.cameraRig.fitToWorld(doc.size)
+    if (doc.id === 'mist-manor-exterior' && this.spaceContext.kind === 'exterior') {
+      const pose = this.cameraRig.orbitStrategy.state
+      this.cameraRig.orbitStrategy.setPose({
+        theta: pose.theta,
+        // Frame the main house and greenhouse together; the full-world fit
+        // leaves the landmarks and path too small to read on desktop.
+        phi: Math.min(pose.phi, 0.9),
+        distance: pose.distance * 0.48,
+        target: {
+          x: doc.size.width * 0.65,
+          y: Math.min(doc.size.height * 0.2, 5),
+          z: doc.size.depth * 0.25,
+        },
+      })
+    }
     // S3a:默认构图映射到刻度(N4:落在刻度中段偏下,不触地)
     this.zoomAxis.reset(this.zoomAxis.zoomFromDistance(this.cameraRig.state.distance))
     // 初始 LOD 档立即落定并下发(否则首个跨档前参数不生效)
@@ -268,6 +303,62 @@ export class VoxelEngine {
     }
   }
 
+  setSpaceContext(context: VoxelSpaceContext): void {
+    this.spaceContext = {
+      kind: context.kind,
+      skyVisible: context.skyVisible,
+      skyLightEnabled: context.skyLightEnabled,
+      fogMode: context.fogMode,
+    }
+    this.renderer.setSkyVisible(context.skyVisible)
+    this.lighting?.setSkyLightEnabled(context.skyLightEnabled)
+    this.applyPalette()
+  }
+
+  getSpaceContext(): VoxelSpaceContext {
+    return { ...this.spaceContext }
+  }
+
+  inspectInterior(): InteriorClosureReport | null {
+    return this.interiorReport
+  }
+
+  probeScene(): VoxelSceneProbe {
+    const walkPosition = this.cameraRig.mode === 'walk' ? this.cameraRig.state.target : null
+    const visibleObjectIds = this.world?.doc.objects.filter((object) => {
+      const projected = new THREE.Vector3(
+        object.anchor.x + 0.5,
+        object.anchor.y + 0.5,
+        object.anchor.z + 0.5,
+      ).project(this.cameraRig.camera)
+      return projected.z >= -1 && projected.z <= 1
+        && projected.x >= -1 && projected.x <= 1
+        && projected.y >= -1 && projected.y <= 1
+    }).map((object) => object.id) ?? []
+    let skyExposedAtPlayer: boolean | null = null
+    if (walkPosition && this.world) {
+      const x = Math.floor(walkPosition.x)
+      const z = Math.floor(walkPosition.z)
+      skyExposedAtPlayer = true
+      for (let y = Math.floor(walkPosition.y) + 1; y < this.world.doc.size.height; y++) {
+        if (this.registry && this.registry.get(this.world.getBlock({ x, y, z }))?.solid) {
+          skyExposedAtPlayer = false
+          break
+        }
+      }
+    }
+    return {
+      spaceContext: this.getSpaceContext(),
+      cameraMode: this.cameraMode,
+      walkPosition: walkPosition ? { x: walkPosition.x, y: walkPosition.y, z: walkPosition.z } : null,
+      worldSize: this.world ? { ...this.world.doc.size } : null,
+      skyVisible: this.renderer.skyVisible,
+      skyExposedAtPlayer,
+      visibleObjectIds,
+      viewport: this.renderer.size,
+    }
+  }
+
   setBaseEnvironment(_env: { skyColor: THREE.ColorRepresentation; fogColor: THREE.ColorRepresentation }): void {
     // 昼夜 sink 协议保留；天色/雾色现由 applyPalette 每帧从色彩中枢采样
     this.applyPalette()
@@ -298,7 +389,11 @@ export class VoxelEngine {
       )
     } else {
       // S3a LOD:雾密度按档缩放(全貌略增雾感,大气透视)
-      const env: EnvironmentState = { fogColor: rgbToHex(resolved.fog.color), fogDensity: resolved.fog.density * this.tierFogScale }
+      const env: EnvironmentState = {
+        // 室内隐藏天空穹顶时也要替换外景雾色背景，避免门窗和边界缺口显出紫色夜空。
+        fogColor: this.spaceContext.fogMode === 'indoor' ? 0x111714 : rgbToHex(resolved.fog.color),
+        fogDensity: resolved.fog.density * this.tierFogScale,
+      }
       this.renderer.setEnvironment(env)
     }
 
@@ -308,7 +403,13 @@ export class VoxelEngine {
       mapSize: Math.max(256, Math.round(this.palette.shadow.mapSize * this.zoomLod.params.shadowMapScale)),
       softwareMapSize: Math.max(256, Math.round(this.palette.shadow.softwareMapSize * this.zoomLod.params.shadowMapScale)),
     }
-    this.renderer.setDirectLight(resolved.direct, lodShadow, this.palette.ambientLift)
+    this.renderer.setDirectLight(
+      resolved.direct,
+      lodShadow,
+      this.palette.ambientLift,
+      this.spaceContext.kind === 'interior' ? 1.3 : 1,
+    )
+    this.renderer.setSkyVisible(this.spaceContext.skyVisible)
     const time = this.renderer.shaderUniforms.uTime.value
     const motion = this.motion.animationTimeScale()
     this.renderer.sky?.update(resolved.sky, resolved.fog.color, time, motion)
@@ -343,7 +444,7 @@ export class VoxelEngine {
       if (this.cameraRig.mode === 'walk' || this.continuum.state === 'landing') return { ok: true }
       if (!this.world || !this.registry) return { ok: false, reason: '世界尚未加载,无法进入第一视角' }
       const target = this.cameraRig.state.target
-      const spawn = findSpawnNear(this.world, this.registry, {
+      const spawn = this.findWalkSpawn({
         x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z),
       })
       if (!spawn) return { ok: false, reason: '注视点附近没有可站立的位置' }
@@ -452,7 +553,7 @@ export class VoxelEngine {
       return
     }
     const target = this.cameraRig.state.target
-    const spawn = findSpawnNear(this.world, this.registry, {
+    const spawn = this.findWalkSpawn({
       x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z),
     })
     const pose = this.cameraRig.getOrbitPose()
@@ -461,15 +562,30 @@ export class VoxelEngine {
       return
     }
     // walk 视线 yaw = orbit theta(相机位于 theta 方向望向注视点,视线同向)
+    const interiorCenterYaw = this.spaceContext.kind === 'interior'
+      ? Math.atan2(
+        -(this.world.doc.size.width / 2 - (spawn.x + 0.5)),
+        -(this.world.doc.size.depth / 2 - (spawn.z + 0.5)),
+      )
+      : pose.theta
     const walkPose: WalkPose = {
       eye: { x: spawn.x + 0.5, y: spawn.y + PLAYER.eye, z: spawn.z + 0.5 },
-      yaw: pose.theta,
+      yaw: interiorCenterYaw,
       pitch: 0,
     }
-    this.pendingLanding = { spawn, yaw: pose.theta }
+    this.pendingLanding = { spawn, yaw: interiorCenterYaw }
     this.zoomAxis.freeze() // 补间期间输入忽略(F2)
     this.continuum.beginLanding(pose, walkPose)
     this.cameraRig.setTransition(this.continuum.transitionCamera)
+  }
+
+  private findWalkSpawn(target: VoxelCoord): VoxelCoord | null {
+    if (!this.world || !this.registry) return null
+    if (this.spaceContext.kind === 'interior') {
+      const spawn = this.interiorReport?.walkableSpawn
+      return spawn ? { ...spawn } : null
+    }
+    return findSpawnNear(this.world, this.registry, target)
   }
 
   private finishLanding(): void {
@@ -614,6 +730,7 @@ export class VoxelEngine {
 
   rebakeAll(): void {
     if (!this.mesher || !this.lighting) return
+    this.lighting.setSkyLightEnabled(this.spaceContext.skyLightEnabled)
     this.lighting.setSkyLevel(this.pendingSkyLevel) // 内部已 computeAll
     this.renderer.updateSections(this.mesher.bakeAll(this.bakeEnv, this.aoParams))
   }

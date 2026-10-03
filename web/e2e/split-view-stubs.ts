@@ -88,6 +88,8 @@ export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } =
       localStorage.setItem('possibility:flag:voxel', '1')
     }),
     page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } })),
+    // 列表页和 owner 地图会并行读取人物；漏掉此 stub 会打到本机 API 401 并清除测试 token。
+    page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [] } })),
     page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' })),
     page.route('**/api/worlds/world-1/map/bootstrap**', (route) => {
       const id = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'

@@ -142,6 +142,8 @@ function stubS4Apis(page: Page, state: { streamPhase: number }) {
       localStorage.setItem('possibility:flag:voxel', '1')
     }),
     page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } })),
+    // owner 地图初始化时还会读取人物列表；保持 fixture 完全离线，避免 401 清除 token。
+    page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [{ id: 'person-1', name: '小夜', createdAt: NOW }] } })),
     page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({
       status: 200, contentType: 'text/event-stream',
       body: state.streamPhase === 0 ? 'event: ping\ndata: {}\n\n' : syncFrame,

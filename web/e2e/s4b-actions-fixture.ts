@@ -18,6 +18,7 @@ async function fixture(page: Page, options: Options = {}) {
     currentTimelineId: 'timeline-main', simNow: '2026-09-19T12:00:00.000Z', stateVersion: version, worldModelVersion: 1,
     evidenceStatus: 'structured', evidence: { level: readOnly ? 'incomplete' : 'complete', reasonCodes: [] }, currentFacts: [], locationBoard: [], events: [],
   })
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.addInitScript(() => { localStorage.setItem('possibility_token', 'e2e-token'); localStorage.setItem('possibility:flag:voxel', '1') })
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '行动世界' }] } }))
   await page.route('**/api/worlds/world-1?**', route => {

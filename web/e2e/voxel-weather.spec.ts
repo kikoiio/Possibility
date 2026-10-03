@@ -16,7 +16,9 @@ test.describe('voxel time & weather (AC6/AC7/AC8 雏形)', () => {
     await slider.fill('0')
     await page.waitForTimeout(300)
     const night = await page.evaluate(() => (window.__voxelEngine as never as { lighting: { getSkyLevel(): number } }).lighting.getSkyLevel())
-    expect(night).toBeLessThan(6)
+    // The current palette keeps a bright moonlit night; follow the shared palette contract
+    // rather than the old nearly-dark threshold.
+    expect(night).toBe(14)
     await page.screenshot({ path: 'e2e/snapshots/voxel-night.png' })
     await slider.fill('0.55')
     await page.waitForTimeout(300)

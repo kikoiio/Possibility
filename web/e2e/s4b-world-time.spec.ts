@@ -1,11 +1,17 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { comparisonFor, NOW, snapshotFor, stubSplitApis, stubTimelines, voxelDocument } from './split-view-stubs'
 
 test.use({ timezoneId: 'America/New_York' })
 const model = { identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] }
 
+async function stubExternalFont(page: Page) {
+  // The CI/browser sandbox cannot reach Google Fonts; a pending font stylesheet delays paint/effects.
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
+}
+
 for (const zone of ['Asia/Tokyo', undefined]) {
   test(`same world clock on home, list, person, canvas and comparison (${zone ?? 'legacy UTC'})`, async ({ page }) => {
+    await stubExternalFont(page)
     await stubSplitApis(page)
     const time = zone ? '2026-09-19 21:00 (Asia/Tokyo)' : '2026-09-19 12:00 (UTC)'
     const timelines = stubTimelines.map(t => ({ ...t, timeZone: zone }))
@@ -46,6 +52,7 @@ for (const zone of ['Asia/Tokyo', undefined]) {
 }
 
 test('failed owner zone save preserves applied clock and draft; retry succeeds without advancing simulation', async ({ page }) => {
+  await stubExternalFont(page)
   await stubSplitApis(page)
   const snapshot = snapshotFor('timeline-main')
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
