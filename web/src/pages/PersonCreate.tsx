@@ -1,8 +1,16 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { DistillDraft } from '../api/types'
 import PersonCard from '../components/PersonCard'
+import {
+  PERSON_CREATE_FIELD_ORDER,
+  focusFirstPersonCreateError,
+  normalizePersonCreateError,
+  validatePersonDraft,
+  type FieldErrors,
+  type PersonCreateField,
+} from '../lib/person-create-validation'
 
 const EXAMPLE = '例如：林晚，32岁，在杭州开一家独立书店，是我大学时的学姐。说话温和但有自己的坚持……'
 
@@ -12,13 +20,33 @@ export default function PersonCreate() {
   const [manual, setManual] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [errorRevision, setErrorRevision] = useState(0)
+  const fieldElements = useRef<Partial<Record<PersonCreateField, HTMLElement | null>>>({})
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    if (!errorRevision) return
+    const firstInput = (field: PersonCreateField): HTMLElement | null => {
+      const selector = field === 'description'
+        ? '#person-create-description'
+        : field === 'name' ? '#person-create-name' : `#person-create-${field}-0`
+      return document.querySelector<HTMLElement>(selector)
+    }
+    fieldElements.current = Object.fromEntries(PERSON_CREATE_FIELD_ORDER.map(field => [field, firstInput(field)]))
+    focusFirstPersonCreateError(PERSON_CREATE_FIELD_ORDER, fieldErrors, fieldElements.current)
+  }, [errorRevision])
+
+  function clearFieldError(field: PersonCreateField) {
+    setFieldErrors(current => current[field] ? { ...current, [field]: undefined } : current)
+  }
 
   async function onDistill(e: FormEvent) {
     e.preventDefault()
     if (!description.trim() || busy) return
     setError('')
+    setFieldErrors({})
     setBusy(true)
     setManual(false)
     try {
@@ -28,7 +56,10 @@ export default function PersonCreate() {
       })
       setDraft(result)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '创建失败，请重试')
+      const normalized = normalizePersonCreateError(err, 'distill')
+      setError(normalized.global || (err instanceof ApiError ? err.message : '创建失败，请重试'))
+      setFieldErrors(normalized.fields)
+      setErrorRevision(revision => revision + 1)
     } finally {
       setBusy(false)
     }
@@ -63,27 +94,15 @@ export default function PersonCreate() {
 
   async function onSave() {
     if (!draft || busy) return
-    if (!draft.name.trim()) {
-      setError('姓名不能为空')
+    const validation = validatePersonDraft(draft, manual)
+    if (Object.keys(validation.fields).length > 0) {
+      setError(validation.global)
+      setFieldErrors(validation.fields)
+      setErrorRevision(revision => revision + 1)
       return
     }
-    if (manual) {
-      const missing = [
-        ['身份与价值观', draft.model.identity],
-        ['行为模式', draft.model.behavior],
-        ['说话方式', draft.model.speech],
-        ['边界', draft.model.boundaries],
-      ].filter(([, items]) => !(items as typeof draft.model.identity).some((item) => item.text.trim()))
-      if (missing.length) {
-        setError(`请至少填写：${missing.map(([label]) => label).join('、')}`)
-        return
-      }
-      if (!draft.model.unknowns.some((item) => item.trim())) {
-        setError('请至少写下一项人物目前不知道的事')
-        return
-      }
-    }
     setError('')
+    setFieldErrors({})
     setBusy(true)
     try {
       const res = await apiFetch<{ id: string }>('/api/persons', {
@@ -96,7 +115,10 @@ export default function PersonCreate() {
         navigate(`/people/${res.id}`)
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '保存失败，请重试')
+      const normalized = normalizePersonCreateError(err, 'save')
+      setError(normalized.global || (err instanceof ApiError ? err.message : '保存失败，请重试'))
+      setFieldErrors(normalized.fields)
+      setErrorRevision(revision => revision + 1)
       setBusy(false)
     }
   }
@@ -110,13 +132,17 @@ export default function PersonCreate() {
         <div className="space-y-3">
           <form onSubmit={onDistill} className="space-y-3">
             <textarea
+              id="person-create-description"
               className="h-40 w-full rounded-xl border border-ink-faint p-3 text-base outline-none focus:border-ink-soft"
               placeholder={EXAMPLE}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => { setDescription(e.target.value); clearFieldError('description') }}
               disabled={busy}
+              aria-invalid={!!fieldErrors.description}
+              aria-describedby={fieldErrors.description ? 'person-create-error-description' : undefined}
             />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {fieldErrors.description && <p id="person-create-error-description" role="alert" className="text-sm text-red-600">{fieldErrors.description}</p>}
+            {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
               disabled={busy || !description.trim()}
@@ -144,8 +170,13 @@ export default function PersonCreate() {
             <span className="text-emerald-600">确知</span>来自创建者提供的信息，
             <span className="text-cinnabar">推断</span>是合理推测——都可以修改、删除或补充。
           </p>
-          <PersonCard draft={draft} onChange={setDraft} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <PersonCard
+            draft={draft}
+            onChange={setDraft}
+            errors={fieldErrors}
+            onFieldChange={clearFieldError}
+          />
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3 pb-8">
             <button
               onClick={() => {

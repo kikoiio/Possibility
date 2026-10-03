@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { worldsApi } from '../api/client'
-import type { WorldSummary } from '../api/types'
+import { apiFetch, worldsApi } from '../api/client'
+import type { PersonListItem, WorldSummary } from '../api/types'
 import { formatWorldTime } from '../lib/world-time'
+import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../lib/world-disambiguation'
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   running: { text: '运行中', cls: 'bg-emerald-100 text-emerald-700' },
@@ -14,13 +15,19 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
 /** 世界列表：本人全部世界 + 创建入口 */
 export default function Worlds() {
   const [worlds, setWorlds] = useState<WorldSummary[] | null>(null)
+  const [persons, setPersons] = useState<PersonListItem[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    void worldsApi.list().then(({ worlds: items }) => {
-      if (active) setWorlds(items)
-    }).catch(() => { if (active) setError('加载失败') })
+    void Promise.all([worldsApi.list(), apiFetch<{ persons: PersonListItem[] }>('/api/persons')]).then(([worldResult, personResult]) => {
+      if (!active) return
+      setWorlds(worldResult.worlds)
+      setPersons(personResult.persons)
+    }).catch(() => {
+      if (active) setError('加载失败，请稍后重试。')
+      void worldsApi.list().then(({ worlds: items }) => { if (active) { setWorlds(items); setError('') } }).catch(() => {})
+    })
     return () => { active = false }
   }, [])
 
@@ -44,23 +51,23 @@ export default function Worlds() {
       )}
 
       <div className="space-y-2">
-        {worlds.map((w) => {
+        {buildWorldDisambiguationItems(worlds, persons).map((w) => {
           const st = STATUS_LABEL[w.status] ?? STATUS_LABEL.paused
           return (
             <article key={w.id} className="rounded-xl border border-ink-line bg-sheet px-4 py-3 hover:border-ink-faint">
               <Link to={`/worlds/${w.id}`} className="block rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-ink">{w.name}</span>
                   {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
-                  {!w.hasScene && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">待创建场景</span>}
                   <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>
-                    {w.status === 'archived' && w.pauseReason === 'idle' ? '闲置归档' : st.text}
+                    {worldStatusLabel(w)}
                   </span>
                   <span className="ml-auto text-xs text-ink-faint">{w.personCount} 个人物</span>
                 </div>
+                <p className="mt-1 text-xs text-ink-soft">人物：{worldPersonLabel(w.personNames)}</p>
                 <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-soft">{w.description}</p>
                 <p className="mt-1 text-xs text-ink-faint">
-                  {w.simNow ? `世界时间 ${formatWorldTime(w.simNow, w.timeZone)}` : ''} · 今日调用 {w.callsToday}
+                  创建于 {new Date(w.createdAt).toLocaleDateString('zh-CN')} · {w.simNow ? `世界时间 ${formatWorldTime(w.simNow, w.timeZone)}` : '尚无世界时间'} · 今日调用 {w.callsToday}
                 </p>
               </Link>
               {!w.hasScene && (() => {

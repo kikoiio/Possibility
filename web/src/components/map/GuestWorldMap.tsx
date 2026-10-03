@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
 import { deserialize, serialize, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
-import type { ForkResult, ForkScenario, WorldSnapshot } from '../../api/types'
-import { clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
+import type { ForkResult, ForkScenario, PersonListItem, WorldSnapshot } from '../../api/types'
+import { apiFetch, clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
 import ScenarioCard from '../ScenarioCard'
 import ComparePanel from '../world/ComparePanel'
@@ -13,13 +13,14 @@ import { buildSceneOverlay } from '../../scene/life/overlay'
 import VoxelViewport from '../../voxel/VoxelViewport'
 import MapSelectionCard from './MapSelectionCard'
 import { formatWorldTime } from '../../lib/world-time'
+import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../../lib/world-disambiguation'
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
 
 /** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
 export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, editable = false }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; editable?: boolean }) {
   const navigate = useNavigate()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
-  const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
+  const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
   const [sceneLocation, setSceneLocation] = useState<string | null>(null)
   useEffect(() => setLiveSnapshot(snapshot), [snapshot])
   const [spaceId, setSpaceIdState] = useState(() =>
@@ -89,9 +90,11 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   useEffect(() => {
     if (guest) return
     let active = true
-    void worldsApi.list().then(result => {
-      if (active) setWorldChoices(result.worlds.map(world => ({ id: world.id, name: world.name, hasScene: world.hasScene })))
-    }).catch(() => {})
+    void Promise.all([worldsApi.list(), apiFetch<{ persons: PersonListItem[] }>('/api/persons')]).then(([worldResult, personResult]) => {
+      if (active) setWorldChoices(buildWorldDisambiguationItems(worldResult.worlds, personResult.persons))
+    }).catch(() => {
+      void worldsApi.list().then(result => { if (active) setWorldChoices(buildWorldDisambiguationItems(result.worlds, [])) }).catch(() => {})
+    })
     return () => { active = false }
   }, [guest])
   // 体素模式:当前空间文档(空间切换 → 换文档重挂载视口)
@@ -231,8 +234,8 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
           if (event.target.value === '__new__') navigate('/worlds/new')
           else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
         }} className="max-w-40 rounded-full border border-white/45 bg-[#263a31]/70 px-3 py-2 text-xs text-white">
-          <option value={liveSnapshot.world.id}>{liveSnapshot.world.name}</option>
-          {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name}{world.hasScene ? '' : ' · 待创建场景'}</option>)}
+          <option value={liveSnapshot.world.id}>{liveSnapshot.world.name} · 当前 · {worldStatusLabel({ ...liveSnapshot.world, hasScene: true })}</option>
+          {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name} · {worldPersonLabel(world.personNames)} · {worldStatusLabel(world)}</option>)}
           <option value="__new__" className="text-[#263a31]">创建世界</option>
         </select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg">{!liveSnapshot.world.isDemo && <div className="p-2"><WorldTimeZoneSetting worldId={liveSnapshot.world.id} timeZone={liveSnapshot.world.timeZone} onSaved={timeZone => setLiveSnapshot(current => ({ ...current, world: { ...current.world, timeZone }, timelines: current.timelines.map(t => ({ ...t, timeZone })) }))} /></div>}<button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
       </header>

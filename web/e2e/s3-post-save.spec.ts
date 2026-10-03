@@ -129,7 +129,12 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
       localStorage.setItem('possibility_token', 'e2e-token')
       localStorage.setItem('possibility:flag:voxel', '1')
     })
-    await page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } }))
+    await page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{
+      id: 'world-1', name: '雾影庄', description: '白雾町的旧宅', status: 'running', pauseReason: null,
+      isDemo: false, hasScene: true, personIds: ['person-host'], personCount: 1, callsToday: 0,
+      simNow: guestSnapshot.simNow, timeZone: 'UTC', createdAt: '2026-09-28T12:00:00.000Z',
+    }] } }))
+    await page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [{ id: 'person-host', name: '主人', createdAt: '2026-09-01T00:00:00.000Z' }] } }))
     await page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
     await page.route('**/api/worlds/world-1/map/bootstrap**', (route) => route.fulfill({ json: {
       access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
@@ -357,7 +362,12 @@ test.describe('S3 移动端布局(F4)', () => {
       localStorage.setItem('possibility_token', 'e2e-token')
       localStorage.setItem('possibility:flag:voxel', '1')
     })
-    await page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } }))
+    await page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{
+      id: 'world-1', name: '雾影庄', description: '白雾町的旧宅', status: 'running', pauseReason: null,
+      isDemo: false, hasScene: true, personIds: ['person-host'], personCount: 1, callsToday: 0,
+      simNow: guestSnapshot.simNow, timeZone: 'UTC', createdAt: '2026-09-28T12:00:00.000Z',
+    }] } }))
+    await page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [{ id: 'person-host', name: '主人', createdAt: '2026-09-01T00:00:00.000Z' }] } }))
     await page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
     await page.route('**/api/worlds/world-1/map/bootstrap**', (route) => route.fulfill({ json: {
       access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
