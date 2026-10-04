@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Native2dViewport from './Native2dViewport'
 import { createSampleController, type SampleControllerState } from './controller'
 import { FIXTURE_IDS } from './fixtures'
 import { HALL_SPACE_ID, MIST_MANOR_SCENE } from './scene'
 import { createLayoutRepository } from './storage'
 import { createWorldSource } from './world-source'
-import type { Selection, SourceConfig } from './types'
+import type { Native2dViewport as Native2dViewportApi, Selection, SourceConfig } from './types'
 import './sample.css'
 
 const FIXTURE_LABELS: Record<string, string> = {
@@ -28,11 +28,21 @@ function initialState(): SampleControllerState {
 }
 
 export default function Native2dSamplePage() {
+  const viewportRef = useRef<Native2dViewportApi | null>(null)
+  const viewportBridge = useMemo<Native2dViewportApi>(() => ({
+    setPresentation: (value) => viewportRef.current?.setPresentation(value),
+    setSelection: (value) => viewportRef.current?.setSelection(value),
+    setFollow: (value) => viewportRef.current?.setFollow(value),
+    setMovePreview: (value) => viewportRef.current?.setMovePreview(value),
+    showOverview: () => viewportRef.current?.showOverview(),
+    dispose: () => undefined,
+  }), [])
   const controller = useMemo(() => createSampleController({
     scene: MIST_MANOR_SCENE,
     createSource: (config) => createWorldSource(config, MIST_MANOR_SCENE),
     repository: createLayoutRepository(MIST_MANOR_SCENE, () => window.localStorage),
-  }), [])
+    viewport: viewportBridge,
+  }), [viewportBridge])
   const [state, setState] = useState<SampleControllerState>(initialState)
   const [sourceKind, setSourceKind] = useState<'fixture' | 'public'>('fixture')
   const [fixtureId, setFixtureId] = useState<string>(FIXTURE_IDS[0])
@@ -105,7 +115,7 @@ export default function Native2dSamplePage() {
 
         <section className="native2d-scene-column" aria-label="庄园场景">
           <div className="native2d-scene-toolbar"><div><span className="native2d-section-index">02 / OBSERVATION</span><strong>{isHall ? '主楼大厅' : '雾影庄外景'}</strong></div><div className="native2d-toolbar-actions"><button type="button" className="native2d-icon-button" onClick={() => setInfoOpen(true)} aria-label="打开事实面板" data-testid="native2d-panel-toggle">事实</button><button type="button" className="native2d-button" onClick={() => setOverviewRequest((value) => value + 1)} data-testid="native2d-overview">返回全景</button></div></div>
-          <div className="native2d-scene-frame"><Native2dViewport scene={MIST_MANOR_SCENE} presentation={state.presentation} selection={state.selection} followPersonId={state.follow?.status === 'following' ? state.follow.personId : null} movePreview={state.movePreview} overviewRequest={overviewRequest} onEvent={(event) => controller.handleViewportEvent(event)} />{!state.presentation && <div className="native2d-scene-empty" role="status">{state.readState.status === 'error' ? '暂无可显示的世界数据' : '正在读取庄园状态…'}</div>}<div className="native2d-scene-caption"><span>固定斜俯视 · 观察模式</span><span>事实版本 {world?.stateVersion ?? '—'}</span></div></div>
+          <div className="native2d-scene-frame"><Native2dViewport scene={MIST_MANOR_SCENE} presentation={state.presentation} selection={state.selection} followPersonId={state.follow?.status === 'following' ? state.follow.personId : null} movePreview={state.movePreview} overviewRequest={overviewRequest} onEvent={(event) => controller.handleViewportEvent(event)} onReady={(viewport) => { viewportRef.current = viewport; if (viewport && state.presentation) viewport.setPresentation(state.presentation) }} />{!state.presentation && <div className="native2d-scene-empty" role="status">{state.readState.status === 'error' ? '暂无可显示的世界数据' : '正在读取庄园状态…'}</div>}<div className="native2d-scene-caption"><span>固定斜俯视 · 观察模式</span><span>事实版本 {world?.stateVersion ?? '—'}</span></div></div>
           {state.follow && <div className="native2d-follow-banner" data-testid="native2d-follow-status">{state.follow.status === 'paused' ? state.follow.reason : `正在跟随 ${world?.residents.find((resident) => resident.personId === state.follow?.personId)?.name ?? ''}`}<button type="button" onClick={() => controller.toggleFollow(state.follow!.personId)}>结束跟随</button></div>}
           <section className={`native2d-edit-panel ${editOpen ? 'mobile-open' : ''}`} aria-label="本地布局编辑"><div className="native2d-edit-heading"><div><span className="native2d-section-index">03 / LOCAL LAYOUT</span><h2>建筑布局</h2></div><button type="button" className="native2d-mobile-close" onClick={() => setEditOpen(false)} aria-label="关闭编辑面板">×</button></div><div className="native2d-edit-controls"><label className="native2d-select-label">建筑<select value={buildingId} onChange={(event) => { setBuildingId(event.target.value); controller.select({ kind: 'building', buildingId: event.target.value }) }} data-testid="native2d-building-list">{MIST_MANOR_SCENE.buildings.map((building) => <option key={building.id} value={building.id} data-testid={`native2d-building-${building.id}`}>{BUILDING_LABELS[building.id] ?? building.id}</option>)}</select></label><button type="button" className="native2d-button" onClick={() => controller.startMove(buildingId)} disabled={editBlocked} data-testid="native2d-move">{state.moveMode ? '移动中…' : '移动建筑'}</button><button type="button" className="native2d-button native2d-button-primary" onClick={() => controller.applyMove()} disabled={!state.movePreview?.validation.valid || editBlocked} data-testid="native2d-apply">应用位置</button><button type="button" className="native2d-button" onClick={() => controller.cancelMove()} disabled={!state.moveMode} data-testid="native2d-cancel">取消预览</button><button type="button" className="native2d-button" onClick={() => controller.undo()} disabled={!state.canUndo || editBlocked} data-testid="native2d-undo">撤销</button><button type="button" className="native2d-button native2d-button-danger" onClick={() => controller.requestReset()} disabled={!world} data-testid="native2d-reset">重置布局</button></div>{isHall && <p className="native2d-inline-note">大厅观察期间不能编辑外景建筑。</p>}{state.restore.status === 'pending' && <div className="native2d-recovery" data-testid="native2d-restore-status" role="alert"><strong>本地布局需要处理 · {state.restore.kind}</strong><p>{state.restore.message}。旧记录尚未覆盖。</p><div><button type="button" className="native2d-button" onClick={() => controller.resolveRestore('retry')} data-testid="native2d-restore-retry">重新读取</button><button type="button" className="native2d-button" onClick={() => controller.resolveRestore('baseline')} data-testid="native2d-restore-baseline">使用初始布局</button><button type="button" className="native2d-button native2d-button-danger" onClick={() => controller.resolveRestore('reset')} data-testid="native2d-restore-reset">清除并重置…</button></div></div>}{state.moveMode && <div className="native2d-move-feedback" data-testid="native2d-move-status">{state.movePreview ? state.movePreview.validation.valid ? `候选位置 ${state.movePreview.target.x}, ${state.movePreview.target.z} · 可应用` : '候选位置不可用' : '在场景中拖动建筑以预览新位置'}{state.movePreview && !state.movePreview.validation.valid && <ul data-testid="native2d-conflict-reasons">{state.movePreview.validation.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{reason.message}</li>)}</ul>}</div>}<div className="native2d-edit-footer"><span data-testid="native2d-save-status">{state.save.status === 'unsaved' ? state.save.message : '布局仅保存在此浏览器'}</span>{state.save.status === 'unsaved' && <button type="button" onClick={() => controller.retrySave()} data-testid="native2d-save-retry">重试保存</button>}</div></section>
         </section>

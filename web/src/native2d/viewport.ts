@@ -83,13 +83,27 @@ export async function createNative2dViewport(
 
   let renderQueued = false
   let rafHandle: number | null = null
+  let drawCount = 0
+  let lastRenderMs = 0
 
   const renderFrame = (): void => {
     renderQueued = false
     rafHandle = null
     if (disposed) return
+    const startedAt = globalThis.performance?.now?.() ?? Date.now()
     // T30 起在此按 state 重建/更新图层；骨架阶段仅渲染现有 stage。
     app.renderer.render(app.stage)
+    lastRenderMs = (globalThis.performance?.now?.() ?? Date.now()) - startedAt
+    drawCount += 1
+    options.onDiagnostics?.({
+      width: host.clientWidth,
+      height: host.clientHeight,
+      resolution: app.renderer.resolution,
+      renderer: app.renderer.constructor.name,
+      drawCount,
+      lastRenderMs,
+      objectBounds: {},
+    })
   }
 
   const requestRender = (): void => {

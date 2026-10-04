@@ -24,6 +24,7 @@ interface Native2dViewportProps {
   readonly movePreview: MovePreview | null
   readonly overviewRequest: number
   readonly onEvent: (event: ViewportEvent) => void
+  readonly onReady?: (viewport: Native2dViewportApi | null) => void
 }
 
 export default function Native2dViewport({
@@ -34,6 +35,7 @@ export default function Native2dViewport({
   movePreview,
   overviewRequest,
   onEvent,
+  onReady,
 }: Native2dViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<Native2dViewportApi | null>(null)
@@ -63,6 +65,7 @@ export default function Native2dViewport({
           return
         }
         viewportRef.current = viewport
+        onReady?.(viewport)
         setReady(true)
       },
       (reason: unknown) => {
@@ -74,6 +77,7 @@ export default function Native2dViewport({
       active = false
       viewportRef.current?.dispose()
       viewportRef.current = null
+      onReady?.(null)
       if (typeof window !== 'undefined') delete window.__native2dDiagnostics
     }
   }, [attempt, scene])
