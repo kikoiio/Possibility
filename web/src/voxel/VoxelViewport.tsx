@@ -239,8 +239,9 @@ export default function VoxelViewport({
     if (eventRouting.routeAt(x, y)) return
     interactRef.current(x, y)
   }, [eventRouting.routeAt])
-  // S2:只有编辑器 UI 真正渲染(controller + planEdits)时才让位编辑;owner 无编辑器时观察点击必须可用
-  useCanvasClick(engineRef.current, ready && !(controller && planEdits) && cameraMode === 'orbit', handleObserveClick)
+  // 编辑器可在没有 AI 规划器时提供手工编辑(例如未保存的新建草稿)。
+  // 只有显示编辑器时才由编辑器接管画布点击。
+  useCanvasClick(engineRef.current, ready && !(controller && editable) && cameraMode === 'orbit', handleObserveClick)
   // 第一视角:点击 = 屏幕中心(准星)射线(F4,只读选中;编辑入口不渲染)
   const handleWalkClick = useCallback(() => {
     const canvas = engineRef.current?.renderer.canvas
@@ -316,11 +317,11 @@ export default function VoxelViewport({
           onSelectPerson={onSelectPerson ? (personId) => callbacksRef.current.onSelectPerson?.(personId) : undefined}
         />
       )}
-      {ready && controller && planEdits && cameraMode === 'orbit' && (
+      {ready && controller && editable && cameraMode === 'orbit' && (
         <VoxelEditor
           engine={engineRef.current!}
           controller={controller}
-          planEdits={(intent) => planEdits(engineRef.current!, intent)}
+          planEdits={planEdits ? (intent) => planEdits(engineRef.current!, intent) : undefined}
           interact={(x, y) => interactRef.current(x, y)}
           editing={gate.showEditing}
         />

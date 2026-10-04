@@ -93,7 +93,7 @@ export default function WorldSceneRepair() {
 
   const worldName = context?.world.name ?? '原世界'
   return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="scene-repair-shell">
-    {doc && <VoxelViewport document={doc} editable={!busy} planEdits={planEditsViaApi}
+    {doc && <VoxelViewport document={doc} editable={!busy} planEdits={(engine, intent) => planEditsViaApi(engine, worldId, intent)}
       onSave={next => { latestDoc.current = next; saveRequestId.current = null; setDoc(next) }} />}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">

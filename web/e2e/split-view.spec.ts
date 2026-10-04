@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
-import { events, FORK_AT, stubSplitApis, watchErrors } from './split-view-stubs'
+import { comparisonFor, events, FORK_AT, snapshotFor, stubSplitApis, watchErrors } from './split-view-stubs'
 
 /**
  * S1 分屏平行视口与对齐时间轴 e2e(T7,AC1/AC2/AC4/AC5/AC7)。
@@ -110,9 +110,90 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await expect(page.getByTestId('split-events-left')).toContainText(events.left.title)
     expect(await page.evaluate(() => Boolean((window as unknown as ProbeWindow).__voxelEngines?.left))).toBe(true)
     // 对照失败有明示,不静默
-    await expect(page.getByRole('status')).toContainText(/请求失败|时间线对照/, { timeout: 10000 })
+    await expect(page.getByTestId('split-compare-error')).toContainText('时间线对照暂时无法读取', { timeout: 10000 })
     // 接口 500 的 console 噪音允许;页面级错误不允许
     expect(errors.filter((e) => !e.includes('500'))).toEqual([])
+  })
+
+  test('右侧快照失败只影响右面板，重试只重新读取右侧', async ({ page }) => {
+    const errors = watchErrors(page)
+    await stubSplitApis(page)
+    let snapshotCalls = 0
+    let compareCalls = 0
+    await page.route('**/api/worlds/world-1?*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('timelineId') !== 'timeline-fork') return route.fallback()
+      snapshotCalls++
+      if (snapshotCalls <= 2) return route.fulfill({ status: 503, json: { error: 'internal database detail' } })
+      return route.fulfill({ json: snapshotFor('timeline-fork') })
+    })
+    await page.route('**/api/worlds/world-1/compare?*', async (route) => {
+      compareCalls++
+      return route.fulfill({ json: comparisonFor('timeline-main', 'timeline-fork') })
+    })
+    await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
+    await expect(leftCanvas(page)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('split-right-error')).toContainText('另一种发展暂时无法读取')
+    await expect(page.getByTestId('split-right-error')).not.toContainText('internal database detail')
+    await expect(page.getByTestId('split-compare-summary')).toBeVisible()
+    await expect(page.getByTestId('world-canvas-error')).toHaveCount(0)
+    const compareCallsBeforeRetry = compareCalls
+
+    await page.getByTestId('split-right-retry').click()
+    await expect.poll(() => snapshotCalls, { timeout: 5000 }).toBe(3)
+    await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
+    await expect(page.getByTestId('split-right-error')).toHaveCount(0)
+    expect(snapshotCalls).toBe(3)
+    expect(compareCalls).toBe(compareCallsBeforeRetry)
+    expect(errors.filter((e) => !e.includes('503'))).toEqual([])
+  })
+
+  test('对照失败保留左右场景，重试只读取对照资源', async ({ page }) => {
+    const errors = watchErrors(page)
+    await stubSplitApis(page)
+    let snapshotCalls = 0
+    let compareCalls = 0
+    await page.route('**/api/worlds/world-1?*', async (route) => {
+      snapshotCalls++
+      return route.fallback()
+    })
+    await page.route('**/api/worlds/world-1/compare?*', async (route) => {
+      compareCalls++
+      if (compareCalls <= 2) return route.fulfill({ status: 502, json: { error: 'internal provider detail' } })
+      return route.fulfill({ json: comparisonFor('timeline-main', 'timeline-fork') })
+    })
+    await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
+    await expect(leftCanvas(page)).toBeVisible({ timeout: 15000 })
+    await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
+    await expect(page.getByTestId('split-compare-error')).toContainText('时间线对照暂时无法读取')
+    await expect(page.getByTestId('split-compare-error')).not.toContainText('internal provider detail')
+    const snapshotCallsBeforeRetry = snapshotCalls
+    await page.getByTestId('split-compare-retry').click()
+    await expect(page.getByTestId('split-compare-summary')).toBeVisible()
+    await expect(page.getByTestId('split-compare-error')).toHaveCount(0)
+    expect(compareCalls).toBe(3)
+    expect(snapshotCalls).toBe(snapshotCallsBeforeRetry)
+    expect(errors.filter((e) => !e.includes('502'))).toEqual([])
+  })
+
+  test('关闭分屏后，迟到的右侧快照不会重新写入当前视图', async ({ page }) => {
+    const errors = watchErrors(page)
+    await stubSplitApis(page)
+    let releaseSnapshot!: () => void
+    const held = new Promise<void>(resolve => { releaseSnapshot = resolve })
+    await page.route('**/api/worlds/world-1?*', async (route) => {
+      if (new URL(route.request().url()).searchParams.get('timelineId') !== 'timeline-fork') return route.fallback()
+      await held
+      return route.fulfill({ json: snapshotFor('timeline-fork') })
+    })
+    await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
+    await expect(leftCanvas(page)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('split-right-loading')).toBeVisible()
+    await page.getByTestId('split-close-right').click()
+    await expect(page.getByTestId('split-view')).toHaveCount(0)
+    releaseSnapshot()
+    await expect(page.getByTestId('split-view')).toHaveCount(0)
+    expect(errors).toEqual([])
   })
 })
 
