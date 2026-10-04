@@ -264,6 +264,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
           <input
             type="datetime-local"
             value={momentInput}
+            step={0.001}
             min={toLocalInputValue(historyRange.earliest)}
             max={toLocalInputValue(historyRange.simNow)}
             onChange={(event) => { setMomentInput(event.target.value); setMomentDirty(true); setEffectiveMoment(null); setMomentError('') }}

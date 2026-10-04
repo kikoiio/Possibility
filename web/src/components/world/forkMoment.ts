@@ -14,15 +14,19 @@ export type MomentPlan =
   /** 本地即可判定不可用,原因直接展示 */
   | { kind: 'invalid'; reason: string }
 
-/** ISO → datetime-local 输入值(UTC 墙钟,直接截取) */
+/** ISO → datetime-local 输入值(UTC 墙钟,保留毫秒以免预填时点落到证据范围之前) */
 export function toLocalInputValue(iso: string): string {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? iso.slice(0, 16) : ''
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso)) return ''
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso)) return iso.slice(0, 16)
+  return /\.\d{3}/.test(iso) && !/\.000/.test(iso) ? iso.slice(0, 23) : iso.slice(0, 19)
 }
 
-/** datetime-local 输入值 → UTC ISO;非法输入返回 null */
+/** datetime-local 输入值 → UTC ISO;接受分钟、秒或毫秒精度,非法输入返回 null */
 export function fromLocalInputValue(value: string): string | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null
-  const iso = `${value}:00.000Z`
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(value)
+  if (!match) return null
+  const milliseconds = (match[3] ?? '').padEnd(3, '0')
+  const iso = `${match[1]}:${match[2] ?? '00'}.${milliseconds}Z`
   return Number.isFinite(Date.parse(iso)) ? iso : null
 }
 

@@ -50,6 +50,16 @@ test('E1 uses a real isolated account and D1 world without calling a model', asy
   await page.route(`**/api/worlds/${worldId}/scene`, route => route.fulfill({ json: {
     status: 'ready', document: sceneFixture, version: 1, contentHash: `e1-${suffix}`, createdAt: new Date().toISOString(),
   } }))
+  await page.route(`**/api/worlds/${worldId}/timelines/${timelineId}/fork/preview`, async route => {
+    const request = route.request().postDataJSON() as { whatIf: string; startTime?: string }
+    return route.fulfill({ json: {
+      name: 'Cafe 天气分支', whatIf: request.whatIf, changedVariable: 'Cafe 天气', startTime: request.startTime,
+      participants: ['Ada'], invariants: ['主线保持不变'], sourceVersion: 2,
+      actionProposal: { type: 'environment', location: 'Cafe', condition: 'weather', value: '晴朗' },
+      actionTargets: { residents: [{ id: personId, name: 'Ada' }], locations: ['主楼', '温室', '庭院', 'Cafe', 'Library'] },
+      sourceCandidates: [],
+    } })
+  })
   await page.goto(`/worlds/${worldId}?timeline=${timelineId}`, { timeout: 60_000 })
   const returnButton = page.getByRole('button', { name: '你不在时' })
   await expect(returnButton).toBeVisible({ timeout: 60_000 })
@@ -58,6 +68,10 @@ test('E1 uses a real isolated account and D1 world without calling a model', asy
   await page.getByRole('button', { name: '查看来源与当时状态' }).click()
   await expect(page.getByTestId('event-evidence-detail')).toContainText('记录事实')
   await expect(page.getByTestId('event-evidence-detail')).toContainText('薄雾')
+  await expect(page.getByTestId('event-evidence-detail')).toContainText('Cafe')
+  await expect(page.getByTestId('event-evidence-detail')).toContainText('Ada')
+  await expect(page.getByTestId('event-evidence-detail')).toContainText(new Date().toISOString().slice(0, 10))
+  await expect(page.getByTestId('event-evidence-detail')).toContainText('可能相关与未知')
 
   // Emulate a world write after the page watermarks were read but before the user marks it seen.
   await writeEnvironmentChange(`e1-${suffix}-second`, 1, '小雨')
@@ -72,4 +86,13 @@ test('E1 uses a real isolated account and D1 world without calling a model', asy
   await expect(forkDialog).toBeVisible()
   await expect(forkDialog.locator('#fork-what-if')).not.toHaveValue('')
   await expect(forkDialog.getByTestId('fork-moment-input')).not.toHaveValue('')
+  await forkDialog.getByTestId('fork-preview-submit').click()
+  await expect(forkDialog.getByTestId('fork-initial-action')).toBeVisible()
+  await forkDialog.locator('#fork-action-value').fill('子线晴朗')
+  const forkResponse = page.waitForResponse(response => response.url().includes(`/api/worlds/${worldId}/timelines/${timelineId}/fork`)
+    && response.request().method() === 'POST')
+  await forkDialog.getByTestId('fork-confirm').click()
+  expect((await forkResponse).status()).toBe(200)
+  await expect(page.getByTestId('fork-action-summary')).toContainText('Cafe的天气已设为：子线晴朗')
+  await expect(page.getByRole('dialog', { name: '创建平行宇宙' })).toHaveCount(0)
 })

@@ -26,10 +26,12 @@ test('E1 returns a recorded event, expands evidence, and opens F1 from a verifie
   await page.route('**/api/worlds/world-1/map/resume', route => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', document: scene, version: 1, contentHash: 'e1', createdAt: now } }))
   await page.route('**/api/worlds/world-1/state**', route => route.fulfill({ json: { timelineId: 'timeline-main', version: 3, worldModelVersion: 1, evidenceStatus: 'structured', current: [], facts: [] } }))
+  let emptyReturn = false
   await page.route('**/api/worlds/world-1/return**', route => route.fulfill({ json: {
     timelineId: 'timeline-main', simNow: now, firstVisit: false, cursor: 0, eventCursor: 0, revisionVersion: 0,
-    nextEventCursor: 3, nextRevisionVersion: 2, hasMore: false, summary: '新增 1 项记录，其中 1 项状态变化。',
-    changes: [{ id: 'fact:weather-1', kind: 'fact', simTime: checkpoint, title: '河畔咖啡馆 · weather已变化',
+    nextEventCursor: emptyReturn ? 0 : 3, nextRevisionVersion: emptyReturn ? 0 : 2, hasMore: false,
+    summary: emptyReturn ? '暂时没有新的变化。' : '新增 1 项记录，其中 1 项状态变化。',
+    changes: emptyReturn ? [] : [{ id: 'fact:weather-1', kind: 'fact', simTime: checkpoint, title: '河畔咖啡馆 · weather已变化',
       description: '记录值：起雾', eventId: 'command:env-1', eventCursor: 3, factId: 'weather-1',
       revisionVersion: 2, sourceCommandId: 'env-1', actorPersonId: null, actorName: null, highlight: 'state_change' }],
     events: [], commitments: [], unread: 0,
@@ -79,4 +81,8 @@ test('E1 returns a recorded event, expands evidence, and opens F1 from a verifie
   await page.getByRole('button', { name: '查看来源与当时状态' }).click()
   await expect(page.getByTestId('event-evidence-detail')).toContainText('基线之前没有可重建状态')
   await expect(page.getByTestId('fork-from-event')).toHaveCount(0)
+  await page.getByRole('button', { name: '关闭' }).click()
+  emptyReturn = true
+  await page.getByRole('button', { name: '你不在时' }).click()
+  await expect(page.getByText('你离开后，暂时没有新的动静。')).toBeVisible()
 })

@@ -1,6 +1,6 @@
 # K2：交谈渠道与空间事实一致 Tasks
 
-> 状态：已获用户批准，实施中。
+> 状态：实现、API/Web 验证与人物页电话旅程均已完成；验收证据见 [checklist.md](./checklist.md)。
 > 输入：[spec.md](./spec.md)、[plan.md](./plan.md)，均已批准。
 > 工作区：/home/neo/.codex/worktrees/b-trust-branching-6638/Possibility，分支 codex/b-trust-branching。
 

@@ -121,7 +121,7 @@
 
 | 日期 | 检查 | 结果 | 证据/命令 | 限制 |
 |---|---|---|---|---|
-| 2026-10-04 | API 全量 | 通过 | `cd api && npm run build && npm test -- --maxWorkers=1 --no-file-parallelism`；104 文件通过、1 文件跳过；681 项通过、1 项跳过 | 最终 K2 API 状态；全部合成数据 |
+| 2026-10-04 | API 全量 | 通过 | `cd api && npm run build && npm test -- --pool=threads --maxWorkers=1 --no-file-parallelism`；104 文件通过、1 文件跳过；682 项通过、1 项跳过 | 包含后续 E1 精确时点/证据边界回归；全部合成数据 |
 | 2026-10-04 | K2 API 定向 | 通过 | `cd api && npm test -- --maxWorkers=1 --no-file-parallelism src/chat/routes.test.ts src/chat/recovery.test.ts src/db/k2-migration.test.ts`；3 文件、15 项通过 | 全部合成数据 |
 | 2026-10-04 | 最终原子性与现场回归 | 通过 | `cd api && npm run build && npm test -- --maxWorkers=1 --no-file-parallelism src/chat/routes.test.ts src/chat/recovery.test.ts src/db/k2-migration.test.ts src/scenes/routes.test.ts src/scene/recovery.test.ts src/world-state/commit.test.ts`；6 文件、64 项通过；之后电话状态 SSE 断言单测通过 | 提交错误返回通用重试提示 |
 | 2026-10-04 | K1 与 scene 回归 | 通过 | `cd api && npm test -- --maxWorkers=1 --no-file-parallelism src/scenes/routes.test.ts src/scene/recovery.test.ts src/world-state/commit.test.ts`；49 项通过；另运行 `src/test/knowledge-journey.test.ts` 与 `src/test/legacy-compat.test.ts`，四文件合计 57 项通过 | `/scene` 未修改 |

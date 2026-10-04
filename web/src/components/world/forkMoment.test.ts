@@ -5,9 +5,13 @@ const range = { earliest: '2026-09-21T08:00:00.000Z', simNow: '2026-09-21T12:00:
 
 describe('forkMoment 时刻判定(S4/F6)', () => {
   it('UTC 墙钟互转:输入值按 UTC 解释,与 simNow 展示一致;非法输入为 null', () => {
-    expect(toLocalInputValue('2026-09-21T09:30:00.000Z')).toBe('2026-09-21T09:30')
+    expect(toLocalInputValue('2026-09-21T09:30:00.000Z')).toBe('2026-09-21T09:30:00')
+    expect(toLocalInputValue('2026-09-21T09:30:45.000Z')).toBe('2026-09-21T09:30:45')
+    expect(toLocalInputValue('2026-09-21T09:30:45.123Z')).toBe('2026-09-21T09:30:45.123')
     expect(toLocalInputValue('garbage')).toBe('')
     expect(fromLocalInputValue('2026-09-21T09:30')).toBe('2026-09-21T09:30:00.000Z')
+    expect(fromLocalInputValue('2026-09-21T09:30:45')).toBe('2026-09-21T09:30:45.000Z')
+    expect(fromLocalInputValue('2026-09-21T09:30:45.123')).toBe('2026-09-21T09:30:45.123Z')
     expect(fromLocalInputValue('')).toBeNull()
     expect(fromLocalInputValue('not-a-time')).toBeNull()
   })
@@ -23,6 +27,13 @@ describe('forkMoment 时刻判定(S4/F6)', () => {
       .toEqual({ kind: 'check', at: '2026-09-21T09:30:00.000Z' })
     expect(planMomentCheck('2026-09-21T08:00', range))
       .toEqual({ kind: 'check', at: '2026-09-21T08:00:00.000Z' })
+  })
+
+  it('分叉预填保留秒,不会把有效检查点截到可回溯起点之前', () => {
+    const preciseRange = { earliest: '2026-09-21T08:00:42.123Z', simNow: '2026-09-21T12:00:00.000Z' }
+    const prefilled = toLocalInputValue(preciseRange.earliest)
+    expect(prefilled).toBe('2026-09-21T08:00:42.123')
+    expect(planMomentCheck(prefilled, preciseRange)).toEqual({ kind: 'check', at: preciseRange.earliest })
   })
 
   it('范围未加载/该线不支持历史 → invalid,原因引导回当前时刻', () => {

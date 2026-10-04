@@ -28,6 +28,23 @@ async function seedEvidenceWorld() {
 }
 
 describe('E1 change review evidence', () => {
+  it('does not treat a same-time unrelated fact as event evidence', async () => {
+    const f = await seedEvidenceWorld()
+    await commitWorldCommand(f.db, { id: 'unrelated-command', worldId: 'home-world', timelineId: 'home-main',
+      userId: 'owner', expectedVersion: 0,
+      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: '雾' } })
+    await f.db.insert(events).values({ id: 'orphan-same-time', timelineId: 'home-main', simTime: WORLD_TIME,
+      title: '独立记录', description: '没有直接来源', kind: 'injected' })
+
+    const response = await app.request('/api/worlds/home-world/events/orphan-same-time/evidence?timelineId=home-main',
+      { headers: owner }, f.env)
+    expect(response.status).toBe(200)
+    const detail = await response.json() as { command: unknown; facts: unknown[]; gaps: string[] }
+    expect(detail.command).toBeNull()
+    expect(detail.facts).toEqual([])
+    expect(detail.gaps).toContain('没有与事件直接关联的版本化事实。')
+  })
+
   it('returns source-backed state and private knowledge without putting message content in public event text', async () => {
     const f = await seedEvidenceWorld()
     const weather = await commitWorldCommand(f.db, { id: 'cmd-weather', worldId: 'home-world', timelineId: 'home-main',
