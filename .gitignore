@@ -1,6 +1,7 @@
 node_modules
 dist
 .dev.vars
+.dev.vars.k1-test
 .wrangler
 api/wrangler.staging-test.toml
 *.local

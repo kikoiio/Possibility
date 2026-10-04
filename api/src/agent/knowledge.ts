@@ -26,6 +26,10 @@ export interface VisibleKnowledgeFact {
   text: string
   sourceFactId: string
   certainty: 'fact' | 'rumor'
+  timelineId?: string
+  simTime?: string
+  version?: number
+  recipientPersonId?: string
 }
 
 export interface KnowledgeFactView {
@@ -33,6 +37,9 @@ export interface KnowledgeFactView {
   factType: string
   visibility: string
   value: unknown
+  timelineId?: string
+  simTime?: string
+  version?: number
 }
 
 /** One visibility rule for chat, scene, NPC dialogue, engine decisions and summaries. */
@@ -47,11 +54,13 @@ export function visibleKnowledgeForPerson(
     if (fact.factType === 'environment' && fact.visibility === 'world') {
       if (typeof value.condition !== 'string' || typeof value.value !== 'string') continue
       visible.push({ kind: 'environment', text: `${String(value.location ?? '全世界')}的${value.condition}：${value.value}`,
-        sourceFactId: fact.id, certainty: 'fact' })
+        sourceFactId: fact.id, certainty: 'fact', timelineId: fact.timelineId, simTime: fact.simTime, version: fact.version })
     } else if (fact.factType === 'knowledge' && fact.visibility === 'private' && value.recipientId === personId
-      && typeof value.topic === 'string' && typeof value.content === 'string') {
+      && typeof value.topic === 'string' && typeof value.content === 'string'
+      && (value.certainty === 'fact' || value.certainty === 'rumor')) {
       visible.push({ kind: 'knowledge', text: `${value.topic}：${value.content}`, sourceFactId: fact.id,
-        certainty: value.certainty === 'fact' ? 'fact' : 'rumor' })
+        certainty: value.certainty, timelineId: fact.timelineId, simTime: fact.simTime,
+        version: fact.version, recipientPersonId: personId })
     }
   }
   return visible

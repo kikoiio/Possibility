@@ -70,10 +70,13 @@ describe('knowledge provenance validation', () => {
         value: { recipientId: 'ada', topic: 'secret', content: canary, certainty: 'rumor' } },
       { id: 'bad-public-secret', factType: 'knowledge', visibility: 'world',
         value: { recipientId: 'ada', topic: 'bad', content: 'must-not-render', certainty: 'fact' } },
+      { id: 'bad-certainty', factType: 'knowledge', visibility: 'private',
+        value: { recipientId: 'ada', topic: 'bad', content: 'malformed-must-not-render', certainty: 'unknown' } },
     ]
     expect(JSON.stringify(visibleKnowledgeForPerson(views, 'ada'))).toContain(canary)
     expect(JSON.stringify(visibleKnowledgeForPerson(views, 'bo'))).not.toContain(canary)
     expect(JSON.stringify(visibleKnowledgeForPerson(views, 'ada'))).not.toContain('must-not-render')
+    expect(JSON.stringify(visibleKnowledgeForPerson(views, 'ada'))).not.toContain('malformed-must-not-render')
     expect(visibleKnowledgeForPerson(views, 'bo')).toContainEqual(expect.objectContaining({
       sourceFactId: 'weather', certainty: 'fact',
     }))
