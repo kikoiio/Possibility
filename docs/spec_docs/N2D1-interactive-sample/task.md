@@ -118,7 +118,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T04：固定世界状态
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（固定世界状态（fixtures：昼夜/刷新/站位不足/未知/跨scope/居民消失；提交 e7ce2de））
 
 **文件：** `web/src/native2d/fixtures.ts`
 
@@ -132,7 +132,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T05：素材几何契约
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（素材几何契约（16 项 AssetDefinition 冻结；提交 3b4adb2））
 
 **文件：** `web/src/native2d/assets.ts`
 
@@ -146,7 +146,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T06：外景、大厅与地点绑定
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（外景、大厅与地点绑定（16×14 外景+6×5 大厅+七地点；scene.test 23 项通过；提交 68db20d））
 
 **文件：** `web/src/native2d/scene.ts`；`web/src/native2d/__tests__/scene.test.ts`
 
@@ -160,7 +160,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T07：固定来源适配
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（固定来源适配（world-source.test 含于 21 项；提交 1044d36））
 
 **文件：** `web/src/native2d/world-source.ts`；`web/src/native2d/__tests__/world-source.test.ts`
 
@@ -174,7 +174,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T08：公开 GET 与身份适配
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（公开 GET 与身份适配（GET+credentials:omit+雾影庄校验；提交 1044d36））
 
 **文件：** `web/src/native2d/world-source.ts`；`web/src/native2d/__tests__/world-source.test.ts`
 
@@ -188,7 +188,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T09：固定时间线与读取失败
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（固定时间线与读取失败（中止/乱序/重试语义；提交 1044d36））
 
 **文件：** `web/src/native2d/world-source.ts`；`web/src/native2d/__tests__/world-source.test.ts`
 
@@ -202,7 +202,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T10：正逆投影
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（正逆投影（projection.test 11 项通过；提交 e7ce2de））
 
 **文件：** `web/src/native2d/projection.ts`；`web/src/native2d/__tests__/projection.test.ts`
 
@@ -216,7 +216,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T11：布局结构与占地校验
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（布局结构与占地校验（layout-validation.test 含于 24 项；提交 a8ca3a8））
 
 **文件：** `web/src/native2d/layout-validation.ts`；`web/src/native2d/__tests__/layout-validation.test.ts`
 
@@ -230,7 +230,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T12：入口与通路连通
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（入口与通路连通（四方向 BFS；提交 a8ca3a8））
 
 **文件：** `web/src/native2d/layout-validation.ts`；`web/src/native2d/__tests__/layout-validation.test.ts`
 
@@ -244,7 +244,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T13：编辑预览与应用
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（编辑预览与应用（editor.test 含于 20 项；提交 19c2e5f））
 
 **文件：** `web/src/native2d/editor.ts`；`web/src/native2d/__tests__/editor.test.ts`
 
@@ -258,7 +258,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T14：逐步撤销
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（逐步撤销（会话内差量栈；提交 19c2e5f））
 
 **文件：** `web/src/native2d/editor.ts`；`web/src/native2d/__tests__/editor.test.ts`
 
@@ -272,7 +272,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T15：范围键与存储记录
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（范围键与存储记录（storage.test 含于 25 项；提交 15b1a10））
 
 **文件：** `web/src/native2d/storage.ts`；`web/src/native2d/__tests__/storage.test.ts`
 
@@ -286,7 +286,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T16：恢复与损坏识别
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（恢复与损坏识别（五态分流原记录不变；提交 15b1a10））
 
 **文件：** `web/src/native2d/storage.ts`；`web/src/native2d/__tests__/storage.test.ts`
 
@@ -300,7 +300,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T17：保存和重置故障
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（保存和重置故障（配额/不可用/删除失败语义；提交 15b1a10））
 
 **文件：** `web/src/native2d/storage.ts`；`web/src/native2d/__tests__/storage.test.ts`
 
@@ -314,7 +314,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T18：居民与地点表现
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（居民与地点表现（presentation.test 含于 29 项；提交 6609d17））
 
 **文件：** `web/src/native2d/presentation.ts`；`web/src/native2d/__tests__/presentation.test.ts`
 
@@ -328,7 +328,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T19：场景表现与世界昼夜
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（场景表现与世界昼夜（边界小时/跨时区；提交 6609d17））
 
 **文件：** `web/src/native2d/presentation.ts`；`web/src/native2d/__tests__/presentation.test.ts`
 
@@ -468,7 +468,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T29：视口实例与生命周期
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（视口实例与生命周期（骨架 tsc 通过，行为证据留 T41/T51/T59；提交 0de828d））
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -510,7 +510,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T32：指针拾取与拖图
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（指针拾取与拖图（input.test 含于 25 项；提交 1fd4719））
 
 **文件：** `web/src/native2d/input.ts`
 
@@ -524,7 +524,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T33：触屏缩放与手势取消
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（触屏缩放与手势取消（提交 1fd4719））
 
 **文件：** `web/src/native2d/input.ts`
 
@@ -734,7 +734,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T48：浏览器读取夹具与拾取
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（浏览器读取夹具与拾取（TESTIDS 契约+响应夹具+只读断言；tsc 通过；提交 c5c1e8d））
 
 **文件：** `web/native2d-e2e/fixtures.ts`
 
