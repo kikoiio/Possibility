@@ -1,6 +1,6 @@
 # N2D1：原生 2D 庄园可交互样板 Tasks
 
-> 状态：四份规格文档已全部获用户批准；用户要求暂不开发，等待明确启动指令。尚未开始实现，60项任务均未执行。
+> 状态：开发已启动（用户 2026-10-04 明确指令），分支 `codex/2d-experience`（主工作区内分支，非独立 worktree）。已完成：T01（基线提交 7410d00）、T02（pixi.js 8.22.0 精确依赖）、T03（types.ts 契约）、T47（独立 Playwright 配置+Vitest 排除）。
 > 输入：已批准的 [spec.md](spec.md)、[plan.md](plan.md)；日期：2026-10-04。
 > 已一并批准的 plan 最小补充：`web/vitest.config.ts` 仅增加 `native2d-e2e/**` 排除项，防止 Vitest 执行 Playwright 用例。其余范围和设计沿用已批准内容。
 
@@ -76,7 +76,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T01：基线与独立工作区
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（2026-10-04：用户指定主工作区内新建分支 `codex/2d-experience`，基线 74d01b4；四文档+参考图定向纳入，提交 7410d00；主目录未提交改动未纳入）
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/{spec,plan,task,checklist}.md`；`design/cold-mystery-reference-v1.png`
 
@@ -90,7 +90,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T02：安装精确依赖
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（pixi.js 8.22.0 --save-exact；npm ls 确认；仅 package.json+1 行与 lockfile+102 行；提交 633de0e）
 
 **文件：** `web/package.json`；`package-lock.json`
 
@@ -104,7 +104,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T03：建立统一类型契约
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（types.ts 覆盖 plan 全部类型与接口；tsc --noEmit 通过；提交 7fe5cb5）
 
 **文件：** `web/src/native2d/types.ts`
 
@@ -720,7 +720,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T47：独立测试配置
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（playwright.native2d.config.ts：testDir native2d-e2e/端口 15174/workers=1/三项目互斥/mobile 390×844 触屏；vitest.config.ts 仅新增 native2d-e2e/** 排除；tsc --ignoreConfig 校验通过；提交 c877817。注：本仓库 TS 版本要求命令行指定文件时加 --ignoreConfig）
 
 **文件：** `web/playwright.native2d.config.ts`；`web/vitest.config.ts`
 
