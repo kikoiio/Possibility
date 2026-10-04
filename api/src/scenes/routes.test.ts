@@ -102,6 +102,39 @@ describe('scene HTTP routes', () => {
     expect(foreign.status).toBe(404)
   })
 
+  it('GET /scene/revisions returns an empty or ordered list only to the world owner', async () => {
+    const f = await createWorldFixture(); fixtures.push(f)
+    const owner = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    const before = await scenesRoutes.request('/worlds/home-world/scene/revisions', { headers: owner }, f.env)
+    expect(before.status).toBe(200)
+    expect(await before.json()).toEqual({ revisions: [] })
+    expect(await f.db.select().from(worldSceneRevisions)).toHaveLength(0)
+
+    const first = await scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers: owner,
+      body: JSON.stringify({ requestId: 'history-v1', expectedVersion: 0, document: voxelEnvelope() }),
+    }, f.env)
+    expect(first.status).toBe(200)
+    const second = await scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers: owner,
+      body: JSON.stringify({ requestId: 'history-v2', expectedVersion: 1, document: voxelEnvelope() }),
+    }, f.env)
+    expect(second.status).toBe(200)
+
+    const history = await scenesRoutes.request('/worlds/home-world/scene/revisions', { headers: owner }, f.env)
+    expect(history.status).toBe(200)
+    expect(await history.json()).toMatchObject({ revisions: [
+      { version: 2, parentVersion: 1, kind: 'voxel-edit' },
+      { version: 1, parentVersion: null, kind: 'voxel-edit' },
+    ] })
+    expect(await f.db.select().from(worldSceneRevisions)).toHaveLength(2)
+
+    const unauthenticated = await scenesRoutes.request('/worlds/home-world/scene/revisions', {}, f.env)
+    expect(unauthenticated.status).toBe(401)
+    const foreign = await scenesRoutes.request('/worlds/other-world/scene/revisions', { headers: owner }, f.env)
+    expect(foreign.status).toBe(404)
+  })
+
   it('repairs a missing scene on the original world and keeps context, residents, and timeline intact', async () => {
     const f = await createWorldFixture(); fixtures.push(f)
     await f.db.insert(persons).values({ id: 'resident-1', userId: 'owner', name: '阿梨', modelJson: '{}', createdAt: '2026-09-21T08:00:00.000Z' })

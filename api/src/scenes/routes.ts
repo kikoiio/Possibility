@@ -36,7 +36,7 @@ scenesRoutes.use('*', async (c, next) => {
   }
   const loginOnly = path === '/api/scene-drafts' || path.startsWith('/api/scene-drafts/')
     || path === '/scene-drafts' || path.startsWith('/scene-drafts/')
-    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:voxel-revision|restore|repair-context|repair-draft)(?:\/|$)/.test(path)
+    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:voxel-revision|restore|repair-context|repair-draft|revisions)(?:\/|$)/.test(path)
   if (loginOnly) return authMiddleware(c, next)
   await next()
 })

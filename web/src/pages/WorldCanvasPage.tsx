@@ -4,7 +4,7 @@ import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, setGuest
 import type {
   ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
-import { SceneHistoryPanel, type SceneRevisionItem } from '../components/scene/SceneHistoryPanel'
+import { SceneHistoryPanel, type SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
@@ -57,15 +57,21 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const splitEventEls = useRef(new Map<string, HTMLElement>())
   const rightScope = useRef<RequestScopeController | null>(null)
   const [mode, setMode] = useState<'life' | 'possibility'>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life')
-  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const [error, setError] = useState('')
   useEffect(() => {
     setGuestRequestContext(guest)
     return () => setGuestRequestContext(false)
   }, [guest])
   const [regeneratingDemo, setRegeneratingDemo] = useState(false)
   const [regenerateError, setRegenerateError] = useState('')
-  const [revisionList, setRevisionList] = useState<SceneRevisionItem[] | null>(null)
+  const [sceneHistoryState, setSceneHistoryState] = useState<SceneHistoryViewState | { status: 'closed' }>({ status: 'closed' })
   const [revisionCurrent, setRevisionCurrent] = useState(0)
+  const sceneHistoryRequestId = useRef(0)
+  const sceneHistoryLoading = useRef(false)
+  const [restoringRevision, setRestoringRevision] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
+  const restoreRequestId = useRef(0)
+  useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
@@ -410,22 +416,46 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
 
   // ── 场景修订历史(体素信封同样走 voxel-revision 链) ──
+  function closeSceneHistory() {
+    sceneHistoryRequestId.current += 1
+    sceneHistoryLoading.current = false
+    restoreRequestId.current += 1
+    setSceneHistoryState({ status: 'closed' })
+    setRestoreError('')
+    setRestoringRevision(false)
+  }
   async function loadRevisionList() {
+    if (sceneHistoryLoading.current || sceneHistoryState.status === 'loading') return
+    const requestId = ++sceneHistoryRequestId.current
+    sceneHistoryLoading.current = true
+    setRestoreError('')
+    setSceneHistoryState({ status: 'loading' })
     try {
-      const current = await worldSceneApi.get(worldId)
-      setRevisionCurrent(current.status === 'ready' ? current.version : 0)
-      setRevisionList((await worldSceneApi.history(worldId)).revisions)
-    } catch (e) { setError(e instanceof Error ? e.message : '场景历史读取失败') }
+      const [current, history] = await Promise.all([worldSceneApi.get(worldId), worldSceneApi.history(worldId)])
+      if (requestId !== sceneHistoryRequestId.current) return
+      const currentVersion = current.status === 'ready' ? current.version : 0
+      setRevisionCurrent(currentVersion)
+      setSceneHistoryState({ status: 'ready', currentVersion, revisions: history.revisions })
+    } catch {
+      if (requestId === sceneHistoryRequestId.current) setSceneHistoryState({ status: 'error', message: '场景历史暂时无法读取，请重试。' })
+    } finally {
+      if (requestId === sceneHistoryRequestId.current) sceneHistoryLoading.current = false
+    }
   }
   async function restoreVersion(version: number) {
-    setBusy(true)
+    if (sceneHistoryState.status !== 'ready' || restoringRevision) return
+    const requestId = ++restoreRequestId.current
+    setRestoringRevision(true)
+    setRestoreError('')
     try {
-      await worldSceneApi.restore(worldId, revisionCurrent, version)
-      setRevisionList(null)
+      await worldSceneApi.restore(worldId, sceneHistoryState.currentVersion, version)
+      closeSceneHistory()
       voxelVersionRef.current = null
       void read()
-    } catch (e) { setError(e instanceof Error ? e.message : '场景恢复失败'); if (e instanceof ApiError && e.status === 409) void read() }
-    finally { setBusy(false) }
+    } catch (e) {
+      if (requestId === restoreRequestId.current) setRestoreError('无法恢复到所选版本，请重试。')
+      if (e instanceof ApiError && e.status === 409) void read()
+    } finally { if (requestId === restoreRequestId.current) setRestoringRevision(false) }
   }
 
   // S2b 体素保存通道:EditController 防抖回调须身份稳定(VoxelViewport 以 onSave 为装配依赖)。
@@ -638,7 +668,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   </main>
 
   return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
-    {revisionList && <SceneHistoryPanel revisions={revisionList} currentVersion={revisionCurrent} busy={busy} onRestore={version => void restoreVersion(version)} onClose={() => setRevisionList(null)} />}
+    {sceneHistoryState.status !== 'closed' && <SceneHistoryPanel state={sceneHistoryState} restoring={restoringRevision} restoreError={restoreError} onRestore={version => void restoreVersion(version)} onRetry={() => void loadRevisionList()} onClose={closeSceneHistory} />}
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#849183]">{snapshot.world.name}{snapshot.world.isDemo ? ' · 演示世界' : ''}</p><h1 className="font-story text-xl text-[#2d4435]">{mode === 'possibility' ? '另一种可能' : '这里正在生活'}</h1></div><div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => {
         const selectedWorld = worldChoices.find(world => world.id === event.target.value)
@@ -667,7 +697,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       {snapshot.timelines.length > 1 && <button onClick={() => { setCompareInitial(null); setCompareOpen(true) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">对照宇宙</button>}
       <button onClick={() => setLlmConfigOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">LLM</button>
       {(running || !evidenceReadonly) && <button onClick={() => void handlePauseResume()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">{running ? '暂停' : '继续'}</button>}
-      <button onClick={() => void loadRevisionList()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
+      <button onClick={() => { if (sceneHistoryState.status === 'closed') void loadRevisionList() }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
       <button onClick={() => navigate('/settings')} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">设置</button>
       <button onClick={() => void handleArchiveWorld()} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#849184]">归档</button>
       <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#536558]">退出</button>
