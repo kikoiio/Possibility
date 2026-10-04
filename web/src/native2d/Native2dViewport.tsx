@@ -82,14 +82,14 @@ export default function Native2dViewport({
     const viewport = viewportRef.current
     if (!viewport || !presentation) return
     viewport.setPresentation(presentation)
-  }, [presentation])
+  }, [presentation, ready])
 
-  useEffect(() => viewportRef.current?.setSelection(selection), [selection])
-  useEffect(() => viewportRef.current?.setFollow(followPersonId), [followPersonId])
-  useEffect(() => viewportRef.current?.setMovePreview(movePreview), [movePreview])
+  useEffect(() => viewportRef.current?.setSelection(selection), [selection, ready])
+  useEffect(() => viewportRef.current?.setFollow(followPersonId), [followPersonId, ready])
+  useEffect(() => viewportRef.current?.setMovePreview(movePreview), [movePreview, ready])
   useEffect(() => {
     if (overviewRequest > 0) viewportRef.current?.showOverview()
-  }, [overviewRequest])
+  }, [overviewRequest, ready])
 
   return (
     <div className="native2d-viewport-wrap">
