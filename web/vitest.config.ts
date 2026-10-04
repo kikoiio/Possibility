@@ -1,3 +1,3 @@
 import { defineConfig, configDefaults } from 'vitest/config'
 
-export default defineConfig({ test: { exclude: [...configDefaults.exclude, 'e2e/**', 'test-results/**', 'playwright-report/**'] } })
+export default defineConfig({ test: { exclude: [...configDefaults.exclude, 'e2e/**', 'native2d-e2e/**', 'test-results/**', 'playwright-report/**'] } })
