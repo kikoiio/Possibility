@@ -53,7 +53,9 @@ export function visibleKnowledgeForPerson(
     const value = fact.value as Record<string, unknown>
     if (fact.factType === 'environment' && fact.visibility === 'world') {
       if (typeof value.condition !== 'string' || typeof value.value !== 'string') continue
-      visible.push({ kind: 'environment', text: `${String(value.location ?? '全世界')}的${value.condition}：${value.value}`,
+      const condition = value.condition === 'weather' ? '天气'
+        : value.condition === 'lighting' ? '照明' : value.condition === 'access' ? '通行状态' : value.condition
+      visible.push({ kind: 'environment', text: `${String(value.location ?? '全世界')}的${condition}：${value.value}`,
         sourceFactId: fact.id, certainty: 'fact', timelineId: fact.timelineId, simTime: fact.simTime, version: fact.version })
     } else if (fact.factType === 'knowledge' && fact.visibility === 'private' && value.recipientId === personId
       && typeof value.topic === 'string' && typeof value.content === 'string'

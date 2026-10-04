@@ -44,6 +44,32 @@ export interface ForkScenario {
   participants: string[]
   invariants: string[]
   name?: string
+  /** F1 preview metadata; ignored when persisting the displayed scenario text. */
+  sourceVersion?: number
+  actionProposal?: ForkActionProposal | null
+  sourceCandidates?: ForkSourceCandidate[]
+  actionTargets?: { residents: { id: string; name: string }[]; locations: string[] }
+}
+
+export type ForkInitialAction =
+  | { type: 'inform'; recipientId: string; topic: string; content: string; sourceFactId?: string }
+  | { type: 'environment'; location: string; condition: 'weather' | 'lighting' | 'access'; value: string }
+
+export type ForkActionProposal = ForkInitialAction
+
+export interface ForkSourceCandidate {
+  id: string
+  type: 'knowledge' | 'environment' | 'location' | 'resident_state'
+  simTime: string
+  certainty: 'fact' | 'rumor'
+  label: string
+}
+
+export interface ForkActionReceipt {
+  commandId: string
+  factId: string
+  version: number
+  summary: string
 }
 
 /** 世界级 fork 提交入参（S2/F4）：两字段必填，participants/invariants 可选；S4/F6 startTime 可选=过去时刻分叉 */
@@ -56,6 +82,8 @@ export interface ForkResult {
   simNow: string
   name: string
   whatIf: string
+  action?: ForkActionReceipt
+  replayed?: boolean
 }
 
 /** S4/F6:历史可回溯范围（earliest=null 表示该线不支持历史分叉） */
@@ -475,9 +503,37 @@ export interface CommitmentView {
   id: string; worldId: string; timelineId: string; personId: string; visitorId: string
   title: string; kind: string; location: string; dueSim: string; status: string; personName: string
 }
+export interface ReturnChange {
+  id: string
+  kind: 'event' | 'fact'
+  simTime: string
+  title: string
+  description: string
+  eventId: string | null
+  eventCursor: number | null
+  factId: string | null
+  revisionVersion: number | null
+  sourceCommandId: string | null
+  actorPersonId: string | null
+  actorName: string | null
+  highlight: 'state_change' | 'commitment_change' | null
+}
 export interface ReturnBrief {
   timelineId: string; simNow: string; firstVisit: boolean; cursor: number
+  eventCursor: number; revisionVersion: number; nextEventCursor: number; nextRevisionVersion: number; hasMore: boolean
+  summary: string; changes: ReturnChange[]
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
+}
+export interface EventEvidenceDetail {
+  timelineId: string
+  event: { id: string; simTime: string; title: string; description: string; kind: string; actorPersonId: string | null; actorName: string | null; location: string | null }
+  command: { id: string; type: string; version: number; actorName: string | null } | null
+  facts: Array<{ id: string; factType: string; simTime: string; version: number; visibility: string; subjectId: string; value: Record<string, unknown>; sourceCommandId: string }>
+  visibleKnowledge: Array<{ factId: string; recipientName: string | null; topic: string; content: string; certainty: 'fact' | 'rumor'; simTime: string }>
+  stateSnapshot: Array<{ personName: string | null; location: string | null; activity: string | null; mood: string | null }>
+  reconstruction: { status: 'complete' | 'unsupported'; simTime: string | null; version: number | null; completeDomains: string[]; reason: string | null }
+  gaps: string[]
+  forkAvailable: boolean
 }
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces, WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'

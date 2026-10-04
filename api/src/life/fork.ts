@@ -1,13 +1,15 @@
-import { and, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
-import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
+import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMemories, type ForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines, SNAPSHOT_REF_JSON, writeForkSnapshot } from './snapshot-store'
 import type { ForkScenario } from '../agent/types'
 import { ensureUniverseRevision, PROJECTION_DOMAINS, type ProjectionDomain } from '../world-state/model'
 import { reconstructAt, type Reconstruction } from '../world-state/reconstruct'
 import { WorldStateError } from '../world-state/types'
-import { requireWritableUniverse } from '../engine/guard'
+import { gateUniverseWrite } from '../engine/guard'
+import { forkActionSummary, type PreparedForkAction } from './fork-action'
 
 function databaseErrorMessages(error: unknown): string[] {
   const messages: string[] = []
@@ -33,14 +35,33 @@ export function forkConflict(error: unknown, busyMessage = '分叉过程中数�
   if (message.includes('active_timeline_limit')) {
     return new WorldStateError('活跃时间线已达上限（3 条），请先归档一条', 409)
   }
-  if (['fork_source_state_conflict', 'fork_source_version_conflict', 'fork_source_schedule_conflict'].some(marker => message.includes(marker))) {
+  if (['fork_source_state_conflict', 'fork_source_version_conflict', 'fork_source_schedule_conflict', 'fork_source_version_guard'].some(marker => message.includes(marker))) {
     return new WorldStateError('源宇宙在创建分叉前已变化；请刷新当前状态后重试。', 409)
   }
   return null
 }
 
+export interface ForkTimelineOptions {
+  expectedSourceVersion?: number
+  initialAction?: PreparedForkAction
+}
+
+export interface ForkActionReceipt {
+  commandId: string
+  factId: string
+  version: number
+  summary: string
+}
+
 /** Read a consistent source snapshot, then atomically persist the child and all copied rows. */
-export async function forkTimeline(db: Db, worldId: string, sourceId: string, scenario: ForkScenario | null = null, requestId?: string) {
+export async function forkTimeline(
+  db: Db,
+  worldId: string,
+  sourceId: string,
+  scenario: ForkScenario | null = null,
+  requestId?: string,
+  options: ForkTimelineOptions = {},
+) {
   if (requestId && (requestId.length > 100 || !requestId.trim())) throw new Error('分叉请求 ID 无效')
   const replay = async () => {
     if (!requestId) return null
@@ -50,7 +71,18 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     if (prior.worldId !== worldId || prior.parentTimelineId !== sourceId || prior.forkScenarioJson !== (scenario ? JSON.stringify(scenario) : null) || !priorSnapshot) {
       throw new Error('分叉请求 ID 已用于另一条时间线')
     }
-    return { id: prior.id, simNow: prior.simNow, snapshot: priorSnapshot }
+    const actionCommandId = `fork:${prior.id}:initial`
+    const priorActionCommand = await db.select().from(worldCommands).where(eq(worldCommands.id, actionCommandId)).get()
+    const expectedPayload = options.initialAction ? JSON.stringify(options.initialAction.action) : null
+    if ((priorActionCommand?.payloadJson ?? null) !== expectedPayload) {
+      throw new Error('分叉请求 ID 已用于另一条时间线或不同初始动作')
+    }
+    if (!options.initialAction) return { id: prior.id, simNow: prior.simNow, snapshot: priorSnapshot }
+    const priorFact = await db.select().from(worldFacts).where(eq(worldFacts.sourceCommandId, actionCommandId)).get()
+    if (!priorFact) throw new Error('分叉动作回执不存在')
+    return { id: prior.id, simNow: prior.simNow, snapshot: priorSnapshot,
+      action: { commandId: actionCommandId, factId: priorFact.id, version: priorFact.version,
+        summary: forkActionSummary(options.initialAction.action) } satisfies ForkActionReceipt }
   }
   const existing = await replay()
   if (existing) return existing
@@ -58,9 +90,12 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     eq(timelines.id, sourceId), eq(timelines.worldId, worldId),
   )).get()
   if (!selectedSource || selectedSource.status !== 'active') throw new Error('只能分叉活跃时间线')
-  await requireWritableUniverse(db, worldId, sourceId)
+  const writeGate = await gateUniverseWrite(db, worldId, sourceId)
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
-  if (!world || world.status !== 'running') throw new Error('世界未运行，不能分叉')
+  const pausedInitialization = !!options.initialAction && world?.status === 'paused'
+    && !writeGate.ok && writeGate.error.includes('已暂停')
+  if (!writeGate.ok && !pausedInitialization) throw new WorldStateError(writeGate.error, writeGate.status === 404 ? 404 : 409)
+  if (!world || (world.status !== 'running' && !(options.initialAction && world.status === 'paused'))) throw new Error('世界未运行，不能分叉')
   await ensureUniverseRevision(db, worldId, sourceId)
   const worldTimelineIds = db.select({ id: timelines.id }).from(timelines).where(eq(timelines.worldId, worldId))
   const [worldTimelinesRaw, states, scheduleRows, memoryRows, eventRows, dialogueRows, transcriptRows, commitmentRows, sourceRevisions, sourceFacts, personaMessageRows, sourceVoxelEvents] = await db.batch([
@@ -101,6 +136,11 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
   const forkSimTime = reconstruction?.simTime ?? source.simNow
   const sourceRevision = sourceRevisions[0]
   if (!sourceRevision) throw new Error('分叉源状态版本不可用')
+  if (options.expectedSourceVersion !== undefined
+    && (!Number.isSafeInteger(options.expectedSourceVersion) || options.expectedSourceVersion < 0
+      || sourceRevision.version !== options.expectedSourceVersion)) {
+    throw new WorldStateError('源宇宙在创建分叉前已变化；请刷新当前状态后重试。', 409)
+  }
   const sourceModel = await db.select().from(worldModelVersions).where(and(
     eq(worldModelVersions.worldId, worldId), eq(worldModelVersions.version, sourceRevision.worldModelVersion),
   )).get()
@@ -182,18 +222,67 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     worldFacts: reconstruction?.rows.worldFacts ?? [...(readForkSnapshot(source)?.worldFacts ?? []), ...sourceFacts],
     ...(reconstruction ? { reconstruction: reconstruction.evidence } : {}),
   }
-  const insertTimeline = db.insert(timelines).values({
+  const preparedAction = options.initialAction
+  const childVersion = preparedAction ? 1 : 0
+  const childRevision = db.insert(universeRevisions).values({ timelineId: forkId, version: childVersion, simTime: forkSimTime,
+    worldModelVersion: sourceRevision.worldModelVersion, updatedAt: now })
+  const timelineValues = {
     id: forkId, worldId, parentTimelineId: source.id,
     forkScenarioJson: scenario ? JSON.stringify(scenario) : null,
     forkSnapshotJson: SNAPSHOT_REF_JSON, simNow: forkSimTime, createdAt: now,
-    status: 'active', ancestorIdsJson: JSON.stringify([...cutoffs.map((a) => a.timelineId).reverse(), source.id]),
+    status: 'active' as const, ancestorIdsJson: JSON.stringify([...cutoffs.map((a) => a.timelineId).reverse(), source.id]),
     lastRealTickAt: now,
-  })
-  try { await db.batch([
+  }
+  const insertTimeline = options.expectedSourceVersion === undefined
+    ? db.insert(timelines).values(timelineValues)
+    : db.insert(timelines).select(db.select({
+        id: sql<string>`${timelineValues.id}`.as('id'),
+        worldId: sql<string>`${timelineValues.worldId}`.as('world_id'),
+        parentTimelineId: sql<string | null>`${timelineValues.parentTimelineId}`.as('parent_timeline_id'),
+        forkScenarioJson: sql<string | null>`${timelineValues.forkScenarioJson}`.as('fork_scenario_json'),
+        simNow: sql<string>`${timelineValues.simNow}`.as('sim_now'),
+        createdAt: sql<string>`${timelineValues.createdAt}`.as('created_at'),
+        status: sql<'active'>`${timelineValues.status}`.as('status'),
+        ancestorIdsJson: sql<string>`${timelineValues.ancestorIdsJson}`.as('ancestor_ids_json'),
+        lastRealTickAt: sql<string>`${timelineValues.lastRealTickAt}`.as('last_real_tick_at'),
+        forkSnapshotJson: sql<string>`${timelineValues.forkSnapshotJson}`.as('fork_snapshot_json'),
+      }).from(universeRevisions).innerJoin(timelines, eq(timelines.id, universeRevisions.timelineId)).where(and(
+        eq(universeRevisions.timelineId, source.id), eq(universeRevisions.version, options.expectedSourceVersion),
+        eq(timelines.id, source.id), eq(timelines.worldId, worldId), eq(timelines.status, 'active'),
+      )))
+  const actionCommandId = `fork:${forkId}:initial`
+  const actionCommand = preparedAction ? db.insert(worldCommands).values({
+    id: actionCommandId, worldId, timelineId: forkId, actorKind: 'owner', actorId: null,
+    type: preparedAction.action.type, payloadJson: JSON.stringify(preparedAction.action),
+    expectedVersion: 0, resultVersion: 1, tickLeaseToken: null, createdAt: now,
+  }) : null
+  const actionFactId = preparedAction ? crypto.randomUUID() : null
+  const actionFact = preparedAction && actionFactId ? db.insert(worldFacts).values({
+    id: actionFactId, timelineId: forkId, version: 1, simTime: forkSimTime,
+    factType: preparedAction.plan.factType, subjectId: preparedAction.plan.subjectId,
+    valueJson: JSON.stringify(preparedAction.plan.value), sourceCommandId: actionCommandId,
+    visibility: preparedAction.plan.visibility,
+  }) : null
+  const actionEvent = preparedAction ? db.insert(events).values({
+    id: preparedAction.plan.eventId ?? `command:${actionCommandId}`, timelineId: forkId,
+    simTime: forkSimTime, title: preparedAction.plan.eventTitle,
+    description: preparedAction.plan.eventDescription, kind: preparedAction.plan.eventKind ?? 'action',
+    actorPersonId: null, dialogueId: null, createdVersion: 1,
+  }) : null
+  // Existing SQLite guards require a running world for child/command inserts.
+  // Toggle only inside this atomic batch; observers see the original paused state
+  // unless every fork and action write commits successfully.
+  const pauseForInitialization = pausedInitialization
+    ? db.update(worlds).set({ status: 'running' }).where(and(eq(worlds.id, worldId), eq(worlds.status, 'paused')))
+    : null
+  const restorePause = pausedInitialization
+    ? db.update(worlds).set({ status: 'paused' }).where(and(eq(worlds.id, worldId), eq(worlds.status, 'running')))
+    : null
+  const forkWrites: BatchItem<'sqlite'>[] = [
+    ...(pauseForInitialization ? [pauseForInitialization] : []),
     insertTimeline,
     writeForkSnapshot(db, forkId, snapshot, now),
-    db.insert(universeRevisions).values({ timelineId: forkId, version: 0, simTime: forkSimTime,
-      worldModelVersion: sourceRevision.worldModelVersion, updatedAt: now }),
+    childRevision,
     db.insert(universeEvidence).values({ timelineId: forkId, level: 'complete', assessedVersion: 0,
       baselineVersion: reconstruction?.evidence.throughVersion ?? sourceRevision.version, reasonCodesJson: '["fork_checkpoint_complete"]', assessedAt: now }),
     ...(reconstruction?.rows.states ?? states).map((s) => db.insert(personStates).values({
@@ -203,12 +292,27 @@ export async function forkTimeline(db: Db, worldId: string, sourceId: string, sc
     ...copiedSchedules.map((s) => db.insert(schedules).values({ ...s, timelineId: forkId, createdVersion: 0 })),
     ...copiedCommitments.map((commitment) => db.insert(commitments).values(commitment)),
     ...copiedVoxelEvents.map((row) => db.insert(voxelEventProjections).values(row)),
-  ]) } catch (error) {
+    ...(actionCommand ? [actionCommand] : []),
+    ...(actionFact ? [actionFact] : []),
+    ...(actionEvent ? [actionEvent] : []),
+    ...(preparedAction ? [db.update(universeEvidence).set({ assessedVersion: 1, assessedAt: now })
+      .where(and(eq(universeEvidence.timelineId, forkId), eq(universeEvidence.assessedVersion, 0)))] : []),
+    ...(restorePause ? [restorePause] : []),
+  ]
+  try { await db.batch(forkWrites as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]) } catch (error) {
     const committed = await replay()
     if (committed) return committed
+    if (options.expectedSourceVersion !== undefined && /constraint|foreign key/i.test(databaseErrorMessages(error).join('\n'))) {
+      const latest = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, source.id)).get()
+      if (latest && latest.version !== options.expectedSourceVersion) {
+        throw new WorldStateError('源宇宙在创建分叉前已变化；请刷新当前状态后重试。', 409)
+      }
+    }
     const conflict = forkConflict(error)
     if (conflict) throw conflict
     throw error
   }
-  return { id: forkId, simNow: forkSimTime, snapshot }
+  return { id: forkId, simNow: forkSimTime, snapshot,
+    ...(preparedAction && actionFactId ? { action: { commandId: actionCommandId, factId: actionFactId,
+      version: 1, summary: forkActionSummary(preparedAction.action) } satisfies ForkActionReceipt } : {}) }
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
-import { memories, persons, personStates, timelines, universeRevisions, voxelEventProjections, worldModelVersions, worldPersons } from '../db/schema'
+import { events, memories, persons, personStates, timelines, universeRevisions, voxelEventProjections, worldCommands, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { createRootProjectionBaseline } from '../world-state/model'
 import { commitWorldCommand } from '../world-state/commit'
 import type { WorldAction } from '../world-state/types'
@@ -11,6 +11,7 @@ import { auditUniverse } from '../world-state/invariants'
 import { readForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines } from './snapshot-store'
 import { forkTimeline } from './fork'
+import { prepareForkAction } from './fork-action'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { fixture?.close(); fixture = null })
@@ -194,5 +195,76 @@ describe('forkTimeline 历史分叉(AC7 纪律)', () => {  it('起点之前/未�
     await db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, 'home-main'))
     const archived = await forkTimeline(db, 'home-world', 'home-main', SCENARIO).catch((error: unknown) => error)
     expect((archived as Error).message).toContain('只能分叉活跃时间线')
+  })
+
+  it('F1: 子线起点动作与快照原子创建，版本从 1 开始且源线不变', async () => {
+    const { db } = await buildWorld()
+    const initialAction = prepareForkAction({ type: 'environment', location: 'Library', condition: 'weather', value: '晴朗' }, {
+      recipientIds: new Set(['resident']), locationNames: new Set(['Cafe', 'Library']), sourceFacts: [],
+      allowedTimelineIds: new Set(['home-main']), sourceTimelineId: 'home-main', forkPointVersion: 9,
+    })
+    const before = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, 'home-main')).get()
+    const result = await forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3, expectedSourceVersion: 9 },
+      'f1-atomic-success', { expectedSourceVersion: 9, initialAction })
+    expect(result.action).toMatchObject({ version: 1, summary: 'Library的天气已设为：晴朗' })
+    expect(await db.select().from(timelines).where(eq(timelines.id, result.id)).get()).toBeDefined()
+    expect(await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, result.id)).get())
+      .toMatchObject({ version: 1, simTime: T3 })
+    expect(await db.select().from(worldCommands).where(eq(worldCommands.id, result.action!.commandId)).get())
+      .toMatchObject({ expectedVersion: 0, resultVersion: 1, type: 'environment', timelineId: result.id })
+    expect(await db.select().from(worldFacts).where(eq(worldFacts.id, result.action!.factId)).get())
+      .toMatchObject({ timelineId: result.id, version: 1, simTime: T3, visibility: 'world', factType: 'environment' })
+    expect(await db.select().from(events).where(eq(events.id, `command:${result.action!.commandId}`)).get())
+      .toMatchObject({ timelineId: result.id, createdVersion: 1, simTime: T3 })
+    expect(await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, 'home-main')).get()).toEqual(before)
+
+    const replay = await forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3, expectedSourceVersion: 9 },
+      'f1-atomic-success', { expectedSourceVersion: 9, initialAction })
+    expect(replay).toMatchObject({ id: result.id, action: result.action })
+    expect(await db.select().from(timelines).where(eq(timelines.worldId, 'home-world'))).toHaveLength(2)
+    const different = prepareForkAction({ type: 'environment', location: 'Library', condition: 'weather', value: '大雪' }, {
+      recipientIds: new Set(['resident']), locationNames: new Set(['Cafe', 'Library']), sourceFacts: [],
+      allowedTimelineIds: new Set(['home-main']), sourceTimelineId: 'home-main', forkPointVersion: 9,
+    })
+    await expect(forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3, expectedSourceVersion: 9 },
+      'f1-atomic-success', { expectedSourceVersion: 9, initialAction: different })).rejects.toThrow('不同初始动作')
+  })
+
+  it('F1: 暂停世界只允许带动作的起点初始化；普通 fork 仍受运行门禁限制', async () => {
+    const { db } = await buildWorld()
+    await db.update(worlds).set({ status: 'paused' }).where(eq(worlds.id, 'home-world'))
+    const initialAction = prepareForkAction({ type: 'inform', recipientId: 'resident', topic: '消息', content: '请到图书馆' }, {
+      recipientIds: new Set(['resident']), locationNames: new Set(['Cafe', 'Library']), sourceFacts: [],
+      allowedTimelineIds: new Set(['home-main']), sourceTimelineId: 'home-main', forkPointVersion: 9,
+    })
+    const fork = await forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3, expectedSourceVersion: 9 },
+      'f1-paused-initialization', { expectedSourceVersion: 9, initialAction })
+    expect(fork.action?.version).toBe(1)
+    await expect(forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3 }, 'legacy-paused-fork'))
+      .rejects.toThrow('世界已暂停')
+    expect(await db.select().from(timelines).where(eq(timelines.worldId, 'home-world'))).toHaveLength(2)
+  })
+
+  it('F1: batch 写入失败会回滚子线和全部初始动作记录', async () => {
+    const { db } = await buildWorld()
+    await db.update(worlds).set({ status: 'paused' }).where(eq(worlds.id, 'home-world'))
+    const beforeCommandCount = await db.select().from(worldCommands)
+    const beforeFactCount = await db.select().from(worldFacts)
+    const beforeEventCount = await db.select().from(events)
+    await db.run(sql.raw(`CREATE TRIGGER fail_f1_action_event BEFORE INSERT ON events
+      WHEN NEW.id LIKE 'command:fork:%:initial'
+      BEGIN SELECT RAISE(ABORT, 'f1_event_failure'); END`))
+    const initialAction = prepareForkAction({ type: 'environment', location: 'Library', condition: 'lighting', value: '明亮' }, {
+      recipientIds: new Set(['resident']), locationNames: new Set(['Cafe', 'Library']), sourceFacts: [],
+      allowedTimelineIds: new Set(['home-main']), sourceTimelineId: 'home-main', forkPointVersion: 9,
+    })
+    await expect(forkTimeline(db, 'home-world', 'home-main', { ...SCENARIO, startTime: T3, expectedSourceVersion: 9 },
+      'f1-atomic-failure', { expectedSourceVersion: 9, initialAction })).rejects.toThrow('f1_event_failure')
+    expect(await db.select().from(timelines).where(eq(timelines.worldId, 'home-world'))).toHaveLength(1)
+    expect(await db.select().from(worldCommands)).toHaveLength(beforeCommandCount.length)
+    expect(await db.select().from(worldFacts)).toHaveLength(beforeFactCount.length)
+    expect(await db.select().from(events)).toHaveLength(beforeEventCount.length)
+    expect((await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, 'home-main')).get())?.version).toBe(9)
+    expect((await db.select().from(worlds).where(eq(worlds.id, 'home-world')).get())?.status).toBe('paused')
   })
 })

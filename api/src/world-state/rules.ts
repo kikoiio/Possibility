@@ -46,6 +46,29 @@ export interface ActionPlan {
     items: { start: string; end: string; location: string; activity: string; kind?: 'sleep' }[] }
 }
 
+/** Pure shared materializers for the two world actions accepted at fork start. */
+export function environmentActionPlan(action: Extract<WorldAction, { type: 'environment' }>): ActionPlan {
+  const location = action.location
+  return {
+    factType: 'environment', subjectId: `${location ?? 'world'}:${action.condition}`,
+    value: { location, condition: action.condition, value: action.value }, visibility: 'world',
+    eventTitle: `${location ?? '世界'}的${action.condition}发生变化`,
+    eventDescription: `${location ?? '整个世界'}的${action.condition}变为：${action.value}。`,
+  }
+}
+
+export function informActionPlan(
+  action: Extract<WorldAction, { type: 'inform' }>, certainty: 'fact' | 'rumor',
+): ActionPlan {
+  return {
+    factType: 'knowledge', subjectId: `${action.recipientId}:${action.topic}`,
+    value: { recipientId: action.recipientId, topic: action.topic, content: action.content,
+      certainty, sourceFactId: action.sourceFactId ?? null },
+    visibility: 'private', eventTitle: '一条消息被转告',
+    eventDescription: '一位居民获得一条消息；内容只对获知者可见。',
+  }
+}
+
 export async function validateWorldAction(db: Db, worldId: string, timelineId: string, action: WorldAction): Promise<ActionPlan> {
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   const timeline = await db.select().from(timelines)
@@ -103,12 +126,7 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     const condition = typeof action.condition === 'string' ? action.condition.trim() : ''
     const value = typeof action.value === 'string' ? action.value.trim() : ''
     if (!condition || !value || condition.length > 40 || value.length > 200) throw new WorldStateError('环境条件无效', 400)
-    return {
-      factType: 'environment', subjectId: `${location ?? 'world'}:${condition}`,
-      value: { location, condition, value }, visibility: 'world',
-      eventTitle: `${location ?? '世界'}的${condition}发生变化`,
-      eventDescription: `${location ?? '整个世界'}的${condition}变为：${value}。`,
-    }
+    return environmentActionPlan({ type: 'environment', location, condition, value })
   }
 
   if (action.type === 'intervention') {
@@ -331,12 +349,7 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
         throw new WorldStateError('该记录不能作为已证实消息的来源', 400)
       }
     }
-    return {
-      factType: 'knowledge', subjectId: `${action.recipientId}:${topic}`,
-      value: { recipientId: action.recipientId, topic, content, certainty, sourceFactId: action.sourceFactId ?? null },
-      visibility: 'private', eventTitle: '一条消息被转告',
-      eventDescription: '一位居民获得一条消息；内容只对获知者可见。',
-    }
+    return informActionPlan({ ...action, topic, content }, certainty)
   }
   if (action.type === 'conversation') {
     if (typeof action.dialogueId !== 'string' || !action.dialogueId || typeof action.requestId !== 'string'

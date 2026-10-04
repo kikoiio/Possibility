@@ -32,6 +32,8 @@ export interface ForkScenario {
   changedVariable: string
   participants: string[]
   invariants: string[]
+  /** F1: source revision previewed for an atomic initial-action fork. */
+  expectedSourceVersion?: number
 }
 
 export type AgentMode = 'chat' | 'catchup' | 'simulate'

@@ -145,6 +145,7 @@ import type {
   ChapterSummary,
   DemoInfo,
   DialogueDetail,
+  ForkInitialAction,
   ForkScenario,
   ForkScenarioInput,
   ForkResult,
@@ -158,6 +159,7 @@ import type {
   WorldStreamEvent,
   WorldSummary,
   WorldState,
+  EventEvidenceDetail,
   ReturnBrief,
   TimelineComparison,
 } from './types'
@@ -227,10 +229,11 @@ export const worldsApi = {
       method: 'POST',
       body: JSON.stringify({ text, timelineId, requestId, expectedVersion }),
     }),
-  fork: (worldId: string, timelineId: string, requestId: string, scenario: ForkScenarioInput) =>
+  fork: (worldId: string, timelineId: string, requestId: string, scenario: ForkScenarioInput,
+    f1?: { expectedSourceVersion: number; initialAction: ForkInitialAction }) =>
     apiFetch<ForkResult>(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, scenario }),
+      body: JSON.stringify({ requestId, scenario, ...f1 }),
     }),
   forkPreview: (worldId: string, timelineId: string, whatIf: string, startTime?: string) =>
     apiFetch<ForkScenario>(`/api/worlds/${worldId}/timelines/${timelineId}/fork/preview`, {
@@ -399,8 +402,16 @@ export const sceneApi = {
 }
 
 export const lifeApi = {
-  returnBrief: (worldId: string, timelineId: string) => apiFetch<ReturnBrief>(`/api/worlds/${worldId}/return?timelineId=${encodeURIComponent(timelineId)}`),
-  markSeen: (worldId: string, timelineId: string, cursor: number) => apiFetch<{ok: true}>(`/api/worlds/${worldId}/return/seen`, {method:'POST', body: JSON.stringify({timelineId, cursor})}),
+  returnBrief: (worldId: string, timelineId: string, page?: { eventCursor?: number; revisionVersion?: number }) => {
+    const query = new URLSearchParams({ timelineId })
+    if (page?.eventCursor !== undefined) query.set('eventCursor', String(page.eventCursor))
+    if (page?.revisionVersion !== undefined) query.set('revisionVersion', String(page.revisionVersion))
+    return apiFetch<ReturnBrief>(`/api/worlds/${worldId}/return?${query.toString()}`)
+  },
+  eventEvidence: (worldId: string, timelineId: string, eventId: string) =>
+    apiFetch<EventEvidenceDetail>(`/api/worlds/${worldId}/events/${encodeURIComponent(eventId)}/evidence?timelineId=${encodeURIComponent(timelineId)}`),
+  markSeen: (worldId: string, timelineId: string, eventCursor: number, revisionVersion = 0) =>
+    apiFetch<{ok: true}>(`/api/worlds/${worldId}/return/seen`, {method:'POST', body: JSON.stringify({timelineId, eventCursor, revisionVersion})}),
   act: (worldId: string, commitmentId: string, action: string, explanation?: string) => apiFetch<{ok:true;status:string}>(`/api/worlds/${worldId}/commitments/${commitmentId}`, {method:'POST', body: JSON.stringify({action, explanation})}),
   compare: (worldId: string, left: string, right: string, opts: { simTime?: string } = {}) =>
     apiFetch<TimelineComparison>(`/api/worlds/${worldId}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}${opts.simTime ? `&simTime=${encodeURIComponent(opts.simTime)}` : ''}`),

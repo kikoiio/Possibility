@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import type { ForkScenario, ForkScenarioInput, HistoryRange, TimelineInfo } from '../../api/types'
+import { useEffect, useRef, useState } from 'react'
+import type { ForkInitialAction, ForkScenario, ForkScenarioInput, HistoryRange, TimelineInfo } from '../../api/types'
 import ScenarioCard from '../ScenarioCard'
 import { planMomentCheck, toLocalInputValue } from './forkMoment'
 import { formatWorldTime } from '../../lib/world-time'
@@ -9,7 +9,7 @@ interface Props {
   timelines: TimelineInfo[]
   currentTimelineId: string
   onSwitch: (timelineId: string) => Promise<boolean | void> | boolean | void
-  onFork: (scenario: ForkScenarioInput) => Promise<boolean>
+  onFork: (scenario: ForkScenarioInput, f1?: { expectedSourceVersion: number; initialAction: ForkInitialAction }) => Promise<boolean>
   /** 一句话预览（S2/F1）：LLM 起草五字段场景，不落库；S4/F6 可带已吸附的历史时刻 */
   onPreview: (whatIf: string, startTime?: string) => Promise<ForkScenario>
   onArchive: (timelineId: string) => void
@@ -22,12 +22,13 @@ interface Props {
   onForkOpen?: () => void
   /** S4/F6:单点可重建性判定——返回吸附后的有效时刻;不可重建时抛错,消息即原因 */
   onCheckMoment?: (at: string) => Promise<string>
+  forkPrefill?: { key: string; whatIf: string; simTime: string } | null
 }
 
 type ForkStep = 'input' | 'advanced' | 'confirm'
 
 /** 时间线切换器：列表 + Fork 入口（一句话预览 → 确认卡；高级=两字段手写）+ 归档 */
-export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onPreview, onArchive, writeLocked = false, onSplitView, historyRange, onForkOpen, onCheckMoment }: Props) {
+export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitch, onFork, onPreview, onArchive, writeLocked = false, onSplitView, historyRange, onForkOpen, onCheckMoment, forkPrefill }: Props) {
   const [open, setOpen] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
   const [step, setStep] = useState<ForkStep>('input')
@@ -35,6 +36,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   const [name, setName] = useState('')
   const [changedVariable, setChangedVariable] = useState('')
   const [scenario, setScenario] = useState<ForkScenario | null>(null)
+  const [initialAction, setInitialAction] = useState<ForkInitialAction | null>(null)
   const [forkError, setForkError] = useState('')
   const [forking, setForking] = useState(false)
   const forkPending = useRef(false)
@@ -57,6 +59,16 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   const [effectiveMoment, setEffectiveMoment] = useState<string | null>(null)
   const [momentError, setMomentError] = useState('')
   const [momentChecking, setMomentChecking] = useState(false)
+  useEffect(() => {
+    if (!forkPrefill) return
+    resetFork()
+    setWhatIf(forkPrefill.whatIf)
+    setMomentMode('custom')
+    setMomentInput(toLocalInputValue(forkPrefill.simTime))
+    setMomentDirty(true)
+    setForkOpen(true)
+    onForkOpen?.()
+  }, [forkPrefill?.key])
   const active = timelines.filter((t) => t.status === 'active')
   const current = timelines.find((t) => t.id === currentTimelineId)
   const depth = (id: string): number => {
@@ -79,6 +91,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
   const resetFork = () => {
     setStep('input')
     setScenario(null)
+    setInitialAction(null)
     setForkError('')
     setMomentMode('current')
     setMomentInput('')
@@ -138,6 +151,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
       const startTime = await resolveStartTime()
       const draft = await onPreview(text, startTime)
       setScenario({ ...draft, name: draft.name || text.slice(0, 80) })
+      setInitialAction(draft.actionProposal ?? null)
       setStep('confirm')
     } catch (e) {
       setForkError(e instanceof Error ? e.message : '场景生成失败，请重试')
@@ -175,6 +189,25 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
     if (!scenario || forkPending.current) return
     const invalid = forkFieldsError(scenario)
     if (invalid) { setForkError(invalid); return }
+    if (!initialAction || !Number.isSafeInteger(scenario.sourceVersion)) {
+      setForkError('当前设定无法映射为受支持的初始动作，请返回修改 what-if 后重新预览。')
+      return
+    }
+    if (initialAction.type === 'inform') {
+      if (!initialAction.recipientId || !initialAction.topic.trim() || initialAction.topic.trim().length > 80
+        || !initialAction.content.trim() || initialAction.content.trim().length > 500) {
+        setForkError('请补全接收居民、主题和消息内容（主题 ≤80 字，内容 ≤500 字）。')
+        return
+      }
+      if (initialAction.sourceFactId && !scenario.sourceCandidates?.some(candidate => candidate.id === initialAction.sourceFactId)) {
+        setForkError('所选来源已不在当前预览的合格证据中，请重新预览。')
+        return
+      }
+    } else if (!initialAction.location || !scenario.actionTargets?.locations.includes(initialAction.location)
+      || !initialAction.value.trim() || initialAction.value.trim().length > 200) {
+      setForkError('请从世界地点中选择目标地点，并填写不超过 200 字的环境状态。')
+      return
+    }
     setForkError('')
     forkPending.current = true
     setForking(true)
@@ -188,7 +221,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
         // 预览返回的 startTime 已是服务端吸附后的有效时刻(现时刻=simNow,透传不改变行为)
         startTime: scenario.startTime,
       }
-      if (await onFork(input)) { setForkOpen(false); resetFork() }
+      if (await onFork(input, { expectedSourceVersion: scenario.sourceVersion!, initialAction })) { setForkOpen(false); resetFork() }
       else setForkError('创建未完成，输入已保留，请重试。')
     } catch (e) {
       setForkError(e instanceof Error ? e.message : '创建失败，输入已保留，请重试。')
@@ -415,6 +448,79 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
               <div className="mt-3">
                 <ScenarioCard scenario={scenario} timeZone={current?.timeZone} onChange={setScenario} />
               </div>
+              <section className="mt-3 rounded-lg border border-ink-line p-3" data-testid="fork-initial-action">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-ink-soft" htmlFor="fork-action-type">子线起点动作</label>
+                  {initialAction && (
+                    <select
+                      id="fork-action-type"
+                      value={initialAction.type}
+                      onChange={event => setInitialAction(event.target.value === 'inform'
+                        ? { type: 'inform', recipientId: '', topic: '', content: '' }
+                        : { type: 'environment', location: '', condition: 'weather', value: '' })}
+                      disabled={forking}
+                      className="rounded border border-ink-line px-2 py-1 text-xs text-ink-soft"
+                    >
+                      <option value="inform">向居民传递消息</option>
+                      <option value="environment">改变地点环境</option>
+                    </select>
+                  )}
+                </div>
+                {!initialAction ? (
+                  <p role="alert" className="mt-2 text-xs text-red-600" data-testid="fork-action-unsupported">
+                    当前 what-if 无法映射到支持的初始动作，请返回修改设定后重新预览。
+                  </p>
+                ) : initialAction.type === 'inform' ? (
+                  <div className="mt-2 space-y-2">
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-recipient">接收居民</label>
+                    <select id="fork-action-recipient" value={initialAction.recipientId}
+                      onChange={event => setInitialAction({ ...initialAction, recipientId: event.target.value })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft">
+                      <option value="">选择居民</option>
+                      {scenario.actionTargets?.residents.map(resident => <option key={resident.id} value={resident.id}>{resident.name}</option>)}
+                    </select>
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-topic">消息主题</label>
+                    <input id="fork-action-topic" value={initialAction.topic} maxLength={80}
+                      onChange={event => setInitialAction({ ...initialAction, topic: event.target.value })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft" />
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-content">消息内容</label>
+                    <textarea id="fork-action-content" value={initialAction.content} maxLength={500} rows={3}
+                      onChange={event => setInitialAction({ ...initialAction, content: event.target.value })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft" />
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-source">消息来源</label>
+                    <select id="fork-action-source" value={initialAction.sourceFactId ?? ''}
+                      onChange={event => setInitialAction({ ...initialAction, sourceFactId: event.target.value || undefined })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft">
+                      <option value="">无来源（作为传闻）</option>
+                      {scenario.sourceCandidates?.map(candidate => <option key={candidate.id} value={candidate.id}>
+                        {candidate.label} · {candidate.certainty === 'fact' ? '事实' : '传闻'} · {formatWorldTime(candidate.simTime, current?.timeZone)}
+                      </option>)}
+                    </select>
+                    <p className="text-[10px] text-ink-faint">引用来源会继承其事实/传闻级别；不选来源时消息按传闻记录。</p>
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-location">地点</label>
+                    <select id="fork-action-location" value={initialAction.location}
+                      onChange={event => setInitialAction({ ...initialAction, location: event.target.value })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft">
+                      <option value="">选择地点</option>
+                      {scenario.actionTargets?.locations.map(location => <option key={location} value={location}>{location}</option>)}
+                    </select>
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-condition">状态类别</label>
+                    <select id="fork-action-condition" value={initialAction.condition}
+                      onChange={event => setInitialAction({ ...initialAction, condition: event.target.value as 'weather' | 'lighting' | 'access' })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft">
+                      <option value="weather">天气</option><option value="lighting">照明</option><option value="access">通行</option>
+                    </select>
+                    <label className="block text-[11px] text-ink-faint" htmlFor="fork-action-value">目标状态（≤200 字）</label>
+                    <input id="fork-action-value" value={initialAction.value} maxLength={200}
+                      onChange={event => setInitialAction({ ...initialAction, value: event.target.value })}
+                      disabled={forking} className="w-full rounded border border-ink-line px-2 py-1.5 text-xs text-ink-soft" />
+                    <p className="text-[10px] text-ink-faint">会写入子线世界事实和事件；首版不联动图形、导航或物理规则。</p>
+                  </div>
+                )}
+              </section>
               {forkError && <p role="alert" className="mt-2 text-xs text-red-600">{forkError}</p>}
               <div className="mt-3 flex items-center justify-between gap-2">
                 <button
@@ -427,7 +533,7 @@ export default function TimelineSwitcher({ timelines, currentTimelineId, onSwitc
                 </button>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setForkOpen(false)} disabled={forking} className="rounded-lg border border-ink-line px-3 py-1.5 text-xs text-ink-soft disabled:opacity-50">取消</button>
-                  <button type="button" onClick={() => void forkConfirmed()} disabled={forking} data-testid="fork-confirm" className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '创建中…' : '确认，让这条时间线开始'}</button>
+                  <button type="button" onClick={() => void forkConfirmed()} disabled={forking || !initialAction} data-testid="fork-confirm" className="rounded-lg bg-ink px-3 py-1.5 text-xs text-white disabled:opacity-50">{forking ? '创建中…' : '确认动作并创建分支'}</button>
                 </div>
               </div>
             </>

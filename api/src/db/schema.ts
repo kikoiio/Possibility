@@ -522,6 +522,7 @@ export const worldVisits = sqliteTable('world_visits', {
   userId: text('user_id').notNull().references(() => users.id),
   timelineId: text('timeline_id').notNull().references(() => timelines.id),
   eventCursor: integer('event_cursor').notNull().default(0),
+  revisionVersion: integer('revision_version').notNull().default(0),
   seenAt: text('seen_at').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.timelineId] })])
 
