@@ -1,0 +1,91 @@
+{
+  "worldId": "8ff1a23f-f784-44d9-af6d-7a53d6d8dde6",
+  "worldName": "雾影庄",
+  "timelineId": "9ccbc882-97a9-41e6-ba13-df4418dcc0f2",
+  "stateVersion": 0,
+  "locations": [
+    {
+      "name": "大厅",
+      "description": "雾影庄的迎客厅，暖炉与挂钟，住客们最常碰面的地方。"
+    },
+    {
+      "name": "书房",
+      "description": "庄主白川宗一郎的房间，书架与账桌，未经许可不得入内——窗边的视线很好。"
+    },
+    {
+      "name": "餐厅",
+      "description": "长桌八席，一日三餐与饭桌上的闲谈在此。"
+    },
+    {
+      "name": "图书室",
+      "description": "收藏旧书与旧报纸的安静房间，角落堆着多年未动的库房箱子。"
+    },
+    {
+      "name": "温室花房",
+      "description": "玻璃顶的暖房，宗一郎的兰草与时令花草，雾气在玻璃上结露。"
+    },
+    {
+      "name": "门房小屋",
+      "description": "庄门旁的小木屋，现借给记者三田村千鹤居住。"
+    },
+    {
+      "name": "后山散步道",
+      "description": "通往温泉的山径，穿过杉木林，往返约半个时辰。"
+    }
+  ],
+  "residents": [
+    {
+      "id": "da86cffa-6c72-4a06-bd2f-650a13c8f185",
+      "name": "雾野 透",
+      "activity": "炉边和衣睡下，留一只耳朵给挂钟——那口走了三十年的钟今夜敲第几声，在下想数一数",
+      "location": "大厅"
+    },
+    {
+      "id": "eb5cafd6-d52c-4e5a-b223-71ee7dc19234",
+      "name": "柊 一成",
+      "activity": "暖炉边合衣小睡，夜里醒过两次，听挂钟，没去翻出诊记录",
+      "location": "大厅"
+    },
+    {
+      "id": "ebfd8072-df88-467b-a250-94209296d023",
+      "name": "白川 宗一郎",
+      "activity": "就寝。合门熄灯，把白日的痕在心里再过一遍，醒前不点灯",
+      "location": "书房"
+    },
+    {
+      "id": "85b3b52f-9549-4669-9d35-8d3996da10d3",
+      "name": "白川 怜",
+      "activity": "和衣浅眠，稿纸摊开作掩护，书页压在怀里——有人推门就是读到天亮的样子",
+      "location": "图书室"
+    },
+    {
+      "id": "d597d045-05f0-49ff-982f-879fd6f2322c",
+      "name": "小夜",
+      "activity": "查看兰草与玻璃上的露水，推开一线天窗换气",
+      "location": "温室花房"
+    },
+    {
+      "id": "8524db6c-cef7-4c5d-b2e2-d308a4336b1a",
+      "name": "三田村 千鹤",
+      "activity": "睡下。手边压着本子，两栏照旧：台面上、台面下。",
+      "location": "门房小屋"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:15174/api/public/demo",
+      "path": "/api/public/demo"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:15174/api/public/worlds/8ff1a23f-f784-44d9-af6d-7a53d6d8dde6",
+      "path": "/api/public/worlds/8ff1a23f-f784-44d9-af6d-7a53d6d8dde6"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:15174/api/public/worlds/8ff1a23f-f784-44d9-af6d-7a53d6d8dde6?timelineId=9ccbc882-97a9-41e6-ba13-df4418dcc0f2",
+      "path": "/api/public/worlds/8ff1a23f-f784-44d9-af6d-7a53d6d8dde6"
+    }
+  ]
+}

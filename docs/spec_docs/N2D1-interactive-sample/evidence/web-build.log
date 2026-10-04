@@ -1,0 +1,36 @@
+npm notice run web@0.0.0 build
+npm notice run tsc --noEmit && vite build
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 882 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                       0.87 kB │ gzip:   0.48 kB
+dist/assets/sample-page-DK8K9xyC.css                 13.52 kB │ gzip:   3.19 kB
+dist/assets/index-CaEXWl40.css                       39.32 kB │ gzip:   8.07 kB
+dist/assets/webworkerAll-BAM2H9sH.js                  0.06 kB │ gzip:   0.07 kB
+dist/assets/BitmapFont-D0drpEuj.js                    0.07 kB │ gzip:   0.08 kB
+dist/assets/WebGLRenderer-DiBkphvn.js                 0.07 kB │ gzip:   0.08 kB
+dist/assets/CanvasRenderer-B2tph6l3.js                0.07 kB │ gzip:   0.08 kB
+dist/assets/WebGPURenderer-_Jj6RIAG.js                0.07 kB │ gzip:   0.08 kB
+dist/assets/getTextureBatchBindGroup-xN-GZasM.js      0.34 kB │ gzip:   0.26 kB
+dist/assets/rolldown-runtime-hePW80VL.js              0.71 kB │ gzip:   0.42 kB
+dist/assets/Cache-DdhBTWUZ.js                         1.09 kB │ gzip:   0.55 kB
+dist/assets/canvasUtils-BRLWHRit.js                   6.05 kB │ gzip:   2.04 kB
+dist/assets/getTexelRangeRects-BHv5vNre.js           11.35 kB │ gzip:   2.99 kB
+dist/assets/init-BERA_fRg.js                         15.25 kB │ gzip:   4.74 kB
+dist/assets/GCManagedHash-BT5-A3sg.js                19.33 kB │ gzip:   6.27 kB
+dist/assets/Filter-BaUIMQ3R.js                       42.00 kB │ gzip:  12.01 kB
+dist/assets/browserAll-CjW47OLl.js                   43.51 kB │ gzip:  11.26 kB
+dist/assets/RenderTargetSystem-QsUgh-z0.js           58.83 kB │ gzip:  16.39 kB
+dist/assets/GraphicsContext-qjFgsARS.js              61.70 kB │ gzip:  20.65 kB
+dist/assets/Geometry-yNEDt-9w.js                     70.54 kB │ gzip:  22.86 kB
+dist/assets/sample-page-Chapwlm0.js                 318.90 kB │ gzip:  93.05 kB
+dist/assets/index-DG_59KYj.js                     1,287.27 kB │ gzip: 355.35 kB
+
+✓ built in 1.06s
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.

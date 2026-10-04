@@ -1,0 +1,52 @@
+[
+  {
+    "sample": "building-move-preview",
+    "renderer": "WebGLRenderer",
+    "resolution": 1,
+    "viewport": [
+      930,
+      468
+    ],
+    "drawDelta": 15,
+    "elapsedMs": 450,
+    "lastRenderMs": 1.2999999970197678
+  },
+  {
+    "sample": "mobile-pan",
+    "browser": "153.0.8010.12",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+    "renderer": "WebGLRenderer",
+    "dpr": 1,
+    "resolution": 1,
+    "viewport": [
+      364,
+      497
+    ],
+    "drawDelta": 19,
+    "elapsedMs": 685,
+    "lastRenderMs": 1.0999999940395355,
+    "raf": {
+      "frames": 61,
+      "durationMs": 1014.5999999940395
+    }
+  },
+  {
+    "sample": "mobile-pinch",
+    "browser": "153.0.8010.12",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+    "renderer": "WebGLRenderer",
+    "dpr": 1,
+    "resolution": 1,
+    "viewport": [
+      364,
+      497
+    ],
+    "drawDelta": 24,
+    "elapsedMs": 486,
+    "lastRenderMs": 0.7000000029802322,
+    "raf": {
+      "frames": 61,
+      "durationMs": 1013.8000000119209
+    }
+  }
+]

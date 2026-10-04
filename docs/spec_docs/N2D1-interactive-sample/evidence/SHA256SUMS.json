@@ -1,0 +1,132 @@
+[
+  {
+    "file": "web-unit.log",
+    "bytes": 476,
+    "sha256": "422ee1da2fd4b26ed74ea971113b57c8639b2e3af5656afd07634ca6b98ffe3c"
+  },
+  {
+    "file": "web-build.log",
+    "bytes": 2402,
+    "sha256": "5cbee6c22c074a820dd78ec236e46aae7394075771be6251b288e201344c914b"
+  },
+  {
+    "file": "browser-collection.log",
+    "bytes": 5978,
+    "sha256": "a84955cf22942713a5530b0b0e0a4583a9c78cdf2d652b78d5fe692957dcfb5c"
+  },
+  {
+    "file": "unit-collection.log",
+    "bytes": 58591,
+    "sha256": "b976ec22dd79d6f38bcf8b25336b8ca9b357e8298f637afa3a928b6577aa0b1a"
+  },
+  {
+    "file": "native2d-browser.log",
+    "bytes": 8770,
+    "sha256": "b91af94aa5b902e2506c902194a953ee11ed9235259b97d18ef6cc0329917666"
+  },
+  {
+    "file": "3d-regression.log",
+    "bytes": 2772,
+    "sha256": "ca953d9b534e7fcd5af18fc8bd9e3a3f95bfafe595dcb1d73bcd1d6f1fdc619b"
+  },
+  {
+    "file": "production-entry.log",
+    "bytes": 242,
+    "sha256": "4ac5300d47c919dea711327d0e914f8fb6f4abb6cebbc11b3f226d50c4e98d6f"
+  },
+  {
+    "file": "production-entry.json",
+    "bytes": 11242,
+    "sha256": "e6602535e30ae34279ddeca40c4af2e6a64b884bae097dcb94673643b0b3e70c"
+  },
+  {
+    "file": "performance.json",
+    "bytes": 1191,
+    "sha256": "743b5918239cea3818ffa3bfcda31fa630f68e23ea12247b6370b0f838ee269b"
+  },
+  {
+    "file": "real-public-identity.json",
+    "bytes": 3162,
+    "sha256": "954d4fb4d400e652c7c1e3a872366aca11609bb5326438983fdb62ecf5082933"
+  },
+  {
+    "file": "buildings-before-moves.png",
+    "bytes": 251003,
+    "sha256": "fceb765838d365c64f777abfd522d3fde859baa6af9c256d582d32b929df365b"
+  },
+  {
+    "file": "day-exterior.png",
+    "bytes": 251019,
+    "sha256": "d463bec909544407a0a04bd51e009874dc73d43bf63bd89d1b93942f3fce6f3c"
+  },
+  {
+    "file": "day-exterior-selected.png",
+    "bytes": 257387,
+    "sha256": "fef0d53f03da76f612cf6c59cf008fc096a718e3e80805aaac29993ec032ec83"
+  },
+  {
+    "file": "day-hall-selected.png",
+    "bytes": 249308,
+    "sha256": "0010c64250744385dbeeed106fc70f43604b8cd26a6f291c0f7f78f8cfd219ed"
+  },
+  {
+    "file": "day-legal-preview.png",
+    "bytes": 260476,
+    "sha256": "97724317e445f6260c2821893896e583a34b84608db1bdf0aacdb66715de01ad"
+  },
+  {
+    "file": "day-invalid-preview.png",
+    "bytes": 275678,
+    "sha256": "0acb81d324b6604ef26a7d0f57cfde11ffe51b971ee1f340a7d5072ea1ce0773"
+  },
+  {
+    "file": "night-exterior.png",
+    "bytes": 255530,
+    "sha256": "5911fe2c0089d0191ce9a1f0eb1be7aaee675dc1e4f2fcf633346130311c08d6"
+  },
+  {
+    "file": "night-hall-selected.png",
+    "bytes": 245828,
+    "sha256": "c70f034db9a07422db7a3e289cc82cdfca620a04cdd475efb28a2865a51bdfb0"
+  },
+  {
+    "file": "night-legal-preview.png",
+    "bytes": 260423,
+    "sha256": "6b0eba65776220063b1a84f966e35b30826e54b589f6cf0fed33b2f570cee2df"
+  },
+  {
+    "file": "night-invalid-preview.png",
+    "bytes": 275717,
+    "sha256": "6fa8c57d1629ca605a6a5d010435a5b8778ffed9ad896c9a9fc5dd96dac81da5"
+  },
+  {
+    "file": "gatehouse-moved.png",
+    "bytes": 255614,
+    "sha256": "d99f6bd013f8033b6bc94908593e2a59f86f0aa27316e716ef589adb175e7108"
+  },
+  {
+    "file": "greenhouse-moved.png",
+    "bytes": 253494,
+    "sha256": "c853f3f0e5b03e20aaecf108dca1265f4e5be0ceb01405d185c0c01522afb0c8"
+  },
+  {
+    "file": "main-house-moved.png",
+    "bytes": 255469,
+    "sha256": "4cc59ad1dcad641a20f58f7a5980d5e14883f82a9fe8cc6104cc58fd29ad7bed"
+  },
+  {
+    "file": "mobile-overview.png",
+    "bytes": 95832,
+    "sha256": "37ce525e6ed5063f24f3466cdb703c3d9e6e73c25d4daab2fe01dfc96eef893a"
+  },
+  {
+    "file": "production-entry.png",
+    "bytes": 251003,
+    "sha256": "fceb765838d365c64f777abfd522d3fde859baa6af9c256d582d32b929df365b"
+  },
+  {
+    "file": "narrow-layout-audit.json",
+    "bytes": 743,
+    "sha256": "ebcc5984439b0d6071546727fd8e3d6f648afa32f49d390e8c87ea365e371f56"
+  }
+]

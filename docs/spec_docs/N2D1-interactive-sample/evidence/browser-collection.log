@@ -1,0 +1,41 @@
+Listing tests:
+  [native2d-desktop] › acceptance.spec.ts:140:3 › N2D1 acceptance gaps › keeps actual resident bounds stable through repeated identical exterior and hall refreshes
+  [native2d-desktop] › acceptance.spec.ts:168:3 › N2D1 acceptance gaps › shows unknown world time and removes time-dependent warm layers without inventing a day phase
+  [native2d-desktop] › acceptance.spec.ts:209:3 › N2D1 acceptance gaps › matches fixed identities, time and every resident and location to the input
+  [native2d-desktop] › acceptance.spec.ts:238:3 › N2D1 acceptance gaps › pins the successful public timeline through multiple manual refresh requests
+  [native2d-desktop] › acceptance.spec.ts:263:3 › N2D1 acceptance gaps › keeps unknown, unmapped and overcrowded residents factual without fabricated positions
+  [native2d-desktop] › acceptance.spec.ts:315:3 › N2D1 acceptance gaps › rejects collision, protected anchors and blocked entrances while allowing a bypassing move
+  [native2d-desktop] › acceptance.spec.ts:343:3 › N2D1 acceptance gaps › cancelled damaged-record recovery leaves its original data and edit gate intact
+  [native2d-desktop] › acceptance.spec.ts:365:3 › N2D1 acceptance gaps › undo remains functional after quota failure and retry persists the undone layout
+  [native2d-desktop] › acceptance.spec.ts:400:3 › N2D1 acceptance gaps › shows an initial read failure and retries without presenting success
+  [native2d-desktop] › acceptance.spec.ts:430:3 › N2D1 acceptance gaps › keeps the old identity and layout when a new source fails, then clears old interaction on success
+  [native2d-desktop] › acceptance.spec.ts:473:3 › N2D1 acceptance gaps › pauses unrepresented follow, resumes at known positions, and clears a missing target
+  [native2d-desktop] › acceptance.spec.ts:511:3 › N2D1 acceptance gaps › cancel and free pan keep the camera free after a later follow target refresh
+  [native2d-desktop] › acceptance.spec.ts:537:3 › N2D1 acceptance gaps › refresh preserves local move history and undo changes only layout, with cancellation and hall edit gates
+  [native2d-desktop] › acceptance.spec.ts:601:3 › N2D1 acceptance gaps › reports storage object and getItem failures, blocks edits, and recovers by retry
+  [native2d-desktop] › acceptance.spec.ts:639:3 › N2D1 acceptance gaps › failed deletion preserves layout, undo history and other scope records
+  [native2d-desktop] › acceptance.spec.ts:673:3 › N2D1 acceptance gaps › keyboard reaches named important controls with visible focus and activates edit and reset actions
+  [native2d-desktop] › editing.spec.ts:47:3 › N2D1 desktop local layout › previews invalid moves, applies a legal move, then undoes it
+  [native2d-desktop] › editing.spec.ts:99:3 › N2D1 desktop local layout › samples render feedback during a building move preview
+  [native2d-desktop] › editing.spec.ts:125:3 › N2D1 desktop local layout › keeps facts unchanged while reset confirmation is explicit
+  [native2d-desktop] › editing.spec.ts:142:3 › N2D1 desktop local layout › keeps public layout storage isolated from fixture scope
+  [native2d-desktop] › editing.spec.ts:157:3 › N2D1 desktop local layout › keeps damaged and incompatible records until an explicit recovery choice
+  [native2d-desktop] › editing.spec.ts:197:3 › N2D1 desktop local layout › retains an applied layout after a quota failure and saves on retry
+  [native2d-desktop] › editing.spec.ts:233:3 › N2D1 desktop local layout › recovers from a missing texture and keeps the viewport usable
+  [native2d-desktop] › editing.spec.ts:251:3 › N2D1 desktop local layout › retries a renderer initialization failure without losing loaded facts
+  [native2d-desktop] › editing.spec.ts:283:3 › N2D1 desktop local layout › renderer retry restores an already moved layout and its facts after route re-entry
+  [native2d-desktop] › editing.spec.ts:361:3 › N2D1 desktop local layout › cleans up diagnostics on route changes and rebuilds after resize and re-entry
+  [native2d-desktop] › lifecycle.spec.ts:11:1 › disposes a viewport that finishes initializing after unmount without accumulating resources
+  [native2d-desktop] › lifecycle.spec.ts:137:1 › aborts a pending old source on unmount and ignores its late response after re-entry
+  [native2d-desktop] › sample.spec.ts:35:3 › N2D1 desktop sample › loads fixed facts, selects residents, follows, and enters the hall
+  [native2d-desktop] › sample.spec.ts:69:3 › N2D1 desktop sample › reads public snapshots, retains stale facts, and retries
+  [native2d-desktop] › sample.spec.ts:102:3 › N2D1 desktop sample › supports overview and canvas selection diagnostics
+  [native2d-desktop] › visual.sample.spec.ts:53:1 › keeps day and night exterior, hall, resident highlights and move feedback readable
+  [native2d-desktop] › visual.sample.spec.ts:120:1 › picks residents, locations and buildings with current camera coordinates and fits full bounds
+  [native2d-desktop] › visual.sample.spec.ts:167:1 › moves three independent building layers without leaving old sprites and retains the main hall binding
+  [native2d-mobile] › sample.mobile.spec.ts:67:3 › N2D1 mobile sample › keeps controls reachable and supports touch selection and panels
+  [native2d-mobile] › sample.mobile.spec.ts:142:3 › N2D1 mobile sample › distinguishes a touch pan from a click
+  [native2d-mobile] › sample.mobile.spec.ts:163:3 › N2D1 mobile sample › switches single and dual touch, then recovers from touch cancellation
+  [native2d-mobile] › sample.mobile.spec.ts:227:3 › N2D1 mobile sample › fits resized mobile overviews, picks all object kinds by touch and samples pan and pinch feedback
+  [native2d-live] › readonly-live.spec.ts:24:3 › N2D1 live public read › reads the configured public demo without writes
+Total: 39 tests in 7 files

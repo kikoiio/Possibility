@@ -1,0 +1,461 @@
+{
+  "browser": "153.0.8010.12",
+  "diagnostics": {
+    "width": 930,
+    "height": 468,
+    "resolution": 1,
+    "renderer": "Ci",
+    "drawCount": 4,
+    "lastRenderMs": 8.5,
+    "objectBounds": {
+      "building:main-house": {
+        "x": 388.392,
+        "y": 104.19200000000001,
+        "width": 153.21599999999995,
+        "height": 140.448
+      },
+      "building:greenhouse": {
+        "x": 541.608,
+        "y": 189.312,
+        "width": 119.16800000000012,
+        "height": 106.39999999999998
+      },
+      "building:gatehouse": {
+        "x": 269.224,
+        "y": 193.568,
+        "width": 102.144,
+        "height": 93.63200000000003
+      },
+      "decoration:tree-edge-1": {
+        "x": 405.416,
+        "y": 74.4,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-2": {
+        "x": 422.44,
+        "y": 82.912,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-3": {
+        "x": 643.752,
+        "y": 193.568,
+        "width": 68.096,
+        "height": 85.11999999999998
+      },
+      "decoration:tree-edge-4": {
+        "x": 660.7760000000001,
+        "y": 202.08,
+        "width": 68.096,
+        "height": 85.12000000000003
+      },
+      "decoration:tree-edge-5": {
+        "x": 388.392,
+        "y": 82.912,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-6": {
+        "x": 643.752,
+        "y": 210.592,
+        "width": 68.096,
+        "height": 85.11999999999998
+      },
+      "decoration:tree-edge-7": {
+        "x": 286.248,
+        "y": 133.984,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-8": {
+        "x": 303.272,
+        "y": 142.496,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-9": {
+        "x": 507.56,
+        "y": 244.64000000000001,
+        "width": 68.09599999999995,
+        "height": 85.11999999999998
+      },
+      "decoration:tree-edge-10": {
+        "x": 524.5840000000001,
+        "y": 253.15200000000002,
+        "width": 68.096,
+        "height": 85.12000000000003
+      },
+      "decoration:tree-edge-11": {
+        "x": 269.224,
+        "y": 142.496,
+        "width": 68.096,
+        "height": 85.12
+      },
+      "decoration:tree-edge-12": {
+        "x": 490.536,
+        "y": 253.15200000000002,
+        "width": 68.09600000000006,
+        "height": 85.12000000000003
+      },
+      "decoration:tree-edge-13": {
+        "x": 490.536,
+        "y": 287.20000000000005,
+        "width": 68.09600000000006,
+        "height": 85.12
+      },
+      "decoration:tree-edge-14": {
+        "x": 473.512,
+        "y": 295.712,
+        "width": 68.09599999999995,
+        "height": 85.12
+      },
+      "decoration:tree-edge-15": {
+        "x": 201.128,
+        "y": 176.544,
+        "width": 68.096,
+        "height": 85.11999999999998
+      },
+      "decoration:tree-edge-16": {
+        "x": 218.152,
+        "y": 185.056,
+        "width": 68.096,
+        "height": 85.12000000000003
+      },
+      "decoration:tree-edge-17": {
+        "x": 456.488,
+        "y": 304.22400000000005,
+        "width": 68.09600000000006,
+        "height": 85.12
+      },
+      "decoration:tree-wall-1": {
+        "x": 507.56,
+        "y": 159.52,
+        "width": 68.09599999999995,
+        "height": 85.12
+      },
+      "decoration:tree-wall-2": {
+        "x": 490.536,
+        "y": 168.032,
+        "width": 68.09600000000006,
+        "height": 85.12
+      },
+      "decoration:tree-wall-3": {
+        "x": 473.512,
+        "y": 176.544,
+        "width": 68.09599999999995,
+        "height": 85.11999999999998
+      },
+      "decoration:tree-wall-4": {
+        "x": 456.488,
+        "y": 185.056,
+        "width": 68.09600000000006,
+        "height": 85.12000000000003
+      },
+      "decoration:shrub-block-1": {
+        "x": 362.856,
+        "y": 185.056,
+        "width": 51.072,
+        "height": 34.048
+      },
+      "decoration:shrub-block-2": {
+        "x": 379.88,
+        "y": 261.664,
+        "width": 51.072,
+        "height": 34.048
+      },
+      "decoration:shrub-block-3": {
+        "x": 447.976,
+        "y": 329.76,
+        "width": 51.072,
+        "height": 34.048
+      },
+      "decoration:shrub-deco-1": {
+        "x": 379.88,
+        "y": 159.52,
+        "width": 51.072,
+        "height": 34.048
+      },
+      "decoration:shrub-deco-2": {
+        "x": 379.88,
+        "y": 244.64000000000001,
+        "width": 51.072,
+        "height": 34.04799999999997
+      },
+      "decoration:shrub-deco-3": {
+        "x": 396.904,
+        "y": 338.27200000000005,
+        "width": 51.072,
+        "height": 34.048
+      },
+      "decoration:shore-pond-1": {
+        "x": 439.464,
+        "y": 299.968,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:shore-pond-2": {
+        "x": 456.488,
+        "y": 308.48,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:shore-pond-3": {
+        "x": 422.44,
+        "y": 308.48,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:shore-pond-4": {
+        "x": 439.464,
+        "y": 316.992,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:shore-pond-5": {
+        "x": 405.416,
+        "y": 316.992,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:shore-pond-6": {
+        "x": 422.44,
+        "y": 325.504,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-1": {
+        "x": 422.44,
+        "y": 223.36,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-2": {
+        "x": 405.416,
+        "y": 231.872,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-3": {
+        "x": 388.392,
+        "y": 240.38400000000001,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-4": {
+        "x": 405.416,
+        "y": 248.89600000000002,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-5": {
+        "x": 422.44,
+        "y": 257.408,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-6": {
+        "x": 439.464,
+        "y": 265.92,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-7": {
+        "x": 456.488,
+        "y": 274.432,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-8": {
+        "x": 473.512,
+        "y": 282.944,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-9": {
+        "x": 490.536,
+        "y": 291.456,
+        "width": 34.04800000000006,
+        "height": 17.024
+      },
+      "decoration:path-road-10": {
+        "x": 507.56,
+        "y": 299.968,
+        "width": 34.047999999999945,
+        "height": 17.024
+      },
+      "decoration:path-road-11": {
+        "x": 558.6320000000001,
+        "y": 274.432,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-12": {
+        "x": 541.608,
+        "y": 282.944,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-13": {
+        "x": 524.5840000000001,
+        "y": 291.456,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-14": {
+        "x": 422.44,
+        "y": 274.432,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-15": {
+        "x": 405.416,
+        "y": 282.944,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-16": {
+        "x": 388.392,
+        "y": 291.456,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-17": {
+        "x": 371.368,
+        "y": 299.968,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-18": {
+        "x": 354.344,
+        "y": 308.48,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-19": {
+        "x": 286.248,
+        "y": 274.432,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-20": {
+        "x": 303.272,
+        "y": 282.944,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-21": {
+        "x": 320.296,
+        "y": 291.456,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-22": {
+        "x": 337.32,
+        "y": 299.968,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-23": {
+        "x": 371.368,
+        "y": 316.992,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-24": {
+        "x": 388.392,
+        "y": 325.504,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-25": {
+        "x": 405.416,
+        "y": 334.016,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-26": {
+        "x": 422.44,
+        "y": 342.528,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-27": {
+        "x": 439.464,
+        "y": 351.04,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "decoration:path-road-28": {
+        "x": 456.488,
+        "y": 359.552,
+        "width": 34.048,
+        "height": 17.024
+      },
+      "location:hill-path": {
+        "x": 456.488,
+        "y": 334.016,
+        "width": 34.048,
+        "height": 25.536
+      },
+      "resident:person-shirakawa-rei": {
+        "x": 445.848,
+        "y": 329.76,
+        "width": 21.279999999999973,
+        "height": 29.79200000000003
+      }
+    }
+  },
+  "gpu": {
+    "vendor": "Google Inc. (Google)",
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+  },
+  "assets": [
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/terrain/tree-occluder.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/terrain/shrub.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/main-house-occluder.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/terrain/path.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/gatehouse-occluder.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/main-house-base.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/greenhouse-occluder.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/gatehouse-base.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/buildings/greenhouse-base.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/terrain/shore.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:15175/native2d/mist-manor/residents/resident-b.png",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "lazyModuleLoaded": true
+}

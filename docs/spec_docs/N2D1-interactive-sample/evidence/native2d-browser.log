@@ -1,0 +1,57 @@
+[WebServer] npm notice run web@0.0.0 dev
+[WebServer] npm notice run vite --host 127.0.0.1 --port 15174
+[WebServer] (node:2011308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 39 tests using 1 worker
+
+(node:2011396) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:140:3 › N2D1 acceptance gaps › keeps actual resident bounds stable through repeated identical exterior and hall refreshes (3.6s)
+  ✓   2 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:168:3 › N2D1 acceptance gaps › shows unknown world time and removes time-dependent warm layers without inventing a day phase (1.6s)
+  ✓   3 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:209:3 › N2D1 acceptance gaps › matches fixed identities, time and every resident and location to the input (2.5s)
+  ✓   4 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:238:3 › N2D1 acceptance gaps › pins the successful public timeline through multiple manual refresh requests (1.6s)
+  ✓   5 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:263:3 › N2D1 acceptance gaps › keeps unknown, unmapped and overcrowded residents factual without fabricated positions (2.2s)
+  ✓   6 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:315:3 › N2D1 acceptance gaps › rejects collision, protected anchors and blocked entrances while allowing a bypassing move (7.9s)
+  ✓   7 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:343:3 › N2D1 acceptance gaps › cancelled damaged-record recovery leaves its original data and edit gate intact (1.9s)
+  ✓   8 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:365:3 › N2D1 acceptance gaps › undo remains functional after quota failure and retry persists the undone layout (4.7s)
+  ✓   9 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:400:3 › N2D1 acceptance gaps › shows an initial read failure and retries without presenting success (1.6s)
+  ✓  10 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:430:3 › N2D1 acceptance gaps › keeps the old identity and layout when a new source fails, then clears old interaction on success (4.2s)
+  ✓  11 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:473:3 › N2D1 acceptance gaps › pauses unrepresented follow, resumes at known positions, and clears a missing target (2.2s)
+  ✓  12 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:511:3 › N2D1 acceptance gaps › cancel and free pan keep the camera free after a later follow target refresh (2.3s)
+  ✓  13 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:537:3 › N2D1 acceptance gaps › refresh preserves local move history and undo changes only layout, with cancellation and hall edit gates (6.8s)
+  ✓  14 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:601:3 › N2D1 acceptance gaps › reports storage object and getItem failures, blocks edits, and recovers by retry (3.2s)
+  ✓  15 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:639:3 › N2D1 acceptance gaps › failed deletion preserves layout, undo history and other scope records (3.7s)
+  ✓  16 [native2d-desktop] › native2d-e2e/acceptance.spec.ts:673:3 › N2D1 acceptance gaps › keyboard reaches named important controls with visible focus and activates edit and reset actions (4.2s)
+  ✓  17 [native2d-desktop] › native2d-e2e/editing.spec.ts:47:3 › N2D1 desktop local layout › previews invalid moves, applies a legal move, then undoes it (4.9s)
+{"sample":"building-move-preview","renderer":"WebGLRenderer","resolution":1,"viewport":[930,468],"drawDelta":15,"elapsedMs":450,"lastRenderMs":1.2999999970197678}
+  ✓  18 [native2d-desktop] › native2d-e2e/editing.spec.ts:99:3 › N2D1 desktop local layout › samples render feedback during a building move preview (1.8s)
+  ✓  19 [native2d-desktop] › native2d-e2e/editing.spec.ts:125:3 › N2D1 desktop local layout › keeps facts unchanged while reset confirmation is explicit (1.5s)
+  ✓  20 [native2d-desktop] › native2d-e2e/editing.spec.ts:142:3 › N2D1 desktop local layout › keeps public layout storage isolated from fixture scope (1.7s)
+  ✓  21 [native2d-desktop] › native2d-e2e/editing.spec.ts:157:3 › N2D1 desktop local layout › keeps damaged and incompatible records until an explicit recovery choice (2.7s)
+  ✓  22 [native2d-desktop] › native2d-e2e/editing.spec.ts:197:3 › N2D1 desktop local layout › retains an applied layout after a quota failure and saves on retry (2.8s)
+  ✓  23 [native2d-desktop] › native2d-e2e/editing.spec.ts:233:3 › N2D1 desktop local layout › recovers from a missing texture and keeps the viewport usable (1.4s)
+  ✓  24 [native2d-desktop] › native2d-e2e/editing.spec.ts:251:3 › N2D1 desktop local layout › retries a renderer initialization failure without losing loaded facts (1.2s)
+  ✓  25 [native2d-desktop] › native2d-e2e/editing.spec.ts:283:3 › N2D1 desktop local layout › renderer retry restores an already moved layout and its facts after route re-entry (2.6s)
+  ✓  26 [native2d-desktop] › native2d-e2e/editing.spec.ts:361:3 › N2D1 desktop local layout › cleans up diagnostics on route changes and rebuilds after resize and re-entry (1.7s)
+  ✓  27 [native2d-desktop] › native2d-e2e/lifecycle.spec.ts:11:1 › disposes a viewport that finishes initializing after unmount without accumulating resources (3.2s)
+  ✓  28 [native2d-desktop] › native2d-e2e/lifecycle.spec.ts:137:1 › aborts a pending old source on unmount and ignores its late response after re-entry (1.6s)
+  ✓  29 [native2d-desktop] › native2d-e2e/sample.spec.ts:35:3 › N2D1 desktop sample › loads fixed facts, selects residents, follows, and enters the hall (1.9s)
+  ✓  30 [native2d-desktop] › native2d-e2e/sample.spec.ts:69:3 › N2D1 desktop sample › reads public snapshots, retains stale facts, and retries (1.6s)
+  ✓  31 [native2d-desktop] › native2d-e2e/sample.spec.ts:102:3 › N2D1 desktop sample › supports overview and canvas selection diagnostics (1.3s)
+  ✓  32 [native2d-desktop] › native2d-e2e/visual.sample.spec.ts:53:1 › keeps day and night exterior, hall, resident highlights and move feedback readable (6.6s)
+  ✓  33 [native2d-desktop] › native2d-e2e/visual.sample.spec.ts:120:1 › picks residents, locations and buildings with current camera coordinates and fits full bounds (2.0s)
+  ✓  34 [native2d-desktop] › native2d-e2e/visual.sample.spec.ts:167:1 › moves three independent building layers without leaving old sprites and retains the main hall binding (5.2s)
+(node:2014840) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  35 [native2d-mobile] › native2d-e2e/sample.mobile.spec.ts:67:3 › N2D1 mobile sample › keeps controls reachable and supports touch selection and panels (6.5s)
+  ✓  36 [native2d-mobile] › native2d-e2e/sample.mobile.spec.ts:142:3 › N2D1 mobile sample › distinguishes a touch pan from a click (1.3s)
+  ✓  37 [native2d-mobile] › native2d-e2e/sample.mobile.spec.ts:163:3 › N2D1 mobile sample › switches single and dual touch, then recovers from touch cancellation (2.1s)
+{"sample":"mobile-pan","browser":"153.0.8010.12","userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36","renderer":"WebGLRenderer","dpr":1,"resolution":1,"viewport":[364,497],"drawDelta":19,"elapsedMs":685,"lastRenderMs":1.0999999940395355,"raf":{"frames":61,"durationMs":1014.5999999940395}}
+{"sample":"mobile-pinch","browser":"153.0.8010.12","userAgent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36","renderer":"WebGLRenderer","dpr":1,"resolution":1,"viewport":[364,497],"drawDelta":24,"elapsedMs":486,"lastRenderMs":0.7000000029802322,"raf":{"frames":61,"durationMs":1013.8000000119209}}
+  ✓  38 [native2d-mobile] › native2d-e2e/sample.mobile.spec.ts:227:3 › N2D1 mobile sample › fits resized mobile overviews, picks all object kinds by touch and samples pan and pinch feedback (5.5s)
+(node:2015138) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  39 [native2d-live] › native2d-e2e/readonly-live.spec.ts:24:3 › N2D1 live public read › reads the configured public demo without writes (4.5s)
+
+  39 passed (2.0m)

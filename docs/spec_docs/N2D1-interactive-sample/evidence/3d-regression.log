@@ -1,0 +1,29 @@
+[WebServer] npm notice run api@0.0.0 dev:s02-e2e
+[WebServer] npm notice run node scripts/start-s02-e2e.mjs /tmp/s02-wrangler-e2e-2017459 18787
+[WebServer] (node:2017494) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] npm notice run npx
+[WebServer] npm notice run 'wrangler' d1 migrations apply DB --local --config wrangler.s02-e2e.toml --persist-to /tmp/s02-wrangler-e2e-2017459
+[WebServer] (node:2018270) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] npm notice run npx
+[WebServer] npm notice run 'wrangler' dev --config wrangler.s02-e2e.toml --ip 127.0.0.1 --port 18787 --persist-to /tmp/s02-wrangler-e2e-2017459
+[WebServer] npm notice run web@0.0.0 dev
+[WebServer] npm notice run vite --host 127.0.0.1 --port 15173
+[WebServer] (node:2018378) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 1 worker
+
+(node:2018433) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-chromium] › e2e/s03-map-entry.spec.ts:37:1 › anonymous landing creates a guest sandbox and opens the multi-space map without mutating the world (2.7s)
+  ✓  2 [desktop-chromium] › e2e/s03-map-entry.spec.ts:51:1 › anonymous landing on a legacy single-space scene shows the readonly map (1.6s)
+  ✓  3 [desktop-chromium] › e2e/s03-map-entry.spec.ts:60:1 › signed-in landing resumes the last world directly on its map (1.0s)
+  ✓  4 [desktop-chromium] › e2e/s5a-navigation-world-list.spec.ts:45:3 › S5A 人物表单与世界列表 › manual form maps errors, focuses first field, and clears corrected errors (968ms)
+  ✓  5 [desktop-chromium] › e2e/s5a-navigation-world-list.spec.ts:82:3 › S5A 人物表单与世界列表 › world list separates same-name worlds with real summaries (909ms)
+  ✓  6 [desktop-chromium] › e2e/s5a-navigation-world-list.spec.ts:100:3 › S5A 人物表单与世界列表 › unmapped server failures remain global while mapped field errors stay local (979ms)
+  ✓  7 [desktop-chromium] › e2e/s5b-visual-finish.spec.ts:90:3 › S5B visual finish desktop › 雾夜外景→主楼室内→第一视角移动→返回外景 (15.6s)
+  ✓  8 [desktop-chromium] › e2e/s5b-visual-finish.spec.ts:193:3 › S5B 保存前后地图回归 owner › 可编辑双空间保存刷新后仍可切换和打开地点卡 (17.7s)
+
+  8 passed (58.4s)

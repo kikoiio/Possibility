@@ -1,12 +1,12 @@
 # N2D1：原生 2D 庄园可交互样板 Tasks
 
-> 状态：主体实现已完成并同步 `origin/main`，分支 `codex/2d-experience`。提交包含基础模块、原生2D交互/E2E及主线同步；验收进度见 checklist。T59 的建筑预览性能和初始化中卸载资源检查仍待补齐，故 T60 验收汇总保持未完成。
+> 状态：开发和验收已完成；提交了原生2D实现、最终资源/遮挡/交互修复及验收证据。`codex/2d-experience`已同步验收时最新本地`main`（`2923d3d`），合并无冲突；2D/浏览器/生产/3D回归均通过。用户已明确授权完成后合入本地main、确认无冲突、删除2D分支并返回main。
 > 输入：已批准的 [spec.md](spec.md)、[plan.md](plan.md)；日期：2026-10-04。
 > 已一并批准的 plan 最小补充：`web/vitest.config.ts` 仅增加 `native2d-e2e/**` 排除项，防止 Vitest 执行 Playwright 用例。其余范围和设计沿用已批准内容。
 
 ## 开发门槛与任务粒度
 
-四份文档已全部获批，2026-10-04 用户明确指示启动开发，文档审批门槛已满足。开发在现有主工作区的 `codex/2d-experience` 分支完成；没有创建独立 worktree。实际验证和仍未完成的检查记录在本文件与 checklist。
+四份文档已全部获批，2026-10-04 用户明确指示启动开发，文档审批门槛已满足。开发最初在`codex/2d-experience`上开始；主工作区之后被切回main，未提交的本任务变更保存在此隔离worktree，主工作区的删除/未跟踪内容原样保留。已完成所有验收和证据记录；按照用户授权将分支无冲突快进到main并清理分支/worktree。
 
 共60个聚焦任务，每项按2–5分钟的主动操作单元组织。生图、网络安装、构建和浏览器测试的外部等待不承诺在5分钟内结束；等待期间不占用同文件编辑权。若实际实现需要更多主动操作，执行前按相同文件责任拆为子项，不能删掉验证或扩大范围。独立类型检查或定向测试是任务交付证据；浏览器操作和最终汇合验证另外记录，不能提前标成已通过。
 
@@ -894,23 +894,23 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T59：交互性能与资源清理
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（桌面/触屏采样、闲置渲染、初始化中卸载和重复路由/尺寸变化资源释放均已执行；仅 Chromium/SwiftShader 模拟结果，不声称真实手机或GPU。）
 
-**已采集的部分证据（2026-10-04）：** 390×844 Chromium Headless 153，WebGLRenderer 使用 SwiftShader 软件渲染，DPR/resolution=1，视口364×497。1秒级交互采样：平移49次重绘/2865ms、末次渲染7.5ms；双指缩放20次重绘/793ms、末次渲染2.3ms；静置1009ms时drawCount增量0、浏览器rAF约60Hz。1280×720 桌面 Playwright/SwiftShader，视口930×468，合法建筑预览拖动产生15次绘制/436ms、末次渲染1.1ms。交互/绘制有反馈，空闲按需绘制。固定触屏的单指—双指切换、touchCancel、移出视口后恢复通过；纹理失败及 WebGL/2D context 初始化失败后重试通过；resize 与反复路由进出后 diagnostics 清理并仅有一个 canvas。初始化进行中卸载时的资源观察及真实硬件性能仍未验证，因此本任务未勾选。
+**验证记录（2026-10-04）：** Intel Core i5-13500HX；Chromium Headless 153，ANGLE SwiftShader，WebGLRenderer，触屏390×844模拟视窗364×497、DPR/resolution=1。平移19次重绘/685ms（末次1.1ms）；缩放24次/486ms（末次0.7ms）；两个1秒窗口的页面rAF均为61帧/约1.015s。1280×720桌面Chromium/SwiftShader，930×468视窗，建筑预览采样15次绘制/450ms、末次renderer耗时1.3ms；计数区间包括进入编辑/预览状态，不把它当作精确预览FPS。静置30帧draw增量0。延迟Pixi真实init后卸载：Application/canvas/输入/resize资源归零；1280×720、1100×760、1280×720三次重入各为1个Application/canvas、6个输入监听、1个ResizeObserver、1个window resize监听；离开后归零。渲染失败后重试保留已移动布局、事实与bounds。详见 checklist、evidence/performance.json 和 evidence/native2d-browser.log。
 
-**文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`；`本任务诊断/进程账本`
+**文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`；`evidence/`
 
 **负责人：** 验收；**依赖：** T36、T41、T58；**粒度：** 2–5分钟主动操作。
 
 **步骤：**
-1. 采集连续平移、缩放和移动预览的实际帧率/绘制耗时/操作表现，记录设备、浏览器、renderer、DPR；区分SwiftShader与真实硬件。
-2. 观察空闲不持续重绘、resize、初始化中卸载、重复路由进入离开与重试后的实例/监听清理；不把空闲drawCount误报成FPS。
+1. 采集平移、缩放和移动预览的绘制耗时与操作反馈，注明主机/浏览器/renderer/DPR；区分SwiftShader与真实硬件。
+2. 观察空闲不持续重绘、resize、初始化中卸载、重复路由进入离开与重试后的实例/监听资源；不把空闲drawCount误报成FPS。
 
-**验证：** AC12证据可复核，无持续卡顿/资源累积；未测设备或受资源限制的检查按事实记未完成，不新增通用FPS硬门槛。
+**验证：** AC12证据可复核，模拟环境内交互连续，闲置无绘制增量，初始化中卸载和重复路由/尺寸变化均无资源累积；真实GPU/手机未测，结果不作硬件外推。
 
 ### T60：验收汇总与支线交付
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（C01–C82均有实际结果；验收证据和触屏/GPU模拟范围已明确记录。）
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/{task,checklist}.md`；`本任务提交`
 
@@ -918,9 +918,9 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 **步骤：**
 1. 按已批准checklist记录通过/未通过与命令、trace、截图和真实读取证据；未通过返回所属任务修复，不提前完成。 三项目用例齐备后，执行独立Playwright --list（不启动服务）与Vitest list，核对desktop/mobile/live互斥及单元测试不收集native2d-e2e。
-2. 按逻辑任务组提交并核对仅含本范围；清理本任务已不再需要的临时前端/子进程，保留用户仍需服务；交付独立支线与合并准备说明。
+2. 按逻辑任务组提交并核对仅含本范围；清理本任务的临时服务。用户之后明确授权：把已验证分支合入最新本地main，检查无冲突后删除`codex/2d-experience`并回到main。
 
-**验证：** 四文档/参考与实现可在支线复现，所有必需检查有结果；不纳入他人改动，不自动发布或合并，未完成项如实列明。
+**验证：** 四份获批规格/设计/参考与实现可在提交中复现；C01–C82全部有实际结果；Playwright --list为三项目desktop/mobile/live，Vitest未收集`native2d-e2e`；2D browser39项、web468单测、生产构建、3D8项、production/live各自通过。Git差异范围仅为原生2D和验收材料；本地合并无冲突，随后按授权删除支线。没有远程发布。
 
 ## 执行顺序与汇合点
 
@@ -987,7 +987,7 @@ flowchart TD
 | B23 | T59 |
 | B24 | T60 |
 
-T54是纯模块汇合，T55是生产构建汇合，T49–T53是独立浏览器证据；T56负责主线受影响回归，T57–T59负责真实操作、美术及性能；T60须等全部必需结果。真实服务暂缺可以继续其他独立验证，但最终交付不能把该项记为通过。T60收集检查在web目录运行 `../node_modules/.bin/playwright test --config=playwright.native2d.config.ts --list` 与 `../node_modules/.bin/vitest list`，必须看到三项目互斥且后者没有native2d-e2e用例。
+T54是纯模块汇合，T55是生产构建汇合，T49–T53是独立浏览器证据；T56负责主线受影响回归，T57–T59负责桌面/触屏模拟、美术及性能；T60在全部必需结果结束后汇总。最终检查在web目录运行 `../node_modules/.bin/playwright test --config=playwright.native2d.config.ts --list` 与 `../node_modules/.bin/vitest list`，必须看到三项目互斥且后者没有native2d-e2e用例。
 
 ## 需求覆盖与验证归属
 
@@ -1012,4 +1012,4 @@ T54是纯模块汇合，T55是生产构建汇合，T49–T53是独立浏览器�
 
 不处理experience_report中的问题，不引入正式世界写入、AI生成、真实行动、正式2D/3D集成或跨设备存档。最终交付是独立可交互样板及完整证据。公共API/快照类型若由主线改变，先同步再适配本样板；不替主线修实现。
 
-本文件、plan中Vitest排除项补充及checklist均已获批准；用户要求暂不开发，等待明确启动指令，不执行任何开发任务。
+四份文档均已获用户批准；用户于2026-10-04明确启动开发，随后授权全部验收完成后同步本地main、核对无冲突并删除2D分支。

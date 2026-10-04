@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-04",
+  "scene": "MIST_MANOR_SCENE",
+  "initialLayout": "createInitialLayout(MIST_MANOR_SCENE, FIXTURE_SCOPE)",
+  "candidateCount": 672,
+  "disconnectedCandidates": 0,
+  "result": "The fixed baseline layout has no single-building candidate whose validation reports disconnected. The existing synthetic narrow-corridor tests exercise disconnected entrance and hill-path cases, plus a legal bypass. Browser acceptance exercises fixed-scene root/entrance blockage and a legal bypass.",
+  "evidence": [
+    "web/src/native2d/__tests__/layout-validation.test.ts: T12 合成窄廊断路",
+    "web/native2d-e2e/acceptance.spec.ts: rejects collision, protected anchors and blocked entrances while allowing a bypassing move"
+  ]
+}

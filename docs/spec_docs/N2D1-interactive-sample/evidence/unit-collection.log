@@ -1,0 +1,466 @@
+src/lib/chatRecovery.test.ts > chat recovery decision > refreshes completed requests without asking for a retry
+src/lib/chatRecovery.test.ts > chat recovery decision > keeps pending requests recoverable with the same request ID
+src/lib/chatRecovery.test.ts > chat recovery decision > requires a new ID after %s
+src/lib/person-create-validation.test.ts > person-create-validation > returns stable field errors for an empty manual draft
+src/lib/person-create-validation.test.ts > person-create-validation > does not require manual-only fields for generated drafts
+src/lib/person-create-validation.test.ts > person-create-validation > maps known server issues and preserves unknown failures globally
+src/lib/person-create-validation.test.ts > person-create-validation > focuses the first available field in the declared order
+src/lib/s01StreamDelay.test.ts > drops the remaining buffered old-timeline SSE frame after switch without changing URL, version, or events
+src/lib/sseParser.test.ts > incremental SSE parser > handles field and delimiter splits plus multiple frames in one chunk
+src/lib/sseParser.test.ts > incremental SSE parser > ignores comments and flushes a final unterminated frame
+src/lib/streamGuard.test.ts > world stream generation guard > rejects wrong ownership, stream changes, duplicate sequence, and version regression
+src/lib/streamGuard.test.ts > world stream generation guard > rejects buffered frames after unsubscribe invalidation
+src/lib/world-disambiguation.test.ts > world-disambiguation > maps real person names without exposing ids
+src/lib/world-disambiguation.test.ts > world-disambiguation > uses explicit fallback labels for missing people
+src/lib/world-time.test.ts > world time formatting > formats the same instant in an explicit zone across date boundaries and DST
+src/lib/world-time.test.ts > world time formatting > submits the browser zone and falls back to UTC when browser zone discovery fails
+src/lib/world-time.test.ts > world time formatting > uses UTC for missing or invalid zones and safely labels invalid instants
+src/scene/action-guidance.test.ts > current action capabilities > suggests an existing destination other than the current place
+src/scene/action-guidance.test.ts > current action capabilities > selects the recovered identity location and excludes removed places
+src/scene/action-guidance.test.ts > current action capabilities > explains recovery for paused, read-only, capped, archived and absent identities
+src/scene/create-draft-store.test.ts > create draft store > stores context in localStorage and expires it after seven days
+src/scene/create-draft-store.test.ts > create draft store > stores the document in IndexedDB and overwrites the single saved draft
+src/scene/create-draft-store.test.ts > create draft store > expires drafts independently and silently degrades when persistence fails
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 传入地点有效时优先,即使 persona 记忆地点不同
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 传入地点失效时回退 persona 记忆地点并提示
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 传入地点失效且 persona 无记忆地点时回退列表首项
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 空传入时保持现状:persona 记忆地点优先
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 空传入且 persona 无记忆地点时取列表首项
+src/scene/entry-location.test.ts > resolveSceneEntryLocation > 全空时返回空串
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > accepts a closed interior with a normal door opening
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > reports a missing roof
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > reports a wall gap and invalid spawn separately
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > rejects a standable cell when surrounding furniture leaves no safe spawn
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > defaults unknown/exterior contexts away from interior validation
+src/voxel/interior-closure.test.ts > inspectInteriorClosure > uses the theme registry when checking opaque blocks
+src/voxel/space-context.test.ts > resolveSpaceContext > maps the main-house interior space to the indoor rendering context
+src/voxel/space-context.test.ts > resolveSpaceContext > keeps the explicit exterior space on the outdoor context
+src/voxel/space-context.test.ts > resolveSpaceContext > falls back to exterior for unknown and missing space ids
+src/voxel/space-context.test.ts > resolveSpaceContext > prefers explicit document metadata over the compatibility id mapping
+src/voxel/space-context.test.ts > resolveSpaceContext > supports legacy nested space metadata without depending on page presentation
+src/voxel/space-context.test.ts > resolveSpaceContext > returns stable, independent context values for repeated resolution
+src/world/alignedTimeline.test.ts > buildAlignedAxis(S1 轴模型) > origin 取分叉截点;一侧即共同祖先时取另一侧截点
+src/world/alignedTimeline.test.ts > buildAlignedAxis(S1 轴模型) > markers 合并三组按 simTime 排序;同时刻 shared < left < right
+src/world/alignedTimeline.test.ts > buildAlignedAxis(S1 轴模型) > 无共同祖先:origin 为 null,markers 仍给出(UI 走明示文案)
+src/world/alignedTimeline.test.ts > buildAlignedAxis(S1 轴模型) > firstDivergenceAt 透传 API 字段;无分歧为 null
+src/world/alignedTimeline.test.ts > buildAlignedAxis(S1 轴模型) > 空事件组:markers 为空,leftNow/rightNow 仍在
+src/world/alignedTimeline.test.ts > filterAt(S1 拖档截断) > ≤ at 的三组标记各归各组
+src/world/alignedTimeline.test.ts > filterAt(S1 拖档截断) > at 早于一切:三组皆空;at 晚于一切:全量返回
+src/world/requestScope.test.ts > request scope guard > invalidates stale timeline responses and aborts their requests
+src/world/requestScope.test.ts > request scope guard > accepts current responses across unchanged context updates
+src/world/timeline-display.test.ts > 可读时间线与新建分支校验 > 主线、新分支和没有 name 的旧分支均有可读标签
+src/world/timeline-display.test.ts > 可读时间线与新建分支校验 > 名称、假设和改变条件必填且长度明确
+src/components/map/tour.test.ts > applyTourMilestone > 空进度完成首步:仅该步完成,无连带步骤
+src/components/map/tour.test.ts > applyTourMilestone > 顺序逐步完成:autoCompleted 恒为空
+src/components/map/tour.test.ts > applyTourMilestone > 乱序完成后填补缺口:显示跨过的步骤计入 autoCompleted(报告 2/8→6/8 跳步)
+src/components/map/tour.test.ts > applyTourMilestone > 前期缺口未填补时完成后期里程碑:无跳步、无连带
+src/components/map/tour.test.ts > applyTourMilestone > 重复完成已完成步骤:完成集不变
+src/components/map/tour.test.ts > applyTourMilestone > 完成最后一步:完成集为全量,无连带
+src/components/world/ComparePanel.test.tsx > ComparePanel 指定本次创建比较对象 > 显式来源/新线优先于 current、parent 和列表首项，展示新旧可读标签
+src/components/world/ComparePanel.test.tsx > ComparePanel 指定本次创建比较对象 > 普通手动入口保持 current/parent 默认比较
+src/components/world/ForkCompareHint.test.tsx > ForkCompareHint（S2/F6 分叉成功横幅） > 渲染文案与两个操作
+src/components/world/ForkCompareHint.test.tsx > ForkCompareHint（S2/F6 分叉成功横幅） > 并排看看深链到分屏：左源右新
+src/components/world/ForkCompareHint.test.tsx > ForkCompareHint（S2/F6 分叉成功横幅） > 窄屏隐藏（sm 以下 hidden）
+src/components/world/ForkCompareHint.test.tsx > 本次创建摘要包含名称和假设，刷新失败时保留摘要并提供重试
+src/components/world/TimelineSwitcher.test.tsx > TimelineSwitcher 分叉弹窗（S2/F1/F5） > 初始展示主宇宙切换按钮，弹窗未打开
+src/components/world/TimelineSwitcher.test.tsx > 当前分支名称优先，旧分支以假设作为名称
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > UTC 墙钟互转:输入值按 UTC 解释,与 simNow 展示一致;非法输入为 null
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > 默认空输入与恰等于当前时刻 → current,不调用 check
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > 范围内过去时刻 → check,携带 UTC ISO 交服务端吸附
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > 分叉预填保留秒,不会把有效检查点截到可回溯起点之前
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > 范围未加载/该线不支持历史 → invalid,原因引导回当前时刻
+src/components/world/forkMoment.test.ts > forkMoment 时刻判定(S4/F6) > 未来/早于起点/非法格式 → invalid 且附对应原因
+src/native2d/__tests__/controller.test.ts > T37 读取协调 > 乱序结果只接受最新请求，旧响应不覆盖状态或布局范围
+src/native2d/__tests__/controller.test.ts > T37 读取协调 > 失败时保留 lastGood 并标记 stale，无旧数据时为 error；AbortError 不报错
+src/native2d/__tests__/controller.test.ts > T37 读取协调 > dispose 后晚到响应不会触碰状态或视口
+src/native2d/__tests__/controller.test.ts > T38 布局恢复、保存与重置 > 新范围加载对应布局，同范围刷新保留布局与撤销历史，来源切换清空它们
+src/native2d/__tests__/controller.test.ts > T38 布局恢复、保存与重置 > 损坏记录进入 pending 且阻止编辑，选择 baseline 后才允许保存
+src/native2d/__tests__/controller.test.ts > T38 布局恢复、保存与重置 > 保存失败保留布局和撤销能力，retrySave 成功后清除 unsaved
+src/native2d/__tests__/controller.test.ts > T38 布局恢复、保存与重置 > 重置取消或失败不改变布局，成功后才恢复基线并清空历史
+src/native2d/__tests__/controller.test.ts > T39 选择、空间与跟随 > 可呈现大厅居民自动进入大厅，刷新后位置变化仍保持跟随
+src/native2d/__tests__/controller.test.ts > T39 选择、空间与跟随 > 未呈现目标保留跟随意图并在自由浏览时取消，居民消失则清理选择
+src/native2d/__tests__/controller.test.ts > T39 选择、空间与跟随 > 选择、跟随、空间切换不写布局存储
+src/native2d/__tests__/controller.test.ts > T40 编辑与视口事件 > 合法移动、撤销、取消以及室内编辑门禁按显式操作生效
+src/native2d/__tests__/controller.test.ts > T40 编辑与视口事件 > 移动目标事件只在对应移动模式下产生预览，未知选择被拒绝
+src/native2d/__tests__/controller.test.ts > T40 编辑与视口事件 > 旧请求被取消时 AbortError 不会把新 loading 写成失败
+src/native2d/__tests__/editor.test.ts > T13 preview > 合法目标返回 valid 且布局不变
+src/native2d/__tests__/editor.test.ts > T13 preview > 非法目标返回 invalid 与原因，布局不变
+src/native2d/__tests__/editor.test.ts > T13 preview > 未知建筑返回 missing_building，非整数目标返回 invalid_asset
+src/native2d/__tests__/editor.test.ts > T13 preview > 新预览覆盖旧预览（后者为准）
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 无预览返回 no_preview
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 非法预览不能应用：invalid_move 且布局不变
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 合法预览应用成功：布局更新、预览清除、记录 from/to 差量
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 应用针对当前布局重新校验，不信任预览时的旧结果
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 与 validateBuildingMove 对当前布局的直接校验结果一致
+src/native2d/__tests__/editor.test.ts > T13 applyPreview > 预览后布局发生变化但目标仍合法时，重新校验并应用候选
+src/native2d/__tests__/editor.test.ts > T13 cancelPreview 与 getLayout > 取消保持原布局，取消后无预览可应用
+src/native2d/__tests__/editor.test.ts > T13 cancelPreview 与 getLayout > getLayout 每次返回深拷贝：调用方篡改不影响内部状态
+src/native2d/__tests__/editor.test.ts > T13 cancelPreview 与 getLayout > applyPreview 返回的布局同样是拷贝：篡改返回值不影响编辑器
+src/native2d/__tests__/editor.test.ts > T13 cancelPreview 与 getLayout > 编辑器不修改传入的初始布局对象
+src/native2d/__tests__/editor.test.ts > T14 undo > 无历史返回 nothing_to_undo
+src/native2d/__tests__/editor.test.ts > T14 undo > 单次移动后撤销恢复原位置，布局仍合法
+src/native2d/__tests__/editor.test.ts > T14 undo > 不同建筑交替移动：按相反顺序逐次恢复
+src/native2d/__tests__/editor.test.ts > T14 undo > 同一建筑连续多次移动：逐步反向恢复每一站
+src/native2d/__tests__/editor.test.ts > T14 undo > 撤销后可重新编辑：从恢复位置再次移动
+src/native2d/__tests__/editor.test.ts > T14 undo > 布局只含 scope 与 placements：编辑器无世界数据入口
+src/native2d/__tests__/editor.test.ts > T14 undo > 重新 createLayoutEditor 不继承旧撤销栈（新实例空栈）
+src/native2d/__tests__/input.test.ts > pointInPolygon > 命中内部点，拒绝外部点
+src/native2d/__tests__/input.test.ts > pointInPolygon > 凹多边形与三角形按射线法判定
+src/native2d/__tests__/input.test.ts > pointInPolygon > 顶点不足或非有限输入恒为 false
+src/native2d/__tests__/input.test.ts > resolvePick > 屏幕点移除相机后命中对象 hitPolygon
+src/native2d/__tests__/input.test.ts > resolvePick > 带平移缩放的相机下拾取一致
+src/native2d/__tests__/input.test.ts > resolvePick > 对象脚点投影点偏移后才作为局部原点
+src/native2d/__tests__/input.test.ts > resolvePick > 多对象重叠时按绘制深度取最前者
+src/native2d/__tests__/input.test.ts > resolvePick > 非有限输入返回 null
+src/native2d/__tests__/input.test.ts > T32 点击与拾取 > 阈值内短按时长判为点击并发出 select
+src/native2d/__tests__/input.test.ts > T32 点击与拾取 > 点击空处发出 selection 为 null 的 select
+src/native2d/__tests__/input.test.ts > T32 点击与拾取 > 超过时长上限的长按不触发选中
+src/native2d/__tests__/input.test.ts > T32 普通模式拖图 > 超过阈值转为拖动：发一次 free-pan 并按增量回调 onPan
+src/native2d/__tests__/input.test.ts > T32 普通模式拖图 > 阈值内的移动保持 pending，不产生平移
+src/native2d/__tests__/input.test.ts > T32 建筑移动模式拖动 > 拖动发出吸附整数格的 move-target，不平移不选中
+src/native2d/__tests__/input.test.ts > T32 建筑移动模式拖动 > 按住建筑拖动时保留脚点相对指针的抓取偏移
+src/native2d/__tests__/input.test.ts > T32 建筑移动模式拖动 > 移动模式下从空地拖动仍平移地图，不移动建筑
+src/native2d/__tests__/input.test.ts > T32 建筑移动模式拖动 > 非有限被吸附拒绝时不发 move-target
+src/native2d/__tests__/input.test.ts > T32 建筑移动模式拖动 > 移动模式下点击不发任何事件（不选中、不应用）
+src/native2d/__tests__/input.test.ts > T32 取消与清理 > pointercancel 清理状态，后续 up 不产出事件
+src/native2d/__tests__/input.test.ts > T32 取消与清理 > 非有限采样被忽略
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 双指中心平移回调 onPan、距离比例回调 onZoom
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 单指已按下后再加一指：取消点击判定，双指期间不选中不应用
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 双指中心累计平移超阈值补发一次 free-pan
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 双指变单指：重置为拖动而非点击，继续移动只平移不选中
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > pinch 中一指 cancel 同样降级为单指拖动
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 第三指被忽略，不进入状态机
+src/native2d/__tests__/input.test.ts > T33 双指缩放与手势转换 > 编辑模式下双指手势同样不触发 move-target 或选中
+src/native2d/__tests__/layout-validation.test.ts > T11 createInitialLayout > 按建筑定义生成完整初始布局，且与场景不共享可变的 placement/origin 引用
+src/native2d/__tests__/layout-validation.test.ts > T11 createInitialLayout > 支持第二组确定 scope（来源隔离）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 合法基线 > 初始布局完整通过：valid 且无原因
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 结构错误 > 缺失建筑被阻止（missing_building）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 结构错误 > 重复建筑被阻止（missing_building）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 结构错误 > 多余未知建筑被阻止（missing_building）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 结构错误 > spaceId 与建筑定义不一致被阻止（missing_building）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateLayout 结构错误 > 原点 NaN 被阻止（invalid_asset）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 越界（正方向）被阻止（out_of_bounds）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 越界（负坐标）被阻止（out_of_bounds）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 移动目标 NaN 被阻止（invalid_asset）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 移动未知建筑被阻止（missing_building）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 与其他建筑占地交叠被阻止（collision）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 与静态阻挡物件交叠被阻止（collision，cells 列出冲突格）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 落在湖塘等不可放置地面被阻止（collision）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 覆盖固定地点锚点/站位被阻止（collision，cells 含锚点）
+src/native2d/__tests__/layout-validation.test.ts > T11 validateBuildingMove 结构与占地 > 输入布局不被修改（纯函数）
+src/native2d/__tests__/layout-validation.test.ts > T12 外景连通校验（真实雾影庄） > 移动导致其他建筑入口被占地覆盖失败（entrance_blocked）
+src/native2d/__tests__/layout-validation.test.ts > T12 外景连通校验（真实雾影庄） > 连通起点被建筑占地覆盖失败（entrance_blocked）
+src/native2d/__tests__/layout-validation.test.ts > T12 外景连通校验（真实雾影庄） > 绕行仍连通的合法移动通过
+src/native2d/__tests__/layout-validation.test.ts > T12 合成窄廊断路 > 初始布局绕行连通（合法基线）
+src/native2d/__tests__/layout-validation.test.ts > T12 合成窄廊断路 > 移动导致其他建筑入口断路失败（disconnected）
+src/native2d/__tests__/layout-validation.test.ts > T12 合成窄廊断路 > 隔断后山散步道通路失败（disconnected，锚点与站位不可达）
+src/native2d/__tests__/layout-validation.test.ts > T12 合成窄廊断路 > validateLayout 对完整候选布局报告同样的断路原因（恢复共用同一校验）
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 大厅居民定位到大厅空间，站位落在大厅绑定站位内
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 同一地点按 personId 稳定排序分配站位
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 后山散步道居民定位到外景锚点区站位
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 未提供内景的地点（书房）保留真实归属并返回定位限制
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 未提供内景的门房小屋同样保留真实归属
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > locationName 为 null 时返回 unknown，不虚构位置
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > personId 不在当前快照时返回 unknown 与明确原因
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 居民消失后其余居民按新快照重新定位（刷新用例）
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 站位不足时多余居民保留真实地点但无站位（overcrowded 用例）
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 同输入定位稳定：重复调用与不同解析顺序结果一致
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 移动建筑（layout 变化）不改变地点/personId 归属
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 地点无匹配 binding 时返回 unknown 并保留真实地点名
+src/native2d/__tests__/presentation.test.ts > resolveResidentPlacement（T18） > 不修改传入的世界、场景或布局数据
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 外景对象集合：三栋建筑 + 全部外景静态物件 + 后山地点标记 + 外景可见居民
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 大厅对象集合：无建筑，含大厅静态物件、大厅地点标记与大厅居民
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 建筑对象原点取自布局 placements，素材取自建筑定义
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > selection 映射：resident/building/location 各自可辨识，decoration 为 null
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 居民素材按 personId 排序取模稳定分配（resident-a/b/c）
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > PresentedLocation 覆盖全部地点并携带 binding 对应的表现类型
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 世界里有但 binding 缺失的地点 → representation unknown、locationKey 为 null
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > timeOfDay 边界小时：5:59/6:00/8:59/9:00/16:59/17:00/19:59/20:00（UTC）
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 跨时区输入：同一 simNow 按世界时区取小时，可落在不同相位
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 跨日输入：世界时区日期翻转时相位仍按世界时区小时推导
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 未知时间：simNow 为 null 或非法字符串时 timeOfDay 为 unknown
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 同一 simNow 的文本（formatWorldTime）与光照相位一致
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > scope/spaceId/simNow/residents 原样透出，活动文本不加工
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > residentPlacements 覆盖快照全部居民（含不可见与未知）
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 空间切换只改变对象集合，居民归属与地点列表不变
+src/native2d/__tests__/presentation.test.ts > buildPresentation（T19） > 未知空间明确抛错；不修改任何输入
+src/native2d/__tests__/projection.test.ts > gridToProjected / projectedToGrid > uses the 64×32 2:1 formula for known cells
+src/native2d/__tests__/projection.test.ts > gridToProjected / projectedToGrid > round-trips representative and negative grid points exactly
+src/native2d/__tests__/projection.test.ts > gridToProjected / projectedToGrid > keeps fractional footpoints as decimals through the round trip
+src/native2d/__tests__/projection.test.ts > camera transforms > applyCamera and removeCamera are exact inverses
+src/native2d/__tests__/projection.test.ts > camera transforms > round-trips grid points through pan and zoom combinations
+src/native2d/__tests__/projection.test.ts > camera transforms > zoom and pan never modify the layout grid
+src/native2d/__tests__/projection.test.ts > camera transforms > removes the camera before inverse projection for pointer input
+src/native2d/__tests__/projection.test.ts > snapToGrid > rounds fractional targets to the nearest integer cell
+src/native2d/__tests__/projection.test.ts > snapToGrid > rejects non-finite coordinates so they cannot enter edit state
+src/native2d/__tests__/projection.test.ts > snapToGrid > returns null when a broken camera makes the inverse projection non-finite
+src/native2d/__tests__/projection.test.ts > snapToGrid > snaps a panned and zoomed pointer position to the integer cell
+src/native2d/__tests__/scene.test.ts > T28 素材契约汇合 > 清单包含 24 个真实文件 URL，分层尺寸与脚点一致
+src/native2d/__tests__/scene.test.ts > 场景身份与空间 > 场景 id/version 与 fixtures 对齐，defaultSpaceId 指向外景
+src/native2d/__tests__/scene.test.ts > 场景身份与空间 > 恰好两个空间：外景（含 connectivityRoot）与 6×5 大厅内景
+src/native2d/__tests__/scene.test.ts > 场景身份与空间 > 工厂每次返回全新数组与对象，内容与冻结常量一致
+src/native2d/__tests__/scene.test.ts > 建筑定义 > 恰好三栋建筑且 id 唯一
+src/native2d/__tests__/scene.test.ts > 建筑定义 > entryOffset 采用 assets.ts 冻结的 BUILDING_ENTRY_OFFSETS
+src/native2d/__tests__/scene.test.ts > 建筑定义 > 主楼 interiorSpaceId 指向大厅，温室与门房无内景
+src/native2d/__tests__/scene.test.ts > 地点绑定 > 大厅为 interior 绑定主楼，entryBuildingId 与 main-house.interiorSpaceId 互指一致
+src/native2d/__tests__/scene.test.ts > 地点绑定 > 书房/餐厅/图书室绑定主楼且为 unrepresented
+src/native2d/__tests__/scene.test.ts > 地点绑定 > 温室花房/门房小屋绑定各自建筑且为 unrepresented
+src/native2d/__tests__/scene.test.ts > 地点绑定 > 后山散步道为 outdoor：外景锚点与示意站位
+src/native2d/__tests__/scene.test.ts > 地点绑定 > sourceLocationName 与 fixtures 的七个真实地点名一一对应
+src/native2d/__tests__/scene.test.ts > 地点绑定 > 建筑的 locationKeys 与地点绑定互相覆盖、无孤儿引用
+src/native2d/__tests__/scene.test.ts > 唯一性与素材引用 > 空间、建筑、静态物件与地点键全部唯一
+src/native2d/__tests__/scene.test.ts > 唯一性与素材引用 > 全部素材引用存在于 ASSET_MANIFEST，场景清单即冻结清单
+src/native2d/__tests__/scene.test.ts > 唯一性与素材引用 > 外景包含树/灌木阻挡、水岸装饰与道路视觉格
+src/native2d/__tests__/scene.test.ts > 唯一性与素材引用 > 大厅包含地面/墙体/家具且墙体与家具阻挡
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 三栋建筑占地全部在界内且落在可通行格子上
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 建筑之间互不重叠，且不覆盖阻挡物件
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 入口格子在 walkableCells 内、不被阻挡、不被任何建筑占地覆盖
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 锚点与示意站位在合法地面且不被初始布局覆盖
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > connectivityRoot 可通行：在 walkableCells 内、不被阻挡、不被建筑覆盖
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 初始布局下全部建筑入口与后山锚点/站位自 connectivityRoot 连通（四方向 BFS）
+src/native2d/__tests__/scene.test.ts > 初始布局合法性 > 场景存在可被建筑移动堵死的窄路与可绕行的宽路（连通校验有意义）
+src/native2d/__tests__/storage.test.ts > T15 范围键与存储记录 > 键带独立前缀，且各段含分隔符/引号/斜杠也不会串键
+src/native2d/__tests__/storage.test.ts > T15 范围键与存储记录 > 来源隔离：fixture 存档对 public 范围不可见
+src/native2d/__tests__/storage.test.ts > T15 范围键与存储记录 > worldId / timelineId / sceneId 分别隔离
+src/native2d/__tests__/storage.test.ts > T15 范围键与存储记录 > 含分隔符的身份保存后互不串键、各自可恢复
+src/native2d/__tests__/storage.test.ts > T15 范围键与存储记录 > 载荷只含批准字段：formatVersion/scope/placements/savedAt，无世界快照或撤销历史
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > 无记录 → none
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > 合法记录 → ready 且布局完整一致
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > 坏 JSON → damaged，原记录保持不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > 结构不符（数组/缺字段/坏 placements）→ damaged，原值不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > formatVersion 不匹配 → incompatible，原值不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > sceneVersion 不匹配 → incompatible（同一键，证明版本在载荷而非键）
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > 记录 scope 段与请求范围不一致 → incompatible，原值不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > placements 缺建筑（validateLayout 非法）→ damaged，原值不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > placements 越界 → damaged，原值不变
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > storageProvider 获取失败 → error/storage_unavailable，不误报无存档
+src/native2d/__tests__/storage.test.ts > T16 恢复与损坏识别 > getItem 抛错 → error/storage_error，原值不变
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > save：storageProvider 获取失败 → storage_unavailable
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > save：QuotaExceededError（name 识别）→ quota_exceeded
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > save：旧式 code=22 异常 → quota_exceeded
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > save：其他 setItem 异常 → storage_error
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > save 失败不删除原值：旧记录仍可恢复
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > reset 成功 → ok:true，随后 load 为 none
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > reset 对不存在记录也成功（幂等清除）
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > reset：removeItem 抛错 → storage_error 且原记录保留
+src/native2d/__tests__/storage.test.ts > T17 保存和重置故障 > reset：storageProvider 获取失败 → storage_unavailable
+src/native2d/__tests__/world-source.test.ts > T07 固定来源适配 > 不发起网络请求，产出模型身份与场景一致
+src/native2d/__tests__/world-source.test.ts > T07 固定来源适配 > 同一输入身份与时间稳定，且每次返回全新对象
+src/native2d/__tests__/world-source.test.ts > T07 固定来源适配 > 中止后不报告成功
+src/native2d/__tests__/world-source.test.ts > T07 固定来源适配 > 固定快照与场景版本不一致时明确失败
+src/native2d/__tests__/world-source.test.ts > T07 固定来源适配 > 未知 fixtureId 在创建时明确失败
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 显式 worldId 直接读取快照，身份与时间字段一致
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 从 locationBoard 提取居民，空活动保留为 null
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 未配置 worldId 时先发现再读取，只发允许的公开 GET
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 发现的演示世界不是雾影庄时明确失败，不继续读取
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 快照身份与请求世界不一致时明确失败
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 畸形响应明确失败：缺少 locationBoard / world.id / currentTimelineId
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > 时区经 effectiveTimeZone 归一，非法时区回退 UTC
+src/native2d/__tests__/world-source.test.ts > T08 公开 GET 与身份适配 > simNow 缺失时保留 null（未知时间）
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 首次成功后固定时间线，后续刷新携带同一时间线且不重新发现
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 响应时间线与已固定时间线不匹配时明确失败，固定范围不丢失
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 首次读取失败不错误固定范围，可重试成功
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 发现失败可重试，不残留固定范围
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 网络失败给出可理解的中文错误
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 非 JSON 响应明确失败
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 中止不产生伪成功也不当读取失败
+src/native2d/__tests__/world-source.test.ts > T09 固定时间线与读取失败 > 原始输入不被更改：config 与 fixtures 快照保持原样
+src/scene/life/overlay.test.ts > scene life overlay > derives time of day and only maps residents from current location board
+src/scene/life/timelineGuard.test.ts > scene timeline event guard > accepts only events from the current timeline
+src/voxel/__tests__/assets.test.ts > Assets (S2b 增量预览与拾取映射) > sync 建立 placementId → 实例映射,instanceCount 正确
+src/voxel/__tests__/assets.test.ts > Assets (S2b 增量预览与拾取映射) > previewTransform 只动目标实例,其余实例矩阵不变
+src/voxel/__tests__/assets.test.ts > Assets (S2b 增量预览与拾取映射) > placementIdAt 反查命中与未命中
+src/voxel/__tests__/assets.test.ts > Assets (S2b 增量预览与拾取映射) > 无 id 的摆放不进入映射(旁路防御)
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 落地补间(T3) > 补间完成返回 landed,状态落定 walk,过渡相机回收
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 落地补间(T3) > 端点位姿精确:起点 = orbit 球面位,终点 = walk 眼位;fov 35→70
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 落地补间(T3) > 路径中点高于两端连线(控制点抬高防穿地,N1)
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 落地补间(T3) > reduced-motion:立即落定 walk,无过渡相机,update 一次性返回 landed(F7)
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 升空补间(T3) > lifting 完成返回 lifted,状态落定 orbit,终点 = orbit 球面位,fov 70→35
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 升空补间(T3) > reduced-motion:立即落定 orbit,update 一次性返回 lifted
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 边界(T3) > 非过渡态 update 返回 null
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 边界(T3) > cancel:landing 中取消回 orbit 稳定态,相机回收,update 不再返回结果
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 边界(T3) > lifting 中 cancel 回 walk 稳定态
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 飞向事件(S3b F6) > orbit→orbit 补间完成返回 settled,状态落定 orbit,fov 恒 35
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 飞向事件(S3b F6) > reduced-motion 直切:无过渡相机,update 取一次 settled
+src/voxel/__tests__/camera-continuum.test.ts > ContinuumController 飞向事件(S3b F6) > flying 中 cancel 回 orbit 稳定态
+src/voxel/__tests__/camera-mode.test.ts > findSpawnNear 落点搜索(T10) > 注视点投影:同柱向下找到地面可站立格
+src/voxel/__tests__/camera-mode.test.ts > findSpawnNear 落点搜索(T10) > 避开不参与体素碰撞的家具对象落点
+src/voxel/__tests__/camera-mode.test.ts > findSpawnNear 落点搜索(T10) > 注视点在全实心柱:螺旋外扩找到邻近空地
+src/voxel/__tests__/camera-mode.test.ts > findSpawnNear 落点搜索(T10) > 半径内全实心:返回 null(不切换)
+src/voxel/__tests__/camera-mode.test.ts > WalkCameraStrategy(T10) > update 后相机位于玩家眼位(脚底 + eye)
+src/voxel/__tests__/camera-mode.test.ts > WalkCameraStrategy(T10) > 自由落体 spawned 空中:update 驱动物理落地
+src/voxel/__tests__/camera-mode.test.ts > CameraRig 双模式(T11) > 未注册 walk 策略时 setMode(walk) 失败且不切换
+src/voxel/__tests__/camera-mode.test.ts > CameraRig 双模式(T11) > orbit → walk:切换后相机为 walk 相机,state 跟随玩家
+src/voxel/__tests__/camera-mode.test.ts > CameraRig 双模式(T11) > walk → orbit:注视点跟随玩家当前位置
+src/voxel/__tests__/camera-mode.test.ts > CameraRig 双模式(T11) > 重复切到当前模式幂等
+src/voxel/__tests__/edit-controller.test.ts > EditController > applies legal edits and rebakes only affected sections
+src/voxel/__tests__/edit-controller.test.ts > EditController > rejects edits on locked objects (AC15 雏形)
+src/voxel/__tests__/edit-controller.test.ts > EditController > rejects invalid edits (out of bounds / unknown block)
+src/voxel/__tests__/edit-controller.test.ts > EditController > honors the canEdit gate
+src/voxel/__tests__/edit-controller.test.ts > EditController > debounces saves: 10 rapid edits merge into one save
+src/voxel/__tests__/edit-controller.test.ts > EditController > flushSave persists immediately with the latest document
+src/voxel/__tests__/edit-controller.test.ts > EditController × S3b 地形重生成与风格包 > 非参数化地形世界 → 拒绝并给 invalid-meta
+src/voxel/__tests__/edit-controller.test.ts > EditController × S3b 地形重生成与风格包 > 重生成替换地形层但物体格原样保留(F7)
+src/voxel/__tests__/edit-controller.test.ts > EditController × S3b 地形重生成与风格包 > 手工挖掉的地形格在重生成时被覆盖(F7)
+src/voxel/__tests__/edit-controller.test.ts > EditController × S3b 地形重生成与风格包 > setStyle:夹取落文档、引擎即时生效、未知预设记录(F8/F9)
+src/voxel/__tests__/engine.test.ts > TextureAtlas > computes UV rects with inset and y-flip
+src/voxel/__tests__/engine.test.ts > TextureAtlas > throws on missing frame
+src/voxel/__tests__/engine.test.ts > WorldModel > setBlock reports face, diagonal, and corner seam sections
+src/voxel/__tests__/engine.test.ts > WorldModel > tracks dirty sections and notifies subscribers
+src/voxel/__tests__/engine.test.ts > LightingEngine > open-air cells above ground receive full sky light
+src/voxel/__tests__/engine.test.ts > LightingEngine > sealed rooms get no sky light; tunnels attenuate
+src/voxel/__tests__/engine.test.ts > LightingEngine > lanterns emit a block-light halo
+src/voxel/__tests__/engine.test.ts > LightingEngine > setSkyLevel rescales the sky channel
+src/voxel/__tests__/engine.test.ts > LightingEngine > local recompute after edit matches full recompute
+src/voxel/__tests__/engine.test.ts > Mesher > a lone block bakes 6 faces
+src/voxel/__tests__/engine.test.ts > Mesher > two adjacent blocks bake 10 faces
+src/voxel/__tests__/engine.test.ts > Mesher > a fully buried block contributes no faces (3×3×3 cube = 54)
+src/voxel/__tests__/engine.test.ts > Mesher > water bakes into the translucent layer; water-water faces are culled
+src/voxel/__tests__/engine.test.ts > Mesher > top and side faces sample different texture frames
+src/voxel/__tests__/engine.test.ts > Mesher > bakes sky light into vertex colors (open brighter than sealed)
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > setEvents 建 Points 层并入 scene;states 初始为空,update 后按裁决填充
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > setTier/setSimNow 驱动状态切换:district 全开;过去留痕;未来隐藏(F5)
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > 同值 setSimNow/setTier 不重复刷新(帧内缓存)
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > pickEvent:阈值内取最近者,不可见(level none)不命中
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > iconCell 图集布局:类型序 × 2 + 留痕位
+src/voxel/__tests__/event-disclosure.test.ts > EventDisclosure(S3b F4/F5/F8) > dispose 幂等:重复调用不抛错
+src/voxel/__tests__/feedback.test.ts > BuildFeedback 资产 ghost 与选中 (S2b) > showAssetGhost 展示半透明克隆+占地指示,dismiss 清除
+src/voxel/__tests__/feedback.test.ts > BuildFeedback 资产 ghost 与选中 (S2b) > 未知资产不展示 ghost
+src/voxel/__tests__/feedback.test.ts > BuildFeedback 资产 ghost 与选中 (S2b) > setAssetSelected 生成选中框并随 null 清除
+src/voxel/__tests__/feedback.test.ts > BuildFeedback 资产 ghost 与选中 (S2b) > 无 assets 注入时 ghost/选中均为 no-op
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击居民 → onPerson，且优先于体素命中
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击绑定地点的物体 → onLocation（AC16 地点详情）
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 物体自带 location binding 同样生效
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击绑定人物的物体 → onObjectPerson
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击普通物体 → onObject
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击空间入口 → onEnterSpace（AC9 外景↔主楼切换）
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 点击空地 → 不消费
+src/voxel/__tests__/interaction-router.test.ts > InteractionRouter > 未挂载画布 / 无世界 → 不消费
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > 自由角（无邻块）：level=3，顶点色 = 无 AO 基准 × curve[3]
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > 单边遮挡：level=2
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > 凹槽（一边 + 对角遮挡）：level=1
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > 拐角内陷（两邻边遮挡）：level=0
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > 同一面的四个角可有不同 AO 档位
+src/voxel/__tests__/mesher-ao.test.ts > Mesher 逐顶点 AO > strength=0 时与不传 AO 完全一致
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > 水顶面顶点下沉到 格底 + 0.875
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > 非水方块顶面不下沉（石头/玻璃保持整格高）
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > 岸边格 foam=1，石沿包围的水池边缘四周成立
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > 水池中央格与开阔水面中央 foam=0
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > 非流体半透明方块（玻璃）foam 恒 0
+src/voxel/__tests__/mesher-water.test.ts > Mesher 下沉水面与白沫 > foam 属性长度与顶点数一致，非水面（侧面/底面）为 0
+src/voxel/__tests__/orbit-pose.test.ts > CameraRig orbit 位姿(S1 分屏联动) > setOrbitPose → getOrbitPose 往返一致
+src/voxel/__tests__/orbit-pose.test.ts > CameraRig orbit 位姿(S1 分屏联动) > 写入越界值按相机边界收敛(phi/distance)
+src/voxel/__tests__/orbit-pose.test.ts > CameraRig orbit 位姿(S1 分屏联动) > 位姿驱动相机实际位置(与 orbit 参数方程一致)
+src/voxel/__tests__/orbit-pose.test.ts > CameraRig orbit 位姿(S1 分屏联动) > walk 模式:getOrbitPose 返回 null,setOrbitPose 被忽略
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver > maps simNow to world time (AC6 产品侧)
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver > maps weather strings to engine weather (AC7 产品侧)
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver > drives time, weather and residents from an overlay
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver > subsequent overlays turn location changes into walk destinations (AC9 产品侧)
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver setSimNow 透传(S3b F5) > apply 时把 overlay.simNow 原样透传给引擎
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver 环境漫步(S4 F5 / AC6) > 首次落位不漫步;地点未变的后续同步给确定性漫步目的地
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver 环境漫步(S4 F5 / AC6) > 日程驱动移动优先:地点变化时让位(漫步不干扰寻路)
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver 环境漫步(S4 F5 / AC6) > reduced-motion 降级:目的地 = 锚点(静止)
+src/voxel/__tests__/overlay-driver.test.ts > OverlayDriver 环境漫步(S4 F5 / AC6) > 漫步落点不可走 → 停在锚点;未配 resolveStandable → 不漫步
+src/voxel/__tests__/palette.test.ts > samplePalette > noon (t=0.5) samples exactly the noon keyframe
+src/voxel/__tests__/palette.test.ts > samplePalette > is continuous under ±0.001 time jitter
+src/voxel/__tests__/palette.test.ts > samplePalette > skyLevel is non-decreasing from midnight to noon
+src/voxel/__tests__/palette.test.ts > samplePalette > weather dim pushes fog toward weatherGray and increases fog density
+src/voxel/__tests__/palette.test.ts > samplePalette > time wraps: t=0 / t=0.999 / t=1 do not throw and wrap consistently
+src/voxel/__tests__/palette.test.ts > samplePalette > unknown theme throws
+src/voxel/__tests__/palette.test.ts > samplePalette 水色 > noon (t=0.5) 水四色命中正午关键帧
+src/voxel/__tests__/palette.test.ts > samplePalette 水色 > 水色 ±0.001 时间抖动连续
+src/voxel/__tests__/palette.test.ts > samplePalette 水色 > weather dim 把水四色推向 weatherGray
+src/voxel/__tests__/palette.test.ts > samplePalette 水色 > 时间 wrap:t=0 与 t=1 水色一致
+src/voxel/__tests__/palette.test.ts > samplePalette 直射光 > 正午直射来自太阳方位,午夜来自月亮方位且偏冷
+src/voxel/__tests__/palette.test.ts > samplePalette 直射光 > 黄昏直射低于正午,且与午夜换向无跳变(S1v2:金色时刻加强后不再要求低于午夜)
+src/voxel/__tests__/palette.test.ts > samplePalette 直射光 > 天气 dim 压暗直射
+src/voxel/__tests__/palette.test.ts > samplePalette 直射光 > 直射强度随时间连续(±0.001 抖动 < 0.05)
+src/voxel/__tests__/palette.test.ts > samplePalette 直射光 > 直射方向全程合法(单位向量,无 NaN)
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > identifies standable cells (solid top + two air above)
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > finds a straight path on open ground
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > routes around obstacles
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > climbs a one-step staircase
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > refuses two-step cliffs and returns null when sealed
+src/voxel/__tests__/pathfinding.test.ts > pathfinding > nearestStandable drops onto ground from air
+src/voxel/__tests__/picker.test.ts > Picker > vertical ray hits the expected ground cell and +y face
+src/voxel/__tests__/picker.test.ts > Picker > angled ray hits a wall face (side face orientation)
+src/voxel/__tests__/picker.test.ts > Picker > misses return null
+src/voxel/__tests__/picker.test.ts > Picker > pickObject reverse-maps hit cells to object ids
+src/voxel/__tests__/picker.test.ts > ghostCells > expands set-block / fill / place-object into cells
+src/voxel/__tests__/picker.test.ts > ghostCells > S2b: 资产 op 不展开格子(由 UI 层 showAssetGhost 负责预览)
+src/voxel/__tests__/picker.test.ts > Picker.pickAsset (S2b) > 命中实例返回 placementId,未命中返回 null
+src/voxel/__tests__/picker.test.ts > Picker.pickAsset (S2b) > 多实例取最近命中
+src/voxel/__tests__/picker.test.ts > Picker.pickAsset (S2b) > 无 assets 注入时返回 null
+src/voxel/__tests__/platform-gate.test.ts > PlatformGate > 窄屏 → 移动端：只读，隐藏编辑入口（AC18）
+src/voxel/__tests__/platform-gate.test.ts > PlatformGate > 粗指针（触屏）→ 移动端
+src/voxel/__tests__/platform-gate.test.ts > PlatformGate > 桌面 → 可编辑
+src/voxel/__tests__/platform-gate.test.ts > PlatformGate > detectPlatform 默认查询在无 window 环境下视为桌面
+src/voxel/__tests__/player.test.ts > PlayerBody 核心物理(T8) > 平地行走:水平移动,y 不变,保持落地
+src/voxel/__tests__/player.test.ts > PlayerBody 核心物理(T8) > 撞实心墙被挡:停在墙面外一个半宽处
+src/voxel/__tests__/player.test.ts > PlayerBody 核心物理(T8) > 自由落体:重力加速,落到地面停住
+src/voxel/__tests__/player.test.ts > PlayerBody 核心物理(T8) > 跳跃:腾空后落地,可回到地面
+src/voxel/__tests__/player.test.ts > PlayerBody 核心物理(T8) > 终端速度封顶:高空下落 vy 不超过 terminal
+src/voxel/__tests__/player.test.ts > PlayerBody 台阶/飞行/边界(T9) > 连续 1 格高差楼梯:无跳跃自动登顶
+src/voxel/__tests__/player.test.ts > PlayerBody 台阶/飞行/边界(T9) > 2 格高差上不去:台阶辅助不生效,跳也够不着
+src/voxel/__tests__/player.test.ts > PlayerBody 台阶/飞行/边界(T9) > 飞行:无重力,可升可降可悬停;退出飞行恢复重力
+src/voxel/__tests__/player.test.ts > PlayerBody 台阶/飞行/边界(T9) > 世界边界:走出边界被钳制
+src/voxel/__tests__/probe-registry.test.ts > 体素探针注册表(S1 视口实例化) > 双实例按 instanceId 隔离注册,互不覆盖
+src/voxel/__tests__/probe-registry.test.ts > 体素探针注册表(S1 视口实例化) > __voxelEngine 别名只跟随 primary 实例(向后兼容)
+src/voxel/__tests__/probe-registry.test.ts > 体素探针注册表(S1 视口实例化) > 卸载按 id 摘除,不影响另一实例;primary 卸载才摘别名
+src/voxel/__tests__/probe-registry.test.ts > 体素探针注册表(S1 视口实例化) > StrictMode 双挂载:旧引擎清理不会误删同 id 新引擎
+src/voxel/__tests__/style-palette.test.ts > resolvePalette(S3b F8/F9) > 契约注册的全部预设 id 都能解析
+src/voxel/__tests__/style-palette.test.ts > resolvePalette(S3b F8/F9) > default/未知/缺省 → 主题基底(N1 等价)
+src/voxel/__tests__/style-palette.test.ts > resolvePalette(S3b F8/F9) > 预设数据与基底不同,且关键帧结构完整
+src/voxel/__tests__/style-palette.test.ts > resolvePalette(S3b F8/F9) > 预设采样输出不同(F9 风格生效探针)
+src/voxel/__tests__/style-palette.test.ts > applyStyleTweaks(微调在采样出口叠加) > fogDensity 乘性、exposure/saturation 加性
+src/voxel/__tests__/style-palette.test.ts > applyStyleTweaks(微调在采样出口叠加) > 无 tweaks → 原样返回
+src/voxel/__tests__/style-palette.test.ts > applyStyleTweaks(微调在采样出口叠加) > 结果夹到合法域
+src/voxel/__tests__/underwater.test.ts > isEyeUnderwater > 眼位低于下沉水面 → true
+src/voxel/__tests__/underwater.test.ts > isEyeUnderwater > 眼位恰好高于下沉水面 → false
+src/voxel/__tests__/underwater.test.ts > isEyeUnderwater > 非流体格 → false
+src/voxel/__tests__/underwater.test.ts > isEyeUnderwater > 出界坐标安全返回 false
+src/voxel/__tests__/underwater.test.ts > isEyeUnderwater > underwaterDepth：未入水为 0，随没入加深，打满封顶 1
+src/voxel/__tests__/underwater.test.ts > smoothUnderwater > 单调收敛不超调
+src/voxel/__tests__/underwater.test.ts > smoothUnderwater > 约 150ms 时间常数：150ms 后收敛约 63%
+src/voxel/__tests__/underwater.test.ts > smoothUnderwater > 回落同样平滑
+src/voxel/__tests__/wander.test.ts > wanderDestination(AC6) > 同人同日同槽位 → 同一目的地(种子确定性)
+src/voxel/__tests__/wander.test.ts > wanderDestination(AC6) > 目的地恒在锚点邻域(2 ~ 4 格),y 与锚点一致
+src/voxel/__tests__/wander.test.ts > wanderDestination(AC6) > slot 递增遍历路径点(漫步位移 > 阈值),换日后轨迹重排
+src/voxel/__tests__/wander.test.ts > wanderDestination(AC6) > 不同人同日 → 不同轨迹
+src/voxel/__tests__/wander.test.ts > wanderSlot / wanderWorldDay > 30 世界分钟一站;不可解析时间 → 槽位 0(防御)
+src/voxel/__tests__/wander.test.ts > wanderSlot / wanderWorldDay > 世界日取 ISO 日期部分
+src/voxel/__tests__/weather-time.test.ts > DayNightCycle.mapTimeOfDay > noon is brightest, midnight is moonlit dim
+src/voxel/__tests__/weather-time.test.ts > DayNightCycle.mapTimeOfDay > dusk has a warm tint and night a cool one
+src/voxel/__tests__/weather-time.test.ts > DayNightCycle.mapTimeOfDay > sun direction shifts face shading across the day
+src/voxel/__tests__/weather-time.test.ts > DayNightCycle.mapTimeOfDay > sky color transitions day → dusk → night
+src/voxel/__tests__/weather-time.test.ts > weather helpers > columnTopY finds ground and rooftops
+src/voxel/__tests__/weather-time.test.ts > weather helpers > isSkyExposed is false under a roof, true in the open
+src/voxel/__tests__/weather-time.test.ts > weather helpers > collectSnowQuads covers exposed tops but skips eaves (檐下不积雪)
+src/voxel/__tests__/weather-time.test.ts > MotionPreference > scales particles and animation to zero when reduced
+src/voxel/__tests__/weather-time.test.ts > WeatherSystem intensity lerp > weather state ramps toward target and back (晴天后效果消退)
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 映射(T1) > 端点对齐:MIN_DISTANCE↔Z_ENTER,MAX_DISTANCE↔0
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 映射(T1) > 往返映射误差可忽略且 orbit 段单调(越近刻度越大)
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 映射(T1) > walk 段输入按 Z_ENTER 防御(距离不低于 MIN)
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > applyDelta 只改目标,update 指数平滑收敛
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > orbit 带上穿 Z_ENTER 触发 enter-walk,且不重复触发
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > walk 带增量有增益:一两次滚轮即下穿 Z_EXIT 触发 exit-walk
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > 滞回:orbit 带下穿 Z_ENTER 不触发任何 crossing
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > frozen 丢弃 delta 且 update 不推进、不报 crossing
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > unfreeze 带 target 同步 current/target(交接后刻度归位)
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > reset 立即同步并回到 orbit 带(落地失败钳回/文档重载)
+src/voxel/__tests__/zoom-axis.test.ts > ZoomAxis 平滑与 crossing(T1) > 常数关系自洽:Z_EXIT = Z_ENTER − HYSTERESIS,Z_AFTER_LIFT 在滞回带外
+src/voxel/__tests__/zoom-input.test.ts > wheelDeltaToZoom(T4) > 方向:deltaY<0(向上滚)= 拉近(正),deltaY>0 = 拉远(负)
+src/voxel/__tests__/zoom-input.test.ts > wheelDeltaToZoom(T4) > 标准一档滚轮(deltaY=±100)给基准步长 0.045
+src/voxel/__tests__/zoom-input.test.ts > wheelDeltaToZoom(T4) > 触控板小 deltaY 有最小步长,高频累积自然平滑
+src/voxel/__tests__/zoom-input.test.ts > wheelDeltaToZoom(T4) > 极端 deltaY 钳制到上限
+src/voxel/__tests__/zoom-input.test.ts > wheelDeltaToZoom(T4) > deltaY=0 不产生缩放的防御:绝对值 0 给负向最小步长无意义,按实现归为拉远最小步长
+src/voxel/__tests__/zoom-input.test.ts > pinchRatioToZoom(T4) > 捏开(ratio>1)= 拉近,捏合(ratio<1)= 拉远
+src/voxel/__tests__/zoom-input.test.ts > pinchRatioToZoom(T4) > 量级:每 2% 间距变化 ≈ 0.01 刻度
+src/voxel/__tests__/zoom-input.test.ts > pinchRatioToZoom(T4) > 单次换算钳制 ±0.08 防跳变
+src/voxel/__tests__/zoom-input.test.ts > pinchRatioToZoom(T4) > ratio=1(未移动)为 0
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 档位划分(T2) > 三区划分:overview / district / close
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 档位划分(T2) > 首次 update 直接落定不回调(避免启动期抖动)
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 档位划分(T2) > params 随 tier 同步;三档参数覆盖五个旋钮
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 滞回(T2) > 边界 ±滞回带 内往复不翻档、不回调
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 滞回(T2) > 升档须越过 边界+H,降档须越过 边界−H,各回调一次
+src/voxel/__tests__/zoom-lod.test.ts > ZoomLod 滞回(T2) > 滞回带宽度符合常量
