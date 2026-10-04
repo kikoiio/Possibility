@@ -51,16 +51,20 @@ export default function Native2dViewport({
     const host = hostRef.current
     if (!host) return
     let active = true
+    const initialization = new AbortController()
     setError(null)
     setAssetError(null)
     setReady(false)
 
     void createNative2dViewport(host, scene, {
+      signal: initialization.signal,
       onEvent: (event) => {
+        if (!active) return
         if (event.type === 'error') setAssetError(event.message)
         eventRef.current(event)
       },
       onDiagnostics: (value) => {
+        if (!active) return
         if (typeof window !== 'undefined') window.__native2dDiagnostics = () => value
       },
     }).then(
@@ -80,6 +84,7 @@ export default function Native2dViewport({
 
     return () => {
       active = false
+      initialization.abort()
       viewportRef.current?.dispose()
       viewportRef.current = null
       onReady?.(null)

@@ -27,7 +27,7 @@ export default defineConfig({
   projects: [
     {
       name: 'native2d-desktop',
-      testMatch: [/.*sample\.spec\.ts/, /.*editing\.spec\.ts/],
+      testMatch: [/.*sample\.spec\.ts/, /.*editing\.spec\.ts/, /.*acceptance\.spec\.ts/, /.*lifecycle\.spec\.ts/],
       use: {
         browserName: 'chromium',
         viewport: { width: 1280, height: 720 },

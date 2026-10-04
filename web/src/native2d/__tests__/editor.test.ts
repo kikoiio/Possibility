@@ -172,6 +172,22 @@ describe('T13 applyPreview', () => {
     const direct = validateBuildingMove(scene, editor.getLayout(), 'gatehouse', GATEHOUSE_OK_A)
     expect(viaEditor).toEqual(direct)
   })
+
+  it('预览后布局发生变化但目标仍合法时，重新校验并应用候选', () => {
+    const editor = freshEditor()
+    applyMove(editor, 'gatehouse', GATEHOUSE_OK_B)
+    expect(editor.preview('greenhouse', { x: 11, z: 3 }).valid).toBe(true)
+
+    // 撤销门房移动改变了布局；温室候选与恢复后的门房仍不冲突。
+    expect(editor.undo().ok).toBe(true)
+    expect(originOf(editor.getLayout(), 'gatehouse')).toEqual({ x: 3, z: 10 })
+    const result = editor.applyPreview()
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(originOf(result.layout, 'greenhouse')).toEqual({ x: 11, z: 3 })
+      expect(validateLayout(scene, result.layout).valid).toBe(true)
+    }
+  })
 })
 
 describe('T13 cancelPreview 与 getLayout', () => {

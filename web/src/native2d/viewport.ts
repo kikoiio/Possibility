@@ -20,7 +20,7 @@ import type {
 } from './types'
 
 const MAX_RESOLUTION = 2
-const MIN_ZOOM = 0.45
+const MIN_ZOOM = 0.15
 const MAX_ZOOM = 3
 const DEFAULT_BG = 0x0b1319
 const COLORS: Record<string, number> = {
@@ -52,6 +52,7 @@ function includeRect(bounds: ProjectedBounds, x: number, y: number, width: numbe
 }
 
 export interface Native2dViewportOptions {
+  readonly signal?: AbortSignal
   readonly onEvent: (event: ViewportEvent) => void
   readonly onDiagnostics?: (value: ViewportDiagnostics) => void
 }
@@ -65,7 +66,7 @@ interface ViewportState {
 }
 
 function sameSelection(a: Selection | null, b: Selection | null): boolean {
-  if (!a || !b || a.kind !== b.kind) return a === b
+  if (!a || !b || a.kind !== b.kind) return false
   if (a.kind === 'resident' && b.kind === 'resident') return a.personId === b.personId
   if (a.kind === 'location' && b.kind === 'location') return a.locationKey === b.locationKey
   if (a.kind === 'building' && b.kind === 'building') return a.buildingId === b.buildingId
@@ -118,6 +119,7 @@ export async function createNative2dViewport(
   scene: SceneDefinition,
   options: Native2dViewportOptions,
 ): Promise<Native2dViewport> {
+  if (options.signal?.aborted) throw new DOMException('视口初始化已取消', 'AbortError')
   let disposed = false
   const app = new Application()
   await app.init({
@@ -127,10 +129,11 @@ export async function createNative2dViewport(
     resizeTo: host,
     backgroundAlpha: 0,
     antialias: true,
+    autoStart: false,
   })
-  if (disposed) {
+  if (options.signal?.aborted) {
     app.destroy({ removeView: true }, { children: true })
-    throw new Error('native2d 视口初始化完成前已卸载')
+    throw new DOMException('视口初始化完成前已卸载', 'AbortError')
   }
 
   app.ticker.stop()
@@ -218,7 +221,8 @@ export async function createNative2dViewport(
     const height = Math.max(1, host.clientHeight)
     const sceneWidth = Math.max(1, bounds.maxX - bounds.minX)
     const sceneHeight = Math.max(1, bounds.maxY - bounds.minY)
-    const zoom = Math.max(MIN_ZOOM, Math.min(current.overview.maxZoom, (width - current.overview.paddingPx * 2) / sceneWidth, (height - current.overview.paddingPx * 2) / sceneHeight))
+    const padding = Math.min(current.overview.paddingPx, width * 0.08)
+    const zoom = Math.max(MIN_ZOOM, Math.min(current.overview.maxZoom, (width - padding * 2) / sceneWidth, (height - padding * 2) / sceneHeight))
     const centerX = (bounds.minX + bounds.maxX) / 2
     const centerY = (bounds.minY + bounds.maxY) / 2
     return { zoom, pan: { x: width / 2 - centerX * zoom, y: height / 2 - centerY * zoom } }
@@ -281,40 +285,98 @@ export async function createNative2dViewport(
     if (!presentation) return
     const current = space()
     const ground = new Graphics()
+    ground.label = 'ground-backdrop'
+    ground.zIndex = Number.MIN_SAFE_INTEGER
     for (let x = 0; x < current.bounds.width; x += 1) {
       for (let z = 0; z < current.bounds.depth; z += 1) drawDiamond(ground, gridToProjected({ x, z }).x, gridToProjected({ x, z }).y, 64, 32, COLORS.ground, 1)
     }
     world.addChild(ground)
     const objects = [...presentation.objects].sort((a, b) => depth(a, scene) - depth(b, scene))
+    const focus = objects.find((object) => object.kind === 'resident' && (
+      sameSelection(state.selection, object.selection) || object.id === `resident:${state.followPersonId}`
+    ))
+    const focusFoot = focus ? gridToProjected(focus.origin) : null
     for (const object of objects) {
       const selected = sameSelection(state.selection, object.selection) || (state.followPersonId !== null && object.id === `resident:${state.followPersonId}`)
-      const graphic = new Graphics()
-      drawPrimitive(graphic, object, scene, selected, 1)
-      world.addChild(graphic)
       const asset = object.assetId ? scene.assetManifest[object.assetId] : null
+      const visibleLayers = asset?.layers.filter((layer) => visibleLayer(layer, presentation.timeOfDay)) ?? []
+      const loadedLayers = visibleLayers.map((layer) => ({ layer, texture: requestTexture(layer.url) }))
+      if (!loadedLayers.some(({ layer, texture }) => layer.role === 'base' && texture)) {
+        const graphic = new Graphics()
+        graphic.zIndex = depth(object, scene) * 10
+        drawPrimitive(graphic, object, scene, selected, 1)
+        world.addChild(graphic)
+      }
       if (asset) {
         const projected = gridToProjected(object.origin)
-        for (const layer of asset.layers) {
-          if (!visibleLayer(layer, presentation.timeOfDay)) continue
-          const texture = requestTexture(layer.url)
+        for (const { layer, texture } of loadedLayers) {
           if (texture) {
             const sprite = new Sprite(texture)
+            sprite.label = `${object.id}:${layer.role}`
             sprite.position.set(projected.x, projected.y)
             sprite.anchor.set(layer.anchorPx.x / layer.pixelWidth, layer.anchorPx.y / layer.pixelHeight)
-            sprite.alpha = selected && layer.role === 'occluder' ? 0.35 : layer.role === 'accent' && presentation.timeOfDay !== 'dusk' && presentation.timeOfDay !== 'night' ? 0 : 1
             sprite.zIndex = depth(object, scene) * 10 + layer.sortOffset
+            const coversFocus = focus && focusFoot && layer.role === 'occluder'
+              && sprite.zIndex > depth(focus, scene) * 10
+              && projected.x - layer.anchorPx.x < focusFoot.x + 20
+              && projected.x - layer.anchorPx.x + layer.pixelWidth > focusFoot.x - 20
+              && projected.y - layer.anchorPx.y < focusFoot.y + 16
+              && projected.y - layer.anchorPx.y + layer.pixelHeight > focusFoot.y - 40
+            sprite.alpha = layer.role === 'occluder' && (selected || coversFocus) ? 0.35 : 1
             world.addChild(sprite)
           }
         }
+      }
+      if (selected) {
+        const highlight = new Graphics()
+        const foot = gridToProjected(object.origin)
+        highlight.label = `${object.id}:highlight`
+        highlight.zIndex = Number.MAX_SAFE_INTEGER
+        if (object.kind === 'resident') {
+          highlight.roundRect(foot.x - 23, foot.y - 43, 46, 61, 12).stroke({ color: 0xf1d48c, width: 2.5 })
+        } else {
+          highlight.circle(foot.x, foot.y, 16).stroke({ color: 0xf1d48c, width: 3 })
+        }
+        world.addChild(highlight)
       }
     }
     if (state.movePreview) {
       const preview = scene.buildings.find((building) => building.id === state.movePreview?.buildingId)
       if (preview) {
-        const marker = new Graphics()
+        const asset = scene.assetManifest[preview.assetId]
+        const candidate = new Container()
+        candidate.label = 'move-candidate'
+        candidate.zIndex = Number.MAX_SAFE_INTEGER - 2
         const p = gridToProjected(state.movePreview.target)
-        drawDiamond(marker, p.x, p.y - 12, 128, 64, state.movePreview.validation.valid ? 0x79c7a3 : 0xd77872, 0.25)
+        for (const layer of asset.layers.filter((item) => visibleLayer(item, presentation.timeOfDay))) {
+          const texture = requestTexture(layer.url)
+          if (!texture) continue
+          const sprite = new Sprite(texture)
+          sprite.position.set(p.x, p.y)
+          sprite.anchor.set(layer.anchorPx.x / layer.pixelWidth, layer.anchorPx.y / layer.pixelHeight)
+          sprite.alpha = 0.5
+          candidate.addChild(sprite)
+        }
+        world.addChild(candidate)
+        const marker = new Graphics()
+        marker.label = 'move-preview'
+        marker.zIndex = Number.MAX_SAFE_INTEGER - 1
+        const color = state.movePreview.validation.valid ? 0x79c7a3 : 0xd77872
+        for (const cell of asset.footprint) {
+          const point = gridToProjected({ x: state.movePreview.target.x + cell.x, z: state.movePreview.target.z + cell.z })
+          drawDiamond(marker, point.x, point.y, 64, 32, color, 0.25)
+          marker.stroke({ color, width: 2 })
+        }
+        const conflicts = new Graphics()
+        conflicts.label = 'move-conflicts'
+        conflicts.zIndex = Number.MAX_SAFE_INTEGER - 1
+        for (const cell of state.movePreview.validation.conflictCells) {
+          const point = gridToProjected(cell)
+          drawDiamond(conflicts, point.x, point.y, 64, 32, 0xd77872, 0.45)
+          conflicts.stroke({ color: 0xf2b8a8, width: 3 })
+        }
         world.addChild(marker)
+        world.addChild(conflicts)
       }
     }
     latestBounds = createBounds()
