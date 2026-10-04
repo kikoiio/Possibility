@@ -71,6 +71,24 @@ function binding(locationKey: string) {
   return found
 }
 
+describe('T28 素材契约汇合', () => {
+  it('清单包含 24 个真实文件 URL，分层尺寸与脚点一致', () => {
+    const layers = Object.values(ASSET_MANIFEST).flatMap((asset) => asset.layers)
+    expect(layers).toHaveLength(24)
+    expect(new Set(layers.map((layer) => layer.url)).size).toBe(24)
+    for (const asset of Object.values(ASSET_MANIFEST)) {
+      const first = asset.layers[0]
+      expect(first).toBeDefined()
+      for (const layer of asset.layers) {
+        expect(layer.url.startsWith('/native2d/mist-manor/')).toBe(true)
+        expect(layer.pixelWidth).toBe(first.pixelWidth)
+        expect(layer.pixelHeight).toBe(first.pixelHeight)
+        expect(layer.anchorPx).toEqual(first.anchorPx)
+      }
+    }
+  })
+})
+
 describe('场景身份与空间', () => {
   it('场景 id/version 与 fixtures 对齐，defaultSpaceId 指向外景', () => {
     expect(scene.id).toBe(MIST_MANOR_SCENE_ID)
