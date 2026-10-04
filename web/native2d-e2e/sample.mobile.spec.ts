@@ -147,4 +147,58 @@ test.describe('N2D1 mobile sample', () => {
       await context.close()
     }
   })
+
+  test('switches single and dual touch, then recovers from touch cancellation', async ({ browser }) => {
+    const { page, context } = await createIsolatedSampleContext(browser, {
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    })
+    try {
+      await page.goto('/dev/native-2d')
+      await expect(page.getByTestId(TESTIDS.readStatus)).toHaveText('事实已更新')
+      await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(0)
+      const box = await page.getByTestId(TESTIDS.viewportHost).boundingBox()
+      if (!box) throw new Error('viewport host is not visible')
+      const x = box.x + box.width / 2
+      const y = box.y + box.height / 2
+      const client = await context.newCDPSession(page)
+      try {
+        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 20, y: y + 8, id: 1 }] })
+        await client.send('Input.dispatchTouchEvent', {
+          type: 'touchStart',
+          touchPoints: [
+            { x: x + 20, y: y + 8, id: 1 },
+            { x: x + 70, y: y + 8, id: 2 },
+          ],
+        })
+        await client.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [
+            { x: x + 4, y: y + 8, id: 1 },
+            { x: x + 86, y: y + 8, id: 2 },
+          ],
+        })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: x + 4, y: y + 8, id: 1 }] })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 28, y: y + 20, id: 1 }] })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 3 }] })
+        await client.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x: box.x + box.width + 1, y, id: 3 }],
+        })
+        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      } finally {
+        await client.detach()
+      }
+      await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(1)
+      await page.getByTestId(TESTIDS.panelToggle).click()
+      await page.getByTestId('native2d-resident-person-mugino-toru').click()
+      await expect(page.getByTestId(TESTIDS.residentCardName)).toHaveText('雾野 透')
+      await expect(page.getByTestId(TESTIDS.followStatus)).toHaveCount(0)
+    } finally {
+      await context.close()
+    }
+  })
 })

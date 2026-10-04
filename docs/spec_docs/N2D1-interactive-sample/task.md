@@ -1,6 +1,6 @@
 # N2D1：原生 2D 庄园可交互样板 Tasks
 
-> 状态：实现已完成并同步 `origin/main`，分支 `codex/2d-experience`。提交包含基础模块、原生2D交互/E2E及主线同步；验收进度见 checklist。T59 的资源生命周期/渲染初始化故障检查仍待补齐，故 T60 验收汇总保持未完成。
+> 状态：主体实现已完成并同步 `origin/main`，分支 `codex/2d-experience`。提交包含基础模块、原生2D交互/E2E及主线同步；验收进度见 checklist。T59 的建筑预览性能和初始化中卸载资源检查仍待补齐，故 T60 验收汇总保持未完成。
 > 输入：已批准的 [spec.md](spec.md)、[plan.md](plan.md)；日期：2026-10-04。
 > 已一并批准的 plan 最小补充：`web/vitest.config.ts` 仅增加 `native2d-e2e/**` 排除项，防止 Vitest 执行 Playwright 用例。其余范围和设计沿用已批准内容。
 
@@ -896,7 +896,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 - [ ] 模块/任务交付并完成独立验证
 
-**已采集的部分证据（2026-10-04）：** 390×844 Chromium Headless 153，WebGLRenderer 使用 SwiftShader 软件渲染，DPR/resolution=1，视口364×497。1秒级交互采样：平移49次重绘/2865ms、末次渲染7.5ms；双指缩放20次重绘/793ms、末次渲染2.3ms；静置1009ms时drawCount增量0、浏览器rAF约60Hz。交互/绘制有反馈，空闲按需绘制。真实硬件未测试；建筑移动预览单独性能、resize/重复路由/初始化中卸载的资源累积观察，以及渲染器初始化失败注入尚未验证，因此本任务未勾选。
+**已采集的部分证据（2026-10-04）：** 390×844 Chromium Headless 153，WebGLRenderer 使用 SwiftShader 软件渲染，DPR/resolution=1，视口364×497。1秒级交互采样：平移49次重绘/2865ms、末次渲染7.5ms；双指缩放20次重绘/793ms、末次渲染2.3ms；静置1009ms时drawCount增量0、浏览器rAF约60Hz。1280×720 桌面 Playwright/SwiftShader，视口930×468，合法建筑预览拖动产生15次绘制/436ms、末次渲染1.1ms。交互/绘制有反馈，空闲按需绘制。固定触屏的单指—双指切换、touchCancel、移出视口后恢复通过；纹理失败及 WebGL/2D context 初始化失败后重试通过；resize 与反复路由进出后 diagnostics 清理并仅有一个 canvas。初始化进行中卸载时的资源观察及真实硬件性能仍未验证，因此本任务未勾选。
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`；`本任务诊断/进程账本`
 

@@ -95,6 +95,32 @@ test.describe('N2D1 desktop local layout', () => {
     }
   })
 
+  test('samples render feedback during a building move preview', async ({ browser }) => {
+    const { page, context } = await openEditing(browser)
+    try {
+      const before = await readDiagnostics(page)
+      await page.getByTestId(TESTIDS.buildingList).selectOption('gatehouse')
+      await page.getByTestId(TESTIDS.moveStart).click()
+      const startedAt = performance.now()
+      await dragObject(page, 'building:gatehouse', 44, 22)
+      const elapsedMs = performance.now() - startedAt
+      await expect(page.getByTestId(TESTIDS.moveStatus)).toContainText('可应用')
+      await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(before?.drawCount ?? 0)
+      const after = await readDiagnostics(page)
+      console.log(JSON.stringify({
+        sample: 'building-move-preview',
+        renderer: after?.renderer,
+        resolution: after?.resolution,
+        viewport: [after?.width, after?.height],
+        drawDelta: (after?.drawCount ?? 0) - (before?.drawCount ?? 0),
+        elapsedMs: Math.round(elapsedMs),
+        lastRenderMs: after?.lastRenderMs,
+      }))
+    } finally {
+      await context.close()
+    }
+  })
+
   test('keeps facts unchanged while reset confirmation is explicit', async ({ browser }) => {
     const { page, context } = await openEditing(browser)
     try {
@@ -216,6 +242,67 @@ test.describe('N2D1 desktop local layout', () => {
       await expect(page.getByTestId(TESTIDS.assetError)).toHaveCount(0)
       await page.getByTestId(TESTIDS.overview).click()
       await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(1)
+    } finally {
+      await context.close()
+    }
+  })
+
+  test('retries a renderer initialization failure without losing loaded facts', async ({ browser }) => {
+    const { page, context } = await createIsolatedSampleContext(browser)
+    await page.addInitScript(() => {
+      const target = window as typeof window & { __failNative2dRenderer?: boolean }
+      target.__failNative2dRenderer = true
+      const prototype = HTMLCanvasElement.prototype
+      const original = prototype.getContext
+      Object.defineProperty(prototype, 'getContext', {
+        configurable: true,
+        value: function (this: HTMLCanvasElement, type: string, ...args: unknown[]) {
+          if (target.__failNative2dRenderer && (type.startsWith('webgl') || type === '2d')) return null
+          return Reflect.apply(original, this, [type, ...args])
+        },
+      })
+    })
+    try {
+      await page.goto('/dev/native-2d')
+      await expect(page.getByTestId(TESTIDS.readStatus)).toHaveText('事实已更新')
+      await expect(page.getByTestId(TESTIDS.viewportError)).toBeVisible()
+      await expect(page.getByTestId(TESTIDS.residentList).locator('button').first()).toHaveCount(1)
+      await page.evaluate(() => {
+        ;(window as typeof window & { __failNative2dRenderer?: boolean }).__failNative2dRenderer = false
+      })
+      await page.getByTestId(TESTIDS.viewportRetry).click()
+      await expect(page.getByTestId(TESTIDS.viewportError)).toHaveCount(0)
+      await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(0)
+      await expect(page.getByTestId(TESTIDS.spaceLabel)).toHaveText('庄园外景')
+    } finally {
+      await context.close()
+    }
+  })
+
+  test('cleans up diagnostics on route changes and rebuilds after resize and re-entry', async ({ browser }) => {
+    const { page, context } = await createIsolatedSampleContext(browser, { viewport: { width: 1280, height: 720 } })
+    try {
+      await page.goto('/dev/native-2d')
+      await expect(page.getByTestId(TESTIDS.readStatus)).toHaveText('事实已更新')
+      await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(0)
+
+      for (const size of [{ width: 1100, height: 760 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(size)
+        await expect.poll(async () => (await readDiagnostics(page))?.width ?? 0).toBeGreaterThan(0)
+        await page.evaluate(() => {
+          window.history.pushState({}, '', '/dev/asset-shot')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        })
+        await expect(page.getByTestId(TESTIDS.viewportHost)).toHaveCount(0)
+        await expect.poll(() => page.evaluate(() => window.__native2dDiagnostics)).toBeUndefined()
+        await page.evaluate(() => {
+          window.history.pushState({}, '', '/dev/native-2d')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        })
+        await expect(page.getByTestId(TESTIDS.readStatus)).toHaveText('事实已更新')
+        await expect.poll(async () => (await readDiagnostics(page))?.drawCount ?? 0).toBeGreaterThan(0)
+        await expect(page.getByTestId(TESTIDS.viewportHost).locator('canvas')).toHaveCount(1)
+      }
     } finally {
       await context.close()
     }
