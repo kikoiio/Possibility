@@ -8,6 +8,7 @@ import { WorldGeneratorError } from '../voxel/generate'
 import { CONTENT_ISSUE_COPY } from './error-copy'
 import { createWorldFixture } from '../test/world-fixture'
 import { persons, timelines, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
+import { eq } from 'drizzle-orm'
 
 /** 合法体素信封:平地 + 可选摆放 op */
 function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxelDocument {
@@ -19,11 +20,11 @@ function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxe
   return JSON.parse(serialize(doc)) as SerializedVoxelDocument
 }
 
-function repairEnvelope(names: string[]): SerializedVoxelDocument {
+function repairEnvelope(names: string[], shift = 0): SerializedVoxelDocument {
   const base = createEmptyWorld({ width: 16, height: 16, depth: 16 }, 'mist-manor', 'repair-route')
   const doc = applyEdits(base, [
     { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
-    ...names.map((_, i) => ({ kind: 'place-object' as const, objectId: `spot-${i}`, objectType: 'stone-lantern' as const, anchor: { x: 2 + i * 4, y: 1, z: 2 }, rotation: 0 as const })),
+    ...names.map((_, i) => ({ kind: 'place-object' as const, objectId: `spot-${i}`, objectType: 'stone-lantern' as const, anchor: { x: 2 + i * 4 + shift, y: 1, z: 2 }, rotation: 0 as const })),
   ]).document
   return JSON.parse(serialize({ ...doc, locations: names.map((name, i) => ({ name, objectId: `spot-${i}` })) })) as SerializedVoxelDocument
 }
@@ -105,6 +106,9 @@ describe('scene HTTP routes', () => {
     const f = await createWorldFixture(); fixtures.push(f)
     await f.db.insert(persons).values({ id: 'resident-1', userId: 'owner', name: '阿梨', modelJson: '{}', createdAt: '2026-09-21T08:00:00.000Z' })
     await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident-1', joinedAt: '2026-09-21T08:00:00.000Z' })
+    const originalWorld = await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get()
+    const originalTimelines = await f.db.select().from(timelines).all()
+    const originalBindings = await f.db.select().from(worldPersons).all()
     const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
 
     const contextResponse = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
@@ -129,8 +133,15 @@ describe('scene HTTP routes', () => {
     expect(await f.db.select().from(worldScenes)).toHaveLength(1)
     expect(await f.db.select().from(worldSceneRevisions)).toMatchObject([{ worldId: 'home-world', version: 1, kind: 'scene-repair' }])
     expect(await f.db.select().from(worlds)).toHaveLength(2)
-    expect(await f.db.select().from(timelines)).toHaveLength(2)
-    expect(await f.db.select().from(worldPersons)).toMatchObject([{ worldId: 'home-world', personId: 'resident-1' }])
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get()).toEqual(originalWorld)
+    expect(await f.db.select().from(timelines)).toEqual(originalTimelines)
+    expect(await f.db.select().from(worldPersons)).toEqual(originalBindings)
+
+    const changedReplay = await scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers,
+      body: JSON.stringify({ requestId: 'repair-save-1', expectedVersion: 0, repair: true, document: repairEnvelope(['Cafe', 'Library'], 1) }),
+    }, f.env)
+    expect(changedReplay.status).toBe(409)
 
     const readyContext = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
     expect(readyContext.status).toBe(409)
@@ -153,6 +164,38 @@ describe('scene HTTP routes', () => {
     expect(mismatch.status).toBe(422)
     expect(await mismatch.json()).toMatchObject({ errorCode: 'repair_location_mismatch' })
     expect(await f.db.select().from(worldScenes)).toHaveLength(0)
+  })
+
+  it('protects repair context by ownership and reports a missing main timeline without changing the world', async () => {
+    const f = await createWorldFixture({ writable: false }); fixtures.push(f)
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    expect((await scenesRoutes.request('/worlds/home-world/scene/repair-context', {}, f.env)).status).toBe(401)
+    expect((await scenesRoutes.request('/worlds/other-world/scene/repair-context', { headers }, f.env)).status).toBe(404)
+
+    const original = await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get()
+    const originalTimelines = await f.db.select().from(timelines).all()
+    await f.db.delete(timelines).where(eq(timelines.id, 'home-main'))
+    const invalid = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
+    expect(invalid.status).toBe(409)
+    expect(await invalid.json()).toMatchObject({ errorCode: 'world_structure_invalid' })
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, 'home-world')).get()).toEqual(original)
+    expect(await f.db.select().from(timelines)).toEqual(originalTimelines.filter(timeline => timeline.id !== 'home-main'))
+    expect(await f.db.select().from(worldScenes)).toHaveLength(0)
+  })
+
+  it('allows only one concurrent first-scene repair to commit', async () => {
+    const f = await createWorldFixture(); fixtures.push(f)
+    await f.db.insert(persons).values({ id: 'resident-1', userId: 'owner', name: '阿梨', modelJson: '{}', createdAt: '2026-09-21T08:00:00.000Z' })
+    await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident-1', joinedAt: '2026-09-21T08:00:00.000Z' })
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    const submit = (requestId: string) => scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers,
+      body: JSON.stringify({ requestId, expectedVersion: 0, repair: true, document: repairEnvelope(['Cafe', 'Library']) }),
+    }, f.env)
+    const outcomes = await Promise.all([submit('repair-race-a'), submit('repair-race-b')])
+    expect(outcomes.map(response => response.status).sort()).toEqual([200, 409])
+    expect(await f.db.select().from(worldScenes)).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions)).toHaveLength(1)
   })
   it('reads explicit missing status and stores accepted revisions only', async () => {
     const f = await createWorldFixture(); fixtures.push(f)

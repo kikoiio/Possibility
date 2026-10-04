@@ -18,7 +18,6 @@ export default function WorldSceneRepair() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [saveBlocked, setSaveBlocked] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -29,7 +28,6 @@ export default function WorldSceneRepair() {
     latestDoc.current = null
     saveRequestId.current = null
     setError('')
-    setSaveBlocked(false)
     void worldSceneApi.repairContext(worldId).then(value => {
       if (!active) return
       setContext(value)
@@ -79,9 +77,8 @@ export default function WorldSceneRepair() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         const scene = await worldSceneApi.get(worldId).catch(() => null)
-      if (scene?.status === 'ready') {
-          setSaveBlocked(true)
-          setError('原世界已由另一份保存补好。当前草稿仍保留在本页；可从右上角进入已保存的原世界。')
+        if (scene?.status === 'ready') {
+          navigate(`/worlds/${encodeURIComponent(worldId)}`, { replace: true })
         } else {
           setError(cause instanceof Error ? cause.message : '保存冲突；当前草稿仍在本页。')
         }
@@ -141,9 +138,9 @@ export default function WorldSceneRepair() {
             <p className="mt-2 text-[10px] text-[#849184]">视口中的调整会保留在本页。确认后保存到这个原世界。</p>
           </div>
           <div className="flex items-center justify-end gap-2 rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl">
-            <button data-testid="save-repair-scene" type="button" onClick={() => void save()} disabled={busy || saveBlocked}
+            <button data-testid="save-repair-scene" type="button" onClick={() => void save()} disabled={busy}
               className="rounded-full bg-[#274739] px-5 py-2.5 text-xs font-semibold text-white shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#274739] disabled:opacity-45">
-              {busy ? '保存中…' : saveBlocked ? '原世界已有场景' : error ? '重试保存' : '保存并进入原世界'}
+              {busy ? '保存中…' : error ? '重试保存' : '保存并进入原世界'}
             </button>
           </div>
         </section>}
