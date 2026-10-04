@@ -11,8 +11,12 @@ import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { gateUniverseWrite, gateWorld } from '../engine/guard'
 import type { AgentMode } from '../agent/types'
 import type { Env } from '../index'
-import { cancelChatRequest, ChatRequestConflict, ChatRequestTerminalError, completeChatRequest,
-  failChatRequest, heartbeatChatRequest, listPendingChatRequests, readChatRequest, reserveChatRequest } from './requests'
+import { cancelChatRequest, ChatRequestConflict, buildChatCompletionWrites, failChatRequest,
+  heartbeatChatRequest, listPendingChatRequests, readChatRequest,
+  reserveChatRequest, type ChatRequest } from './requests'
+import { ensureUniverseRevision } from '../world-state/model'
+import { commitWorldCommand } from '../world-state/commit'
+import { WorldStateError } from '../world-state/types'
 
 type Conversation = typeof conversations.$inferSelect
 
@@ -101,8 +105,8 @@ chatRoutes.get('/conversations/:id/requests/pending', async (c) => {
   const convo = await loadOwnedConversation(db, conversationId, userId)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
   const requests = await listPendingChatRequests(db, conversationId, userId)
-  return c.json({ requests: requests.map(({ requestId, status, heartbeatAt, createdAt, updatedAt }) => ({
-    requestId, status, heartbeatAt, createdAt, updatedAt,
+  return c.json({ requests: requests.map(({ requestId, channel, status, heartbeatAt, createdAt, updatedAt }) => ({
+    requestId, channel, status, heartbeatAt, createdAt, updatedAt,
   })) })
 })
 
@@ -118,6 +122,8 @@ async function runAndStream(
     mode: AgentMode
     input: string
     runId: string
+    channel?: 'phone'
+    phoneRequest?: ChatRequest
     history?: HistoryMessage[]
   },
 ): Promise<{ text: string; complete: boolean }> {
@@ -126,6 +132,7 @@ async function runAndStream(
     personId: opts.personId,
     timelineId: opts.timelineId,
     mode: opts.mode,
+    ...(opts.channel ? { communication: { channel: opts.channel, counterpartId: opts.userId } } : {}),
   })
   if (!ctx) {
     await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: '上下文不存在' }) })
@@ -145,6 +152,9 @@ async function runAndStream(
     return { text: '', complete: false }
   }
 
+  // Capture the optimistic version before any model work; a concurrent world write makes the final batch fail.
+  const expectedVersion = opts.phoneRequest ? (await ensureUniverseRevision(db, ctx.world.id, ctx.timeline.id)).version : undefined
+
   let full = ''
   let complete = false
   const controller = new AbortController()
@@ -152,7 +162,39 @@ async function runAndStream(
   stream.onAbort(() => controller.abort())
   if (stream.aborted) controller.abort()
   try {
-    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], { signal: controller.signal, runId: opts.runId })) {
+    for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], {
+      signal: controller.signal, runId: opts.runId,
+      ...(opts.phoneRequest ? { onComplete: async (run) => {
+        run.current.activity = '通过电话与用户交谈'
+        const action = {
+          type: 'resident_state' as const,
+          personId: opts.personId,
+          cause: 'agent_state' as const,
+          windowStart: ctx.timeline.simNow,
+          patch: { ...run.stagedPatch, activity: '通过电话与用户交谈' },
+          // Shared event history records only that a phone turn produced an experience;
+          // the detailed conversation stays in this resident's private memory/chat.
+          events: run.stagedEvents.map(event => ({ ...event, title: '电话交谈中的经历',
+            description: '此经历来自与用户的电话交谈；详细内容保留在居民私有记忆中。' })),
+          memories: run.stagedMemories,
+          communicationChannel: 'phone' as const,
+          communicationRequestId: opts.runId,
+        }
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`phone:${opts.runId}`))
+        const commandId = `system:${[...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')}`
+        let committed
+        try {
+          committed = await commitWorldCommand(db, {
+            id: commandId, worldId: ctx.world.id, timelineId: ctx.timeline.id, userId: ctx.world.userId,
+            actorKind: 'system', expectedVersion: expectedVersion!, action,
+          }, buildChatCompletionWrites(db, opts.phoneRequest!, full))
+        } catch (error) {
+          if (error instanceof WorldStateError) throw error
+          throw new Error('电话回合提交失败，请重试。')
+        }
+        return committed.commandId
+      } } : {}),
+    })) {
       await heartbeatChatRequest(db, opts.runId)
       if (ev.type === 'text') full += ev.delta
       if (ev.type === 'done') {
@@ -187,6 +229,7 @@ async function requestResponse(db: Db, conversationId: string, requestId: string
     worldId: request.worldId,
     timelineId: request.timelineId,
     personId: request.personId,
+    channel: request.channel,
     userMessageId: request.userMessageId,
     replyMessageId: request.replyMessageId,
     status: request.status,
@@ -247,7 +290,8 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
   if (!requestId || requestId.length > 100) return c.json({ error: 'requestId 必填且不能超过 100 字符' }, 400)
 
   // 旧聊天仍可读取，但被拒绝的发送不能先落下一条用户消息。
-  const ctx = await buildAgentContext(db, { userId, personId: convo.personId, timelineId: convo.timelineId, mode: 'chat' })
+  const ctx = await buildAgentContext(db, { userId, personId: convo.personId, timelineId: convo.timelineId, mode: 'chat',
+    communication: { channel: 'phone', counterpartId: userId } })
   if (!ctx) return c.json({ error: '上下文不存在' }, 404)
   const gate = await gateUniverseWrite(db, ctx.world.id, ctx.timeline.id)
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
@@ -255,7 +299,7 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
   let reservation
   try {
     reservation = await reserveChatRequest(db, { requestId, conversationId: convo.id, userId,
-      worldId: ctx.world.id, timelineId: ctx.timeline.id, personId: convo.personId, content })
+      worldId: ctx.world.id, timelineId: ctx.timeline.id, personId: convo.personId, content, channel: 'phone' })
   } catch (error) {
     if (error instanceof ChatRequestConflict) return c.json({ error: error.message }, error.status)
     throw error
@@ -299,16 +343,13 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
       personId: convo.personId,
       timelineId: convo.timelineId,
       mode: 'chat',
+      channel: 'phone',
+      phoneRequest: reservation.request,
       input: content,
       runId: requestId,
       history,
     })
-    if (result.complete && result.text.trim()) {
-      try { await completeChatRequest(db, requestId, result.text) }
-      catch (error) {
-        if (!(error instanceof ChatRequestTerminalError)) throw error
-      }
-    } else {
+    if (!result.complete || !result.text.trim()) {
       await failChatRequest(db, requestId, 'model_incomplete')
     }
   })

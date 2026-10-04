@@ -11,7 +11,7 @@ interface ScenarioCardProps {
   confirming?: boolean
 }
 
-/** What-if 场景设定卡：起始时间/改变变量/参与人物/不变条件（F10），可编辑确认 */
+/** What-if 场景设定卡：展示可编辑的文字描述；实际初始改变由 fork action 单独确认。 */
 export default function ScenarioCard({ scenario, timeZone, onChange, onConfirm, onCancel, confirming }: ScenarioCardProps) {
   const editable = !!onChange
   const fieldId = useId()
@@ -49,7 +49,7 @@ export default function ScenarioCard({ scenario, timeZone, onChange, onConfirm, 
       </div>
 
       <div>
-        <label htmlFor={`${fieldId}-condition`} className="mb-1 block text-xs text-woad-deep">改变的变量</label>
+        <label htmlFor={`${fieldId}-condition`} className="mb-1 block text-xs text-woad-deep">场景中的改变描述</label>
         {editable ? (
           <textarea
             id={`${fieldId}-condition`}
@@ -62,6 +62,7 @@ export default function ScenarioCard({ scenario, timeZone, onChange, onConfirm, 
         ) : (
           <p className="text-sm text-ink">{scenario.changedVariable}</p>
         )}
+        <p className="mt-1 text-[11px] text-ink-faint">这段文字用于描述假设；实际写入子线的改变由下方结构化动作决定。</p>
       </div>
 
       <div>

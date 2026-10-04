@@ -1,4 +1,4 @@
-import type { EngineContext, ScheduleItem } from './engine-context'
+import type { ResidentEnginePromptContext, ScheduleItem } from './engine-context'
 import { renderModelItems } from './prompt'
 import type { Memory } from './memory'
 import type { ModelItem } from './types'
@@ -25,7 +25,7 @@ function items(title: string, list: ModelItem[]): string {
 }
 
 /** 公共段：人设 + 世界/地点/同世界人物 + 当前状态/当日日程 + 记忆检索集 */
-function buildEngineSystem(ctx: EngineContext): string {
+function buildEngineSystem(ctx: ResidentEnginePromptContext): string {
   const { model, state, snapshot } = ctx
   const { world, locations, timeline } = snapshot
 
@@ -39,6 +39,9 @@ function buildEngineSystem(ctx: EngineContext): string {
   const knowledgeSection = ctx.knownFacts?.length
     ? `## 在这个宇宙里你可依据的记录\n${ctx.knownFacts.map(f => `- [${f.certainty === 'fact' ? '已证实' : '传闻'}；来源 ${f.sourceFactId}] ${f.text}`).join('\n')}\n未列出的私人消息不属于你的知识；传闻不能说成已证实。`
     : '## 在这个宇宙里你可依据的记录\n没有新的已记录消息。不要把别人的私人消息当成自己知道的事。'
+  const dialogueEvidence = ctx.evidence?.filter(evidence => evidence.kind === 'utterance') ?? []
+  const dialogueSection = dialogueEvidence.length
+    ? `## 你实际听到的发言\n以下只证明这些话曾被说出，不证明话中内容属实；转述中的传闻仍是传闻。\n${dialogueEvidence.map(evidence => `- ${evidence.content}`).join('\n')}` : ''
 
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
@@ -71,6 +74,7 @@ function buildEngineSystem(ctx: EngineContext): string {
     items('技能与爱好', model.skills),
     memorySection,
     knowledgeSection,
+    dialogueSection,
     items('关系', model.relationships),
     [
       '## 边界与未知（诚实红线）',
@@ -88,7 +92,7 @@ function buildEngineSystem(ctx: EngineContext): string {
       `地点：\n${locations.map((l) => `- ${l.name}：${l.description}`).join('\n')}`,
       `现在的时间：${formatWorldTime(timeline.simNow, world.timeZone)}`,
       timeline.parentTimelineId
-        ? `你所在的是一条 what-if 分叉时间线，分叉点之前的主线记忆你同样拥有。\n分叉设定：${timeline.forkScenarioJson ?? ''}`
+        ? '你身处一条 what-if 分叉时间线。你只知道自己亲历、实际听到或有来源支持的信息。'
         : '',
     ]
       .filter(Boolean)
@@ -113,7 +117,7 @@ function buildEngineSystem(ctx: EngineContext): string {
 }
 
 /** schedule：生成当日日程 */
-export function buildSchedulePrompt(ctx: EngineContext): PromptPair {
+export function buildSchedulePrompt(ctx: ResidentEnginePromptContext): PromptPair {
   const locationNames = ctx.snapshot.locations.map((l) => l.name).join('、')
   const instruction = [
     '## 任务：安排今日日程',
@@ -133,7 +137,7 @@ export function buildSchedulePrompt(ctx: EngineContext): PromptPair {
 }
 
 /** beat：日程项结束后的生活节拍 */
-export function buildBeatPrompt(ctx: EngineContext, finishedItem: ScheduleItem | null, windowMinutes: number): PromptPair {
+export function buildBeatPrompt(ctx: ResidentEnginePromptContext, finishedItem: ScheduleItem | null, windowMinutes: number): PromptPair {
   const locationNames = ctx.snapshot.locations.map((l) => l.name).join('、')
   const windowDesc = finishedItem
     ? `你的日程项「${finishedItem.activity}」（@${finishedItem.location}，${finishedItem.start}-${finishedItem.end}）刚刚结束，回顾这约 ${windowMinutes} 分钟。`
@@ -167,7 +171,7 @@ export function buildBeatPrompt(ctx: EngineContext, finishedItem: ScheduleItem |
 }
 
 /** injection：注入事件的感知与反应（输出格式同 beat） */
-export function buildInjectionPrompt(ctx: EngineContext, eventText: string): PromptPair {
+export function buildInjectionPrompt(ctx: ResidentEnginePromptContext, eventText: string): PromptPair {
   const base = buildBeatPrompt(ctx, null, 0)
   const injection = [
     '',
@@ -187,7 +191,7 @@ export interface DialogueTurnView {
 
 /** dialogue_turn：轮到某人发言 */
 export function buildDialoguePrompt(
-  ctx: EngineContext,
+  ctx: ResidentEnginePromptContext,
   othersNames: string[],
   turns: DialogueTurnView[],
   opts: { isLastTurn: boolean; location: string },
@@ -225,7 +229,7 @@ export function buildDialoguePrompt(
 
 /** scene：用户以在场身份来到某地点，人物依次回应（输出格式同 dialogue_turn） */
 export function buildScenePrompt(
-  ctx: EngineContext,
+  ctx: ResidentEnginePromptContext,
   visitor: { name: string; profile: string },
   location: string,
   turns: DialogueTurnView[],
@@ -270,7 +274,7 @@ export function buildScenePrompt(
 }
 
 /** summary：把一批老记忆（或老摘要）蒸馏为一条摘要（S2 契约 v2：只产正文，重要性由应用侧聚合） */
-export function buildSummaryPrompt(ctx: EngineContext, batch: Memory[]): PromptPair {
+export function buildSummaryPrompt(ctx: ResidentEnginePromptContext, batch: Memory[]): PromptPair {
   const list = batch
     .map((m) => `- ${m.simTime ? `[${formatWorldTime(m.simTime, ctx.snapshot.world.timeZone)}] ` : ''}${m.content}`)
     .join('\n')

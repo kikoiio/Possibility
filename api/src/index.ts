@@ -22,6 +22,7 @@ import { settingsRoutes } from './settings/routes'
 import { voxelRoutes } from './voxel/routes'
 import { cleanupExpiredGuestData } from './demo/cleanup'
 import { createDb } from './db/client'
+import { memoryRepairRoutes } from './admin/memory-repair-routes'
 
 export interface Env {
   DB: D1Database
@@ -86,6 +87,7 @@ app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
 app.route('/api', lifeRoutes) // 归来回顾与承诺
 app.route('/api', comparisonRoutes) // 时间线证据对照
 app.route('/api/settings', settingsRoutes) // BYOK 与全局预算(F5/S3);须在 chat/timeline 全局鉴权之前
+app.route('/api/admin', memoryRepairRoutes) // 管理员限定的居民记忆重建维护入口
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
 app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id
 app.route('/api/home', homeRoutes)

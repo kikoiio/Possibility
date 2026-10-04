@@ -1,6 +1,8 @@
-import { and, asc, eq, lt } from 'drizzle-orm'
+import { and, asc, eq, lt, sql } from 'drizzle-orm'
+import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { chatRequests, messages } from '../db/schema'
+import type { CommunicationChannel } from '../agent/types'
 
 export type ChatRequest = typeof chatRequests.$inferSelect
 
@@ -12,6 +14,7 @@ export interface ReserveChatRequestInput {
   timelineId: string
   personId: string
   content: string
+  channel?: CommunicationChannel
   now?: Date
 }
 
@@ -59,6 +62,7 @@ function sameRequest(row: ChatRequest, input: ReserveChatRequestInput, contentHa
     && row.worldId === input.worldId
     && row.timelineId === input.timelineId
     && row.personId === input.personId
+    && row.channel === (input.channel ?? 'unknown')
     && row.contentHash === contentHash
 }
 
@@ -86,6 +90,7 @@ export async function reserveChatRequest(db: Db, input: ReserveChatRequestInput)
     worldId: input.worldId,
     timelineId: input.timelineId,
     personId: input.personId,
+    channel: input.channel ?? 'unknown',
     contentHash,
     userMessageId,
     replyMessageId,
@@ -143,6 +148,26 @@ export async function completeChatRequest(
     throw error
   }
   return (await readChatRequest(db, requestId))!
+}
+
+/** Completion writes are appended to a world-command D1 batch for phone turns. */
+export function buildChatCompletionWrites(
+  db: Db,
+  request: ChatRequest,
+  content: string,
+  at = new Date(),
+): [BatchItem<'sqlite'>, BatchItem<'sqlite'>] {
+  const reply = content.trim()
+  if (!reply) throw new ChatRequestConflict('回复内容不能为空')
+  const finishedAt = at.toISOString()
+  return [
+    db.insert(messages).values({ id: request.replyMessageId, conversationId: request.conversationId,
+      role: 'person', content: reply, createdAt: finishedAt }),
+    // If a concurrent cancellation won, force a NOT NULL constraint failure so the entire D1 batch rolls back.
+    db.update(chatRequests).set({ requestId: sql`CASE WHEN ${chatRequests.status} = 'pending' THEN ${chatRequests.requestId} ELSE NULL END`,
+      status: 'completed', updatedAt: finishedAt, finishedAt, errorCode: null, heartbeatAt: at.getTime() })
+      .where(eq(chatRequests.requestId, request.requestId)),
+  ]
 }
 
 async function finishWithoutReply(

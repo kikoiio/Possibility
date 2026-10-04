@@ -17,9 +17,13 @@ export const WORLD_PREVIEW_SYSTEM = `你是「可能性设定师」。用户要�
   "startTime": "分叉起始时间，ISO 8601，必须是给定的当前时刻，不得早于或晚于它",
   "changedVariable": "被改变的那一个条件，一句话",
   "participants": ["涉及的人物，从居民名单中选"],
-  "invariants": ["保持不变的条件"]
+  "invariants": ["保持不变的条件"],
+  "actionProposal": null 或以下二选一：
+    { "type": "inform", "recipientId": "居民 ID", "topic": "主题", "content": "要传达的内容" }
+    { "type": "environment", "location": "地点名称", "condition": "weather|lighting|access", "value": "目标状态" }
 }
-要求：changedVariable 只改一件事；participants 只从给出的居民中选，不确定就留空；invariants 2-4 条；用中文。`
+要求：changedVariable 只改一件事；participants 只从给出的居民中选，不确定就留空；invariants 2-4 条；用中文。
+actionProposal 最多一项，必须是用户 what-if 可映射到的消息传递或指定地点天气/照明/通行改变；消息接收者必须使用居民 ID。无法可靠映射时设为 null。动作只是草稿，不要虚构来源证据，不要返回 sourceFactId。`
 
 /** 居民摘要上限：brief 中至多列出的人数 */
 const MAX_RESIDENTS_IN_BRIEF = 12
@@ -36,6 +40,7 @@ export async function buildWorldForkBrief(
 ): Promise<string> {
   const residents = await db
     .select({
+      id: worldPersons.personId,
       name: persons.name,
       location: personStates.location,
       activity: personStates.activity,
@@ -53,12 +58,19 @@ export async function buildWorldForkBrief(
 
   const residentLines = residents.length
     ? residents
-        .map((r) => `- ${r.name}：${r.location ?? '位置未知'}；${r.activity ?? '忙着自己的事'}；情绪 ${r.mood ?? '平静'}；目标 ${r.goal ?? '无'}`)
+        .map((r) => `- ID=${r.id}；${r.name}：${r.location ?? '位置未知'}；${r.activity ?? '忙着自己的事'}；情绪 ${r.mood ?? '平静'}；目标 ${r.goal ?? '无'}`)
         .join('\n')
     : '（世界暂无居民）'
+  let locationNames: string[] = []
+  try {
+    const parsed = JSON.parse(world.locationsJson || '[]') as unknown
+    if (Array.isArray(parsed)) locationNames = parsed.flatMap((item) =>
+      item && typeof item === 'object' && 'name' in item && typeof item.name === 'string' ? [item.name] : [])
+  } catch { /* invalid legacy world */ }
 
   return [
     `世界：${world.name}——${world.description}`,
+    `地点：${locationNames.join('、') || '（地点信息未载入）'}`,
     `当前时刻：${source.simNow}`,
     `居民近况：`,
     residentLines,

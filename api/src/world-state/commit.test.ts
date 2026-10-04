@@ -6,6 +6,7 @@ import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { commitWorldCommand } from './commit'
 import { WorldStateError } from './types'
 import { buildEngineContext, buildWorldSnapshot } from '../agent/engine-context'
+import { buildSchedulePrompt } from '../agent/engine-prompt'
 import { worldSnapshot } from '../worlds/queries'
 import { transitionCommitment } from '../life/service'
 import { auditUniverse } from './invariants'
@@ -299,6 +300,11 @@ describe('versioned world command', () => {
     const b = (await buildEngineContext(fixture.db, 'b', snapshot))!
     expect(a.knownFacts).toEqual([expect.objectContaining({ kind: 'knowledge', certainty: 'rumor', text: expect.stringContaining('tomorrow') })])
     expect(b.knownFacts).toEqual([])
+    const emptyModel = { identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [] }
+    const promptA = buildSchedulePrompt({ ...a, model: emptyModel }).system
+    const promptB = buildSchedulePrompt({ ...b, model: emptyModel }).system
+    expect(promptA).toContain('The letter says tomorrow')
+    expect(promptB).not.toContain('The letter says tomorrow')
   })
 
   it('preserves rumor certainty when relayed and keeps private knowledge out of public snapshots', async () => {

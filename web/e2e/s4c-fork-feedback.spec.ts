@@ -1,7 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import { comparisonFor, NOW, snapshotFor, stubSplitApis, stubTimelines, voxelDocument, type StubTimeline } from './split-view-stubs'
 
-const draft = { name: '建议分支', whatIf: '如果那封信提前到达', changedVariable: '送达时间', startTime: NOW, participants: ['小夜'], invariants: ['共同过去保持不变'] }
+const draft = {
+  name: '建议分支', whatIf: '如果那封信提前到达', changedVariable: '送达时间', startTime: NOW,
+  participants: ['小夜'], invariants: ['共同过去保持不变'], sourceVersion: 1,
+  actionProposal: { type: 'environment', location: '主楼', condition: 'weather', value: '晴朗' },
+  sourceCandidates: [], actionTargets: { residents: [{ id: 'person-1', name: '小夜' }], locations: ['主楼'] },
+}
 
 async function fixture(page: Page, options: { failCreate?: boolean; failRefresh?: boolean; alignment?: 'same_sim_time' | 'different_sim_times' } = {}) {
   const state = { requests: [] as Record<string, unknown>[], created: false, failRefresh: !!options.failRefresh, failSwitch: false, compares: [] as [string, string][] }
@@ -47,7 +52,7 @@ async function confirmCard(page: Page) {
   await dialog.getByTestId('fork-preview-submit').click()
   await dialog.getByLabel('分支名称').fill('准时的信')
   await dialog.getByLabel('What-if').fill('如果信准时送达')
-  await dialog.getByLabel('改变的变量').fill('信件送达时刻')
+  await dialog.getByLabel('场景中的改变描述').fill('信件送达时刻')
   return dialog
 }
 
@@ -90,7 +95,7 @@ test('创建失败保留全部编辑输入及原时间线，可明确重试', as
   await expect(dialog.getByRole('alert')).toBeVisible()
   await expect(dialog.getByLabel('分支名称')).toHaveValue('准时的信')
   await expect(dialog.getByLabel('What-if')).toHaveValue('如果信准时送达')
-  await expect(dialog.getByLabel('改变的变量')).toHaveValue('信件送达时刻')
+  await expect(dialog.getByLabel('场景中的改变描述')).toHaveValue('信件送达时刻')
   await expect(page).toHaveURL(/timeline=timeline-main/)
   expect(state.requests).toHaveLength(1)
   expect(state.compares).toHaveLength(0)
@@ -163,7 +168,7 @@ test('访客移动端：编辑确认、取消与失败保留、刷新恢复及�
   dialog = page.getByRole('dialog', { name: '确认平行宇宙' })
   await dialog.getByLabel('分支名称').fill('访客的信')
   await dialog.getByLabel('What-if').fill('访客假设')
-  await dialog.getByLabel('改变的变量').fill('信件送达')
+  await dialog.getByLabel('场景中的改变描述').fill('信件送达')
   await dialog.getByTestId('guest-fork-confirm').click()
   await expect(page.getByText('创建暂不可用')).toBeVisible()
   await expect(dialog.getByLabel('分支名称')).toHaveValue('访客的信')

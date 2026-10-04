@@ -2,28 +2,35 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, type Memory } from './memory'
-import type { AgentMode, PersonModel } from './types'
+import type { AgentMode, CommunicationContext, PersonModel } from './types'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
+import { residentTimeline, type ResidentTimeline } from './resident-context'
+import { buildResidentEvidence, type ResidentEvidence } from './resident-evidence'
 
 type Person = typeof persons.$inferSelect
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
 type PersonState = typeof personStates.$inferSelect
 
-export interface AgentContextData {
+export interface ResidentPromptContext {
   person: Person
   model: PersonModel
   world: World
-  timeline: Timeline // 当前所在时间线（主线也有对应行）
+  timeline: ResidentTimeline // 居民提示边界只暴露非秘密的最小时间线元数据
   mainTimelineId: string
   isMain: boolean
   memories: Memory[] // 已按隔离规则查询好
   knownFacts: VisibleKnowledgeFact[]
+  evidence?: ResidentEvidence[]
   state: PersonState
   mode: AgentMode
+  communication?: CommunicationContext
 }
+
+/** Internal compatibility name; prompt construction uses the resident-safe contract. */
+export type AgentContextData = ResidentPromptContext
 
 /**
  * 按 timelineId 组装自主体上下文。
@@ -36,8 +43,9 @@ export async function buildAgentContext(
     personId: string
     timelineId: string | null // null = 主线
     mode: AgentMode
+    communication?: CommunicationContext
   },
-): Promise<AgentContextData | null> {
+): Promise<ResidentPromptContext | null> {
   const person = await db
     .select()
     .from(persons)
@@ -95,17 +103,20 @@ export async function buildAgentContext(
   const recorded = pinned?.residents.find(resident => resident.id === person.id)
   const structured = await readWorldState(db, world.id, timeline.id)
   const knownFacts = visibleKnowledgeForPerson(structured.current, person.id)
+  const evidence = await buildResidentEvidence(db, { timelineId: timeline.id, personId: person.id, knownFacts })
 
   return {
     person: recorded ? { ...person, name: recorded.name } : person,
     model: (recorded?.model ?? JSON.parse(person.modelJson)) as PersonModel,
     world: pinned ? { ...world, name: pinned.name, description: pinned.description } : world,
-    timeline,
+    timeline: residentTimeline(timeline),
     mainTimelineId: mainTimeline.id,
     isMain: timeline.id === mainTimeline.id,
     memories: mems,
     knownFacts,
+    evidence,
     state,
     mode: opts.mode,
+    ...(opts.communication ? { communication: opts.communication } : {}),
   }
 }
