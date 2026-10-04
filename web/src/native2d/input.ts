@@ -7,8 +7,8 @@
  * 状态机（phase）与转移：
  * - idle ──pointerdown──▶ single(pending)：记录起点/起始时间，捕获指针。
  * - single(pending) ──位移 > CLICK_MOVE_THRESHOLD_PX──▶ single(dragging)：
- *   普通模式发出一次 free-pan 并按增量回调 onPan；建筑移动模式改为逐次发
- *   move-target（snapScreenToGrid 吸附整数格，非有限被吸附拒绝时不发）。
+ *   普通模式发出一次 free-pan 并按增量回调 onPan；建筑移动模式保留按下点与
+ *   建筑脚点的偏移，按拖动的世界坐标差更新目标并吸附整数格。
  * - single(pending) ──pointerup──▶ idle：位移 ≤ 阈值且时长 ≤ CLICK_TIME_LIMIT_MS
  *   判为点击：普通模式做 hitPolygon 拾取并发 select（命中或 null）；移动模式
  *   点击不选中、不应用，不发任何事件。长按（超时长）不算点击。
@@ -32,7 +32,7 @@
  * 对应已批准 plan.md「视口与输入模块」与 task.md T32/T33。
  */
 
-import { gridToProjected, removeCamera, snapScreenToGrid, type Camera } from './projection'
+import { gridToProjected, removeCamera, screenToGrid, snapToGrid, type Camera } from './projection'
 import type {
   AssetDefinition,
   GridPoint,
@@ -140,6 +140,10 @@ interface TrackedPointer {
   lastX: number
   lastY: number
   maxDisplacement: number
+  /** 抓取点相对建筑脚点的格坐标偏移；移动时保留建筑与指针的相对位置。 */
+  moveOffset: GridPoint | null
+  /** 移动模式按下点是否实际命中当前建筑；空地拖动仍用于平移地图。 */
+  moveBuildingCaptured: boolean
 }
 
 type PhaseState =
@@ -155,7 +159,11 @@ type PhaseState =
       panNotified: boolean
     }
 
-function trackPointer(sample: PointerSample): TrackedPointer {
+function trackPointer(
+  sample: PointerSample,
+  moveOffset: GridPoint | null = null,
+  moveBuildingCaptured = false,
+): TrackedPointer {
   return {
     id: sample.pointerId,
     startX: sample.x,
@@ -164,6 +172,8 @@ function trackPointer(sample: PointerSample): TrackedPointer {
     lastX: sample.x,
     lastY: sample.y,
     maxDisplacement: 0,
+    moveOffset,
+    moveBuildingCaptured,
   }
 }
 
@@ -217,7 +227,28 @@ export class PointerInputMachine {
   pointerDown(sample: PointerSample): void {
     if (!isFiniteSample(sample)) return
     if (this.phase.kind === 'idle') {
-      this.phase = { kind: 'single', pointer: trackPointer(sample), dragging: false }
+      const moveBuildingId = this.handlers.getMoveBuildingId()
+      const building = moveBuildingId
+        ? this.handlers.getPickTargets().find(
+            (target) => target.selection.kind === 'building' && target.selection.buildingId === moveBuildingId,
+          )
+        : null
+      const camera = this.handlers.getCamera()
+      const point = screenToGrid(sample, camera)
+      const selection = moveBuildingId
+        ? resolvePick(sample, camera, this.handlers.getPickTargets(), this.handlers.getAssetDefinition)
+        : null
+      const moveBuildingCaptured = Boolean(
+        building && selection?.kind === 'building' && selection.buildingId === moveBuildingId,
+      )
+      const moveOffset = moveBuildingCaptured && building
+        ? { x: building.origin.x - point.x, z: building.origin.z - point.z }
+        : null
+      this.phase = {
+        kind: 'single',
+        pointer: trackPointer(sample, moveOffset, moveBuildingCaptured),
+        dragging: false,
+      }
       return
     }
     if (this.phase.kind === 'single') {
@@ -251,12 +282,12 @@ export class PointerInputMachine {
       if (!phase.dragging) {
         if (pointer.maxDisplacement <= CLICK_MOVE_THRESHOLD_PX) return
         phase.dragging = true
-        if (!this.handlers.isMoveMode()) {
+        if (!this.handlers.isMoveMode() || !pointer.moveBuildingCaptured) {
           this.handlers.onEvent({ type: 'free-pan' })
         }
       }
-      if (this.handlers.isMoveMode()) {
-        this.emitMoveTarget({ x: sample.x, y: sample.y })
+      if (this.handlers.isMoveMode() && pointer.moveBuildingCaptured) {
+        this.emitMoveTarget({ x: sample.x, y: sample.y }, pointer.moveOffset)
       } else {
         this.handlers.onPan({ x: pointer.lastX - prevX, y: pointer.lastY - prevY })
       }
@@ -354,6 +385,8 @@ export class PointerInputMachine {
       lastX: remaining.lastX,
       lastY: remaining.lastY,
       maxDisplacement: 0,
+      moveOffset: remaining.moveOffset,
+      moveBuildingCaptured: remaining.moveBuildingCaptured,
     }
     this.phase = { kind: 'single', pointer: reset, dragging: true }
   }
@@ -370,10 +403,11 @@ export class PointerInputMachine {
     this.handlers.onEvent({ type: 'select', selection })
   }
 
-  private emitMoveTarget(screen: PixelPoint): void {
+  private emitMoveTarget(screen: PixelPoint, moveOffset: GridPoint | null): void {
     const buildingId = this.handlers.getMoveBuildingId()
-    if (!buildingId) return
-    const target = snapScreenToGrid(screen, this.handlers.getCamera())
+    if (!buildingId || !moveOffset) return
+    const point = screenToGrid(screen, this.handlers.getCamera())
+    const target = snapToGrid({ x: point.x + moveOffset.x, z: point.z + moveOffset.z })
     // 非有限输入被吸附拒绝时不发 move-target。
     if (!target) return
     this.handlers.onEvent({ type: 'move-target', buildingId, target })

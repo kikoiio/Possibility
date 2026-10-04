@@ -239,12 +239,41 @@ describe('T32 建筑移动模式拖动', () => {
   it('拖动发出吸附整数格的 move-target，不平移不选中', () => {
     const h = createHarness()
     h.setMoveMode(true)
+    h.setTargets([
+      { id: 'building-1', selection: BUILDING_SELECTION, origin: { x: 0, z: 0 }, assetId: 'test-asset' },
+    ])
     h.machine.pointerDown(sample(1, 0, 0, 0))
     // 屏幕 (64, 32) 逆投影恰为格子 (2, 0)。
     h.machine.pointerMove(sample(1, 64, 32, 10))
     h.machine.pointerUp(sample(1, 64, 32, 20))
     expect(h.events).toEqual([{ type: 'move-target', buildingId: 'building-1', target: { x: 2, z: 0 } }])
     expect(h.pans).toEqual([])
+  })
+
+  it('按住建筑拖动时保留脚点相对指针的抓取偏移', () => {
+    const h = createHarness()
+    h.setMoveMode(true)
+    h.setTargets([
+      { id: 'gatehouse', selection: BUILDING_SELECTION, origin: { x: 3, z: 10 }, assetId: 'test-asset' },
+    ])
+    // 门房脚点投影为 (-224, 208)。拖动到 (-128, 176) 后落在 (4, 8)。
+    h.machine.pointerDown(sample(1, -224, 208, 0))
+    h.machine.pointerMove(sample(1, -128, 176, 10))
+    h.machine.pointerUp(sample(1, -128, 176, 20))
+    expect(h.events).toEqual([{ type: 'move-target', buildingId: 'building-1', target: { x: 4, z: 8 } }])
+  })
+
+  it('移动模式下从空地拖动仍平移地图，不移动建筑', () => {
+    const h = createHarness()
+    h.setMoveMode(true)
+    h.setTargets([
+      { id: 'building-1', selection: BUILDING_SELECTION, origin: { x: 0, z: 0 }, assetId: 'test-asset' },
+    ])
+    h.machine.pointerDown(sample(1, 100, 100, 0))
+    h.machine.pointerMove(sample(1, 150, 100, 10))
+    h.machine.pointerUp(sample(1, 150, 100, 20))
+    expect(h.events).toEqual([{ type: 'free-pan' }])
+    expect(h.pans).toEqual([{ x: 50, y: 0 }])
   })
 
   it('非有限被吸附拒绝时不发 move-target', () => {
@@ -254,7 +283,7 @@ describe('T32 建筑移动模式拖动', () => {
     h.machine.pointerDown(sample(1, 0, 0, 0))
     h.machine.pointerMove(sample(1, 50, 50, 10))
     h.machine.pointerUp(sample(1, 50, 50, 20))
-    expect(h.events).toEqual([])
+    expect(h.events.filter((event) => event.type === 'move-target')).toEqual([])
     expect(h.machine.getPhase()).toBe('idle')
   })
 

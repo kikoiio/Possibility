@@ -328,6 +328,8 @@ export interface Native2dViewport {
   setSelection(value: Selection | null): void
   setFollow(personId: string | null): void
   setMovePreview(value: MovePreview | null): void
+  setMoveMode?(buildingId: string | null): void
   showOverview(): void
+  retryAssets?(): void
   dispose(): void
 }

@@ -20,12 +20,13 @@
  * 直接修改控制器状态的入口。
  */
 
-import type { Browser, BrowserContext, Page, Route } from '@playwright/test'
+import type { Browser, BrowserContext, BrowserContextOptions, Page, Route } from '@playwright/test'
 
 import {
   PUBLIC_DEMO_SCOPE,
   createFixtureReadModel,
 } from '../src/native2d/fixtures'
+import { ASSET_MANIFEST } from '../src/native2d/assets'
 import type { SampleScope, ViewportDiagnostics, WorldReadModel } from '../src/native2d/types'
 import type {
   DemoInfo,
@@ -103,6 +104,8 @@ export const TESTIDS = {
   /* 视口故障与重试（T41/T36） */
   viewportError: 'native2d-viewport-error',
   viewportRetry: 'native2d-viewport-retry',
+  assetError: 'native2d-asset-error',
+  assetRetry: 'native2d-asset-retry',
 
   /* 移动端面板（T45）：信息卡/编辑面板展开收起 */
   panelToggle: 'native2d-panel-toggle',
@@ -117,6 +120,8 @@ export const testId = {
   fixtureOption: (fixtureId: string): string => `native2d-source-fixture-${fixtureId}`,
   /** 居民列表项。 */
   residentItem: (personId: string): string => `native2d-resident-${personId}`,
+  /** 居民行内跟随按钮；选中居民时页面也提供兼容的单值 TESTIDS.followToggle。 */
+  followToggle: (personId: string): string => `native2d-follow-toggle-${personId}`,
   /** 地点列表项（按真实地点名）。 */
   locationItem: (locationName: string): string => `native2d-location-${locationName}`,
   /** 建筑选择列表项。 */
@@ -177,6 +182,15 @@ export async function getObjectClickPoint(page: Page, objectId: string): Promise
   const hostBox = await host.boundingBox()
   const rect = await getObjectScreenRect(page, objectId)
   if (!hostBox || !rect) return null
+  const assetId = objectId.startsWith('building:') ? objectId.slice('building:'.length) : null
+  const layer = assetId ? ASSET_MANIFEST[assetId]?.layers[0] : null
+  if (layer && rect.width > 0) {
+    const zoom = rect.width / layer.pixelWidth
+    return {
+      x: hostBox.x + rect.x + layer.anchorPx.x * zoom,
+      y: hostBox.y + rect.y + layer.anchorPx.y * zoom,
+    }
+  }
   return {
     x: hostBox.x + rect.x + rect.width / 2,
     y: hostBox.y + rect.y + rect.height / 2,
@@ -377,6 +391,11 @@ export async function installPublicApiStub(page: Page, script: PublicApiStubScri
   // Playwright 路由按注册的逆序匹配（后注册者优先），
   // 故兜底拦截必须最先注册，具体公开路径在其后注册才能生效。
   await page.route('**/api/**', async (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (!pathname.startsWith('/api/')) {
+      await route.continue()
+      return
+    }
     await route.abort('failed')
   })
 
@@ -412,8 +431,8 @@ export interface IsolatedSampleContext {
  * 每个用例一个全新 context：localStorage 干净、无共享 cookie/缓存。
  * 用例结束须自行 `await context.close()`（或在 fixture 中包 afterEach）。
  */
-export async function createIsolatedSampleContext(browser: Browser): Promise<IsolatedSampleContext> {
-  const context = await browser.newContext({ storageState: undefined })
+export async function createIsolatedSampleContext(browser: Browser, options: BrowserContextOptions = {}): Promise<IsolatedSampleContext> {
+  const context = await browser.newContext({ storageState: undefined, ...options })
   const page = await context.newPage()
   return { context, page }
 }
@@ -466,13 +485,13 @@ export function createApiRequestRecorder(page: Page): ApiRequestRecorder {
   const records: ApiRequestRecord[] = []
   const onRequest = (request: { method(): string; url(): string }): void => {
     const url = request.url()
-    if (!url.includes('/api/')) return
     let path = url
     try {
       path = new URL(url).pathname
     } catch {
       /* 保留原始 url */
     }
+    if (!path.startsWith('/api/')) return
     records.push({ method: request.method(), url, path })
   }
   page.on('request', onRequest)

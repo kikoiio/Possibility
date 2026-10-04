@@ -42,6 +42,7 @@ export default function Native2dViewport({
   const eventRef = useRef(onEvent)
   const [attempt, setAttempt] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [assetError, setAssetError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
   eventRef.current = onEvent
@@ -51,10 +52,14 @@ export default function Native2dViewport({
     if (!host) return
     let active = true
     setError(null)
+    setAssetError(null)
     setReady(false)
 
     void createNative2dViewport(host, scene, {
-      onEvent: (event) => eventRef.current(event),
+      onEvent: (event) => {
+        if (event.type === 'error') setAssetError(event.message)
+        eventRef.current(event)
+      },
       onDiagnostics: (value) => {
         if (typeof window !== 'undefined') window.__native2dDiagnostics = () => value
       },
@@ -104,11 +109,21 @@ export default function Native2dViewport({
         aria-label="雾影庄 2D 场景视口"
       />
       {!ready && !error && <div className="native2d-viewport-message" role="status">正在准备场景…</div>}
-      {error && (
-        <div className="native2d-viewport-error" role="alert" data-testid="native2d-viewport-error">
-          <span>场景视口无法启动：{error}</span>
-          <button type="button" onClick={() => setAttempt((value) => value + 1)} data-testid="native2d-viewport-retry">
-            重试视口
+      {(error || assetError) && (
+        <div className="native2d-viewport-error" role="alert" data-testid={error ? 'native2d-viewport-error' : 'native2d-asset-error'}>
+          <span>{error ? `场景视口无法启动：${error}` : assetError}</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (error) setAttempt((value) => value + 1)
+              else {
+                viewportRef.current?.retryAssets?.()
+                setAssetError(null)
+              }
+            }}
+            data-testid={error ? 'native2d-viewport-retry' : 'native2d-asset-retry'}
+          >
+            {error ? '重试视口' : '重试素材'}
           </button>
         </div>
       )}

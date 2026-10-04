@@ -288,6 +288,7 @@ export function createSampleController(options: SampleControllerOptions): Sample
     // 新范围确定：取消预览、清除旧选择/跟随、重建编辑器会话，再加载对应布局。
     editor?.cancelPreview()
     viewport?.setMovePreview(null)
+    viewport?.setMoveMode?.(null)
     viewport?.setSelection(null)
     viewport?.setFollow(null)
 
@@ -574,12 +575,12 @@ export function createSampleController(options: SampleControllerOptions): Sample
       const placement = resolveResidentPlacement(world, scene, state.layout, personId)
       if (placement.status === 'visible' && placement.spaceId && placement.point) {
         const follow: FollowState = { personId, status: 'following', reason: null }
-        viewport?.setFollow(personId)
         update({ follow, notice: null })
         if (placement.spaceId !== state.spaceId) {
           // 目标进入大厅等可呈现空间：自动切换观察空间。
           switchSpace(placement.spaceId)
         }
+        viewport?.setFollow(personId)
       } else {
         const follow: FollowState = {
           personId,
@@ -642,6 +643,7 @@ export function createSampleController(options: SampleControllerOptions): Sample
       }
       editor?.cancelPreview()
       viewport?.setMovePreview(null)
+      viewport?.setMoveMode?.(buildingId)
       update({ moveMode: { buildingId }, movePreview: null, notice: null })
     },
 
@@ -682,6 +684,7 @@ export function createSampleController(options: SampleControllerOptions): Sample
         return
       }
       viewport?.setMovePreview(null)
+      viewport?.setMoveMode?.(null)
       update({ layout: result.layout, moveMode: null, movePreview: null, notice: null })
       undoDepth += 1
       update({ canUndo: true })
@@ -694,6 +697,7 @@ export function createSampleController(options: SampleControllerOptions): Sample
       if (disposed) return
       editor?.cancelPreview()
       viewport?.setMovePreview(null)
+      viewport?.setMoveMode?.(null)
       update({ moveMode: null, movePreview: null })
     },
 
@@ -808,6 +812,7 @@ export function createSampleController(options: SampleControllerOptions): Sample
       undoDepth = 0
       hasStoredRecord = false
       viewport?.setMovePreview(null)
+      viewport?.setMoveMode?.(null)
       update({
         layout,
         restore: { status: 'ok' },
@@ -839,6 +844,8 @@ export function createSampleController(options: SampleControllerOptions): Sample
       requestSeq += 1
       inFlight?.abort()
       inFlight = null
+      viewport?.setMovePreview(null)
+      viewport?.setMoveMode?.(null)
       listeners.clear()
     },
   }
