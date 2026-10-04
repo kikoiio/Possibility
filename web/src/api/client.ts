@@ -35,6 +35,7 @@ export class ApiError extends Error {
     public issues?: { code: string; message: string }[],
     public kind?: string,
     public callsUsed?: number,
+    public errorCode?: string,
   ) {
     super(message)
   }
@@ -45,6 +46,7 @@ type ApiErrorEnvelope = {
   issues?: { code: string; message: string }[]
   kind?: string
   callsUsed?: number
+  errorCode?: string
 }
 
 async function readApiErrorEnvelope(response: Response): Promise<ApiErrorEnvelope> {
@@ -70,11 +72,11 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     const data = await readApiErrorEnvelope(res)
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
     if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed)
+    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   if (!res.ok) {
     const data = await readApiErrorEnvelope(res)
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed)
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   return res.json() as Promise<T>
 }
@@ -90,7 +92,7 @@ export async function apiFetchAsGuest<T>(path: string, options: RequestInit = {}
   if (!res.ok) {
     const data = await readApiErrorEnvelope(res)
     // Keep the guest credential on failure so a pending copy remains recoverable.
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed)
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   return res.json() as Promise<T>
 }
@@ -127,11 +129,11 @@ export async function postSSE(
     else if (!guestRequestContext) clearGuestToken()
     const data = await readApiErrorEnvelope(res)
     if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed)
+    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   if (!res.ok || !res.body) {
     const data = await readApiErrorEnvelope(res)
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed)
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
   }
 
   const reader = res.body.getReader()

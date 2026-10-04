@@ -18,6 +18,8 @@ export default function WorldSceneRepair() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [canCreateIndependentWorld, setCanCreateIndependentWorld] = useState(false)
+  const [confirmIndependentWorld, setConfirmIndependentWorld] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -28,6 +30,8 @@ export default function WorldSceneRepair() {
     latestDoc.current = null
     saveRequestId.current = null
     setError('')
+    setCanCreateIndependentWorld(false)
+    setConfirmIndependentWorld(false)
     void worldSceneApi.repairContext(worldId).then(value => {
       if (!active) return
       setContext(value)
@@ -43,6 +47,7 @@ export default function WorldSceneRepair() {
       }
       if (active) {
         setError(cause instanceof Error ? cause.message : '暂时无法读取原世界。')
+        setCanCreateIndependentWorld(cause instanceof ApiError && cause.errorCode === 'world_structure_invalid')
         setLoading(false)
       }
     })
@@ -103,7 +108,29 @@ export default function WorldSceneRepair() {
       {!loading && !context && <section className="pointer-events-auto absolute left-1/2 top-24 w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-2xl bg-white/95 p-5 text-sm text-[#526558] shadow-lg">
         <p role="alert">{error || '暂时无法读取原世界。'}</p>
         <Link to={`/worlds/${encodeURIComponent(worldId)}`} className="mt-3 inline-block underline underline-offset-2">返回原世界</Link>
+        {canCreateIndependentWorld && <button type="button" onClick={() => setConfirmIndependentWorld(true)}
+          className="ml-4 mt-3 rounded-full border border-[#8a9a8d] px-4 py-2 text-xs font-medium text-[#405246] hover:bg-[#eef2ec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536b5a]">
+          创建独立新世界
+        </button>}
       </section>}
+
+      {confirmIndependentWorld && <div className="pointer-events-auto absolute inset-0 z-20 grid place-items-center bg-[#122019]/55 p-4" data-testid="independent-world-confirm-backdrop">
+        <section role="dialog" aria-modal="true" aria-labelledby="independent-world-title" className="w-full max-w-md rounded-3xl border border-white/80 bg-[#f8faf6] p-6 text-[#405246] shadow-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#829083]">独立的新世界</p>
+          <h2 id="independent-world-title" className="mt-2 font-story text-2xl text-[#283f35]">要创建一个独立世界吗？</h2>
+          <p className="mt-3 text-sm leading-6">新世界会单独创建。原世界会保留；原居民、时间线、状态和历史不会迁移、替换或归档。接下来你可以在创建流程中自行选择新世界的居民。</p>
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => setConfirmIndependentWorld(false)}
+              className="rounded-full border border-[#ccd5ca] bg-white px-4 py-2.5 text-sm text-[#536558] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536b5a]">
+              返回补建页
+            </button>
+            <button type="button" onClick={() => navigate('/worlds/new', { replace: true })}
+              className="rounded-full bg-[#274739] px-4 py-2.5 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#274739]">
+              确认，创建独立新世界
+            </button>
+          </div>
+        </section>
+      </div>}
 
       {context && <>
         {error && <p role="alert" className="pointer-events-auto absolute left-1/2 top-20 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl bg-white px-4 py-3 text-sm text-red-700 shadow-lg">{error}</p>}
