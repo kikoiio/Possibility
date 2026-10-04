@@ -1,5 +1,5 @@
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { apiFetch, clearToken, getToken, mapApi, worldsApi } from './api/client'
 import Login from './pages/Login'
@@ -14,6 +14,8 @@ import WorldCanvasPage from './pages/WorldCanvasPage'
 import DemoLanding from './pages/DemoLanding'
 import VoxelDevHarness from './voxel/dev-harness'
 import AssetShot from './voxel/ui/AssetShot'
+
+const Native2dSamplePage = lazy(() => import('./native2d/sample-page'))
 
 function RequireAuth({ children }: { children: ReactElement }) {
   if (!getToken()) return <Navigate to="/login" replace />
@@ -131,6 +133,14 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/dev/voxel" element={<VoxelDevHarness />} />
       <Route path="/dev/asset-shot" element={<AssetShot />} />
+      <Route
+        path="/dev/native-2d"
+        element={
+          <Suspense fallback={<div className="grid h-screen place-items-center bg-paper text-sm text-ink-faint">正在加载 2D 样板…</div>}>
+            <Native2dSamplePage />
+          </Suspense>
+        }
+      />
       <Route path="/" element={<Landing />} />
       <Route path="/worlds/:id" element={<RequireAuth><WorldViewRoute /></RequireAuth>} />
       <Route path="/worlds/new" element={<RequireAuth><div className="h-full"><WorldCreate /></div></RequireAuth>} />
