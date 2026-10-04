@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError, clearToken, lifeApi, mapApi, publicApi, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
+import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
   ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
@@ -34,7 +34,7 @@ import { timelineDisplayName } from '../world/timeline-display'
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
  * 文字主视图已退役;辅助文字以覆盖层形式保留。
  */
-export default function WorldCanvasPage({ worldId, readonly = false, guest = false }: { worldId: string; readonly?: boolean; guest?: boolean }) {
+export default function WorldCanvasPage({ worldId, readonly = false, guest = false, claimPending = false }: { worldId: string; readonly?: boolean; guest?: boolean; claimPending?: boolean }) {
   const [search, setSearch] = useSearchParams(); const timelineId = search.get('timeline'); const navigate = useNavigate()
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
@@ -58,6 +58,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const rightScope = useRef<RequestScopeController | null>(null)
   const [mode, setMode] = useState<'life' | 'possibility'>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life')
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  useEffect(() => {
+    setGuestRequestContext(guest)
+    return () => setGuestRequestContext(false)
+  }, [guest])
   const [regeneratingDemo, setRegeneratingDemo] = useState(false)
   const [regenerateError, setRegenerateError] = useState('')
   const [revisionList, setRevisionList] = useState<SceneRevisionItem[] | null>(null)
@@ -101,7 +105,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         if (current.status === 'ready') setSceneDoc(current.document)
         else { setSceneDoc(null); setSceneMissing(true) }
       } else {
-        const bootstrap = await mapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
+        const bootstrap = guest
+          ? await guestMapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
+          : await mapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
         if (!scopes.accepts(request.scope)) return
         setSnapshot(bootstrap.world)
         setCanEditScene(bootstrap.access.editScene)
@@ -582,11 +588,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     </div>
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
-  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} editable={canEditScene} planEdits={planEditsViaApi} />
+  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} claimPending={claimPending} editable={canEditScene} planEdits={planEditsViaApi} />
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
     const rebuildHref = personId
-      ? `/worlds/new?person=${encodeURIComponent(personId)}&fromWorld=${encodeURIComponent(worldId)}`
+      ? `/worlds/${encodeURIComponent(worldId)}/scene/repair`
       : null
     return (
       <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4">

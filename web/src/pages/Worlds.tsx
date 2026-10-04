@@ -74,7 +74,7 @@ export default function Worlds() {
                 const personId = w.personIds[0]
                 const reason = '当前世界没有可用于补建场景的人物。'
                 return personId ? (
-                  <Link to={`/worlds/new?person=${encodeURIComponent(personId)}&fromWorld=${encodeURIComponent(w.id)}`} className="mt-3 inline-flex rounded-lg border border-ink-faint px-3 py-1.5 text-xs font-medium text-ink-soft hover:border-ink-soft">
+                  <Link to={`/worlds/${encodeURIComponent(w.id)}/scene/repair`} className="mt-3 inline-flex rounded-lg border border-ink-faint px-3 py-1.5 text-xs font-medium text-ink-soft hover:border-ink-soft">
                     补建场景
                   </Link>
                 ) : (

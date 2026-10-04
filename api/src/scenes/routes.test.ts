@@ -7,6 +7,7 @@ import { LlmContractError } from '../llm/contracts'
 import { WorldGeneratorError } from '../voxel/generate'
 import { CONTENT_ISSUE_COPY } from './error-copy'
 import { createWorldFixture } from '../test/world-fixture'
+import { persons, timelines, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
 
 /** 合法体素信封:平地 + 可选摆放 op */
 function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxelDocument {
@@ -16,6 +17,15 @@ function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxe
     ...ops,
   ]).document
   return JSON.parse(serialize(doc)) as SerializedVoxelDocument
+}
+
+function repairEnvelope(names: string[]): SerializedVoxelDocument {
+  const base = createEmptyWorld({ width: 16, height: 16, depth: 16 }, 'mist-manor', 'repair-route')
+  const doc = applyEdits(base, [
+    { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
+    ...names.map((_, i) => ({ kind: 'place-object' as const, objectId: `spot-${i}`, objectType: 'stone-lantern' as const, anchor: { x: 2 + i * 4, y: 1, z: 2 }, rotation: 0 as const })),
+  ]).document
+  return JSON.parse(serialize({ ...doc, locations: names.map((name, i) => ({ name, objectId: `spot-${i}` })) })) as SerializedVoxelDocument
 }
 
 describe('scene HTTP routes', () => {
@@ -89,6 +99,60 @@ describe('scene HTTP routes', () => {
     expect(unauth.status).toBe(401)
     const foreign = await scenesRoutes.request('/worlds/other-world/scene', { headers: { Authorization: 'Bearer owner-token' } }, f.env)
     expect(foreign.status).toBe(404)
+  })
+
+  it('repairs a missing scene on the original world and keeps context, residents, and timeline intact', async () => {
+    const f = await createWorldFixture(); fixtures.push(f)
+    await f.db.insert(persons).values({ id: 'resident-1', userId: 'owner', name: '阿梨', modelJson: '{}', createdAt: '2026-09-21T08:00:00.000Z' })
+    await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident-1', joinedAt: '2026-09-21T08:00:00.000Z' })
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+
+    const contextResponse = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
+    expect(contextResponse.status).toBe(200)
+    expect(await contextResponse.json()).toMatchObject({
+      world: { id: 'home-world', name: 'Home world', locations: [{ name: 'Cafe' }, { name: 'Library' }] },
+      residents: [{ id: 'resident-1', name: '阿梨' }], sceneStatus: 'missing',
+    })
+
+    const envelope = repairEnvelope(['Cafe', 'Library'])
+    const saveRequest = () => scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers,
+      body: JSON.stringify({ requestId: 'repair-save-1', expectedVersion: 0, repair: true, document: envelope }),
+    }, f.env)
+    const saved = await saveRequest()
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toMatchObject({ version: 1, document: { locations: [{ name: 'Cafe' }, { name: 'Library' }] } })
+
+    const replay = await saveRequest()
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ version: 1 })
+    expect(await f.db.select().from(worldScenes)).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions)).toMatchObject([{ worldId: 'home-world', version: 1, kind: 'scene-repair' }])
+    expect(await f.db.select().from(worlds)).toHaveLength(2)
+    expect(await f.db.select().from(timelines)).toHaveLength(2)
+    expect(await f.db.select().from(worldPersons)).toMatchObject([{ worldId: 'home-world', personId: 'resident-1' }])
+
+    const readyContext = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
+    expect(readyContext.status).toBe(409)
+    expect(await readyContext.json()).toMatchObject({ errorCode: 'scene_exists' })
+  })
+
+  it('rejects repair for an owned world with invalid resident bindings or locations outside its original set', async () => {
+    const f = await createWorldFixture(); fixtures.push(f)
+    const headers = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
+    const noResidents = await scenesRoutes.request('/worlds/home-world/scene/repair-context', { headers }, f.env)
+    expect(noResidents.status).toBe(409)
+    expect(await noResidents.json()).toMatchObject({ errorCode: 'world_structure_invalid' })
+
+    await f.db.insert(persons).values({ id: 'resident-1', userId: 'owner', name: '阿梨', modelJson: '{}', createdAt: '2026-09-21T08:00:00.000Z' })
+    await f.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident-1', joinedAt: '2026-09-21T08:00:00.000Z' })
+    const mismatch = await scenesRoutes.request('/worlds/home-world/scene/voxel-revision', {
+      method: 'POST', headers,
+      body: JSON.stringify({ requestId: 'repair-mismatch', expectedVersion: 0, repair: true, document: repairEnvelope(['Cafe', 'Elsewhere']) }),
+    }, f.env)
+    expect(mismatch.status).toBe(422)
+    expect(await mismatch.json()).toMatchObject({ errorCode: 'repair_location_mismatch' })
+    expect(await f.db.select().from(worldScenes)).toHaveLength(0)
   })
   it('reads explicit missing status and stores accepted revisions only', async () => {
     const f = await createWorldFixture(); fixtures.push(f)

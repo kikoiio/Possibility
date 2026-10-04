@@ -294,6 +294,18 @@ export type { SceneLifeOverlay }
 export interface SceneDraftWorld { name: string; description: string; locations: LocationDef[] }
 /** S1 体素创建:骨架 + 单空间体素信封草稿 */
 export interface VoxelSceneDraftResponse { world: SceneDraftWorld; document: SerializedVoxelDocument; explanation: string; warnings: string[]; callsUsed: number }
+export interface SceneRepairContext {
+  world: { id: string; name: string; description: string; locations: LocationDef[] }
+  residents: { id: string; name: string }[]
+  sceneStatus: 'missing'
+}
+export interface SceneRepairDraftResponse {
+  worldId: string
+  document: SerializedVoxelDocument
+  explanation: string
+  warnings: string[]
+  callsUsed: number
+}
 export type SceneReadResponse = { status: 'missing' } | { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }
 
 export interface PublicUniverseEvidence {

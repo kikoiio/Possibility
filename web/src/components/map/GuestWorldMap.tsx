@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
 import { deserialize, serialize, type EditOperation, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import type { ForkResult, ForkScenario, PersonListItem, WorldSnapshot } from '../../api/types'
-import { apiFetch, clearToken, demoApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
+import { apiFetch, clearToken, demoApi, guestMapApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
 import ScenarioCard from '../ScenarioCard'
 import ComparePanel from '../world/ComparePanel'
@@ -18,7 +18,7 @@ import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } fro
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
 
 /** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
-export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, editable = false, planEdits }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; editable?: boolean; planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditOperation[]> }) {
+export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, claimPending = false, editable = false, planEdits }: { voxelSpaces: SerializedVoxelSpaces; snapshot: WorldSnapshot; overlay: SceneLifeOverlay | null; initialSpaceId?: string; initialMode?: 'create' | 'life' | 'possibility'; guest?: boolean; claimPending?: boolean; editable?: boolean; planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditOperation[]> }) {
   const navigate = useNavigate()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
   const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
@@ -79,12 +79,12 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     timelinePending.current = true
     setSwitchTarget(nextId); setTimelineBusy(true); setActionError('')
     try {
-      const data = await mapApi.bootstrap(liveSnapshot.world.id, nextId)
+      const data = guest ? await guestMapApi.bootstrap(liveSnapshot.world.id, nextId) : await mapApi.bootstrap(liveSnapshot.world.id, nextId)
       setLiveSnapshot(data.world)
       setForkId(forkResult && data.world.timelines.some(item => item.id === forkResult.id)
         ? forkResult.id : data.world.timelines.find(item => item.id === nextId && item.parentTimelineId)?.id ?? data.world.timelines.find(item => item.parentTimelineId)?.id ?? null)
       setCompareOpen(false)
-      void mapApi.saveResume(liveSnapshot.world.id, { timelineId: nextId, spaceId, mode: mode === 'observe' ? 'life' : mode })
+      void (guest ? guestMapApi.saveResume(liveSnapshot.world.id, { timelineId: nextId, spaceId, mode: mode === 'observe' ? 'life' : mode }) : mapApi.saveResume(liveSnapshot.world.id, { timelineId: nextId, spaceId, mode: mode === 'observe' ? 'life' : mode }))
     } catch { setActionError('时间线切换失败；当前宇宙和原选择已保留，可重试切换。') }
     finally { timelinePending.current = false; setTimelineBusy(false) }
   }
@@ -166,20 +166,20 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   }, [liveSnapshot.world.id])
   function setSpaceId(next: string) {
     setSpaceIdState(next)
-    void mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId: next, mode: mode === 'observe' ? 'life' : mode })
+    void (guest ? guestMapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId: next, mode: mode === 'observe' ? 'life' : mode }) : mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId: next, mode: mode === 'observe' ? 'life' : mode }))
   }
   function setMapMode(next: 'observe' | 'life' | 'possibility') {
     setMode(next)
-    void mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId, mode: next === 'observe' ? 'life' : next })
+    void (guest ? guestMapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId, mode: next === 'observe' ? 'life' : next }) : mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId, mode: next === 'observe' ? 'life' : next }))
   }
   async function reset() {
-    if (!guest) return
+    if (!guest || claimPending) return
     setBusy(true)
     try { await demoApi.reset(); try { localStorage.removeItem(tourStorageKey(liveSnapshot.world.id)) } catch { /* Ignore unavailable storage. */ }; window.location.reload() } finally { setBusy(false) }
   }
   async function refreshFork(result: ForkResult) {
     try {
-      const data = await mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)
+      const data = guest ? await guestMapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId) : await mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)
       setLiveSnapshot(data.world)
       if (!data.world.timelines.some(t => t.id === result.sourceTimelineId) || !data.world.timelines.some(t => t.id === result.id)) throw new Error('新分支尚未出现在时间线列表中。')
       setForkRefreshError('')
@@ -213,6 +213,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   const existingFork = liveSnapshot.timelines.find(t => t.id === forkId)
   const compareSourceId = forkResult?.sourceTimelineId ?? existingFork?.parentTimelineId
   return <main className="relative h-screen overflow-hidden bg-[#dfe8df]" data-testid="guest-world-map">
+    {guest && claimPending && <div role="status" className="absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-full border border-white/70 bg-[#f8faf6]/95 px-4 py-2 text-xs text-[#405246] shadow-md">访客副本待保存 · <a href="/login?claimDemo=1" className="underline">继续认领</a></div>}
     {voxelDoc
       ? <VoxelViewport
           document={editDoc ?? voxelDoc}
@@ -232,7 +233,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
-        {guest ? <div className="flex items-center gap-2"><button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button><a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">登录并保存</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">{nextTourStep ? '继续导览' : '重新开启导览'}</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
+        {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">{nextTourStep ? '继续导览' : '重新开启导览'}</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
           const selectedWorld = worldChoices.find(world => world.id === event.target.value)
           if (event.target.value === '__new__') navigate('/worlds/new')
           else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
@@ -281,7 +282,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
     {sceneLocation && <ScenePanel timeZone={liveSnapshot.world.timeZone} worldStatus={liveSnapshot.world.status} readOnly={liveSnapshot.evidence?.level !== 'complete'} worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
       setSceneLocation(null)
-      void mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId).then(data => setLiveSnapshot(data.world)).catch(() => {})
+      void (guest ? guestMapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId) : mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)).then(data => setLiveSnapshot(data.world)).catch(() => {})
     }} />}
   </main>
 }
