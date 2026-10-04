@@ -100,7 +100,13 @@ describe('scene intent proposal endpoint', () => {
       mockCompletion({ type: 'inform', recipientId: 'absent-resident', topic: 'weather', content: '北边道路被水淹了' })
       const response = await postIntent(fixture, '请告诉那个人：北边道路被水淹了')
       expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({ status: 'clarification' })
+      const result = await response.json() as Record<string, unknown>
+      expect(result).toMatchObject({
+        status: 'clarification',
+        question: '指定居民当前不在Cafe现场。当前可传话给：Ada。',
+        alternatives: { locations: ['Library'], residents: [{ id: 'ada', name: 'Ada' }] },
+      })
+      expect(result).not.toHaveProperty('recovery')
       expect(await fixture.db.select().from(worldCommands).all()).toHaveLength(0)
       expect(await fixture.db.select().from(worldFacts).all()).toHaveLength(0)
       expect(await fixture.db.select().from(universeRevisions).all()).toHaveLength(0)

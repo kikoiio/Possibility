@@ -53,7 +53,7 @@ async function readApiErrorEnvelope(response: Response): Promise<ApiErrorEnvelop
   return response.json().catch(() => ({})) as Promise<ApiErrorEnvelope>
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}, behavior: { redirectOnUnauthorized?: boolean } = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (guestRequestContext) headers.delete('Authorization')
@@ -71,7 +71,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     else if (!guestRequestContext) clearGuestToken()
     const data = await readApiErrorEnvelope(res)
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
-    if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
+    if (hadToken && behavior.redirectOnUnauthorized !== false && !location.pathname.startsWith('/login')) location.href = '/login'
     throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   if (!res.ok) {
@@ -431,6 +431,7 @@ export type SceneIntentResolution = {
   status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
   proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
   question?: string; reason?: string; recovery?: 'refresh_state';
+  alternatives?: { locations: string[]; residents: { id: string; name: string }[] };
 }
 
 export const sceneApi = {
@@ -441,12 +442,7 @@ export const sceneApi = {
   recoverRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/recover?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
   cancelRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/cancel?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
   resolveIntent: (worldId: string, body: { timelineId: string; content: string; requestId: string }) =>
-    apiFetch<{
-      requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
-      status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
-      proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
-      question?: string; reason?: string; recovery?: 'refresh_state';
-    }>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<SceneIntentResolution>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }, { redirectOnUnauthorized: false }),
   pendingIntent: (worldId: string, timelineId: string) =>
     apiFetch<{ text: string; result: SceneIntentResolution } | { proposal: null }>(
       `/api/worlds/${worldId}/scene/intent/pending?timelineId=${encodeURIComponent(timelineId)}`),

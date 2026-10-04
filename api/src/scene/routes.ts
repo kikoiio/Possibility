@@ -23,7 +23,7 @@ import { commitWorldCommand } from '../world-state/commit'
 import { ensureUniverseRevision } from '../world-state/model'
 import { recoverDialogueLock } from '../world-state/system'
 import { WorldStateError, type WorldAction } from '../world-state/types'
-import { buildIntentMessages, resolveIntentOutput } from '../world-actions/resolve'
+import { alternativesFor, buildIntentMessages, resolveIntentOutput } from '../world-actions/resolve'
 import { validateWorldAction } from '../world-state/rules'
 import type { Env } from '../index'
 
@@ -290,6 +290,9 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
     }
     return c.json(JSON.parse(priorProposal.resolutionJson))
   }
+  // Capture the revision before assembling the action context so changes during
+  // either context loading or provider resolution are detected without writing state.
+  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timeline.id)).get()
   const state = await db.select().from(personStates).where(and(
     eq(personStates.personId, persona.id), eq(personStates.timelineId, timeline.id),
   )).get()
@@ -298,9 +301,6 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
   if (!snapshot) return c.json({ error: '世界快照不存在' }, 404)
   const gate = await gateWorld(db, world.id, budgetFromEnv(c.env))
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
-  // Resolution is read-only with respect to world state: an uninitialized legacy
-  // revision is reported as its deterministic baseline instead of being created here.
-  const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timeline.id)).get()
   const intentContext = {
     text: content,
     currentLocation: state.location,
@@ -335,11 +335,6 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
       parse: raw => resolveIntentOutput(parseContractObject(raw, LLM_CONTRACT_VERSIONS.sceneIntent), intentContext),
     })
     let recovery: 'refresh_state' | undefined
-    const latestRevision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timeline.id)).get()
-    if ((latestRevision?.version ?? 0) !== (revision?.version ?? 0)) {
-      resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请先刷新，再重新生成行动提议。' }
-      recovery = 'refresh_state'
-    }
     if (resolution.status === 'proposal') {
       try {
         const proposal = resolution.proposal
@@ -351,9 +346,21 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
         }
       } catch (error) {
         if (!(error instanceof WorldStateError)) throw error
-        resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请重新描述这个行动。' }
-        recovery = 'refresh_state'
+        const revisionAfterValidation = await db.select().from(universeRevisions)
+          .where(eq(universeRevisions.timelineId, timeline.id)).get()
+        if ((revisionAfterValidation?.version ?? 0) !== (revision?.version ?? 0)) {
+          resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请先刷新，再重新生成行动提议。' }
+          recovery = 'refresh_state'
+        } else {
+          const alternatives = alternativesFor(intentContext)
+          resolution = { status: 'clarification', question: error.message, ...(alternatives ? { alternatives } : {}) }
+        }
       }
+    }
+    const latestRevision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timeline.id)).get()
+    if ((latestRevision?.version ?? 0) !== (revision?.version ?? 0)) {
+      resolution = { status: 'clarification', question: '世界状态或行动条件已变化；请先刷新，再重新生成行动提议。' }
+      recovery = 'refresh_state'
     }
     const result = { requestId, timelineId: timeline.id, expectedVersion: revision?.version ?? 0,
       currentLocation: state.location, ...resolution, ...(recovery ? { recovery } : {}) }
