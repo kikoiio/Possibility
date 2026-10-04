@@ -44,14 +44,19 @@ claimRoutes.post('/', async c => {
   if (!token || !body?.requestId?.trim()) return c.json({ error: '访客凭证和 requestId 必填' }, 400)
   try {
     const result = await claimGuestSession(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim() })
-    return result ? c.json(result) : c.json({ error: '访客体验无法认领' }, 409)
+    if (!result) return c.json({ error: '访客体验无法认领', code: 'claim_unavailable' }, 409)
+    if (result.kind === 'already_claimed_elsewhere') {
+      return c.json({ error: '这份访客副本已由其他账号保存', code: result.kind }, 409)
+    }
+    return c.json(result)
   } catch (error) {
     // S2/F4/N5：核验失败返回可理解类别,访客副本保留可重试;内部 issue 只记服务端日志
     if (error instanceof ClaimVerificationError) {
       console.error('[claim] 保存核验未通过:', JSON.stringify(error.issues))
-      return c.json({ error: '演示世界暂时无法保存，请稍后重试' }, 500)
+      return c.json({ error: '演示世界暂时无法保存，请稍后重试', code: 'claim_verification_failed' }, 500)
     }
-    throw error
+    console.error('[claim] 保存失败:', error instanceof Error ? error.message : 'unknown error')
+    return c.json({ error: '演示世界暂时无法保存，请稍后重试', code: 'claim_failed' }, 500)
   }
 })
 demoRoutes.route('/session/claim', claimRoutes)

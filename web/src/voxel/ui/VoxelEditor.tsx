@@ -12,7 +12,7 @@ export interface VoxelEditorProps {
   engine: VoxelEngine
   controller: EditController
   /** AI 编辑规划（产品层接 /api/voxel/edit-plan） */
-  planEdits: (intent: string) => Promise<EditOperation[]>
+  planEdits?: (intent: string) => Promise<EditOperation[]>
   /** 无编辑工具激活时的观察点击（居民/地点/空间导航，T28）；返回 true 表示已消费 */
   interact?: (clientX: number, clientY: number) => boolean
   /** 平台闸门（T29）：false 时隐藏全部编辑入口 */
@@ -392,7 +392,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
             onDeselect={() => selectPlacement(null)}
           />
         )}
-        {editing && tool === 'ai' && (
+        {editing && planEdits && tool === 'ai' && (
           <AiEditPanel
             planEdits={planEdits}
             onPreview={handleAiPreview}
@@ -410,7 +410,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
         <div className="pointer-events-auto absolute bottom-3 right-3 flex gap-1 text-xs" data-testid="voxel-editor-toolbar">
           {toolButton('warehouse', '物体仓库')}
           {toolButton('asset', '资产')}
-          {toolButton('ai', 'AI 改造')}
+          {planEdits && toolButton('ai', 'AI 改造')}
           {toolButton('world', '世界')}
         </div>
       )}

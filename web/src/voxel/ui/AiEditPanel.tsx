@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { EditOperation } from '@possibility/voxel-contract'
+import { EditPlanRequestError } from '../plan-edits'
 
 export interface AiEditPanelProps {
   /** 调用规划器（产品层接 api；开发页可 stub），返回通过校验的操作 */
@@ -15,13 +16,19 @@ export interface AiEditPanelProps {
 export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel, pending, error }: AiEditPanelProps) {
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<{ message: string; nextStep?: string; retryable: boolean } | null>(null)
 
   const submit = async () => {
     if (!intent.trim() || busy) return
     setBusy(true)
     try {
       const ops = await planEdits(intent.trim())
+      setFailure(null)
       onPreview(ops)
+    } catch (cause) {
+      setFailure(cause instanceof EditPlanRequestError
+        ? { message: cause.message, nextStep: cause.nextStep, retryable: cause.retryable }
+        : { message: 'AI 改造暂时失败，请稍后重试。', retryable: true })
     } finally {
       setBusy(false)
     }
@@ -35,7 +42,10 @@ export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel,
         className="h-16 resize-none rounded bg-zinc-800 p-2 text-zinc-100 outline-none placeholder:text-zinc-500"
         placeholder="描述你想要的改动，如：在庭院里加一座石灯笼"
         value={intent}
-        onChange={(e) => setIntent(e.target.value)}
+        onChange={(e) => {
+          setIntent(e.target.value)
+          setFailure(null)
+        }}
       />
       <button
         data-testid="voxel-ai-preview"
@@ -43,9 +53,12 @@ export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel,
         disabled={busy || !intent.trim()}
         onClick={() => void submit()}
       >
-        {busy ? '规划中…' : '生成预览'}
+        {busy ? '规划中…' : failure?.retryable ? '重试生成预览' : '生成预览'}
       </button>
-      {error && <div className="rounded bg-red-900/60 p-2 text-red-200" data-testid="voxel-ai-error">{error}</div>}
+      {(error || failure) && <div className="rounded bg-red-900/60 p-2 text-red-200" data-testid="voxel-ai-error" role="status">
+        {error ?? failure?.message}
+        {failure?.nextStep && <p className="mt-1 text-red-100/80">{failure.nextStep}</p>}
+      </div>}
       {pending && (
         <div className="flex gap-1" data-testid="voxel-ai-pending">
           <button data-testid="voxel-ai-confirm" className="flex-1 rounded bg-emerald-600 px-2 py-1.5 text-white" onClick={onConfirm}>

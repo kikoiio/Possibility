@@ -65,6 +65,15 @@ test.describe('N2D1 desktop local layout', () => {
       await page.getByTestId(TESTIDS.undo).click()
       await expect(page.getByTestId(TESTIDS.undo)).toBeDisabled()
 
+      // 温室也能独立移动；从 z=2 向可放置的西南格移动一格。
+      await page.getByTestId(TESTIDS.buildingList).selectOption('greenhouse')
+      await page.getByTestId(TESTIDS.moveStart).click()
+      await dragObject(page, 'building:greenhouse', -43, 22)
+      await expect(page.getByTestId(TESTIDS.moveStatus)).toContainText('可应用')
+      await page.getByTestId(TESTIDS.moveApply).click()
+      await expect(page.getByTestId(TESTIDS.undo)).toBeEnabled()
+      await page.getByTestId(TESTIDS.undo).click()
+
       // 移动主楼后仍使用同一大厅入口，并在刷新后恢复布局但不恢复会话撤销栈。
       await page.getByTestId(TESTIDS.buildingList).selectOption('main-house')
       await page.getByTestId(TESTIDS.moveStart).click()

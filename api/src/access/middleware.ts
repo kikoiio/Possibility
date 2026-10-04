@@ -17,6 +17,29 @@ export async function resolveAccessContext(
   credentials: { authorization?: string; guestToken?: string },
   now = new Date(),
 ): Promise<AccessContext> {
+  const token = credentials.guestToken?.trim()
+  // 显式携带访客凭证的请求走访客上下文，即使浏览器同时仍有账号 Bearer token。
+  if (token) {
+    const row = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(token))).get()
+    if (!row) throw new AccessCredentialError('invalid', '访客体验凭证无效', 401)
+    if (row.status === 'claimed') throw new AccessCredentialError('claimed', '这次访客体验已经保存到登录账号', 409)
+    if (row.status === 'replaced') throw new AccessCredentialError('replaced', '这次访客体验已经被新的体验替换', 409)
+    if (row.status !== 'active' && row.status !== 'claim_pending') throw new AccessCredentialError('expired', '访客体验已过期，请重新开始', 401)
+    if (row.status === 'active' && row.expiresAt <= now.toISOString()) throw new AccessCredentialError('expired', '访客体验已过期，请重新开始', 401)
+    if (!row.currentSandboxWorldId) throw new AccessCredentialError('invalid', '访客体验尚未准备完成', 409)
+    const renewedAt = now.toISOString()
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    if (row.status === 'active') await db.batch([
+      db.update(guestSessions).set({ expiresAt, updatedAt: renewedAt }).where(eq(guestSessions.id, row.id)),
+      db.update(demoSandboxes).set({ expiresAt }).where(and(eq(demoSandboxes.sessionId, row.id), eq(demoSandboxes.status, 'active'))),
+    ])
+    return {
+      kind: 'guest', sessionId: row.id, ownerId: row.ownerUserId,
+      worldId: row.currentSandboxWorldId, generation: row.generation,
+      expiresAt: row.status === 'claim_pending' ? row.expiresAt : expiresAt,
+    }
+  }
+
   const bearer = credentials.authorization?.startsWith('Bearer ') ? credentials.authorization.slice(7).trim() : ''
   if (bearer) {
     const session = await db.select().from(sessions).where(eq(sessions.token, bearer)).get()
@@ -26,24 +49,7 @@ export async function resolveAccessContext(
     return { kind: 'user', userId: user.id, username: user.username, role: user.role === 'admin' ? 'admin' : 'user', ownerId: user.id }
   }
 
-  const token = credentials.guestToken?.trim()
-  if (!token) return { kind: 'anonymous' }
-  const row = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(token))).get()
-  if (!row) throw new AccessCredentialError('invalid', '访客体验凭证无效', 401)
-  if (row.status === 'claimed') throw new AccessCredentialError('claimed', '这次访客体验已经保存到登录账号', 409)
-  if (row.status === 'replaced') throw new AccessCredentialError('replaced', '这次访客体验已经被新的体验替换', 409)
-  if (row.status !== 'active' || row.expiresAt <= now.toISOString()) throw new AccessCredentialError('expired', '访客体验已过期，请重新开始', 401)
-  if (!row.currentSandboxWorldId) throw new AccessCredentialError('invalid', '访客体验尚未准备完成', 409)
-  const renewedAt = now.toISOString()
-  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
-  await db.batch([
-    db.update(guestSessions).set({ expiresAt, updatedAt: renewedAt }).where(eq(guestSessions.id, row.id)),
-    db.update(demoSandboxes).set({ expiresAt }).where(and(eq(demoSandboxes.sessionId, row.id), eq(demoSandboxes.status, 'active'))),
-  ])
-  return {
-    kind: 'guest', sessionId: row.id, ownerId: row.ownerUserId,
-    worldId: row.currentSandboxWorldId, generation: row.generation, expiresAt,
-  }
+  return { kind: 'anonymous' }
 }
 
 export const accessMiddleware = createMiddleware<{ Bindings: Env; Variables: AccessVariables }>(async (c, next) => {

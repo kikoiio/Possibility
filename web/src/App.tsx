@@ -1,4 +1,4 @@
-import { Link, NavLink, Navigate, Outlet, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, NavLink, Navigate, Outlet, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { apiFetch, clearToken, getToken, mapApi, worldsApi } from './api/client'
@@ -10,6 +10,7 @@ import PersonDetail from './pages/PersonDetail'
 import Worlds from './pages/Worlds'
 import SettingsPage from './pages/SettingsPage'
 import WorldCreate from './pages/WorldCreate'
+import WorldSceneRepair from './pages/WorldSceneRepair'
 import WorldCanvasPage from './pages/WorldCanvasPage'
 import DemoLanding from './pages/DemoLanding'
 import VoxelDevHarness from './voxel/dev-harness'
@@ -127,10 +128,19 @@ function WorldViewRoute() {
   )
 }
 
+/** Old recovery links must never silently create and archive a replacement world. */
+function WorldCreateRoute() {
+  const [searchParams] = useSearchParams()
+  const sourceWorldId = searchParams.get('fromWorld')
+  if (sourceWorldId) return <Navigate to={`/worlds/${encodeURIComponent(sourceWorldId)}/scene/repair`} replace />
+  return <div className="h-full"><WorldCreate /></div>
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/demo/recover" element={<DemoLanding recoveryOnly />} />
       <Route path="/dev/voxel" element={<VoxelDevHarness />} />
       <Route path="/dev/asset-shot" element={<AssetShot />} />
       <Route
@@ -142,8 +152,9 @@ export default function App() {
         }
       />
       <Route path="/" element={<Landing />} />
+      <Route path="/worlds/:worldId/scene/repair" element={<RequireAuth><div className="h-full"><WorldSceneRepair /></div></RequireAuth>} />
       <Route path="/worlds/:id" element={<RequireAuth><WorldViewRoute /></RequireAuth>} />
-      <Route path="/worlds/new" element={<RequireAuth><div className="h-full"><WorldCreate /></div></RequireAuth>} />
+      <Route path="/worlds/new" element={<RequireAuth><WorldCreateRoute /></RequireAuth>} />
       <Route
         element={
           <RequireAuth>

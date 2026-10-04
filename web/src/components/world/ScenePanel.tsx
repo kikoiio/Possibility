@@ -114,6 +114,7 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
   const [intentProposal, setIntentProposal] = useState<ResolvedIntent | null>(null)
   const [intentNeedsRetry, setIntentNeedsRetry] = useState(false)
   const [intentRetryError, setIntentRetryError] = useState('')
+  const [intentLoginRequired, setIntentLoginRequired] = useState(false)
   const intentInFlight = useRef(false)
   const latestActionVersion = useRef<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -375,22 +376,58 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
     setIntentNotice('')
     setIntentNeedsRetry(false)
     setIntentRetryError('')
+    setIntentLoginRequired(false)
     if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
     setIntentProposal(null)
+    let requestId = crypto.randomUUID()
+    let automaticRetryUsed = false
     try {
-      const result = await sceneApi.resolveIntent(worldId, { timelineId, content, requestId: crypto.randomUUID() })
-      setIntentProposal(result)
-      const key = pendingIntentStorageKey(worldId, timelineId, persona.id)
-      if (result.recovery === 'refresh_state') { await recoverIntent(); return }
-      if (result.status === 'proposal') savePendingIntentProposal(key, { text: intentText, result })
-      else clearPendingIntentProposal(key)
-      if (result.status === 'clarification') setIntentNotice(result.question ?? '请再说具体一些。')
-      else if (result.status === 'rejected') setIntentNotice(result.reason ?? '这个行动不在当前范围内。')
+      while (true) {
+        const result = await sceneApi.resolveIntent(worldId, { timelineId, content, requestId })
+        if (result.recovery === 'refresh_state') {
+          if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+          setIntentProposal(null)
+          setIntentNeedsRetry(true)
+          const refreshed = await refreshActionState()
+          if (!refreshed) {
+            setIntentRetryError('状态或地点刷新失败；保留原行动描述，请先刷新后再生成提议。')
+            setIntentNotice('刷新失败，系统已停止自动重试。')
+            return
+          }
+          setIntentRetryError('')
+          if (automaticRetryUsed) {
+            setIntentNotice('自动重试期间世界状态再次变化。已刷新最新情况，请检查后再手动重新生成提议。')
+            return
+          }
+          automaticRetryUsed = true
+          setIntentNeedsRetry(false)
+          setIntentNotice('世界状态已刷新，正在按最新情况重新生成提议。')
+          requestId = crypto.randomUUID()
+          continue
+        }
+        setIntentProposal(result)
+        const key = pendingIntentStorageKey(worldId, timelineId, persona.id)
+        if (result.status === 'proposal') savePendingIntentProposal(key, { text: intentText, result })
+        else clearPendingIntentProposal(key)
+        if (result.status === 'clarification') setIntentNotice(result.question ?? '请再说具体一些。')
+        else if (result.status === 'rejected') setIntentNotice(result.reason ?? '这个行动不在当前范围内。')
+        return
+      }
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        if (e.message.includes('只读') || e.message.includes('仅可读取')) setActionReadOnly(true)
-        await recoverIntent()
-      } else setIntentNotice(e instanceof Error ? e.message : '暂时无法解析行动；世界状态未改变。')
+      const readOnlyError = e instanceof ApiError && (e.message.includes('只读') || e.message.includes('仅可读取'))
+      if (readOnlyError) {
+        setActionReadOnly(true)
+        setIntentNotice('')
+      }
+      const message = e instanceof ApiError && e.status === 401
+        ? '登录状态已失效；请在新标签页重新登录，返回后可继续当前行动。'
+        : readOnlyError
+          ? '这个世界当前只读，无法执行行动。请切换到有编辑权限的世界或时间线。'
+          : e instanceof ApiError && e.status >= 500
+            ? '暂时无法解析行动；世界状态未改变，请稍后重试。'
+            : e instanceof Error ? e.message : '暂时无法解析行动；世界状态未改变。'
+      if (e instanceof ApiError && e.status === 401) setIntentLoginRequired(true)
+      if (!readOnlyError) setIntentNotice(message)
     } finally { intentInFlight.current = false; setIntentBusy(false) }
   }
 
@@ -707,6 +744,11 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
                 </div>
               </div>}
               {intentNotice && <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">{intentNotice}</p>}
+              {intentLoginRequired && <a href="/login" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-ink underline">在新标签页重新登录</a>}
+              {intentProposal?.alternatives && <p className="mt-1 text-xs leading-relaxed text-ink-faint">
+                {intentProposal.alternatives.locations.length > 0 && <>当前可前往：{intentProposal.alternatives.locations.join('、')}。 </>}
+                {intentProposal.alternatives.residents.length > 0 && <>当前可传话给：{intentProposal.alternatives.residents.map(person => person.name).join('、')}。</>}
+              </p>}
             </details>
             <div className="flex items-end gap-2 border-t border-ink-line/60 px-4 py-3">
               <textarea

@@ -33,8 +33,9 @@ describe('guest demo sandbox lifecycle', () => {
     const guest = await createGuestSession(fixture.db, 'create')
     const first = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'claim' })
     const second = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'claim' })
-    expect(second).toEqual(first)
-    expect((await fixture.db.select().from(worlds).all()).some(world => world.id === first?.worldId && world.userId === 'member')).toBe(true)
+    if (first?.kind !== 'claimed') throw new Error('claim should succeed')
+    expect(second).toEqual({ ...first, replayed: true })
+    expect((await fixture.db.select().from(worlds).all()).some(world => world.id === first.worldId && world.userId === 'member')).toBe(true)
     expect((await fixture.db.select().from(guestSessions).get())?.tokenHash).not.toContain(guest.token!)
   })
 
@@ -57,7 +58,7 @@ describe('guest demo sandbox lifecycle', () => {
     })).rejects.toThrow('forced claim clone failure')
 
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get())
-      .toMatchObject({ status: 'active', currentSandboxWorldId: guest.worldId })
+      .toMatchObject({ status: 'claim_pending', currentSandboxWorldId: guest.worldId })
     expect(await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.id, sandboxBefore!.id)).get())
       .toMatchObject({ status: 'active', claimedWorldId: null })
     expect(await fixture.db.select().from(worlds).where(eq(worlds.userId, 'member')).all()).toEqual([])
@@ -66,7 +67,7 @@ describe('guest demo sandbox lifecycle', () => {
     expect(await fixture.db.select().from(events).where(eq(events.title, 'Existing event')).all()).toHaveLength(1)
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get())
       .toMatchObject({ currentSandboxWorldId: guest.worldId })
-    expect((await resumeGuestSession(fixture.db, guest.token!))?.worldId).toBe(guest.worldId)
+    expect(await resumeGuestSession(fixture.db, guest.token!)).toMatchObject({ worldId: guest.worldId, claimPending: true })
     expect(await fixture.db.select().from(worlds).where(eq(worlds.id, guest.worldId)).get()).toBeDefined()
 
     fixture.sqlite.exec('DROP TRIGGER fail_claim_event')
@@ -76,14 +77,15 @@ describe('guest demo sandbox lifecycle', () => {
     const replay = await claimGuestSession(fixture.db, {
       token: guest.token!, userId: 'member', requestId: 'retryable-claim-success',
     })
-    expect(first).toBeDefined()
-    expect(replay).toEqual(first)
+    expect(first).toMatchObject({ kind: 'claimed', replayed: false })
+    expect(replay).toEqual({ ...first, replayed: true })
+    if (first?.kind !== 'claimed') throw new Error('claim should succeed')
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get())
       .toMatchObject({ status: 'claimed' })
     expect(await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.id, sandboxBefore!.id)).get())
-      .toMatchObject({ status: 'claimed', claimedWorldId: first!.worldId })
+      .toMatchObject({ status: 'claimed', claimedWorldId: first.worldId })
     expect((await fixture.db.select().from(worlds).where(eq(worlds.userId, 'member')).all()).map(world => world.id))
-      .toEqual([first!.worldId])
+      .toEqual([first.worldId])
     fixture.close()
   })
 
@@ -105,18 +107,19 @@ describe('guest demo sandbox lifecycle', () => {
     expect(await fixture.db.select().from(worlds).where(eq(worlds.userId, 'member')).all()).toEqual([])
     expect(await fixture.db.select().from(persons).where(eq(persons.userId, 'member')).all()).toEqual([])
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get())
-      .toMatchObject({ status: 'active', currentSandboxWorldId: guest.worldId })
+      .toMatchObject({ status: 'claim_pending', currentSandboxWorldId: guest.worldId })
     expect(await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.id, sandboxBefore!.id)).get())
       .toMatchObject({ status: 'active', claimedWorldId: null })
-    expect((await resumeGuestSession(fixture.db, guest.token!))?.worldId).toBe(guest.worldId)
+    expect(await resumeGuestSession(fixture.db, guest.token!)).toMatchObject({ worldId: guest.worldId, claimPending: true })
 
     // 去除故障后同 requestId 重试:干净重建同一世界并保持幂等
     const first = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'verify-retry' })
     const replay = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'verify-retry' })
-    expect(first).toBeDefined()
-    expect(replay).toEqual(first)
+    expect(first).toMatchObject({ kind: 'claimed', replayed: false })
+    expect(replay).toEqual({ ...first, replayed: true })
+    if (first?.kind !== 'claimed') throw new Error('claim should succeed')
     expect((await fixture.db.select().from(worlds).where(eq(worlds.userId, 'member')).all()).map(world => world.id))
-      .toEqual([first!.worldId])
+      .toEqual([first.worldId])
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get())
       .toMatchObject({ status: 'claimed' })
     fixture.close()
@@ -137,5 +140,55 @@ describe('guest demo sandbox lifecycle', () => {
     expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get()).toBeUndefined()
     expect(await fixture.db.select().from(worlds).where(eq(worlds.id, baseline!.worldId)).get()).toBeDefined()
     expect(await fixture.db.select().from(users).where(eq(users.id, session!.ownerUserId)).get()).toBeUndefined()
+  })
+
+  it('keeps claim-pending sessions beyond the ordinary rolling expiry', async () => {
+    const fixture = await demoFixture()
+    const ordinary = await createGuestSession(fixture.db, 'ordinary-expired')
+    const pending = await createGuestSession(fixture.db, 'claim-pending-retained')
+    const ordinarySandbox = await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.sessionId, ordinary.sessionId)).get()
+    const pendingSandbox = await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.sessionId, pending.sessionId)).get()
+    await fixture.db.update(guestSessions).set({ expiresAt: '2020-01-01T00:00:00.000Z', status: 'claim_pending' })
+      .where(eq(guestSessions.id, pending.sessionId))
+    await fixture.db.update(demoSandboxes).set({ expiresAt: '2020-01-01T00:00:00.000Z' })
+      .where(eq(demoSandboxes.id, pendingSandbox!.id))
+    await fixture.db.update(guestSessions).set({ expiresAt: '2020-01-01T00:00:00.000Z' })
+      .where(eq(guestSessions.id, ordinary.sessionId))
+    await fixture.db.update(demoSandboxes).set({ expiresAt: '2020-01-01T00:00:00.000Z' })
+      .where(eq(demoSandboxes.id, ordinarySandbox!.id))
+
+    const result = await cleanupExpiredGuestData(fixture.db, new Date('2026-10-04T00:00:00.000Z'))
+
+    expect(result).toEqual({ sessions: 1, sandboxes: 1, worlds: 1 })
+    expect(await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, pending.sessionId)).get())
+      .toMatchObject({ status: 'claim_pending', currentSandboxWorldId: pending.worldId })
+    expect(await resumeGuestSession(fixture.db, pending.token!, new Date('2026-10-04T00:00:00.000Z')))
+      .toMatchObject({ worldId: pending.worldId, claimPending: true })
+    expect(await fixture.db.select().from(worlds).where(eq(worlds.id, pending.worldId)).get()).toBeDefined()
+    fixture.close()
+  })
+
+  it('allows only one concurrent claimant and hides the winner world from another account', async () => {
+    const fixture = await demoFixture()
+    await fixture.db.insert(users).values([
+      { id: 'member-a', username: 'member-a', passwordHash: 'x', createdAt: '2026-09-28T00:00:00.000Z' },
+      { id: 'member-b', username: 'member-b', passwordHash: 'x', createdAt: '2026-09-28T00:00:00.000Z' },
+    ])
+    const guest = await createGuestSession(fixture.db, 'concurrent-claim')
+    const [a, b] = await Promise.all([
+      claimGuestSession(fixture.db, { token: guest.token!, userId: 'member-a', requestId: 'claim-a' }),
+      claimGuestSession(fixture.db, { token: guest.token!, userId: 'member-b', requestId: 'claim-b' }),
+    ])
+    const winner = [a, b].find(result => result?.kind === 'claimed')
+    expect(winner).toMatchObject({ kind: 'claimed' })
+    expect([a, b].filter(result => result?.kind === 'already_claimed_elsewhere')).toHaveLength(1)
+    if (winner?.kind !== 'claimed') throw new Error('one claim should win')
+    const winningWorld = await fixture.db.select().from(worlds).where(eq(worlds.id, winner.worldId)).get()
+    expect(['member-a', 'member-b']).toContain(winningWorld?.userId)
+    const loserId = winningWorld?.userId === 'member-a' ? 'member-b' : 'member-a'
+    expect(await fixture.db.select().from(worlds).where(eq(worlds.userId, loserId)).all()).toEqual([])
+    expect((await fixture.db.select().from(worlds).where(eq(worlds.userId, winningWorld!.userId)).all()).map(world => world.id))
+      .toEqual([winner.worldId])
+    fixture.close()
   })
 })

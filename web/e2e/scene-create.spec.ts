@@ -27,7 +27,7 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   await page.route('**/api/worlds/world-1**', route => {
     const url = route.request().url()
     if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
-      access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
+      access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
       world: snapshot,
       scene: { status: 'ready', document: voxelDoc },
       presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
@@ -46,6 +46,9 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   // 体素预览:直接挂载体素视口(不再经过 2D 画布)
   await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
+  await expect(page.getByTestId('voxel-editor-toolbar')).toBeVisible()
+  await expect(page.getByTestId('voxel-tool-ai')).toHaveCount(0)
+  await expect(page.getByText(/AI 改造需先保存并进入有编辑权限的世界/)).toBeVisible()
   await expect(page.getByTestId('start-life')).toBeEnabled()
 
   await page.getByTestId('start-life').click()
@@ -58,6 +61,7 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   await page.getByTestId('enter-world-map').click()
   await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
+  await expect(page.getByTestId('voxel-tool-ai')).toBeVisible()
 })
 
 test('authenticated voxel-spaces world supports resident and location interaction', async ({ page }) => {

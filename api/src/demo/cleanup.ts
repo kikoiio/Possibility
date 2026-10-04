@@ -57,6 +57,7 @@ async function purgeSandbox(db: Db, sandboxId: string, worldId: string, ownerId:
 /** Removes expired guest data only after fencing all credentials and marking each sandbox for purge. */
 export async function cleanupExpiredGuestData(db: Db, now = new Date()): Promise<GuestCleanupSummary> {
   const nowIso = now.toISOString()
+  // claim_pending is intentionally absent: its source copy survives ordinary guest TTL cleanup until claim succeeds.
   const expiredSessions = await db.select().from(guestSessions)
     .where(and(lte(guestSessions.expiresAt, nowIso), inArray(guestSessions.status, ['active', 'expired']))).all()
   const oldClaimedSessions = await db.select().from(guestSessions)

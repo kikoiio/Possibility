@@ -1,12 +1,12 @@
 # N2D1：原生 2D 庄园可交互样板 Tasks
 
-> 状态：开发已启动（用户 2026-10-04 明确指令），分支 `codex/2d-experience`（主工作区内分支，非独立 worktree）。已完成：T01（基线提交 7410d00）、T02（pixi.js 8.22.0 精确依赖）、T03（types.ts 契约）、T47（独立 Playwright 配置+Vitest 排除）。
+> 状态：实现已完成并同步 `origin/main`，分支 `codex/2d-experience`。提交包含基础模块、原生2D交互/E2E及主线同步；验收进度见 checklist。T59 的资源生命周期/渲染初始化故障检查仍待补齐，故 T60 验收汇总保持未完成。
 > 输入：已批准的 [spec.md](spec.md)、[plan.md](plan.md)；日期：2026-10-04。
 > 已一并批准的 plan 最小补充：`web/vitest.config.ts` 仅增加 `native2d-e2e/**` 排除项，防止 Vitest 执行 Playwright 用例。其余范围和设计沿用已批准内容。
 
 ## 开发门槛与任务粒度
 
-四份文档已全部获批，文档审批门槛已满足；但用户明确要求暂不开发，须等用户明确启动指令后才执行下列任务。本文件不代表已创建 worktree、安装依赖、生成生产素材或通过实现验证。
+四份文档已全部获批，2026-10-04 用户明确指示启动开发，文档审批门槛已满足。开发在现有主工作区的 `codex/2d-experience` 分支完成；没有创建独立 worktree。实际验证和仍未完成的检查记录在本文件与 checklist。
 
 共60个聚焦任务，每项按2–5分钟的主动操作单元组织。生图、网络安装、构建和浏览器测试的外部等待不承诺在5分钟内结束；等待期间不占用同文件编辑权。若实际实现需要更多主动操作，执行前按相同文件责任拆为子项，不能删掉验证或扩大范围。独立类型检查或定向测试是任务交付证据；浏览器操作和最终汇合验证另外记录，不能提前标成已通过。
 
@@ -342,7 +342,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T20：主楼独立素材
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（主楼独立透明图层已交付；contact sheet 预览和外景合成确认。）
 
 **文件：** `web/public/native2d/mist-manor/buildings/main-house-{base,occluder,accent}.png`
 
@@ -356,7 +356,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T21：温室独立素材
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（温室独立透明图层已交付；contact sheet 预览和场景引用测试通过。）
 
 **文件：** `web/public/native2d/mist-manor/buildings/greenhouse-{base,occluder,accent}.png`
 
@@ -370,7 +370,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T22：门房独立素材
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（门房独立透明图层已交付；contact sheet 预览和场景引用测试通过。）
 
 **文件：** `web/public/native2d/mist-manor/buildings/gatehouse-{base,occluder,accent}.png`
 
@@ -384,7 +384,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T23：地面、道路与水岸
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（外景地面/道路/岸线素材已交付并在场景合成中验证。）
 
 **文件：** `web/public/native2d/mist-manor/terrain/{ground,path,shore}.png`
 
@@ -398,7 +398,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T24：植被与外景遮挡
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（植被本体与遮挡层已交付；contact sheet 和外景绘制通过。）
 
 **文件：** `web/public/native2d/mist-manor/terrain/{tree-base,tree-occluder,shrub}.png`
 
@@ -412,7 +412,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T25：大厅地面与墙体
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（大厅地面/墙体图层已交付并在大厅浏览用例中绘制。）
 
 **文件：** `web/public/native2d/mist-manor/hall/{floor,wall-base,wall-occluder}.png`
 
@@ -426,7 +426,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T26：大厅家具
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（大厅家具使用独立素材；大厅入口/返回浏览器用例通过。）
 
 **文件：** `web/public/native2d/mist-manor/hall/{table,chair,lamp}.png`
 
@@ -440,7 +440,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T27：居民素材
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（居民透明素材已交付；固定与真实读取页面绘制通过。）
 
 **文件：** `web/public/native2d/mist-manor/residents/{resident-a,resident-b,resident-c}.png`
 
@@ -454,7 +454,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T28：素材清单汇合与校准
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（scene.test 验证清单引用/几何契约；最终外景桌面/手机截图检查通过。）
 
 **文件：** `web/src/native2d/assets.ts`；`web/src/native2d/__tests__/scene.test.ts`
 
@@ -482,7 +482,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T30：分层绘制与深度
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（素材分层/遮挡在外景与大厅可见；桌面/手机浏览器用例通过。）
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -496,7 +496,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T31：相机与全景
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（相机约束、全景和对象bounds由完整 browser project 验证。）
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -538,7 +538,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T34：选择、跟随与遮挡
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（controller/presentation/input 单测与桌面居民选择、跟随及空间切换通过。）
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -552,7 +552,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T35：建筑移动预览
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（建筑拖动只捕获已选建筑，空地仍平移；三栋建筑合法移动与非法候选覆盖。）
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -566,7 +566,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T36：渲染故障与只读诊断
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（资产失败/重试、渲染计数/时长/对象边界诊断已由浏览器与视口测试验证；初始化失败注入另列 T59 未完成。）
 
 **文件：** `web/src/native2d/viewport.ts`
 
@@ -580,7 +580,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T37：控制器读取协调
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（全量 controller 单测通过，读请求失败、竞态及重试行为覆盖。）
 
 **文件：** `web/src/native2d/controller.ts`；`web/src/native2d/__tests__/controller.test.ts`
 
@@ -594,7 +594,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T38：控制器布局恢复与保存
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（controller/storage 单测及浏览器范围隔离、损坏恢复、配额重试通过。）
 
 **文件：** `web/src/native2d/controller.ts`；`web/src/native2d/__tests__/controller.test.ts`
 
@@ -608,7 +608,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T39：控制器选择与空间跟随
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（controller 单测及桌面/手机选择、跟随和大厅切换通过。）
 
 **文件：** `web/src/native2d/controller.ts`；`web/src/native2d/__tests__/controller.test.ts`
 
@@ -622,7 +622,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T40：控制器编辑与重置
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（controller/editor 单测及浏览器应用、撤销、确认/取消重置通过。）
 
 **文件：** `web/src/native2d/controller.ts`；`web/src/native2d/__tests__/controller.test.ts`
 
@@ -636,7 +636,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T41：React 视口挂载与重试
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（完整单测/生产预览通过；缺失纹理恢复后事实和视口可用。）
 
 **文件：** `web/src/native2d/Native2dViewport.tsx`
 
@@ -650,7 +650,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T42：页面读取与事实信息
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（固定/公开来源、地点/居民信息、失败重试由桌面与 live 浏览器用例通过。）
 
 **文件：** `web/src/native2d/sample-page.tsx`
 
@@ -664,7 +664,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T43：页面编辑与恢复控件
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（编辑/恢复控件的移动、撤销、重置确认、损坏记录及保存重试浏览器用例通过。）
 
 **文件：** `web/src/native2d/sample-page.tsx`
 
@@ -678,7 +678,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T44：桌面冷色界面
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（1280×720 实际页面与外景截图检查，控件/画布可见。）
 
 **文件：** `web/src/native2d/sample.css`
 
@@ -692,7 +692,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T45：手机布局
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（390×844 Chromium 触屏模拟完成旅程并检查无横向溢出；不代表真实手机硬件。）
 
 **文件：** `web/src/native2d/sample.css`
 
@@ -706,7 +706,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T46：独立懒加载路由
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（App 路由冲突同步后仍保留原生2D lazy/Suspense；生产预览成功打开样板。）
 
 **文件：** `web/src/App.tsx`
 
@@ -748,7 +748,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T49：桌面数据、浏览与观察流程
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（同步后桌面固定来源/事实/跟随/大厅/全景 3 项通过。）
 
 **文件：** `web/native2d-e2e/sample.spec.ts`
 
@@ -762,7 +762,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T50：移动、撤销与恢复流程
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（非法/合法拖动、应用、逐步撤销、刷新恢复及重置确认浏览器用例通过。）
 
 **文件：** `web/native2d-e2e/editing.spec.ts`
 
@@ -776,7 +776,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T51：浏览器故障与重试
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（损坏/不兼容记录、配额失败重试及缺失纹理恢复浏览器用例通过。）
 
 **文件：** `web/native2d-e2e/editing.spec.ts`；`web/native2d-e2e/sample.spec.ts`
 
@@ -790,7 +790,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T52：触屏完整旅程
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（390×844 Chromium touch-emulation 两项通过：双指缩放、面板/选择、非法/合法移动、撤销、刷新恢复、重置。）
 
 **文件：** `web/native2d-e2e/sample.mobile.spec.ts`
 
@@ -804,7 +804,9 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T53：真实公开数据读取验证
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证
+
+**本次证据（2026-10-04）：** 在 `web` 目录执行 `../node_modules/.bin/playwright test --config=playwright.native2d.config.ts --project=native2d-live --workers=1`，1 passed；真实公开读取后选择居民/地点、观察大厅、刷新、移动与撤销；请求均在 `/api/public/`，没有世界写请求或模型调用。
 
 **文件：** `web/native2d-e2e/readonly-live.spec.ts`
 
@@ -818,7 +820,9 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T54：单元测试汇合
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证
+
+**本次证据（2026-10-04）：** 定向 native2d 单元测试 `9 files / 194 tests passed`；完整 web 单元测试 `56 files / 466 tests passed`，均以 `--maxWorkers=1` 执行；Playwright 用例未被 Vitest 收集。
 
 **文件：** `web/src/native2d/__tests__/*.test.ts`；`现有web单元测试（只运行）`
 
@@ -832,7 +836,9 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T55：类型与生产构建
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证
+
+**本次证据（2026-10-04）：** 主线同步后的 `npm --workspace web run build` 通过，Vite 生产构建完成；`vite preview` 的 `/dev/native-2d` 页面完成视口绘制并显示全部素材，浏览器页面/控制台无错误。构建有 >500 kB 大 chunk warning，作为优化提示记录。
 
 **文件：** `web/package.json 的现有 build`；`生成产物（不提交）`
 
@@ -846,7 +852,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T56：主线同步与3D受影响回归
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（合入 `origin/main`，仅 App.tsx 路由需手工合并；指定 3D 回归 8 项全部通过，主线后的全量 web 单测、build 与 2D 12 项复验通过。）
 
 **文件：** `本支线公共文件`；`web/e2e/s03-map-entry.spec.ts、s5a-navigation-world-list.spec.ts、s5b-visual-finish.spec.ts（只运行）`
 
@@ -860,7 +866,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T57：桌面美术与实际操作复核
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（1280×720 截图 `/tmp/native2d-desktop-review.png`；外景风格/层次目视复核；桌面交互中主楼、温室、门房均覆盖移动/撤销操作。）
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`；`截图输出到/tmp/native2d-playwright-results`
 
@@ -874,7 +880,7 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 
 ### T58：手机触屏人工复核
 
-- [ ] 模块/任务交付并完成独立验证
+- [x] 模块/任务交付并完成独立验证（390×844 Chromium 触屏模拟截图 `/tmp/native2d-mobile-review.png`；双指/单指、面板和恢复旅程自动化通过。未测试真实手机硬件。）
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`
 
@@ -889,6 +895,8 @@ npm --workspace web test -- src/native2d/__tests__/对应文件.test.ts --maxWor
 ### T59：交互性能与资源清理
 
 - [ ] 模块/任务交付并完成独立验证
+
+**已采集的部分证据（2026-10-04）：** 390×844 Chromium Headless 153，WebGLRenderer 使用 SwiftShader 软件渲染，DPR/resolution=1，视口364×497。1秒级交互采样：平移49次重绘/2865ms、末次渲染7.5ms；双指缩放20次重绘/793ms、末次渲染2.3ms；静置1009ms时drawCount增量0、浏览器rAF约60Hz。交互/绘制有反馈，空闲按需绘制。真实硬件未测试；建筑移动预览单独性能、resize/重复路由/初始化中卸载的资源累积观察，以及渲染器初始化失败注入尚未验证，因此本任务未勾选。
 
 **文件：** `docs/spec_docs/N2D1-interactive-sample/checklist.md（证据）`；`本任务诊断/进程账本`
 

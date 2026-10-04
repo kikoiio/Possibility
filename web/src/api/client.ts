@@ -1,5 +1,10 @@
 const TOKEN_KEY = 'possibility_token'
 const GUEST_TOKEN_KEY = 'possibility_guest_token'
+const GUEST_CLAIM_PENDING_KEY = 'possibility_guest_claim_pending'
+let guestRequestContext = false
+
+/** Scope otherwise shared API clients to the guest route while it is mounted. */
+export function setGuestRequestContext(active: boolean): void { guestRequestContext = active }
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -16,6 +21,11 @@ export function clearToken(): void {
 export function getGuestToken(): string | null { return localStorage.getItem(GUEST_TOKEN_KEY) }
 export function setGuestToken(token: string): void { localStorage.setItem(GUEST_TOKEN_KEY, token) }
 export function clearGuestToken(): void { localStorage.removeItem(GUEST_TOKEN_KEY) }
+export function isGuestClaimPending(): boolean { return localStorage.getItem(GUEST_CLAIM_PENDING_KEY) === '1' }
+export function setGuestClaimPending(pending: boolean): void {
+  if (pending) localStorage.setItem(GUEST_CLAIM_PENDING_KEY, '1')
+  else localStorage.removeItem(GUEST_CLAIM_PENDING_KEY)
+}
 
 export class ApiError extends Error {
   constructor(
@@ -25,6 +35,7 @@ export class ApiError extends Error {
     public issues?: { code: string; message: string }[],
     public kind?: string,
     public callsUsed?: number,
+    public errorCode?: string,
   ) {
     super(message)
   }
@@ -35,16 +46,18 @@ type ApiErrorEnvelope = {
   issues?: { code: string; message: string }[]
   kind?: string
   callsUsed?: number
+  errorCode?: string
 }
 
 async function readApiErrorEnvelope(response: Response): Promise<ApiErrorEnvelope> {
   return response.json().catch(() => ({})) as Promise<ApiErrorEnvelope>
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}, behavior: { redirectOnUnauthorized?: boolean } = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  const token = getToken()
+  if (guestRequestContext) headers.delete('Authorization')
+  const token = guestRequestContext ? null : getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
   else {
     const guestToken = getGuestToken()
@@ -55,15 +68,31 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (res.status === 401) {
     const hadToken = !!token
     if (hadToken) clearToken()
-    else clearGuestToken()
+    else if (!guestRequestContext) clearGuestToken()
     const data = await readApiErrorEnvelope(res)
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
-    if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed)
+    if (hadToken && behavior.redirectOnUnauthorized !== false && !location.pathname.startsWith('/login')) location.href = '/login'
+    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   if (!res.ok) {
     const data = await readApiErrorEnvelope(res)
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed)
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
+  }
+  return res.json() as Promise<T>
+}
+
+/** Explicit guest identity for recovery routes, even when an account token is present. */
+export async function apiFetchAsGuest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const guestToken = getGuestToken()
+  if (guestToken) headers.set('X-Possibility-Guest', guestToken)
+  headers.delete('Authorization')
+  const res = await fetch(path, { ...options, headers })
+  if (!res.ok) {
+    const data = await readApiErrorEnvelope(res)
+    // Keep the guest credential on failure so a pending copy remains recoverable.
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   return res.json() as Promise<T>
 }
@@ -82,7 +111,7 @@ export async function postSSE(
   onEvent: (event: SSEEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const token = getToken()
+  const token = guestRequestContext ? null : getToken()
   const guestToken = token ? null : getGuestToken()
   const res = await fetch(path, {
     method: 'POST',
@@ -96,14 +125,15 @@ export async function postSSE(
   })
   if (res.status === 401) {
     const hadToken = !!token
-    clearToken()
+    if (hadToken) clearToken()
+    else if (!guestRequestContext) clearGuestToken()
     const data = await readApiErrorEnvelope(res)
     if (hadToken && !location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed)
+    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
   }
   if (!res.ok || !res.body) {
     const data = await readApiErrorEnvelope(res)
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed)
+    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
   }
 
   const reader = res.body.getReader()
@@ -161,7 +191,7 @@ import type {
   ReturnBrief,
   TimelineComparison,
 } from './types'
-import type { SceneReadResponse, VoxelSceneDraftResponse } from './types'
+import type { SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, VoxelSceneDraftResponse } from './types'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
@@ -263,26 +293,58 @@ export const mapApi = {
     apiFetch<{ ok: true }>(`/api/worlds/${encodeURIComponent(worldId)}/map/resume`, { method: 'PUT', body: JSON.stringify(input) }),
 }
 
+export const guestMapApi = {
+  bootstrap: (worldId: string, timelineId?: string, signal?: AbortSignal) => apiFetchAsGuest<import('./map').MapBootstrap>(
+    `/api/worlds/${encodeURIComponent(worldId)}/map/bootstrap${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`,
+    { signal },
+  ),
+  saveResume: (worldId: string, input: { timelineId: string; spaceId: string; mode: 'create' | 'life' | 'possibility' }) =>
+    apiFetchAsGuest<{ ok: true }>(`/api/worlds/${encodeURIComponent(worldId)}/map/resume`, { method: 'PUT', body: JSON.stringify(input) }),
+}
+
+export const authApi = {
+  me: () => apiFetch<{ user: { id: string; username: string } }>('/api/auth/me'),
+}
+
 export const demoApi = {
   start: async () => {
-    const result = await apiFetch<{ token: string; sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) })
+    const result = await apiFetchAsGuest<{ token: string; sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string; claimPending?: boolean }>('/api/demo/session', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) })
     setGuestToken(result.token)
+    setGuestClaimPending(false)
     return result
   },
-  current: () => apiFetch<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session'),
-  reset: () => apiFetch<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session/reset', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) }),
-  claim: () => apiFetch<{ worldId: string }>('/api/demo/session/claim', {
-    method: 'POST',
-    headers: getGuestToken() ? { 'X-Possibility-Guest': getGuestToken()! } : undefined,
-    body: JSON.stringify({ requestId: crypto.randomUUID() }),
-  }),
-  fork: (worldId: string, timelineId: string, input: Pick<ForkScenarioInput, 'name' | 'whatIf' | 'changedVariable'>, requestId: string = crypto.randomUUID()) => apiFetch<ForkResult>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId }) }),
-  compare: (worldId: string, left: string, right: string) => apiFetch<{ differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } }; limitations: string[] }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
+  current: () => apiFetchAsGuest<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string; claimPending?: boolean }>('/api/demo/session'),
+  reset: async () => {
+    const result = await apiFetchAsGuest<{ sessionId: string; worldId: string; timelineId: string; generation: number; expiresAt: string }>('/api/demo/session/reset', { method: 'POST', body: JSON.stringify({ requestId: crypto.randomUUID() }) })
+    setGuestClaimPending(false)
+    return result
+  },
+  claim: async (requestId: string = crypto.randomUUID()) => {
+    setGuestClaimPending(true)
+    const result = await apiFetch<{ kind: 'claimed'; worldId: string; replayed: boolean }>('/api/demo/session/claim', {
+      method: 'POST',
+      headers: getGuestToken() ? { 'X-Possibility-Guest': getGuestToken()! } : undefined,
+      body: JSON.stringify({ requestId }),
+    })
+    setGuestClaimPending(false)
+    return result
+  },
+  fork: (worldId: string, timelineId: string, input: Pick<ForkScenarioInput, 'name' | 'whatIf' | 'changedVariable'>, requestId: string = crypto.randomUUID()) => apiFetchAsGuest<ForkResult>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId }) }),
+  compare: (worldId: string, left: string, right: string) => apiFetchAsGuest<{ differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } }; limitations: string[] }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
 }
 
 export const worldSceneApi = {
   // S1 体素创建:提示词 → 世界骨架 + 体素草稿信封(S2 起唯一创建通道)
   draftVoxel: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<VoxelSceneDraftResponse>('/api/scene-drafts/voxel', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
+  repairContext: (worldId: string) => apiFetch<SceneRepairContext>(`/api/worlds/${encodeURIComponent(worldId)}/scene/repair-context`),
+  repairDraft: (worldId: string, prompt: string, requestId = crypto.randomUUID()) => apiFetch<SceneRepairDraftResponse>(
+    `/api/worlds/${encodeURIComponent(worldId)}/scene/repair-draft`,
+    { method: 'POST', body: JSON.stringify({ prompt, requestId }) },
+  ),
+  commitRepairVoxel: (worldId: string, requestId: string, document: SerializedVoxelDocument) => apiFetch<{ document: SerializedVoxelDocument; version: number; contentHash: string; createdAt: string }>(
+    `/api/worlds/${encodeURIComponent(worldId)}/scene/voxel-revision`,
+    { method: 'POST', body: JSON.stringify({ expectedVersion: 0, requestId, document, repair: true }) },
+  ),
   get: (worldId: string) => apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`),
   // S2b:体素整文档保存通道（T10 服务端 voxel-revision 端点）
   commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument | SerializedVoxelSpaces, spaceId?: string) => apiFetch<{ document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document, ...(spaceId ? { spaceId } : {}) }) }),
@@ -369,6 +431,7 @@ export type SceneIntentResolution = {
   status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
   proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
   question?: string; reason?: string; recovery?: 'refresh_state';
+  alternatives?: { locations: string[]; residents: { id: string; name: string }[] };
 }
 
 export const sceneApi = {
@@ -379,12 +442,7 @@ export const sceneApi = {
   recoverRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'; recoverable: boolean}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/recover?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
   cancelRequest: (worldId: string, timelineId: string, requestId: string) => apiFetch<{status: 'missing' | 'pending' | 'completed' | 'failed'}>(`/api/worlds/${worldId}/scene/requests/${encodeURIComponent(requestId)}/cancel?timelineId=${encodeURIComponent(timelineId)}`, { method: 'POST' }),
   resolveIntent: (worldId: string, body: { timelineId: string; content: string; requestId: string }) =>
-    apiFetch<{
-      requestId: string; timelineId: string; expectedVersion: number; currentLocation: string;
-      status: 'proposal' | 'clarification' | 'rejected'; confirmationRequired?: true;
-      proposal?: { type: 'move'; to: string } | { type: 'inform'; recipientId: string; recipientName: string; topic: string; content: string };
-      question?: string; reason?: string; recovery?: 'refresh_state';
-    }>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<SceneIntentResolution>(`/api/worlds/${worldId}/scene/intent`, { method: 'POST', body: JSON.stringify(body) }, { redirectOnUnauthorized: false }),
   pendingIntent: (worldId: string, timelineId: string) =>
     apiFetch<{ text: string; result: SceneIntentResolution } | { proposal: null }>(
       `/api/worlds/${worldId}/scene/intent/pending?timelineId=${encodeURIComponent(timelineId)}`),

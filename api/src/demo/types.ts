@@ -13,4 +13,9 @@ export interface GuestSessionResult {
   timelineId: string
   generation: number
   expiresAt: string
+  claimPending: boolean
 }
+
+export type ClaimResult =
+  | { kind: 'claimed'; worldId: string; replayed: boolean }
+  | { kind: 'already_claimed_elsewhere' }

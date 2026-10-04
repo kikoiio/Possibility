@@ -17,6 +17,7 @@ import { LlmContractError } from '../llm/contracts'
 import { byokFailureHint } from '../llm/resolve'
 import { CONTENT_ISSUE_COPY, CONTENT_ISSUE_FALLBACK } from './error-copy'
 import { createVoxelSceneDraft } from './voxel-draft'
+import { createSceneRepairDraft, readSceneRepairContext, SceneRepairError } from './repair'
 import { commitScene, listSceneVersions, readCurrentScene, SceneConflict } from './repository'
 import { generateWorld, WorldGeneratorError } from '../voxel/generate'
 import { buildWorldGeneratorMessages } from '../voxel/prompts'
@@ -35,7 +36,7 @@ scenesRoutes.use('*', async (c, next) => {
   }
   const loginOnly = path === '/api/scene-drafts' || path.startsWith('/api/scene-drafts/')
     || path === '/scene-drafts' || path.startsWith('/scene-drafts/')
-    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:voxel-revision|restore)(?:\/|$)/.test(path)
+    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:voxel-revision|restore|repair-context|repair-draft|revisions)(?:\/|$)/.test(path)
   if (loginOnly) return authMiddleware(c, next)
   await next()
 })
@@ -46,6 +47,10 @@ async function ownedWorld(db: ReturnType<typeof createDb>, worldId: string, user
 const err = (c: Context<{ Bindings: Env; Variables: AuthVariables }>, error: unknown) => {
   if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)
   if (error instanceof SceneConflict) return c.json({ error: error.message }, 409)
+  if (error instanceof SceneRepairError) {
+    const status = error.code === 'world_missing' ? 404 : 409
+    return c.json({ error: error.message, errorCode: error.code }, status)
+  }
   return c.json({ error: error instanceof Error ? error.message : '场景处理失败' }, 400)
 }
 
@@ -75,6 +80,39 @@ scenesRoutes.post('/scene-drafts/voxel', async c => {
   }
 })
 
+scenesRoutes.get('/worlds/:worldId/scene/repair-context', async c => {
+  const db = createDb(c.env.DB)
+  try {
+    const context = await readSceneRepairContext(db, c.get('user').id, c.req.param('worldId'))
+    if (context.sceneStatus === 'ready') return c.json({ error: '这个世界已经有场景，可以直接进入。', errorCode: 'scene_exists' }, 409)
+    return c.json(context)
+  } catch (error) { return err(c, error) }
+})
+
+scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
+  const body = await c.req.json<{ requestId?: string; prompt?: string }>().catch(() => null)
+  if (!body?.requestId || !body.prompt?.trim()) return c.json({ error: '请提供场景描述和请求标识', errorCode: 'invalid_request' }, 400)
+  const db = createDb(c.env.DB)
+  try {
+    return c.json(await createSceneRepairDraft(c.env, db, c.get('user').id, c.req.param('worldId'), {
+      requestId: body.requestId, prompt: body.prompt.trim(),
+    }))
+  } catch (error) {
+    if (error instanceof BudgetRefusal) return c.json({ error: error.message, errorCode: 'budget' }, error.status)
+    if (error instanceof WorldGeneratorError) {
+      const issues = error.issues.slice(0, 12).map(issue => ({
+        code: issue.code,
+        ...(CONTENT_ISSUE_COPY[issue.code as keyof typeof CONTENT_ISSUE_COPY] ?? CONTENT_ISSUE_FALLBACK),
+      }))
+      return c.json({ error: '场景暂时没有生成成功，请调整描述后重试。', errorCode: 'content', issues }, 502)
+    }
+    if (error instanceof LlmContractError && error.code === 'provider_http_error' && /(?:401|403)/.test(error.message)) {
+      return c.json({ error: byokFailureHint('user') ?? '模型配置无法使用，请检查 API Key 和服务地址。', errorCode: 'config' }, 502)
+    }
+    return err(c, error)
+  }
+})
+
 scenesRoutes.get('/worlds/:worldId/scene', async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -92,9 +130,17 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
   const db = createDb(c.env.DB); const user = c.get('user')
   const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; document?: unknown; spaceId?: string }>().catch(() => null)
+  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; document?: unknown; spaceId?: string; repair?: boolean }>().catch(() => null)
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !body.document) return c.json({ error: '体素场景提交参数不完整' }, 400)
+  if (body.repair && body.expectedVersion !== 0) return c.json({ error: '原世界场景补建必须提交首版场景', errorCode: 'invalid_repair_version' }, 400)
   try {
+    // A ready scene is allowed through only so commitScene can replay the identical successful repair request.
+    const repairContext = body.repair
+      ? await readSceneRepairContext(db, user.id, world.id)
+      : null
+    if (body.repair && isSerializedVoxelSpaces(body.document)) {
+      return c.json({ error: '原世界补建首版仅接受单体素场景文档', errorCode: 'invalid_repair_scene' }, 422)
+    }
     let document: SerializedVoxelDocument | SerializedVoxelSpaces
     if (isSerializedVoxelSpaces(body.document)) {
       if (!body.spaceId) return c.json({ error: '多空间体素保存需要 spaceId' }, 400)
@@ -116,12 +162,29 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
       const doc = ensureAssetPlacementIds(deserialize(JSON.stringify(body.document)))
       const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
       if (issues.length) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 422)
+      if (repairContext) {
+        const expected = repairContext.world.locations.map(location => location.name)
+        const actual = doc.locations.map(location => location.name)
+        if (actual.length !== expected.length || new Set(actual).size !== actual.length
+          || expected.some(location => !actual.includes(location))) {
+          return c.json({ error: '体素场景地点必须与原世界完全一致', errorCode: 'repair_location_mismatch' }, 422)
+        }
+      }
       document = JSON.parse(serialize(doc)) as SerializedVoxelDocument
     } else return c.json({ error: '文档不是序列化体素信封或空间包' }, 422)
     const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
       .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active'))).get()
     const allowBaseline = !!baseline && world.isDemo && user.role === 'admin'
-    const result = await commitScene(db, { worldId: world.id, expectedVersion: body.expectedVersion!, requestId: body.requestId, document, summary: body.spaceId ? `编辑空间 ${body.spaceId}` : '体素编辑', kind: 'voxel-edit', allowBaseline })
+    const isRepair = body.repair === true
+    const result = await commitScene(db, {
+      worldId: world.id,
+      expectedVersion: body.expectedVersion!,
+      requestId: body.requestId,
+      document,
+      summary: isRepair ? '为原世界补建场景' : body.spaceId ? `编辑空间 ${body.spaceId}` : '体素编辑',
+      kind: isRepair ? 'scene-repair' : 'voxel-edit',
+      allowBaseline,
+    })
     return c.json(result)
   } catch (error) { return err(c, error) }
 })

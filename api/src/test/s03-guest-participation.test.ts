@@ -5,6 +5,7 @@ import { createTestDb } from './db'
 import { demoSandboxes, events, forkSnapshots, guestSessions, persons, personStates, sessions, timelines, users, worldPersons, worlds } from '../db/schema'
 import { seedDemoWorld } from '../dev/seed-demo'
 import { createGuestSession } from '../demo/session-service'
+import { cloneWorldGraph } from '../demo/world-graph-cloner'
 
 describe('S03 guest participation API', () => {
   it('allows a guest to register, enter and move only inside its sandbox', async () => {
@@ -35,9 +36,19 @@ describe('S03 guest participation API', () => {
   it('claims the active guest sandbox into the authenticated user account', async () => {
     const fixture = createTestDb()
     await fixture.db.insert(users).values({ id: 'admin', username: 'admin', passwordHash: 'x', createdAt: new Date().toISOString() })
-    await fixture.db.insert(users).values({ id: 'member', username: 'member', passwordHash: 'x', createdAt: new Date().toISOString() })
-    await fixture.db.insert(sessions).values({ token: 'member-token', userId: 'member', expiresAt: new Date(Date.now() + 60_000).toISOString() })
-    await seedDemoWorld(fixture.db)
+    await fixture.db.insert(users).values([
+      { id: 'member', username: 'member', passwordHash: 'x', createdAt: new Date().toISOString() },
+      { id: 'other-member', username: 'other-member', passwordHash: 'x', createdAt: new Date().toISOString() },
+    ])
+    await fixture.db.insert(sessions).values([
+      { token: 'member-token', userId: 'member', expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      { token: 'other-member-token', userId: 'other-member', expiresAt: new Date(Date.now() + 60_000).toISOString() },
+    ])
+    const baseline = await seedDemoWorld(fixture.db)
+    const priorWorld = await cloneWorldGraph(fixture.db, {
+      sourceWorldId: baseline.worldId, targetOwnerId: 'member', requestId: 'existing-account-world', name: '账号已有世界',
+    })
+    const priorWorldIds = (await fixture.db.select({ id: worlds.id }).from(worlds).where(eq(worlds.userId, 'member')).all()).map(row => row.id)
     const guest = await createGuestSession(fixture.db, 'guest-claim-api')
     const participation = await app.request(`/api/worlds/${guest.worldId}/scene/position`, {
       method: 'POST',
@@ -75,12 +86,31 @@ describe('S03 guest participation API', () => {
     }, fixture.env)
     const response = await claim()
     expect(response.status, await response.clone().text()).toBe(200)
-    const result = await response.json() as { worldId: string }
+    const result = await response.json() as { kind: string; worldId: string; replayed: boolean }
+    expect(result).toMatchObject({ kind: 'claimed', replayed: false })
     const replay = await claim()
     expect(replay.status, await replay.clone().text()).toBe(200)
-    expect(await replay.json()).toEqual(result)
+    expect(await replay.json()).toEqual({ ...result, replayed: true })
+
+    const otherAccountClaim = await app.request('/api/demo/session/claim', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer other-member-token',
+        'X-Possibility-Guest': guest.token!,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ requestId: 'other-account-retry' }),
+    }, fixture.env)
+    expect(otherAccountClaim.status).toBe(409)
+    const conflict = await otherAccountClaim.json() as Record<string, unknown>
+    expect(conflict).toMatchObject({ code: 'already_claimed_elsewhere' })
+    expect(conflict).not.toHaveProperty('worldId')
 
     expect(await fixture.db.select().from(worlds).where(eq(worlds.id, result.worldId)).get()).toMatchObject({ id: result.worldId, userId: 'member' })
+    const memberWorldIds = (await fixture.db.select({ id: worlds.id }).from(worlds).where(eq(worlds.userId, 'member')).all()).map(row => row.id)
+    expect(memberWorldIds).toHaveLength(priorWorldIds.length + 1)
+    expect(memberWorldIds).toContain(priorWorld.worldId)
+    expect(memberWorldIds).toContain(result.worldId)
     expect(await fixture.db.select({ status: guestSessions.status }).from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get()).toMatchObject({ status: 'claimed' })
     expect(await fixture.db.select().from(demoSandboxes).where(eq(demoSandboxes.sessionId, guest.sessionId)).get()).toMatchObject({ status: 'claimed', claimedWorldId: result.worldId })
 
@@ -111,6 +141,46 @@ describe('S03 guest participation API', () => {
     )).get()).toMatchObject({ location: '温室花房' })
     expect(clonedTimelines.some(row => row.parentTimelineId === fork.id)).toBe(false)
     fixture.close()
+  })
+
+  it('keeps a failed claim recoverable and routes authenticated guest requests to the guest copy', async () => {
+    const fixture = createTestDb()
+    try {
+      await fixture.db.insert(users).values([
+        { id: 'admin', username: 'admin', passwordHash: 'x', createdAt: new Date().toISOString() },
+        { id: 'member', username: 'member', passwordHash: 'x', createdAt: new Date().toISOString() },
+      ])
+      await fixture.db.insert(sessions).values({ token: 'member-token', userId: 'member', expiresAt: new Date(Date.now() + 60_000).toISOString() })
+      await seedDemoWorld(fixture.db)
+      const guest = await createGuestSession(fixture.db, 'guest-claim-failure-api')
+      await fixture.db.insert(events).values({
+        id: 'claim-failure-event', timelineId: guest.timelineId, simTime: '2026-10-02T00:00:00.000Z',
+        title: 'Claim failure fixture', description: 'Ensures cloning touches the injected failing table.',
+      })
+      fixture.sqlite.exec(`CREATE TRIGGER fail_claim_event BEFORE INSERT ON events
+        BEGIN SELECT RAISE(ABORT, 'forced claim clone failure'); END`)
+      const failed = await app.request('/api/demo/session/claim', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer member-token', 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requestId: 'claim-failure-api' }),
+      }, fixture.env)
+      expect(failed.status).toBe(500)
+      expect(await fixture.db.select({ status: guestSessions.status }).from(guestSessions)
+        .where(eq(guestSessions.id, guest.sessionId)).get()).toMatchObject({ status: 'claim_pending' })
+
+      const resume = await app.request('/api/demo/session', {
+        headers: { 'X-Possibility-Guest': guest.token! },
+      }, fixture.env)
+      expect(resume.status).toBe(200)
+      expect(await resume.json()).toMatchObject({ sessionId: guest.sessionId, worldId: guest.worldId, claimPending: true })
+
+      const state = await app.request(`/api/worlds/${guest.worldId}/state?timelineId=${guest.timelineId}`, {
+        headers: { Authorization: 'Bearer member-token', 'X-Possibility-Guest': guest.token! },
+      }, fixture.env)
+      expect(state.status, await state.clone().text()).toBe(200)
+    } finally { fixture.close() }
   })
 })
 

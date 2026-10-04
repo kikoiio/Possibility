@@ -28,15 +28,86 @@ export interface VoxelSceneDraftError extends Error {
  * 把世界骨架翻译成体素生成器的场景描述。
  * 绑定指令是硬约束：每个世界地点必须绑到独立物体（事件蒸馏/在场覆盖层靠它锚定）。
  */
-export function buildVoxelSceneDescription(world: WorldDraft, prompt: string): string {
+export function buildVoxelSceneDescription(world: WorldDraft, prompt: string, residentNames: string[] = []): string {
   const spots = world.locations.map(l => `地点「${l.name}」(${l.description})`).join(';')
   return [
     `世界「${world.name}」:${world.description}`,
+    ...(residentNames.length ? [`这里已经绑定的居民:${residentNames.join('、')}`] : []),
     `创建者的一句话:${prompt}`,
     `世界包含 ${world.locations.length} 个地点:${spots}。`,
     '每个地点必须由 ops 中一个独立的 place-object 建筑或标志物承载,并登记进 locations(name 与上文逐字一致,objectId 指向承载它的物体);严禁多个地点绑定同一物体。',
     '地点之间留出可行走的道路与庭院;不要逐格铺满植被;主建筑加锁。',
   ].join('\n')
+}
+
+export interface FixedWorldVoxelSceneDraft {
+  worldId: string
+  document: SerializedVoxelDocument
+  explanation: string
+  warnings: string[]
+  callsUsed: number
+}
+
+/** Generate a scene for an existing world without drafting or persisting a new world skeleton. */
+export async function createFixedWorldVoxelSceneDraft(
+  env: Env,
+  db: Db,
+  userId: string,
+  request: {
+    requestId: string
+    prompt: string
+    world: { id: string } & WorldDraft
+    residents: { id: string; name: string }[]
+  },
+  deps: { generateWorldFn?: typeof generateWorld } = {},
+): Promise<FixedWorldVoxelSceneDraft> {
+  if (!request.requestId || !request.prompt.trim()) throw new Error('请提供场景描述和请求标识')
+  if (request.world.locations.length === 0 || request.residents.length === 0) throw new Error('原世界资料不完整，无法补建场景')
+  const residentIds = [...new Set(request.residents.map(person => person.id))]
+  const owned = await db.select({ id: persons.id }).from(persons)
+    .where(and(eq(persons.userId, userId), inArray(persons.id, residentIds))).all()
+  if (owned.length !== residentIds.length) throw new Error('原世界包含不属于当前账号的居民')
+
+  let sceneReceipt: Pick<Reservation, 'calls'> | undefined
+  try {
+    const reserve = userReservation(db, userId, budgetFromEnv(env), 'scene')
+    sceneReceipt = reserve
+    const { config } = await resolveLlmConfig(db, env, { userId, worldId: request.world.id }, reserve)
+    const assets = libraryManifest() ?? undefined
+    const doc = await (deps.generateWorldFn ?? generateWorld)(
+      buildVoxelSceneDescription(request.world, request.prompt, request.residents.map(person => person.name)),
+      'mist-manor',
+      {
+        id: `repair-${request.world.id}-${request.requestId}`,
+        complete: messages => complete(config, messages, {
+          maxTokens: 16000,
+          requestId: request.requestId,
+          responseFormat: { type: 'json_object' },
+          thinking: { type: 'disabled' },
+        }),
+        assets,
+        maxAttempts: 4,
+        buildMessages: assets ? (description, theme) => buildWorldGeneratorMessages(description, theme, assets) : undefined,
+      },
+    )
+    const expected = request.world.locations.map(location => location.name)
+    const actual = doc.locations.map(location => location.name)
+    if (actual.length !== expected.length || new Set(actual).size !== actual.length
+      || expected.some(location => !actual.includes(location))) {
+      throw new WorldGeneratorError('生成场景的地点与原世界不匹配')
+    }
+    return {
+      worldId: request.world.id,
+      document: JSON.parse(serialize(doc)) as SerializedVoxelDocument,
+      explanation: `「${request.world.name}」的场景已经成形，可以继续调整后保存到原世界。`,
+      warnings: [],
+      callsUsed: sceneReceipt.calls,
+    }
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error))
+    Object.assign(failure, { callsUsed: sceneReceipt?.calls ?? 0 })
+    throw failure
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gt, isNull } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { demoSandboxes, guestSessions, persons, personStates, timelines, users, worldPersons, worlds } from '../db/schema'
@@ -7,7 +7,7 @@ import { hashGuestToken } from '../access/middleware'
 import { readActiveBaseline } from './baseline-repository'
 import { cloneWorldGraph, deleteClonedWorldGraph } from './world-graph-cloner'
 import { verifyClonedWorld } from './clone-verification'
-import type { GuestSessionResult } from './types'
+import type { ClaimResult, GuestSessionResult } from './types'
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -40,7 +40,10 @@ async function sessionResult(db: Db, sessionId: string, token?: string): Promise
     ? await db.select().from(timelines).where(and(eq(timelines.id, session.resumeTimelineId), eq(timelines.worldId, session.currentSandboxWorldId))).get()
     : await db.select().from(timelines).where(eq(timelines.worldId, session.currentSandboxWorldId)).get()
   if (!timeline) throw new Error('访客沙盒没有时间线')
-  return { token, sessionId, worldId: session.currentSandboxWorldId, timelineId: timeline.id, generation: session.generation, expiresAt: session.expiresAt }
+  return {
+    token, sessionId, worldId: session.currentSandboxWorldId, timelineId: timeline.id,
+    generation: session.generation, expiresAt: session.expiresAt, claimPending: session.status === 'claim_pending',
+  }
 }
 
 async function createGeneration(db: Db, input: { sessionId: string; ownerId: string; generation: number; requestId: string; now: Date }) {
@@ -98,11 +101,15 @@ export async function createGuestSession(db: Db, requestId = crypto.randomUUID()
 
 export async function resumeGuestSession(db: Db, token: string, now = new Date()): Promise<GuestSessionResult | null> {
   const session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(token))).get()
-  if (!session || session.status !== 'active' || !session.currentSandboxWorldId || session.expiresAt <= now.toISOString()) return null
+  if (!session || !['active', 'claim_pending'].includes(session.status) || !session.currentSandboxWorldId ||
+    (session.status === 'active' && session.expiresAt <= now.toISOString())) return null
+  const claimPending = session.status === 'claim_pending'
   const expiresAt = expiry(now)
-  await db.batch([
+  if (!claimPending) await db.batch([
     db.update(guestSessions).set({ expiresAt, updatedAt: now.toISOString() }).where(eq(guestSessions.id, session.id)),
     db.update(demoSandboxes).set({ expiresAt }).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.status, 'active'))),
+  ])
+  await db.batch([
     // 回访即活跃：沙盒若被闲置归档则解冻，并刷新活动时间避免立刻再次归档
     db.update(worlds).set({ status: 'running', pauseReason: null })
       .where(and(eq(worlds.id, session.currentSandboxWorldId), eq(worlds.status, 'archived'))),
@@ -128,16 +135,40 @@ export class ClaimVerificationError extends Error {
   }
 }
 
-export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; now?: Date }): Promise<{ worldId: string } | null> {
+export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; now?: Date }): Promise<ClaimResult | null> {
   const now = input.now ?? new Date()
-  const session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
+  let session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
   if (!session) return null
   const active = await db.select().from(demoSandboxes).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.generation, session.generation))).get()
-  if (active?.claimedWorldId) return { worldId: active.claimedWorldId }
-  if (session.status !== 'active' || !session.currentSandboxWorldId || !active || session.expiresAt <= now.toISOString()) return null
+  if (!active || !session.currentSandboxWorldId) return null
+
+  const existingClaim = async (): Promise<ClaimResult | null> => {
+    const sandbox = await db.select().from(demoSandboxes).where(eq(demoSandboxes.id, active.id)).get()
+    if (!sandbox?.claimedWorldId) return null
+    const owner = await db.select({ userId: worlds.userId }).from(worlds).where(eq(worlds.id, sandbox.claimedWorldId)).get()
+    return owner?.userId === input.userId
+      ? { kind: 'claimed', worldId: sandbox.claimedWorldId, replayed: true }
+      : { kind: 'already_claimed_elsewhere' }
+  }
+  const priorClaim = await existingClaim()
+  if (priorClaim) return priorClaim
+  if (session.status === 'active') {
+    if (session.expiresAt <= now.toISOString()) return null
+    const marked = await db.update(guestSessions).set({ status: 'claim_pending', updatedAt: now.toISOString() })
+      .where(and(eq(guestSessions.id, session.id), eq(guestSessions.status, 'active'), gt(guestSessions.expiresAt, now.toISOString())))
+      .returning({ id: guestSessions.id })
+    if (!marked.length) {
+      session = await db.select().from(guestSessions).where(eq(guestSessions.id, session.id)).get()
+      const wonDuringTransition = await existingClaim()
+      if (wonDuringTransition) return wonDuringTransition
+      if (session?.status !== 'claim_pending') return null
+    } else session = { ...session, status: 'claim_pending' }
+  } else if (session.status !== 'claim_pending') return null
+  if (!session || session.status !== 'claim_pending' || !session.currentSandboxWorldId) return null
+
   const cloned = await cloneWorldGraph(db, {
     sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId,
-    requestId: `claim:${session.id}:${input.requestId}`, name: '雾影庄 · 保存的可能',
+    requestId: `claim:${session.id}:${input.userId}:${input.requestId}`, name: '雾影庄 · 保存的可能',
   })
   // S2/F4：核验通过才落 claimed;失败删半成品克隆图,访客会话与副本原样保留,同 requestId 可干净重试
   const verification = await verifyClonedWorld(db, {
@@ -149,9 +180,18 @@ export async function claimGuestSession(db: Db, input: { token: string; userId: 
     await deleteClonedWorldGraph(db, cloned)
     throw new ClaimVerificationError(verification.issues)
   }
-  await db.batch([
-    db.update(demoSandboxes).set({ status: 'claimed', claimedWorldId: cloned.worldId }).where(eq(demoSandboxes.id, active.id)),
-    db.update(guestSessions).set({ status: 'claimed', updatedAt: now.toISOString() }).where(eq(guestSessions.id, session.id)),
-  ])
-  return { worldId: cloned.worldId }
+  const won = await db.update(demoSandboxes).set({ status: 'claimed', claimedWorldId: cloned.worldId })
+    .where(and(eq(demoSandboxes.id, active.id), eq(demoSandboxes.status, 'active'), isNull(demoSandboxes.claimedWorldId)))
+    .returning({ id: demoSandboxes.id })
+  if (won.length) {
+    await db.update(guestSessions).set({ status: 'claimed', updatedAt: now.toISOString() })
+      .where(and(eq(guestSessions.id, session.id), eq(guestSessions.status, 'claim_pending')))
+    return { kind: 'claimed', worldId: cloned.worldId, replayed: false }
+  }
+
+  // 同 requestId 的同账号并发可能共享确定性克隆；确认不是赢家结果后才清理临时图。
+  const winner = await existingClaim()
+  if (winner?.kind === 'claimed' && winner.worldId === cloned.worldId) return winner
+  await deleteClonedWorldGraph(db, cloned)
+  return winner
 }

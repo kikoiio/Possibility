@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError, clearToken, lifeApi, mapApi, publicApi, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
+import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
   ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
-import { SceneHistoryPanel, type SceneRevisionItem } from '../components/scene/SceneHistoryPanel'
+import { SceneHistoryPanel, type SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
@@ -30,11 +30,16 @@ import { formatWorldTime } from '../lib/world-time'
 import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
 import { timelineDisplayName } from '../world/timeline-display'
 
+type AsyncReadState<T> =
+  | { status: 'closed' | 'loading' }
+  | { status: 'ready'; value: T }
+  | { status: 'error'; message: string }
+
 /**
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
  * 文字主视图已退役;辅助文字以覆盖层形式保留。
  */
-export default function WorldCanvasPage({ worldId, readonly = false, guest = false }: { worldId: string; readonly?: boolean; guest?: boolean }) {
+export default function WorldCanvasPage({ worldId, readonly = false, guest = false, claimPending = false }: { worldId: string; readonly?: boolean; guest?: boolean; claimPending?: boolean }) {
   const [search, setSearch] = useSearchParams(); const timelineId = search.get('timeline'); const navigate = useNavigate()
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
@@ -43,11 +48,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [canEditScene, setCanEditScene] = useState(false)
   const [resumeSpaceId, setResumeSpaceId] = useState('exterior')
   const [resumeMode, setResumeMode] = useState<'life' | 'possibility'>('life')
-  const [otherSnapshot, setOtherSnapshot] = useState<WorldSnapshot | null>(null)
-  const [compareSummary, setCompareSummary] = useState<{ facts: number; states: number; events: number } | null>(null)
+  const [rightSceneRead, setRightSceneRead] = useState<AsyncReadState<WorldSnapshot>>({ status: 'closed' })
   // S1 分屏:右线显式选择(URL ?right= 驱动)、完整对照数据、拖档对齐时刻、相机联动
   const [rightTimelineId, setRightTimelineId] = useState<string | null>(() => search.get('right'))
-  const [comparison, setComparison] = useState<TimelineComparison | null>(null)
+  const [comparisonRead, setComparisonRead] = useState<AsyncReadState<TimelineComparison>>({ status: 'closed' })
+  const rightSnapshotRequestId = useRef(0)
+  const comparisonRequestId = useRef(0)
   const [scrubAt, setScrubAt] = useState<string | null>(null)
   const [cameraLinked, setCameraLinked] = useState(true)
   const [sharedPose, setSharedPose] = useState<OrbitPose | null>(null)
@@ -55,13 +61,22 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [smallSide, setSmallSide] = useState<'left' | 'right'>('left')
   const [selectedSplitEvent, setSelectedSplitEvent] = useState<string | null>(null)
   const splitEventEls = useRef(new Map<string, HTMLElement>())
-  const rightScope = useRef<RequestScopeController | null>(null)
   const [mode, setMode] = useState<'life' | 'possibility'>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life')
-  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setGuestRequestContext(guest)
+    return () => setGuestRequestContext(false)
+  }, [guest])
   const [regeneratingDemo, setRegeneratingDemo] = useState(false)
   const [regenerateError, setRegenerateError] = useState('')
-  const [revisionList, setRevisionList] = useState<SceneRevisionItem[] | null>(null)
+  const [sceneHistoryState, setSceneHistoryState] = useState<SceneHistoryViewState | { status: 'closed' }>({ status: 'closed' })
   const [revisionCurrent, setRevisionCurrent] = useState(0)
+  const sceneHistoryRequestId = useRef(0)
+  const sceneHistoryLoading = useRef(false)
+  const [restoringRevision, setRestoringRevision] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
+  const restoreRequestId = useRef(0)
+  useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
@@ -87,6 +102,13 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const snapshotVersion = useRef(0); snapshotVersion.current = snapshot?.stateVersion ?? 0
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
+  const otherSnapshot = rightSceneRead.status === 'ready' ? rightSceneRead.value : null
+  const comparison = comparisonRead.status === 'ready' ? comparisonRead.value : null
+  const compareSummary = comparison ? {
+    facts: comparison.differences.facts.length,
+    states: comparison.differences.states.length,
+    events: comparison.differences.events.leftOnly.length + comparison.differences.events.rightOnly.length,
+  } : null
 
   const read = useCallback(async () => {
     setError(''); setSceneMissing(false)
@@ -101,7 +123,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         if (current.status === 'ready') setSceneDoc(current.document)
         else { setSceneDoc(null); setSceneMissing(true) }
       } else {
-        const bootstrap = await mapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
+        const bootstrap = guest
+          ? await guestMapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
+          : await mapApi.bootstrap(worldId, timelineId ?? undefined, request.controller.signal)
         if (!scopes.accepts(request.scope)) return
         setSnapshot(bootstrap.world)
         setCanEditScene(bootstrap.access.editScene)
@@ -147,37 +171,56 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     return () => { active = false; unsubscribe() }
   }, [snapshot?.currentTimelineId, worldId, timelineId, readonly, guest])
 
+  const readRightScene = useCallback(async (targetId: string) => {
+    const requestId = ++rightSnapshotRequestId.current
+    setRightSceneRead({ status: 'loading' })
+    try {
+      const result = await worldsApi.snapshot(worldId, targetId)
+      if (requestId !== rightSnapshotRequestId.current || result.currentTimelineId !== targetId) return
+      setRightSceneRead({ status: 'ready', value: result })
+    } catch (error) {
+      if (requestId === rightSnapshotRequestId.current) setRightSceneRead({ status: 'error', message: '另一种发展暂时无法读取。请重试，或关闭分屏。' })
+    }
+  }, [worldId])
+
+  const readComparison = useCallback(async (currentId: string, targetId: string) => {
+    const requestId = ++comparisonRequestId.current
+    setComparisonRead({ status: 'loading' })
+    try {
+      const result = await lifeApi.compare(worldId, currentId, targetId)
+      if (requestId !== comparisonRequestId.current) return
+      setComparisonRead({ status: 'ready', value: result })
+    } catch {
+      if (requestId === comparisonRequestId.current) setComparisonRead({ status: 'error', message: '时间线对照暂时无法读取。请重试。' })
+    }
+  }, [worldId])
+
   useEffect(() => {
-    if (mode !== 'possibility' || !snapshot) {
-      setOtherSnapshot(null); setComparison(null); setCompareSummary(null)
-      setScrubAt(null); setSplitWalk({ left: false, right: false })
+    const currentId = snapshot?.currentTimelineId
+    const target = snapshot?.timelines.find(item => item.id === rightTimelineId && item.id !== currentId)
+      ?? snapshot?.timelines.find(item => item.id !== currentId)
+    if (mode !== 'possibility' || !currentId || !target) {
+      ++rightSnapshotRequestId.current; ++comparisonRequestId.current
+      setRightSceneRead({ status: 'closed' }); setComparisonRead({ status: 'closed' })
+      if (mode !== 'possibility') { setScrubAt(null); setSplitWalk({ left: false, right: false }) }
       return
     }
-    const currentId = snapshot.currentTimelineId
-    const target = snapshot.timelines.find(item => item.id === rightTimelineId && item.id !== currentId)
-      ?? snapshot.timelines.find(item => item.id !== currentId)
-    if (!target) { setOtherSnapshot(null); setComparison(null); setCompareSummary(null); return }
     if (target.id !== rightTimelineId) setRightTimelineId(target.id) // 缺省回退:第一条其他线
-    // 右侧独立 RequestScopeController:切线/失败不影响左侧通道(F2 隔离)
-    const scopes = rightScope.current ?? (rightScope.current = new RequestScopeController({ worldId, timelineId: target.id, spaceId: 'exterior' }))
-    scopes.update({ worldId, timelineId: target.id, spaceId: 'exterior' })
-    const request = scopes.create()
-    let active = true
-    void Promise.all([
-      worldsApi.snapshot(worldId, target.id),
-      lifeApi.compare(worldId, currentId, target.id),
-    ]).then(([other, result]) => {
-      if (!active || !scopes.accepts(request.scope) || other.currentTimelineId !== target.id) return
-      setOtherSnapshot(other)
-      setComparison(result)
-      setCompareSummary({
-        facts: result.differences.facts.length,
-        states: result.differences.states.length,
-        events: result.differences.events.leftOnly.length + result.differences.events.rightOnly.length,
-      })
-    }).catch(e => { if (active && scopes.accepts(request.scope)) setError(e instanceof Error ? e.message : '时间线对照暂时不可用') })
-    return () => { active = false }
-  }, [mode, snapshot, worldId, rightTimelineId])
+    void readRightScene(target.id)
+    void readComparison(currentId, target.id)
+    return () => { ++rightSnapshotRequestId.current; ++comparisonRequestId.current }
+  }, [mode, snapshot?.currentTimelineId, snapshot?.timelines, rightTimelineId, readRightScene, readComparison])
+
+  const retryRightScene = () => {
+    const currentId = snapshot?.currentTimelineId
+    const targetId = rightTimelineId ?? snapshot?.timelines.find(item => item.id !== currentId)?.id
+    if (currentId && targetId) void readRightScene(targetId)
+  }
+  const retryComparison = () => {
+    const currentId = snapshot?.currentTimelineId
+    const targetId = rightTimelineId ?? snapshot?.timelines.find(item => item.id !== currentId)?.id
+    if (currentId && targetId) void readComparison(currentId, targetId)
+  }
 
   // 右侧独立 SSE 订阅:右侧事件只驱动右侧 snapshot 刷新(F2 隔离)
   useEffect(() => {
@@ -190,7 +233,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       void worldsApi.snapshot(worldId, rightId).then(next => {
         if (!active || next.currentTimelineId !== rightId) return
         version = Math.max(version, next.stateVersion)
-        setOtherSnapshot(current => current?.currentTimelineId === rightId && current.stateVersion < next.stateVersion ? next : current)
+        setRightSceneRead(current => current.status === 'ready' && current.value.currentTimelineId === rightId && current.value.stateVersion < next.stateVersion
+          ? { status: 'ready', value: next } : current)
       }).catch(() => {})
     }, { isPublic: readonly, onError: () => {} })
     return () => { active = false; unsubscribe() }
@@ -404,22 +448,46 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
 
   // ── 场景修订历史(体素信封同样走 voxel-revision 链) ──
+  function closeSceneHistory() {
+    sceneHistoryRequestId.current += 1
+    sceneHistoryLoading.current = false
+    restoreRequestId.current += 1
+    setSceneHistoryState({ status: 'closed' })
+    setRestoreError('')
+    setRestoringRevision(false)
+  }
   async function loadRevisionList() {
+    if (sceneHistoryLoading.current || sceneHistoryState.status === 'loading') return
+    const requestId = ++sceneHistoryRequestId.current
+    sceneHistoryLoading.current = true
+    setRestoreError('')
+    setSceneHistoryState({ status: 'loading' })
     try {
-      const current = await worldSceneApi.get(worldId)
-      setRevisionCurrent(current.status === 'ready' ? current.version : 0)
-      setRevisionList((await worldSceneApi.history(worldId)).revisions)
-    } catch (e) { setError(e instanceof Error ? e.message : '场景历史读取失败') }
+      const [current, history] = await Promise.all([worldSceneApi.get(worldId), worldSceneApi.history(worldId)])
+      if (requestId !== sceneHistoryRequestId.current) return
+      const currentVersion = current.status === 'ready' ? current.version : 0
+      setRevisionCurrent(currentVersion)
+      setSceneHistoryState({ status: 'ready', currentVersion, revisions: history.revisions })
+    } catch {
+      if (requestId === sceneHistoryRequestId.current) setSceneHistoryState({ status: 'error', message: '场景历史暂时无法读取，请重试。' })
+    } finally {
+      if (requestId === sceneHistoryRequestId.current) sceneHistoryLoading.current = false
+    }
   }
   async function restoreVersion(version: number) {
-    setBusy(true)
+    if (sceneHistoryState.status !== 'ready' || restoringRevision) return
+    const requestId = ++restoreRequestId.current
+    setRestoringRevision(true)
+    setRestoreError('')
     try {
-      await worldSceneApi.restore(worldId, revisionCurrent, version)
-      setRevisionList(null)
+      await worldSceneApi.restore(worldId, sceneHistoryState.currentVersion, version)
+      closeSceneHistory()
       voxelVersionRef.current = null
       void read()
-    } catch (e) { setError(e instanceof Error ? e.message : '场景恢复失败'); if (e instanceof ApiError && e.status === 409) void read() }
-    finally { setBusy(false) }
+    } catch (e) {
+      if (requestId === restoreRequestId.current) setRestoreError('无法恢复到所选版本，请重试。')
+      if (e instanceof ApiError && e.status === 409) void read()
+    } finally { if (requestId === restoreRequestId.current) setRestoringRevision(false) }
   }
 
   // S2b 体素保存通道:EditController 防抖回调须身份稳定(VoxelViewport 以 onSave 为装配依赖)。
@@ -517,7 +585,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
                     cameraPose={linkActive ? sharedPose : undefined}
                     onCameraChange={setSharedPose}
                     onCameraModeChange={(m) => setSplitWalk(s => ({ ...s, right: m === 'walk' }))} />
-                : <div className="grid h-full min-h-0 place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+                : rightSceneRead.status === 'error'
+                  ? <div role="alert" data-testid="split-right-error" className="grid h-full min-h-0 place-content-center gap-3 rounded-2xl bg-white/60 p-4 text-center text-sm text-[#718075]">
+                      <p>{rightSceneRead.message}</p>
+                      <button type="button" data-testid="split-right-retry" onClick={retryRightScene} className="mx-auto rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-xs text-[#536558]">重试读取右侧</button>
+                    </div>
+                  : <div role="status" data-testid="split-right-loading" className="grid h-full min-h-0 place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
             </div>
             {renderSplitEvents('right', otherSnapshot)}
           </section>
@@ -527,6 +600,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           rightTimeZone={otherSnapshot?.timelines.find(t => t.id === otherSnapshot.currentTimelineId)?.timeZone ?? otherSnapshot?.world.timeZone ?? snapshot!.world.timeZone ?? 'UTC'}
           at={scrubAt} onScrub={setScrubAt} onSelect={handleSelectMarker} />}
         {compareSummary && <p className="text-xs text-[#687a6b]" data-testid="split-compare-summary">已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。</p>}
+        {comparisonRead.status === 'loading' && <p role="status" data-testid="split-compare-loading" className="text-xs text-[#718075]">正在读取时间线对照…</p>}
+        {comparisonRead.status === 'error' && <div role="alert" data-testid="split-compare-error" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/80 px-3 py-2 text-xs text-[#718075]">
+          <span>{comparisonRead.message}</span>
+          <button type="button" data-testid="split-compare-retry" onClick={retryComparison} className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[#536558]">重试对照</button>
+        </div>}
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs text-[#526558]">
           <label className="flex items-center gap-1.5">
             <input type="checkbox" data-testid="split-camera-link" checked={cameraLinked} onChange={(e) => setCameraLinked(e.target.checked)} />
@@ -555,8 +633,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
             <span className="ml-1 font-normal text-[#849184]">{snap ? formatWorldTime(snap.simNow, snap.world.timeZone) : '读取中…'}</span>
           </p>
           <div className="flex items-center gap-2">
-            <button type="button" data-testid="split-small-toggle" onClick={() => setSmallSide(s => (s === 'left' ? 'right' : 'left'))} disabled={!otherSnapshot}
-              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558] disabled:opacity-50">
+            <button type="button" data-testid="split-small-toggle" onClick={() => setSmallSide(s => (s === 'left' ? 'right' : 'left'))}
+              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558]">
               看{smallSide === 'left' ? '另一种' : '原来的'}发展
             </button>
             <button type="button" data-testid="split-close-small" onClick={() => closeSplit(smallSide)} className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558]">关闭分屏</button>
@@ -567,7 +645,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
               events={(smallSide === 'left' ? snapshot!.voxelEvents : otherSnapshot?.voxelEvents) ?? null}
               timeZone={snap.world.timeZone}
               instanceId={smallSide === 'left' ? 'left' : 'right'} probePrimary={smallSide === 'left'} personNames={personNames} />
-          : <div className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+          : rightSceneRead.status === 'error'
+            ? <div role="alert" data-testid="split-right-error" className="grid min-h-[430px] place-content-center gap-3 rounded-2xl bg-white/60 p-4 text-center text-sm text-[#718075]"><p>{rightSceneRead.message}</p><button type="button" data-testid="split-right-retry" onClick={retryRightScene} className="mx-auto rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-xs text-[#536558]">重试读取右侧</button></div>
+            : <div role="status" data-testid="split-right-loading" className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]">正在读取另一种发展…</div>}
+        {comparisonRead.status === 'loading' && <p role="status" data-testid="split-compare-loading" className="text-xs text-[#718075]">正在读取时间线对照…</p>}
+        {comparisonRead.status === 'error' && <div role="alert" data-testid="split-compare-error" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/80 px-3 py-2 text-xs text-[#718075]"><span>{comparisonRead.message}</span><button type="button" data-testid="split-compare-retry" onClick={retryComparison} className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[#536558]">重试对照</button></div>}
         <p className="text-[10px] text-[#849184]">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
       </div>
     )
@@ -582,11 +664,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     </div>
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
-  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} editable={canEditScene} planEdits={planEditsViaApi} />
+  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} claimPending={claimPending} editable={canEditScene} planEdits={canEditScene ? (engine, intent) => planEditsViaApi(engine, worldId, intent) : undefined} />
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
     const rebuildHref = personId
-      ? `/worlds/new?person=${encodeURIComponent(personId)}&fromWorld=${encodeURIComponent(worldId)}`
+      ? `/worlds/${encodeURIComponent(worldId)}/scene/repair`
       : null
     return (
       <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4">
@@ -632,7 +714,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   </main>
 
   return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
-    {revisionList && <SceneHistoryPanel revisions={revisionList} currentVersion={revisionCurrent} busy={busy} onRestore={version => void restoreVersion(version)} onClose={() => setRevisionList(null)} />}
+    {sceneHistoryState.status !== 'closed' && <SceneHistoryPanel state={sceneHistoryState} restoring={restoringRevision} restoreError={restoreError} onRestore={version => void restoreVersion(version)} onRetry={() => void loadRevisionList()} onClose={closeSceneHistory} />}
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#849183]">{snapshot.world.name}{snapshot.world.isDemo ? ' · 演示世界' : ''}</p><h1 className="font-story text-xl text-[#2d4435]">{mode === 'possibility' ? '另一种可能' : '这里正在生活'}</h1></div><div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => {
         const selectedWorld = worldChoices.find(world => world.id === event.target.value)
@@ -661,14 +743,14 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       {snapshot.timelines.length > 1 && <button onClick={() => { setCompareInitial(null); setCompareOpen(true) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">对照宇宙</button>}
       <button onClick={() => setLlmConfigOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">LLM</button>
       {(running || !evidenceReadonly) && <button onClick={() => void handlePauseResume()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">{running ? '暂停' : '继续'}</button>}
-      <button onClick={() => void loadRevisionList()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
+      <button onClick={() => { if (sceneHistoryState.status === 'closed') void loadRevisionList() }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
       <button onClick={() => navigate('/settings')} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">设置</button>
       <button onClick={() => void handleArchiveWorld()} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#849184]">归档</button>
       <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#536558]">退出</button>
     </div></header>
       {canInteract && !snapshot.world.isDemo && <WorldTimeZoneSetting worldId={worldId} timeZone={snapshot.world.timeZone} onSaved={zone => {
         setSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
-        setOtherSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
+        setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: { ...current.value, world: { ...current.value.world, timeZone: zone }, timelines: current.value.timelines.map(t => ({ ...t, timeZone: zone })) } } : current)
       }} />}
       <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
@@ -711,7 +793,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     )}
     <div className="flex min-h-0 flex-1 gap-3"><div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="owner-map-stage">
       {mode === 'possibility' && !isSmall ? renderSplitView() : mode === 'possibility' ? renderSmallSplit()
-        : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable planEdits={planEditsViaApi} onSave={saveVoxel}
+        : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable={canEditScene} planEdits={canEditScene ? (engine, intent) => planEditsViaApi(engine, worldId, intent) : undefined} onSave={saveVoxel}
             onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
             onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
       {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard

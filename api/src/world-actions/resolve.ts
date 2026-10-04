@@ -1,7 +1,25 @@
-import type { IntentContext, IntentResolution, WorldActionProposal } from './types'
+import type { IntentAlternatives, IntentContext, IntentResolution, WorldActionProposal } from './types'
 import { contractViolation, LLM_CONTRACT_VERSIONS } from '../llm/contracts'
 
 const fallbackQuestion = '我还不能确定你想做什么。你可以明确说要去哪个地点，或把哪句话告诉现场的哪位居民。'
+
+export function alternativesFor(context: IntentContext): IntentAlternatives | undefined {
+  const alternatives = {
+    locations: context.locations.filter(location => location !== context.currentLocation),
+    residents: context.residents,
+  }
+  return alternatives.locations.length || alternatives.residents.length ? alternatives : undefined
+}
+
+function clarify(question: string, context: IntentContext): IntentResolution {
+  const alternatives = alternativesFor(context)
+  return { status: 'clarification', question, ...(alternatives ? { alternatives } : {}) }
+}
+
+function reject(reason: string, context: IntentContext): IntentResolution {
+  const alternatives = alternativesFor(context)
+  return { status: 'rejected', reason, ...(alternatives ? { alternatives } : {}) }
+}
 
 /** Strictly validates model output against server-supplied capabilities and the user's literal message. */
 export function resolveIntentOutput(raw: unknown, context: IntentContext): IntentResolution {
@@ -15,13 +33,13 @@ export function resolveIntentOutput(raw: unknown, context: IntentContext): Inten
     if (typeof value.question !== 'string') return contractViolation(version, 'clarify.question 必须是字符串')
     const question = value.question.trim()
     if (!question || question.length > 200) return contractViolation(version, 'clarify.question 长度非法')
-    return { status: 'clarification', question }
+    return clarify(question, context)
   }
   if (value.type === 'reject') {
     if (typeof value.reason !== 'string') return contractViolation(version, 'reject.reason 必须是字符串')
     const reason = value.reason.trim()
     if (!reason || reason.length > 200) return contractViolation(version, 'reject.reason 长度非法')
-    return { status: 'rejected', reason }
+    return reject(reason, context)
   }
 
   let proposal: WorldActionProposal | null = null
@@ -29,6 +47,14 @@ export function resolveIntentOutput(raw: unknown, context: IntentContext): Inten
     if (typeof value.to !== 'string') return contractViolation(version, 'move.to 必须是字符串')
     const to = value.to.trim()
     if (context.locations.includes(to) && to !== context.currentLocation) proposal = { type: 'move', to }
+    else if (to === context.currentLocation) {
+      return clarify(`你已经在${context.currentLocation}，请选择其他有效地点。`, context)
+    } else {
+      const options = alternativesFor(context)?.locations ?? []
+      return clarify(options.length
+        ? `“${to}”不是当前有效地点。当前可前往：${options.join('、')}。`
+        : `“${to}”不是当前有效地点，而且现在没有其他可前往地点。`, context)
+    }
   }
   if (value.type === 'inform') {
     if (typeof value.recipientId !== 'string' || typeof value.topic !== 'string' || typeof value.content !== 'string') {
@@ -37,14 +63,22 @@ export function resolveIntentOutput(raw: unknown, context: IntentContext): Inten
     const recipient = context.residents.find(person => person.id === value.recipientId)
     const topic = value.topic.trim()
     const content = value.content.trim()
+    if (!recipient) {
+      const people = context.residents.map(person => person.name)
+      return clarify(people.length
+        ? `指定居民当前不在${context.currentLocation}现场。当前可传话给：${people.join('、')}。`
+        : `当前${context.currentLocation}没有可传话的居民。`, context)
+    }
     // The model may extract/shorten what the visitor said, but may not invent or embellish a claim.
-    if (recipient && topic.length > 0 && topic.length <= 80 && content.length > 0 && content.length <= 500
+    if (topic.length > 0 && topic.length <= 80 && content.length > 0 && content.length <= 500
       && context.text.includes(content)) {
       proposal = { type: 'inform', recipientId: recipient.id, recipientName: recipient.name, topic, content }
+    } else {
+      return clarify('传话内容必须摘自你刚才写下的话，请补充要告诉对方的原句。', context)
     }
   }
   if (proposal) return { status: 'proposal', proposal, confirmationRequired: true }
-  return { status: 'clarification', question: fallbackQuestion }
+  return clarify(fallbackQuestion, context)
 }
 
 export function buildIntentMessages(context: IntentContext) {

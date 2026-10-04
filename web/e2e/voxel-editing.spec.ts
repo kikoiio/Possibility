@@ -7,13 +7,6 @@ async function waitReady(page: Page) {
   await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 15000 })
 }
 
-async function nonAirCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const doc = (window.__voxelEngine as never as { world: { doc: DocProbe } }).world.doc
-    return Object.values(doc.sections).reduce((n, s) => n + s.nonAirCount, 0)
-  })
-}
-
 async function objectsProbe(page: Page) {
   return page.evaluate(() => (window.__voxelEngine as never as { world: { doc: DocProbe } }).world.doc.objects)
 }
@@ -26,6 +19,19 @@ async function toScreen(page: Page, at: { x: number; y: number; z: number }) {
 
 test.describe('voxel editing (AC12/AC13/AC14/AC15)', () => {
   // S2b:方块编辑入口已移除(block 工具退役),set-block 底层能力由 AI 编辑用例间接覆盖
+  test('fixture page keeps manual editing and explains saved-world AI requirement', async ({ page }) => {
+    let planningRequests = 0
+    await page.route('**/api/voxel/edit-plan', route => {
+      planningRequests += 1
+      return route.fulfill({ status: 403, json: { error: 'fixture must not call planner' } })
+    })
+    await waitReady(page)
+    await expect(page.getByTestId('voxel-tool-ai')).toHaveCount(0)
+    await expect(page.getByText('AI 改造请在有编辑权限的已保存世界中使用。')).toBeVisible()
+    await expect(page.getByTestId('voxel-tool-warehouse')).toBeVisible()
+    expect(planningRequests).toBe(0)
+  })
+
   test('warehouse: drag a lantern in, move it, remove it (AC12)', async ({ page }) => {
     await waitReady(page)
     const objectsBefore = (await objectsProbe(page)).length
@@ -56,31 +62,6 @@ test.describe('voxel editing (AC12/AC13/AC14/AC15)', () => {
     await expect(page.getByTestId('voxel-object-actions')).toBeVisible()
     await page.getByTestId('voxel-object-remove').click()
     await expect.poll(async () => (await objectsProbe(page)).length).toBe(objectsBefore)
-  })
-
-  test('AI edit: ghost preview, confirm applies, cancel discards (AC14)', async ({ page }) => {
-    await waitReady(page)
-    const before = await nonAirCount(page)
-    await page.route('**/api/voxel/edit-plan', (route) => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ ops: [{ kind: 'set-block', at: { x: 2, y: 1, z: 42 }, block: 'lantern' }] }),
-    }))
-    await page.getByTestId('voxel-tool-ai').click()
-    await page.getByTestId('voxel-ai-input').fill('在庭院里加一座石灯笼')
-    await page.getByTestId('voxel-ai-preview').click()
-    await expect(page.getByTestId('voxel-ai-pending')).toBeVisible()
-    // 幽灵预览展示中
-    expect(await page.evaluate(() => (window.__voxelEngine as never as { feedback: { ghostActive: boolean } }).feedback.ghostActive)).toBe(true)
-
-    // 取消 → 无变更
-    await page.getByTestId('voxel-ai-cancel').click()
-    expect(await nonAirCount(page)).toBe(before)
-
-    // 再次预览 → 确认 → 应用
-    await page.getByTestId('voxel-ai-preview').click()
-    await expect(page.getByTestId('voxel-ai-pending')).toBeVisible()
-    await page.getByTestId('voxel-ai-confirm').click()
-    await expect.poll(() => nonAirCount(page)).toBe(before + 1)
   })
 
   test('locked objects refuse moves with a reason (AC15)', async ({ page }) => {

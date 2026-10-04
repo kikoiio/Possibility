@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, type EditOperation, type VoxelDocument } from '@possibility/voxel-contract'
 import { createTestDb } from '../test/db'
-import { llmCallLog, persons, users } from '../db/schema'
-import { buildVoxelSceneDescription, createVoxelSceneDraft } from './voxel-draft'
+import { llmCallLog, persons, users, worlds } from '../db/schema'
+import { buildVoxelSceneDescription, createFixedWorldVoxelSceneDraft, createVoxelSceneDraft } from './voxel-draft'
 import { WorldGeneratorError } from '../voxel/generate'
 import type { WorldDraft } from '../worlds/draft'
 
@@ -143,5 +143,29 @@ describe('createVoxelSceneDraft(S1 体素创建)', () => {
       { requestId: 'req-3', prompt: 'x', personIds: [] }, deps(doc))).rejects.toThrow('1-6 位居民')
     await expect(createVoxelSceneDraft(fixture!.env, fixture!.db, 'u',
       { requestId: 'req-4', prompt: 'x', personIds: ['p3'] }, deps(doc))).rejects.toThrow('不属于你的居民')
+  })
+})
+
+describe('createFixedWorldVoxelSceneDraft(R2 原世界补建)', () => {
+  it('uses the supplied world and residents directly without drafting or persisting a replacement world', async () => {
+    await setup()
+    let captured = ''
+    const result = await createFixedWorldVoxelSceneDraft(fixture!.env, fixture!.db, 'u', {
+      requestId: 'repair-existing-world',
+      prompt: '在湖畔建一座温室',
+      world: { id: 'existing-world', ...WORLD },
+      residents: [{ id: 'p1', name: '阿黛' }],
+    }, {
+      generateWorldFn: (async (description: string) => {
+        captured = description
+        return docWithLocations(WORLD.locations.map(location => location.name))
+      }) as never,
+    })
+    expect(result.worldId).toBe('existing-world')
+    expect(result.document.locations.map(location => location.name)).toEqual(WORLD.locations.map(location => location.name))
+    expect(captured).toContain('湖边的庄园,住着几位安静的人。')
+    expect(captured).toContain('阿黛')
+    expect(captured).toContain('创建者的一句话:在湖畔建一座温室')
+    expect(await fixture!.db.select().from(worlds)).toHaveLength(0)
   })
 })

@@ -4,7 +4,6 @@ import { apiFetch, ApiError, clearToken, mapApi, worldSceneApi, worldsApi } from
 import type { PersonListItem, VoxelSceneDraftResponse, WorldSnapshot } from '../api/types'
 import { deserialize, serialize, type VoxelDocument } from '@possibility/voxel-contract'
 import VoxelViewport from '../voxel/VoxelViewport'
-import { planEditsViaApi } from '../voxel/plan-edits'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { createCreateDraftStore } from '../scene/create-draft-store'
 import { browserTimeZone, formatWorldTime } from '../lib/world-time'
@@ -175,7 +174,7 @@ export default function WorldCreate() {
   const worldName = live?.snapshot.world.name ?? draft?.world.name ?? '新的世界'
   return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="scene-create-shell">
     {doc && <VoxelViewport document={doc} overlay={overlay} events={live ? (live.snapshot.voxelEvents ?? null) : undefined}
-      editable={!live} planEdits={planEditsViaApi}
+      editable={!live}
       onSave={(next) => { latestDoc.current = next; setEdited(true); setEditRevision(value => value + 1) }} />}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
@@ -217,7 +216,7 @@ export default function WorldCreate() {
           <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">{draft.world.name}</p>
           <h1 className="mt-0.5 font-story text-lg">继续调整这方天地</h1>
           <p className="mt-2 text-xs leading-relaxed text-[#68796d]">{draft.explanation}</p>
-          <p className="mt-2 text-[10px] leading-relaxed text-[#849184]">右下角可以挖方块、摆建筑、让 AI 按你的想法改造;修改会自动记下。{edited ? '已记下你的调整。' : ''}</p>
+          <p className="mt-2 text-[10px] leading-relaxed text-[#849184]">右下角可以挖方块、摆建筑，修改会自动记下。AI 改造需先保存并进入有编辑权限的世界。{edited ? '已记下你的调整。' : ''}</p>
           {draft.warnings.length > 0 && <p className="mt-2 text-[10px] text-[#8a7a4a]">{draft.warnings.join(';')}</p>}
         </div>
         <div className="flex items-center justify-end gap-2 rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md">

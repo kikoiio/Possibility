@@ -9,7 +9,6 @@ import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
 import EventOverlay, { useEventClickRouting } from './ui/EventOverlay'
 import EventPanel from './ui/EventPanel'
-import { planEditsViaApi as devPlanEdits } from './plan-edits'
 
 /** e2e 探针：最近的产品交互事件（居民 / 地点 / 空间导航） */
 interface InteractionEvent { kind: string; detail: string }
@@ -219,6 +218,9 @@ export default function VoxelDevHarness() {
           正在加载体素世界…
         </div>
       )}
+      <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/55 px-3 py-2 text-[10px] text-zinc-300">
+        AI 改造请在有编辑权限的已保存世界中使用。
+      </div>
       <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/55 px-3 py-2 text-xs leading-5 text-zinc-200">
         <div className="font-medium">体素开发页 · 雾影庄 fixture</div>
         <div className="text-zinc-400">
@@ -233,7 +235,6 @@ export default function VoxelDevHarness() {
         <VoxelEditor
           engine={engineRef.current!}
           controller={controller}
-          planEdits={(intent) => devPlanEdits(engineRef.current!, intent)}
           interact={(x, y) => eventRouting.routeAt(x, y) || (interactRef.current?.(x, y) ?? false)}
           editing={gate.showEditing}
         />
