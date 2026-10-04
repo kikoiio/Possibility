@@ -73,6 +73,10 @@ it('completes an invited meeting through acceptance, arrival-window refusal, att
   expect(await f.db.select().from(worldFacts).where(eq(worldFacts.factType, 'commitment')).all()).toHaveLength(3)
 
   const returnView = await app.request('/api/worlds/home-world/return?timelineId=home-main', { headers }, f.env)
-  expect(await returnView.json()).toMatchObject({ commitments: [expect.objectContaining({ id: 'visitor-meeting', status: 'fulfilled' })] })
+  const review = await returnView.json() as { commitments: { id: string; status: string }[]; changes: { title: string; highlight: string | null; sourceCommandId: string | null }[] }
+  expect(review.commitments).toEqual([expect.objectContaining({ id: 'visitor-meeting', status: 'fulfilled' })])
+  expect(review.changes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ title: 'Meet at the cafe · 如约完成', highlight: 'commitment_change', sourceCommandId: expect.any(String) }),
+  ]))
   expect(await auditUniverse(f.db, 'home-world', 'home-main')).toEqual([])
 })

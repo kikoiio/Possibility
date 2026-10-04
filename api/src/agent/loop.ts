@@ -33,7 +33,8 @@ export async function* runAgentTurn(
   ctx: AgentContextData,
   input: string,
   history: HistoryMessage[] = [],
-  opts: { maxIterations?: number; maxActs?: number; signal?: AbortSignal; runId?: string } = {},
+  opts: { maxIterations?: number; maxActs?: number; signal?: AbortSignal; runId?: string;
+    onComplete?: (run: ToolRunState) => Promise<string | void> } = {},
 ): AsyncIterable<AgentEvent> {
   const reserve = worldReservation(db, ctx.world.id, budgetFromEnv(env), {
     timelineId: ctx.timeline.id, personId: ctx.person.id, purpose: ctx.mode === 'simulate' ? 'fork_simulate' : 'chat',
@@ -53,6 +54,7 @@ export async function* runAgentTurn(
     runId: opts.runId ?? crypto.randomUUID(),
     isMain: ctx.isMain,
     mode: ctx.mode,
+    communicationChannel: ctx.communication?.channel,
     // catchup 从人物状态时间起填空白区间；chat/simulate 从各自锚点起
     clock: ctx.mode === 'catchup' ? Math.min(stateMs, simNowMs) : ctx.mode === 'simulate' ? Math.max(stateMs, simNowMs) : simNowMs,
     windowEnd: ctx.mode === 'simulate' ? null : simNowMs,
@@ -64,6 +66,7 @@ export async function* runAgentTurn(
       mood: ctx.state.mood,
       goal: ctx.state.goal,
     },
+    stagedPatch: {}, stagedEvents: [], stagedMemories: [],
   }
 
   const messages: ChatMessage[] = [
@@ -118,6 +121,23 @@ export async function* runAgentTurn(
     }
   }
 
-  // 模拟时间与每条 act 的居民事实同批提交；不在回合结束时单独推进时间线。
+  if (!streamError && run.communicationChannel === 'phone') {
+    try {
+      if (!opts.onComplete) throw new Error('电话回合缺少原子提交处理器')
+      const commandId = await opts.onComplete(run)
+      if (commandId) {
+        for (const [index, event] of run.stagedEvents.entries()) {
+          yield { type: 'event', id: `command:${commandId}:story:${index}`, ...event }
+        }
+        yield { type: 'state', state: { simTime: new Date(run.clock).toISOString(), ...run.current } }
+        for (const [index, memory] of run.stagedMemories.entries()) {
+          yield { type: 'memory', id: `${commandId}:memory:${index}`, content: memory.content }
+        }
+      }
+    } catch (error) {
+      streamError = error instanceof Error ? error.message : '电话回合提交失败'
+    }
+  }
+  // 模拟时间与每条 act 的居民事实同批提交；电话回合在此之前与回复原子提交。
   yield { type: 'done', llmCalls: reserve.calls, ...(streamError ? { error: streamError } : {}) }
 }

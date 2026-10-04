@@ -1,4 +1,4 @@
-import type { AgentContextData } from './context'
+import type { ResidentPromptContext } from './context'
 import type { ModelItem } from './types'
 import { formatWorldTime } from '../worlds/time-zone'
 
@@ -13,7 +13,26 @@ function items(title: string, list: ModelItem[]): string {
 /** 供引擎提示词复用的分层渲染（engine-prompt.ts） */
 export { items as renderModelItems }
 
-function modeInstruction(ctx: AgentContextData): string {
+function modeInstruction(ctx: ResidentPromptContext): string {
+  if (ctx.mode === 'chat' && ctx.communication?.channel === 'phone') {
+    return [
+      '## 当前模式：电话对话',
+      '你正在通过电话和远程用户交谈。用户不在你的现场，也不属于当前地点的在场者。',
+      '你的当前位置由服务端状态提供；不要声称用户已经到达、进入或与你同处一地。邀请用户来访不代表用户已到达。',
+      '不要通过 update_state 改变地点。活动状态由服务端记录为电话交谈。',
+      '- 对话中值得长期记住的事调用 remember。',
+      '- 实际发生的行动调用 act。',
+      '工具调用用户看不到，回复正文才是对用户说的话。',
+    ].join('\n')
+  }
+  if (ctx.mode === 'chat' && ctx.communication?.channel === 'unknown') {
+    return [
+      '## 当前模式：渠道未知的对话',
+      '自然回应用户，但通信渠道未经确认。不要据此推断用户在你的地点或把用户加入现场参与者。',
+      '不要声称发生了当面会面；只有服务端提供有效在场证据时才可描述现场交谈。',
+      '工具调用用户看不到，回复正文才是对用户说的话。',
+    ].join('\n')
+  }
   switch (ctx.mode) {
     case 'chat':
       return [
@@ -36,7 +55,7 @@ function modeInstruction(ctx: AgentContextData): string {
     case 'simulate':
       return [
         '## 当前模式：What-if 生活',
-        '你正身处一条 what-if 时间线。用户消息里是分叉设定。',
+        '你正身处一条 what-if 时间线；只依据居民可见的证据继续生活。',
         '从分叉点出发，继续过你的生活：',
         '1. 连续调用 act 逐条记录接下来发生的关键事件（每条给出具体的 simTime，按时间顺序推进，事件之间要有因果与连贯性，符合你的性格与目标）。',
         '2. 事件 8-12 条为宜，覆盖分叉后一段有意义的时光。',
@@ -52,7 +71,7 @@ function modeInstruction(ctx: AgentContextData): string {
  * 身份 → 行为 → 说话方式 → 技能 → 记忆 → 关系 → 边界与未知（不编造）
  * → 当前状态/世界/时间 → 模式指令 → 产品语言约束
  */
-export function buildSystemPrompt(ctx: AgentContextData): string {
+export function buildSystemPrompt(ctx: ResidentPromptContext): string {
   const { model, state, world, timeline } = ctx
 
   const sourceMem = items('源记忆（来自你人生的底色）', model.memories)
@@ -65,6 +84,9 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
   const knowledgeSection = ctx.knownFacts.length
     ? `## 在这个宇宙里你可依据的记录\n${ctx.knownFacts.map(f => `- [${f.certainty === 'fact' ? '已证实' : '传闻'}；来源 ${f.sourceFactId}] ${f.text}`).join('\n')}\n未列出的私人消息不属于你的知识；传闻不能说成已证实。`
     : '## 在这个宇宙里你可依据的记录\n没有新的已记录消息。不要把别人的私人消息当成自己知道的事。'
+  const dialogueEvidence = ctx.evidence?.filter(evidence => evidence.kind === 'utterance') ?? []
+  const dialogueSection = dialogueEvidence.length
+    ? `## 你实际听到的发言\n以下只证明这些话曾被说出，不证明话中内容属实；转述中的传闻仍是传闻。\n${dialogueEvidence.map(evidence => `- ${evidence.content}`).join('\n')}` : ''
 
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
@@ -81,6 +103,7 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
     items('技能与爱好', model.skills),
     memorySection,
     knowledgeSection,
+    dialogueSection,
     items('关系', model.relationships),
     [
       '## 边界与未知（诚实红线）',
@@ -98,7 +121,7 @@ export function buildSystemPrompt(ctx: AgentContextData): string {
       `现在的时间：${formatWorldTime(timeline.simNow, world.timeZone)}`,
       `地点：${state.location}；活动：${state.activity}；情绪：${state.mood}；近期目标：${state.goal}`,
       timeline.parentTimelineId
-        ? `你所在的是一条 what-if 分叉时间线（分叉设定见下），分叉点之前的主线记忆你同样拥有。\n分叉设定：${timeline.forkScenarioJson ?? ''}`
+        ? '你身处一条 what-if 分叉时间线。你只知道自己亲历、实际听到或有来源支持的信息。'
         : '你所在的是主线时间线。',
     ].join('\n'),
     modeInstruction(ctx),

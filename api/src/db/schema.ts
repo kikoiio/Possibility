@@ -117,6 +117,44 @@ export const timelines = sqliteTable('timelines', {
   forkSnapshotJson: text('fork_snapshot_json'),
 })
 
+/** Child-timeline memories written before the resident-safe prompt cutover require review. */
+export const residentMemorySafety = sqliteTable('resident_memory_safety', {
+  timelineId: text('timeline_id').primaryKey().references(() => timelines.id),
+  safeAfterCreatedAt: text('safe_after_created_at').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+export const residentMemoryRepairRuns = sqliteTable('resident_memory_repair_runs', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  personId: text('person_id').notNull().references(() => persons.id),
+  status: text('status').notNull().default('pending'),
+  cursorCreatedAt: text('cursor_created_at'),
+  cursorMemoryId: text('cursor_memory_id'),
+  batchSize: integer('batch_size').notNull(),
+  scanned: integer('scanned').notNull().default(0),
+  rebuilt: integer('rebuilt').notNull().default(0),
+  unreconstructable: integer('unreconstructable').notNull().default(0),
+  lastError: text('last_error'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('resident_memory_repair_scope').on(t.worldId, t.timelineId, t.personId),
+  index('resident_memory_repair_status').on(t.status, t.updatedAt),
+])
+
+export const residentMemoryRepairItems = sqliteTable('resident_memory_repair_items', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => residentMemoryRepairRuns.id),
+  sourceMemoryId: text('source_memory_id').notNull().references(() => memories.id),
+  status: text('status').notNull(),
+  replacementMemoryId: text('replacement_memory_id').references(() => memories.id),
+  sourceIdsJson: text('source_ids_json').notNull().default('[]'),
+  reason: text('reason'),
+  createdAt: text('created_at').notNull(),
+}, t => [uniqueIndex('resident_memory_repair_source').on(t.runId, t.sourceMemoryId)])
+
 /** ForkSnapshot 正文外置存储(0028):timelines.forkSnapshotJson 只留 $ref 指针;旧行内 v1 永久可读 */
 export const forkSnapshots = sqliteTable('fork_snapshots', {
   timelineId: text('timeline_id')
@@ -408,6 +446,7 @@ export const chatRequests = sqliteTable('chat_requests', {
   worldId: text('world_id').notNull().references(() => worlds.id),
   timelineId: text('timeline_id').notNull().references(() => timelines.id),
   personId: text('person_id').notNull().references(() => persons.id),
+  channel: text('channel').notNull().default('unknown'),
   contentHash: text('content_hash').notNull(),
   userMessageId: text('user_message_id').notNull().references(() => messages.id),
   replyMessageId: text('reply_message_id').notNull(),
@@ -484,6 +523,7 @@ export const worldVisits = sqliteTable('world_visits', {
   userId: text('user_id').notNull().references(() => users.id),
   timelineId: text('timeline_id').notNull().references(() => timelines.id),
   eventCursor: integer('event_cursor').notNull().default(0),
+  revisionVersion: integer('revision_version').notNull().default(0),
   seenAt: text('seen_at').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.timelineId] })])
 

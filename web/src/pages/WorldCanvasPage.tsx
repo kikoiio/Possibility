@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
+  ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
 import { SceneHistoryPanel, type SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
 import { buildSceneOverlay } from '../scene/life/overlay'
@@ -79,6 +79,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
+  const [forkPrefill, setForkPrefill] = useState<{ key: string; whatIf: string; simTime: string } | null>(null)
   const [compareOpen, setCompareOpen] = useState(false)
   const [llmConfigOpen, setLlmConfigOpen] = useState(false)
   const [presenceOpen, setPresenceOpen] = useState(false)
@@ -376,24 +377,25 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     }
   }
 
-  const handleFork = async (scenario: ForkScenarioInput): Promise<boolean> => {
+  const handleFork = async (scenario: ForkScenarioInput, f1?: { expectedSourceVersion: number; initialAction: ForkInitialAction }): Promise<boolean> => {
     const sourceTimelineId = activeTimelineId
     if (!sourceTimelineId || forking.current) return false
     forking.current = true
     setActionError('')
     try {
-      const inputKey = JSON.stringify(scenario)
+      const inputKey = JSON.stringify({ scenario, f1 })
       if (inputKey !== forkInputRef.current) { forkRequestIdRef.current = null; forkInputRef.current = inputKey }
       const requestId = forkRequestIdRef.current ?? crypto.randomUUID()
       forkRequestIdRef.current = requestId
-      const fork = await worldsApi.fork(worldId, sourceTimelineId, requestId, scenario)
+      const fork = await worldsApi.fork(worldId, sourceTimelineId, requestId, scenario, f1)
       forkRequestIdRef.current = null
       setForkHint({ ...fork, sourceId: fork.sourceTimelineId, newId: fork.id })
       await refreshForkResult(fork)
       return true
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : '分支创建失败；输入已保留，可重试。')
-      return false
+      const message = e instanceof Error ? e.message : '分支创建失败；输入已保留，可重试。'
+      setActionError(message)
+      throw new Error(message)
     } finally { forking.current = false }
   }
   /** 一句话预览(S2/F1):LLM 起草五字段场景,不落库;S4/F6 可带已吸附的历史时刻 */
@@ -735,6 +737,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         historyRange={historyRange?.tid === activeTimelineId ? historyRange.range : undefined}
         onForkOpen={handleForkOpen}
         onCheckMoment={handleCheckMoment}
+        forkPrefill={forkPrefill}
       />
       {canEditScene && snapshot.world.isDemo && voxelSpaces && <button data-testid="demo-regenerate" disabled={regeneratingDemo} onClick={() => void regenerateDemo()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">{regeneratingDemo ? '重新生成中…' : '重新生成演示世界'}</button>}
       {canInteract && <button onClick={() => setInjectOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">干预</button>}
@@ -775,6 +778,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         newId={forkHint?.newId ?? activeTimelineId}
         name={forkHint?.name}
         whatIf={forkHint?.whatIf}
+        actionSummary={forkHint?.action?.summary}
         refreshError={forkRefreshError}
         onRetry={forkHint ? () => void refreshForkResult(forkHint) : undefined}
         onCompare={forkHint ? () => { if (!forkRefreshError) { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) } } : undefined}
@@ -784,7 +788,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         }}
       />
     )}
-    {forkHint && <p role="status" className="text-xs text-ink-soft sm:hidden">已创建分支「{forkHint.name}」：{forkHint.whatIf}{forkRefreshError && <button onClick={() => void refreshForkResult(forkHint)}>重试刷新</button>}{!forkRefreshError && <button onClick={() => { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) }}>比较本次分支</button>}</p>}
+    {forkHint && <p role="status" className="text-xs text-ink-soft sm:hidden">已创建分支「{forkHint.name}」：{forkHint.whatIf}{forkHint.action?.summary && ` · 已执行：${forkHint.action.summary}`}{forkRefreshError && <button onClick={() => void refreshForkResult(forkHint)}>重试刷新</button>}{!forkRefreshError && <button onClick={() => { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) }}>比较本次分支</button>}</p>}
     {injectOpen && canInteract && (
       <div className="rounded-2xl bg-white/85 px-4 py-3" data-testid="inject-overlay">
         <p className="mb-2 text-xs text-[#849184]">叙事干预会写入当前宇宙历史，并由居民在后续生活中自行感知和回应；它不等同于直接改变环境事实。</p>
@@ -807,7 +811,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       />}
       {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{formatWorldTime(snapshot.simNow, snapshot.world.timeZone)}</span></div>}
     </div></div>
-    {lifeOpen && activeTimelineId && <LifePanel worldId={worldId} timelineId={activeTimelineId} timeZone={snapshot.world.timeZone} onClose={() => setLifeOpen(false)} />}
+    {lifeOpen && activeTimelineId && <LifePanel worldId={worldId} timelineId={activeTimelineId} timeZone={snapshot.world.timeZone} onClose={() => setLifeOpen(false)} onForkAtMoment={(simTime, premise) => { setLifeOpen(false); setForkPrefill({ key: crypto.randomUUID(), whatIf: premise, simTime }) }} />}
     {compareOpen && activeTimelineId && snapshot.timelines.length > 1 && <ComparePanel worldId={worldId} currentTimelineId={activeTimelineId} timelines={snapshot.timelines} initialLeftTimelineId={compareInitial?.left} initialRightTimelineId={compareInitial?.right} onClose={() => setCompareOpen(false)} />}
     {presenceOpen && activeTimelineId && <ScenePanel key={`${worldId}:${activeTimelineId}`} worldId={worldId} timelineId={activeTimelineId} timeZone={snapshot.world.timeZone} worldStatus={snapshot.world.status} readOnly={snapshot.evidence.level !== 'complete'} locations={snapshot.world.locations} initialLocation={presenceLocation ?? ''} onClose={() => { setPresenceOpen(false); setPresenceLocation(null) }} />}
   </main>

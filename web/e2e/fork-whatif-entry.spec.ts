@@ -16,6 +16,10 @@ const SCENARIO = {
   changedVariable: '信件是否送达',
   participants: ['小夜'],
   invariants: ['分叉前的共同历史不变'],
+  sourceVersion: 1,
+  actionProposal: { type: 'environment', location: '主楼', condition: 'weather', value: '晴朗' },
+  sourceCandidates: [],
+  actionTargets: { residents: [{ id: 'person-1', name: '小夜' }], locations: ['主楼'] },
 }
 
 async function stubForkApis(page: Page, opts: { onPreview?: () => void; onFork?: (body: unknown) => void } = {}) {
@@ -41,7 +45,7 @@ test.describe('S2 一句话分叉入口', () => {
   test('世界级主流程:一句话 → 预览确认卡(startTime 只读) → 分叉 → 横幅 → 分屏', async ({ page }) => {
     const errors = watchErrors(page)
     await stubSplitApis(page, { timelines: MAIN_AND_FORK })
-    let forkBody: { scenario?: Record<string, unknown> } | null = null
+    let forkBody: { scenario?: Record<string, unknown>; initialAction?: Record<string, unknown>; expectedSourceVersion?: number } | null = null
     await stubForkApis(page, { onFork: (body) => { forkBody = body as typeof forkBody } })
     await openForkDialog(page)
 
@@ -66,6 +70,8 @@ test.describe('S2 一句话分叉入口', () => {
     expect(forkBody?.scenario?.changedVariable).toBe('信件是否送达')
     expect(forkBody?.scenario?.participants).toEqual(['小夜', '阿澄'])
     expect(forkBody?.scenario?.invariants).toEqual(['分叉前的共同历史不变'])
+    expect(forkBody?.expectedSourceVersion).toBe(1)
+    expect(forkBody?.initialAction).toMatchObject({ type: 'environment', location: '主楼', condition: 'weather', value: '晴朗' })
 
     // 落点(AC5):横幅出现,点击进分屏左源右新
     await expect(page.getByTestId('fork-compare-hint')).toBeVisible()

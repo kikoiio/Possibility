@@ -8,6 +8,8 @@ import { lifeContext } from '../life/service'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
+import { residentTimeline, type ResidentTimeline } from './resident-context'
+import { buildResidentEvidence, type ResidentEvidence } from './resident-evidence'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
@@ -48,7 +50,8 @@ export interface WorldSnapshot {
 export interface EngineContext {
   lifeContext?: string
   knownFacts?: VisibleKnowledgeFact[]
-  snapshot: WorldSnapshot
+  evidence?: ResidentEvidence[]
+  snapshot: Omit<WorldSnapshot, 'timeline'> & { timeline: ResidentTimeline }
   person: Person
   model: PersonModel
   state: PersonState
@@ -58,6 +61,9 @@ export interface EngineContext {
   sameLocationAwake: Person[] // 同地点、清醒、空闲（相遇候选）
   scheduleItems: ScheduleItem[] | null
 }
+
+/** The engine data whose timeline has already crossed the resident-safe prompt boundary. */
+export type ResidentEnginePromptContext = EngineContext
 
 export function parseLocations(world: World): LocationDef[] {
   try {
@@ -277,6 +283,9 @@ export async function buildEngineContext(db: Db, personId: string, snapshot: Wor
 
   const structured = await readWorldState(db, snapshot.world.id, snapshot.timeline.id)
   const knownFacts = visibleKnowledgeForPerson(structured.current, personId)
+  const evidence = await buildResidentEvidence(db, { timelineId: snapshot.timeline.id, personId, knownFacts })
 
-  return { snapshot, person, model, state, others, memories, knownFacts, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule, lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
+  return { snapshot: { ...snapshot, timeline: residentTimeline(snapshot.timeline) }, person, model, state, others, memories,
+    knownFacts, evidence, unperceivedEvents, sameLocationAwake, scheduleItems: mySchedule,
+    lifeContext: await lifeContext(db, personId, snapshot.timeline.id) }
 }

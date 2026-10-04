@@ -1,12 +1,26 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { memories, memoryAccess, timelines, worldPersons } from '../db/schema'
+import { memories, memoryAccess, residentMemorySafety, timelines, worldPersons } from '../db/schema'
 import { readForkSnapshot, selectVisibleMemories, visibilityBuckets, type MemoryBucket } from './visibility'
 import { hydrateTimelines } from '../life/snapshot-store'
 import { DEFAULT_RETRIEVAL_CONFIG, type RetrievalConfig } from './retrieval-config'
 
 type Timeline = typeof timelines.$inferSelect
 export type Memory = typeof memories.$inferSelect
+
+/** Quarantine legacy memories from forked timelines until they have resident-visible provenance. */
+async function filterUnsafeForkMemories(db: Db, rows: Memory[]): Promise<Memory[]> {
+  const timelineIds = [...new Set(rows.flatMap(row => row.timelineId ? [row.timelineId] : []))]
+  if (!timelineIds.length) return rows
+  const cutoffs = await db.select().from(residentMemorySafety)
+    .where(inArray(residentMemorySafety.timelineId, timelineIds)).all()
+  const safeAfter = new Map(cutoffs.map(row => [row.timelineId, row.safeAfterCreatedAt]))
+  return rows.filter(row => {
+    if (!row.timelineId) return true
+    const cutoff = safeAfter.get(row.timelineId)
+    return !cutoff || row.createdAt > cutoff
+  })
+}
 
 /**
  * S2 摘要层级推导（唯一来源，D6）：显式 level 优先；
@@ -65,7 +79,8 @@ export async function visibleMemories(db: Db, personId: string, timeline: Timeli
   const visible = selectVisibleMemories(rows, personId, timeline, worldTimelines)
   // A legacy NULL bucket cannot be attributed to a particular world once an asset is reused.
   // Keep it readable in the old data, but do not feed it into another universe's decisions.
-  return sharedAcrossWorlds ? visible.filter(m => m.timelineId !== null) : visible
+  const worldScoped = sharedAcrossWorlds ? visible.filter(m => m.timelineId !== null) : visible
+  return filterUnsafeForkMemories(db, worldScoped)
 }
 
 /**
@@ -191,6 +206,8 @@ export async function retrieveForPrompt(db: Db, personId: string, timeline: Time
     pool = buckets ? await candidateMemories(db, personId, buckets, situation, config) : []
   }
 
+  pool = await filterUnsafeForkMemories(db, pool)
+
   const byCreatedDesc = [...pool].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const picked = new Map<string, Memory>()
   for (const m of byCreatedDesc.slice(0, config.recentFloor)) picked.set(m.id, m)
@@ -242,6 +259,8 @@ export async function needsCompression(
   threshold: number,
 ): Promise<boolean> {
   const main = await mainTimelineOf(db, timeline.worldId)
+  const safety = await db.select().from(residentMemorySafety)
+    .where(eq(residentMemorySafety.timelineId, timeline.id)).get()
   const rows = await db
     .select({ id: memories.id })
     .from(memories)
@@ -251,6 +270,7 @@ export async function needsCompression(
         bucketCondition(timeline, main),
         eq(memories.summarized, false),
         sourceLevelCondition(sourceLevel),
+        ...(safety ? [gt(memories.createdAt, safety.safeAfterCreatedAt)] : []),
       ),
     )
     .limit(threshold + 1)
@@ -267,6 +287,8 @@ export async function oldestCompressible(
   n: number,
 ): Promise<Memory[]> {
   const main = await mainTimelineOf(db, timeline.worldId)
+  const safety = await db.select().from(residentMemorySafety)
+    .where(eq(residentMemorySafety.timelineId, timeline.id)).get()
   return db
     .select()
     .from(memories)
@@ -276,6 +298,7 @@ export async function oldestCompressible(
         bucketCondition(timeline, main),
         eq(memories.summarized, false),
         sourceLevelCondition(sourceLevel),
+        ...(safety ? [gt(memories.createdAt, safety.safeAfterCreatedAt)] : []),
       ),
     )
     .orderBy(asc(memories.createdAt))

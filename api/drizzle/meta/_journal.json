@@ -239,6 +239,27 @@
       "when": 1790965200000,
       "tag": "0033_s4b_world_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791072000000,
+      "tag": "0034_resident_memory_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791100479571,
+      "tag": "0035_e1_return_revision_watermark",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791102057290,
+      "tag": "0036_k2_chat_channel",
+      "breakpoints": true
     }
   ]
 }

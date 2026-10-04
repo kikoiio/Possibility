@@ -1,7 +1,7 @@
 import type { Db } from '../db/client'
 import type { ToolDef } from '../llm/client'
 import { clampImportance } from './memory'
-import type { AgentEvent, AgentMode } from './types'
+import type { AgentEvent, AgentMode, CommunicationChannel } from './types'
 import { recordResidentState } from '../world-state/system'
 import { WorldStateError } from '../world-state/types'
 
@@ -74,11 +74,15 @@ export interface ToolRunState {
   runId: string
   isMain: boolean
   mode: AgentMode
+  communicationChannel?: CommunicationChannel
   clock: number // 虚拟时钟（ms 时间戳），随 act 推进
   windowEnd: number | null // catchup 模式的窗口右端（真实 now）
   acts: number
   maxActs: number
   current: { location: string; activity: string; mood: string; goal: string }
+  stagedPatch: Partial<ToolRunState['current']>
+  stagedEvents: { simTime: string; title: string; description: string }[]
+  stagedMemories: { type: 'timeline' | 'relationship' | 'world'; content: string; importance: number }[]
 }
 
 /** 推进虚拟时钟：优先用模型给的时间，否则按模式步进；单调不减、不超过窗口右端（导出供单测） */
@@ -118,6 +122,10 @@ export async function executeTool(
     const description = String(args.description ?? '').trim()
     const previousClock = run.clock
     const simTime = nextSimTime(run, args.simTime)
+    if (run.communicationChannel === 'phone') {
+      run.stagedEvents.push({ simTime, title, description: description.slice(0, 2000) })
+      return { result: { ok: true, simTime, staged: true }, events: out }
+    }
     let result
     try {
       result = await recordResidentState(run.db, {
@@ -144,6 +152,16 @@ export async function executeTool(
       if (typeof v === 'string' && v.trim()) patch[k] = v.trim()
     }
     const simTime = new Date(run.clock).toISOString()
+    if (run.communicationChannel === 'phone') {
+      if (patch.location && patch.location !== run.current.location) {
+        return { result: { error: '电话交谈不能改变居民地点' }, events: out }
+      }
+      delete patch.location
+      delete patch.activity
+      Object.assign(run.stagedPatch, patch)
+      Object.assign(run.current, patch)
+      return { result: { ok: true, staged: true, note: '地点和电话活动由服务端管理' }, events: out }
+    }
     try {
       await recordResidentState(run.db, {
         worldId: run.worldId, timelineId: run.timelineId, sourceKey: `${run.runId}:state:${run.acts}:${simTime}`,
@@ -166,6 +184,12 @@ export async function executeTool(
       ? String(args.type)
       : 'timeline'
     const simTime = new Date(run.clock).toISOString()
+    if (run.communicationChannel === 'phone') {
+      if (run.stagedMemories.length >= 10) return { result: { error: '本轮记忆条数已达上限' }, events: out }
+      run.stagedMemories.push({ type: type as 'timeline' | 'relationship' | 'world',
+        content: content.slice(0, 2000), importance: clampImportance(args.importance) })
+      return { result: { ok: true, staged: true }, events: out }
+    }
     let result
     try {
       result = await recordResidentState(run.db, {

@@ -20,6 +20,7 @@ describe('agent tool world-state boundary', () => {
       db: f.db, worldId: 'home-world', personId: 'ada', timelineId: 'home-main', runId: 'fork:one',
       isMain: false, mode: 'simulate', clock: Date.parse(WORLD_TIME), windowEnd: null,
       acts: 0, maxActs: 3, current: { location: 'Cafe', activity: 'Reading', mood: 'Calm', goal: 'Listen' },
+      stagedPatch: {}, stagedEvents: [], stagedMemories: [],
     }
     const result = await executeTool(run, 'act', { title: '遇见邻居', description: '在咖啡馆和邻居交谈。' })
     const stateResult = await executeTool(run, 'update_state', { activity: '和邻居交谈' })

@@ -3,7 +3,7 @@ import { conversations, chatRequests, messages, persons, personStates, sessions,
 import app from '../index'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
 import { cancelChatRequest, ChatRequestConflict, ChatRequestTerminalError, completeChatRequest,
-  failChatRequest, heartbeatChatRequest, recoverExpiredChatRequests, reserveChatRequest } from './requests'
+  buildChatCompletionWrites, failChatRequest, heartbeatChatRequest, recoverExpiredChatRequests, reserveChatRequest } from './requests'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { fixture?.close(); fixture = null; vi.unstubAllGlobals() })
@@ -51,7 +51,7 @@ it('discovers pending requests by owner and conversation without sharing browser
 
   const recovered = await app.request('/api/conversations/conversation-a/requests/pending', { headers }, f.env)
   expect(await recovered.json()).toEqual({ requests: [expect.objectContaining({
-    requestId: 'browser-a-pending', status: 'pending', heartbeatAt: Date.parse(WORLD_TIME),
+    requestId: 'browser-a-pending', channel: 'unknown', status: 'pending', heartbeatAt: Date.parse(WORLD_TIME),
   })] })
   expect((await app.request('/api/conversations/unknown/requests/pending', { headers }, f.env)).status).toBe(404)
   expect((await app.request('/api/conversations/conversation-a/requests/pending', {
@@ -78,6 +78,7 @@ it('rejects content, conversation, and ownership reuse of one request id', async
     { worldId: 'other-world' },
     { timelineId: 'other-main' },
     { personId: 'another-person' },
+    { channel: 'phone' as const },
   ]) {
     await expect(reserveChatRequest(f.db, { ...input, ...changed })).rejects.toBeInstanceOf(ChatRequestConflict)
   }
@@ -149,6 +150,15 @@ it('fences a late worker after cancellation and rolls back its reply', async () 
   await cancelChatRequest(f.db, input.requestId)
   await expect(completeChatRequest(f.db, input.requestId, 'Too late.')).rejects.toBeInstanceOf(ChatRequestTerminalError)
   expect((await f.db.select().from(messages).all()).map(row => row.id)).toEqual(['chat:user:stable-request'])
+})
+
+it('fences a phone command batch after cancellation so all world writes roll back', async () => {
+  const f = await setup()
+  const reservation = await reserveChatRequest(f.db, { ...input, channel: 'phone' })
+  await cancelChatRequest(f.db, input.requestId)
+  await expect(f.db.batch(buildChatCompletionWrites(f.db, reservation.request, 'Too late.'))).rejects.toThrow()
+  expect((await f.db.select().from(messages).all()).map(row => row.id)).toEqual(['chat:user:stable-request'])
+  expect(await f.db.select().from(chatRequests).get()).toMatchObject({ channel: 'phone', status: 'cancelled' })
 })
 
 it('rolls back reply insertion when completion state update fails', async () => {

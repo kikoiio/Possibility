@@ -3,7 +3,7 @@ import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
 import { streamSSE } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
-import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldModelVersions, worldPersons, worldScenes, worlds } from '../db/schema'
+import { dialogues, persons, personStates, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons, worldScenes, worlds } from '../db/schema'
 import {
   deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
   type SerializedVoxelDocument,
@@ -12,6 +12,8 @@ import { libraryManifest } from '../voxel/library-manifest'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
 import { buildWorldForkBrief, WORLD_PREVIEW_SYSTEM } from '../life/fork-preview'
+import { forkActionSummary, forkSourceCandidates, normalizeForkActionProposal, normalizeForkInitialAction, prepareForkAction,
+  type PreparedForkAction } from '../life/fork-action'
 import { complete } from '../llm/client'
 import { byokFailureHint, resolveLlmConfig } from '../llm/resolve'
 import { extractJson, normalizeScenario } from '../timelines/routes'
@@ -24,8 +26,8 @@ import { draftWorld } from './draft'
 import { budgetFromEnv, touchWorldActivity } from '../engine/budget'
 import { BudgetRefusal, gateUniverseWrite, gateWorld, worldReservation } from '../engine/guard'
 import { commitWorldCommand } from '../world-state/commit'
-import { checkMoment, historyRange, type HistoryRejectCode } from '../world-state/reconstruct'
-import { createRootProjectionBaseline, ensureUniverseRevision } from '../world-state/model'
+import { checkMoment, historyRange, reconstructAt, type HistoryRejectCode } from '../world-state/reconstruct'
+import { createRootProjectionBaseline, ensureUniverseRevision, readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { effectiveTimeZone, isValidTimeZone } from './time-zone'
 import { WorldStateError, type WorldAction } from '../world-state/types'
@@ -539,6 +541,31 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
     startTime = check.effectiveMoment
   }
 
+  const sourceRevision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, source.id)).get()
+  const currentSourceVersion = sourceRevision?.version ?? 0
+  const actionResidentRows = await db.select({ id: persons.id, name: persons.name }).from(worldPersons)
+    .innerJoin(persons, eq(persons.id, worldPersons.personId)).where(eq(worldPersons.worldId, world.id)).all()
+  const previewModel = await readPinnedWorldModel(db, world.id, source.id)
+  let actionLocations: { name: string }[] = previewModel?.locations ?? []
+  if (!previewModel) try { actionLocations = JSON.parse(world.locationsJson || '[]') as { name: string }[] } catch { /* invalid legacy world */ }
+  let evidenceFacts: (typeof worldFacts.$inferSelect)[]
+  let forkPointVersion = currentSourceVersion
+  if (Date.parse(startTime) !== Date.parse(source.simNow)) {
+    const reconstructed = await reconstructAt(db, world.id, source.id, startTime)
+    if (!reconstructed.ok) return c.json({ error: reconstructed.message }, historyRejectStatus(reconstructed.reasonCode))
+    evidenceFacts = reconstructed.rows.worldFacts
+    forkPointVersion = reconstructed.evidence.throughVersion
+  } else {
+    const state = await readWorldState(db, world.id, source.id)
+    evidenceFacts = state.facts
+    forkPointVersion = state.version
+  }
+  const sourceFacts = evidenceFacts.filter(fact => Date.parse(fact.simTime) <= Date.parse(startTime)
+    && (fact.timelineId !== source.id || fact.version <= forkPointVersion))
+  const allowedTimelineIds = new Set(sourceFacts.map(fact => fact.timelineId))
+  allowedTimelineIds.add(source.id)
+  const sourceCandidates = forkSourceCandidates(sourceFacts, allowedTimelineIds, source.id, forkPointVersion)
+
   const cfg = budgetFromEnv(c.env)
   const gate = await gateWorld(db, world.id, cfg)
   if (!gate.ok) return c.json({ error: gate.error }, gate.status)
@@ -557,8 +584,14 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
         ],
         { maxTokens: 8000 },
       )
+      const parsed = extractJson(raw)
+      const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
       // startTime 纪律:缺省当前时刻;历史时刻已被 checkMoment 吸附校验
-      return c.json({ ...normalizeScenario(extractJson(raw), whatIf, source.simNow), startTime })
+      return c.json({ ...normalizeScenario(record, whatIf, source.simNow), startTime,
+        sourceVersion: currentSourceVersion,
+        actionProposal: normalizeForkActionProposal(record.actionProposal),
+        sourceCandidates,
+        actionTargets: { residents: actionResidentRows, locations: actionLocations.map(location => location.name) } })
     } catch (e) {
       if (e instanceof BudgetRefusal) return c.json({ error: e.message }, e.status)
       lastError = e
@@ -572,9 +605,15 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
 /** 世界级 Fork（F9）：复制世界设定与全部人物状态/当日日程到新线；记忆经可见性规则自然继承 */
 worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   try {
-  const body = await c.req.json<{ requestId?: string; scenario?: unknown }>().catch(() => null)
+  const body = await c.req.json<{ requestId?: string; scenario?: unknown; expectedSourceVersion?: number; initialAction?: unknown }>().catch(() => null)
   const requestId = body?.requestId
   if (requestId != null && (typeof requestId !== 'string' || !requestId.trim() || requestId.length > 100)) return c.json({ error: '分叉请求 ID 无效' }, 400)
+  const hasInitialAction = !!body && Object.prototype.hasOwnProperty.call(body, 'initialAction')
+  const initialActionDraft = hasInitialAction ? normalizeForkInitialAction(body?.initialAction) : undefined
+  if (hasInitialAction && !requestId) return c.json({ error: '带初始动作的分叉必须提供请求 ID' }, 400)
+  if (hasInitialAction && (!Number.isSafeInteger(body?.expectedSourceVersion) || body!.expectedSourceVersion! < 0)) {
+    return c.json({ error: '分叉预览版本无效，请重新预览' }, 400)
+  }
   const value = body?.scenario
   if (!value || typeof value !== 'object' || Array.isArray(value)) return c.json({ error: '请说明分叉假设与改变条件' }, 400)
   const record = value as Record<string, unknown>
@@ -603,7 +642,8 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   const sourceGate = await gateUniverseWrite(db, world.id, c.req.param('tid'))
-  if (!sourceGate.ok) return c.json({ error: sourceGate.error }, sourceGate.status)
+  const pausedF1Gate = !!initialActionDraft && !sourceGate.ok && sourceGate.error.includes('已暂停')
+  if (!sourceGate.ok && !pausedF1Gate) return c.json({ error: sourceGate.error }, sourceGate.status)
   if (requestId) {
     const existing = await db.select().from(timelines).where(eq(timelines.id, requestId)).get()
     if (existing && existing.worldId === world.id && existing.parentTimelineId === c.req.param('tid')) {
@@ -616,7 +656,21 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
       const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
       const sameScenario = stored !== null && stored.name === scenarioDraft.name && stored.whatIf === scenarioDraft.whatIf && stored.changedVariable === scenarioDraft.changedVariable
         && sameList(storedParticipants, scenarioDraft.participants) && sameList(storedInvariants, scenarioDraft.invariants)
-      if (sameScenario) return c.json({ id: existing.id, sourceTimelineId: c.req.param('tid'), simNow: existing.simNow, name: stored!.name, whatIf: stored!.whatIf })
+      const existingActionCommand = await db.select().from(worldCommands).where(eq(worldCommands.id, `fork:${existing.id}:initial`)).get()
+      const sameAction = (existingActionCommand?.payloadJson ?? null) === (initialActionDraft ? JSON.stringify(initialActionDraft) : null)
+      const sameForkVersion = initialActionDraft
+        ? stored?.expectedSourceVersion === body?.expectedSourceVersion
+          && (!record.startTime || !stored?.startTime || Date.parse(record.startTime as string) === Date.parse(stored.startTime))
+        : stored?.expectedSourceVersion == null
+      if (sameScenario && sameAction && sameForkVersion) {
+        if (!initialActionDraft) return c.json({ id: existing.id, sourceTimelineId: c.req.param('tid'), simNow: existing.simNow, name: stored!.name, whatIf: stored!.whatIf })
+        const actionFact = await db.select().from(worldFacts).where(eq(worldFacts.sourceCommandId, existingActionCommand!.id)).get()
+        if (!actionFact) throw new WorldStateError('分叉动作回执不存在', 409)
+        return c.json({ id: existing.id, sourceTimelineId: c.req.param('tid'), simNow: existing.simNow,
+          name: stored!.name, whatIf: stored!.whatIf,
+          action: { commandId: existingActionCommand!.id, factId: actionFact.id, version: actionFact.version,
+            summary: forkActionSummary(initialActionDraft!) }, replayed: true })
+      }
       return c.json({ error: '分叉请求 ID 已用于不同条件' }, 409)
     }
     if (existing) return c.json({ error: '分叉请求 ID 已用于另一条时间线' }, 409)
@@ -640,6 +694,7 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   const scenario: ForkScenario = {
     ...scenarioDraft,
     startTime,
+    ...(initialActionDraft ? { expectedSourceVersion: body!.expectedSourceVersion } : {}),
   }
 
   const activeCount = await db
@@ -652,8 +707,42 @@ worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
   }
 
   let fork: Awaited<ReturnType<typeof forkTimeline>>
-  fork = await forkTimeline(db, world.id, source.id, scenario, requestId)
-  return c.json({ id: fork.id, sourceTimelineId: source.id, simNow: fork.simNow, name: scenario.name, whatIf: scenario.whatIf, snapshot: {
+  let preparedAction: PreparedForkAction | undefined
+  if (initialActionDraft) {
+    const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, source.id)).get()
+    const actualSourceVersion = revision?.version ?? 0
+    if (actualSourceVersion !== body!.expectedSourceVersion) throw new WorldStateError('源宇宙在创建分叉前已变化；请刷新当前状态后重试。', 409)
+    let sourceFacts: (typeof worldFacts.$inferSelect)[]
+    let forkPointVersion = actualSourceVersion
+    if (Date.parse(startTime) !== Date.parse(source.simNow)) {
+      const reconstructed = await reconstructAt(db, world.id, source.id, startTime)
+      if (!reconstructed.ok) throw new WorldStateError(reconstructed.message, historyRejectStatus(reconstructed.reasonCode))
+      sourceFacts = reconstructed.rows.worldFacts
+      forkPointVersion = reconstructed.evidence.throughVersion
+    } else {
+      const state = await readWorldState(db, world.id, source.id)
+      sourceFacts = state.facts
+      forkPointVersion = state.version
+    }
+    sourceFacts = sourceFacts.filter(fact => Date.parse(fact.simTime) <= Date.parse(startTime)
+      && (fact.timelineId !== source.id || fact.version <= forkPointVersion))
+    const allowedTimelineIds = new Set(sourceFacts.map(fact => fact.timelineId))
+    allowedTimelineIds.add(source.id)
+    const recipientRows = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, world.id)).all()
+    const pinned = await readPinnedWorldModel(db, world.id, source.id)
+    let locations: { name: string }[] = pinned?.locations ?? []
+    if (!pinned) try { locations = JSON.parse(world.locationsJson || '[]') as { name: string }[] } catch { /* invalid legacy world */ }
+    preparedAction = prepareForkAction(initialActionDraft, {
+      recipientIds: new Set(recipientRows.map(row => row.personId)),
+      locationNames: new Set(locations.map(location => location.name)),
+      sourceFacts, allowedTimelineIds, sourceTimelineId: source.id, forkPointVersion,
+    })
+  }
+  fork = await forkTimeline(db, world.id, source.id, scenario, requestId, {
+    ...(initialActionDraft ? { expectedSourceVersion: body!.expectedSourceVersion, initialAction: preparedAction } : {}),
+  })
+  return c.json({ id: fork.id, sourceTimelineId: source.id, simNow: fork.simNow, name: scenario.name, whatIf: scenario.whatIf,
+    ...(fork.action ? { action: fork.action, replayed: false } : {}), snapshot: {
     version: fork.snapshot.version, sourceTimelineId: source.id,
     sourceSimTime: fork.snapshot.sourceSimTime, capturedAt: fork.snapshot.capturedAt,
   } })

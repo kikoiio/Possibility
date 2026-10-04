@@ -25,4 +25,13 @@ describe('system prompt world time', () => {
     const legacy = { ...context, world: { ...context.world, timeZone: null } } as unknown as AgentContextData
     expect(buildSystemPrompt(legacy)).toContain('现在的时间：2026-01-01 00:30 (UTC)')
   })
+
+  it('keeps phone calls remote and unknown chat channels from implying in-person presence', () => {
+    const phone = buildSystemPrompt({ ...context, communication: { channel: 'phone', counterpartId: 'owner' } })
+    expect(phone).toContain('通过电话')
+    expect(phone).toContain('用户不在你的现场')
+    const unknown = buildSystemPrompt({ ...context, communication: { channel: 'unknown' } })
+    expect(unknown).toContain('通信渠道未经确认')
+    expect(unknown).toContain('把用户加入现场参与者')
+  })
 })
