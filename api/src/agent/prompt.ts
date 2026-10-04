@@ -14,6 +14,25 @@ function items(title: string, list: ModelItem[]): string {
 export { items as renderModelItems }
 
 function modeInstruction(ctx: ResidentPromptContext): string {
+  if (ctx.mode === 'chat' && ctx.communication?.channel === 'phone') {
+    return [
+      '## 当前模式：电话对话',
+      '你正在通过电话和远程用户交谈。用户不在你的现场，也不属于当前地点的在场者。',
+      '你的当前位置由服务端状态提供；不要声称用户已经到达、进入或与你同处一地。邀请用户来访不代表用户已到达。',
+      '不要通过 update_state 改变地点。活动状态由服务端记录为电话交谈。',
+      '- 对话中值得长期记住的事调用 remember。',
+      '- 实际发生的行动调用 act。',
+      '工具调用用户看不到，回复正文才是对用户说的话。',
+    ].join('\n')
+  }
+  if (ctx.mode === 'chat' && ctx.communication?.channel === 'unknown') {
+    return [
+      '## 当前模式：渠道未知的对话',
+      '自然回应用户，但通信渠道未经确认。不要据此推断用户在你的地点或把用户加入现场参与者。',
+      '不要声称发生了当面会面；只有服务端提供有效在场证据时才可描述现场交谈。',
+      '工具调用用户看不到，回复正文才是对用户说的话。',
+    ].join('\n')
+  }
   switch (ctx.mode) {
     case 'chat':
       return [

@@ -37,6 +37,12 @@ export interface ForkScenario {
 }
 
 export type AgentMode = 'chat' | 'catchup' | 'simulate'
+export type CommunicationChannel = 'phone' | 'in_person' | 'unknown'
+
+export interface CommunicationContext {
+  channel: CommunicationChannel
+  counterpartId?: string
+}
 
 export type AgentEvent =
   | { type: 'text'; delta: string }

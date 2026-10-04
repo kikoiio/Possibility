@@ -46,6 +46,8 @@ export type WorldAction =
       events: { simTime: string; title: string; description: string }[]
       memories: { type: 'thought' | 'timeline' | 'relationship' | 'world'; content: string; importance: number;
         mentions?: string[]; location?: string | null; topics?: string[] }[]
+      communicationChannel?: 'phone' | 'in_person' | 'unknown'
+      communicationRequestId?: string
     }
 
 export interface WorldCommandInput {

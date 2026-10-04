@@ -564,6 +564,13 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     const person = await db.select().from(persons).where(eq(persons.id, action.personId)).get()
     if (!member || !state || !person) throw new WorldStateError('居民状态不存在', 404)
     if (!['schedule', 'beat', 'injection', 'agent_act', 'agent_state', 'agent_memory'].includes(action.cause)) throw new WorldStateError('居民状态变更来源无效', 400)
+    if (action.communicationChannel != null && !['phone', 'in_person', 'unknown'].includes(action.communicationChannel)) {
+      throw new WorldStateError('居民通信渠道无效', 400)
+    }
+    if (action.communicationRequestId != null && (action.communicationChannel !== 'phone'
+      || !action.communicationRequestId.trim() || action.communicationRequestId.length > 100)) {
+      throw new WorldStateError('居民通信请求来源无效', 400)
+    }
     if (!action.patch || typeof action.patch !== 'object' || Array.isArray(action.patch)) throw new WorldStateError('居民状态变更无效', 400)
     const keys = Object.keys(action.patch)
     if (keys.some(key => !['location', 'activity', 'mood', 'goal', 'lastBeatSimTime'].includes(key))) {
@@ -588,13 +595,13 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
       if (action.cause !== 'agent_act' || !Number.isFinite(nextTime) || nextTime < currentTime
         || nextTime - currentTime > 24 * 60 * 60_000) throw new WorldStateError('居民模拟时间推进无效', 400)
     }
-    if (!Array.isArray(action.events) || action.events.length > 3
+    if (!Array.isArray(action.events) || action.events.length > 5
       || action.events.some(event => !event || !Number.isFinite(Date.parse(event.simTime)) || event.simTime < action.windowStart
         || event.simTime > resultSimTime || typeof event.title !== 'string' || !event.title.trim() || event.title.length > 60
         || typeof event.description !== 'string' || !event.description.trim() || event.description.length > 2000)) {
       throw new WorldStateError('居民经历记录无效', 400)
     }
-    if (!Array.isArray(action.memories) || action.memories.length > 2
+    if (!Array.isArray(action.memories) || action.memories.length > 10
       || action.memories.some(memory => !memory || !['thought', 'timeline', 'relationship', 'world'].includes(memory.type)
         || typeof memory.content !== 'string' || !memory.content.trim() || memory.content.length > 2000
         || !Number.isFinite(memory.importance) || memory.importance < 1 || memory.importance > 10)) {
@@ -603,6 +610,7 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     const changes = Object.fromEntries(keys.map(key => [key, action.patch[key as keyof typeof action.patch]]))
     const after = { ...state, ...action.patch, simTime: resultSimTime }
     const changed = keys.some(key => state[key as keyof typeof state] !== action.patch[key as keyof typeof action.patch])
+      || action.communicationChannel === 'phone'
     if (!changed && !action.events.length && !action.memories.length) throw new WorldStateError('状态没有变化', 409)
     return {
       factType: action.patch.location != null && state.location !== action.patch.location ? 'location' : 'resident_state',

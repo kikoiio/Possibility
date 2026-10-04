@@ -328,7 +328,10 @@ it('advances the selected world, completes ordinary chat, and forks from the res
   expect(await replay.text()).toContain('"replayed":true')
   expect((await f.db.select().from(messages).where(eq(messages.conversationId, conversation.id)).all())
     .map(message => message.role)).toEqual(['user', 'person'])
-  expect(await f.db.select().from(worldFacts).all()).toEqual(factsBeforeChat)
+  const factsAfterChat = await f.db.select().from(worldFacts).all()
+  expect(factsAfterChat).toHaveLength(factsBeforeChat.length + 1)
+  expect(factsAfterChat.slice(0, factsBeforeChat.length)).toEqual(factsBeforeChat)
+  expect(factsAfterChat.at(-1)).toMatchObject({ factType: 'resident_state', visibility: 'world' })
 
   vi.useRealTimers()
   const forked = await app.request('/api/worlds/home-world/timelines/home-main/fork', { method: 'POST', headers,

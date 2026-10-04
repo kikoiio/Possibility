@@ -446,6 +446,7 @@ export const chatRequests = sqliteTable('chat_requests', {
   worldId: text('world_id').notNull().references(() => worlds.id),
   timelineId: text('timeline_id').notNull().references(() => timelines.id),
   personId: text('person_id').notNull().references(() => persons.id),
+  channel: text('channel').notNull().default('unknown'),
   contentHash: text('content_hash').notNull(),
   userMessageId: text('user_message_id').notNull().references(() => messages.id),
   replyMessageId: text('reply_message_id').notNull(),

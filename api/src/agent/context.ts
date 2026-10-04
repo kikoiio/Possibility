@@ -2,7 +2,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, type Memory } from './memory'
-import type { AgentMode, PersonModel } from './types'
+import type { AgentMode, CommunicationContext, PersonModel } from './types'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
@@ -26,6 +26,7 @@ export interface ResidentPromptContext {
   evidence?: ResidentEvidence[]
   state: PersonState
   mode: AgentMode
+  communication?: CommunicationContext
 }
 
 /** Internal compatibility name; prompt construction uses the resident-safe contract. */
@@ -42,6 +43,7 @@ export async function buildAgentContext(
     personId: string
     timelineId: string | null // null = 主线
     mode: AgentMode
+    communication?: CommunicationContext
   },
 ): Promise<ResidentPromptContext | null> {
   const person = await db
@@ -115,5 +117,6 @@ export async function buildAgentContext(
     evidence,
     state,
     mode: opts.mode,
+    ...(opts.communication ? { communication: opts.communication } : {}),
   }
 }

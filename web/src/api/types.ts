@@ -123,6 +123,7 @@ export interface Message {
 }
 
 export type ChatRequestStatus = 'pending' | 'completed' | 'failed' | 'cancelled'
+export type CommunicationChannel = 'phone' | 'in_person' | 'unknown'
 
 /** 普通聊天的持久请求状态；回复只在 completed 时存在。 */
 export interface ChatRequestState {
@@ -131,6 +132,7 @@ export interface ChatRequestState {
   worldId: string
   timelineId: string
   personId: string
+  channel: CommunicationChannel
   userMessageId: string
   replyMessageId: string
   status: ChatRequestStatus

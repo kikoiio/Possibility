@@ -15,6 +15,7 @@ function run(patch: Partial<ToolRunState>): ToolRunState {
     acts: 0,
     maxActs: 5,
     current: { location: '', activity: '', mood: '', goal: '' },
+    stagedPatch: {}, stagedEvents: [], stagedMemories: [],
     ...patch,
   }
 }

@@ -191,7 +191,7 @@ export const chatApi = {
       `/api/conversations/${encodeURIComponent(conversationId)}/requests/${encodeURIComponent(requestId)}`,
     ),
   pendingRequests: (conversationId: string) =>
-    apiFetch<{ requests: Pick<ChatRequestState, 'requestId' | 'status' | 'heartbeatAt' | 'createdAt' | 'updatedAt'>[] }>(
+    apiFetch<{ requests: Pick<ChatRequestState, 'requestId' | 'channel' | 'status' | 'heartbeatAt' | 'createdAt' | 'updatedAt'>[] }>(
       `/api/conversations/${encodeURIComponent(conversationId)}/requests/pending`,
     ),
   cancelRequest: (conversationId: string, requestId: string) =>
