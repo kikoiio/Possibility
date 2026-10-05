@@ -155,6 +155,26 @@ const snapshot = {
   events: [],
 }
 
+/** A1:服务端 preflight 的真实形状——valid 候选携带完整依据。 */
+function preflightValid(version: number) {
+  return {
+    status: 'valid',
+    basis: {
+      expectedCurrentVersion: version,
+      currentContentHash: 'e2e-hash',
+      source: { worldId: 'world-1', version, contentHash: 'e2e-hash' },
+      candidateHash: 'sha256:e2e-candidate',
+      rulesVersion: 'rules-1', assetManifestHash: 'assets-1', templateCatalogHash: 'templates-1',
+      bindingHash: 'bindings-1', contextFingerprint: 'context-1', baseline: null,
+    },
+    report: {
+      status: 'valid', issues: [], issueCount: 0, countIsExact: true, stopReason: null,
+      checkedSpaceIds: ['exterior'], pendingSpaceIds: [], workUnitsUsed: 1, elapsedMs: 1,
+      ruleNotes: { items: [], total: 0, hasMore: false },
+    },
+  }
+}
+
 test('产品页：放置资产 → 保存 → 刷新仍在；guest 无编辑入口', async ({ page }) => {
   // 可变存档:bootstrap/GET scene 读它,voxel-revision 写它
   let currentDoc = structuredClone(voxelDoc)
@@ -188,6 +208,12 @@ test('产品页：放置资产 → 保存 → 刷新仍在；guest 无编辑入�
     currentVersion += 1
     return route.fulfill({ json: { document: currentDoc, version: currentVersion, contentHash: 'e2e-hash', createdAt: snapshot.simNow } })
   })
+  // A1:放置资产先经服务端完整 preflight 再落引擎;显式 stub 排在通用 scene** 之后注册
+  const preflightRequests: unknown[] = []
+  await page.route('**/api/worlds/world-1/scene/compatibility/preflight', (route) => {
+    preflightRequests.push(route.request().postDataJSON())
+    return route.fulfill({ json: preflightValid(currentVersion) })
+  })
 
   await page.goto('/worlds/world-1')
   await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
@@ -203,6 +229,9 @@ test('产品页：放置资产 → 保存 → 刷新仍在；guest 无编辑入�
   // 防抖保存(800ms)落盘:版本对齐 GET scene 的 5,存档里多出 1 条摆放
   await expect.poll(() => lastExpectedVersion, { timeout: 5000 }).toBe(5)
   expect((currentDoc.assetPlacements ?? []).length).toBe(1)
+  // A1:保存前先经过完整候选预检(operations 形态)
+  expect(preflightRequests.length).toBeGreaterThanOrEqual(1)
+  expect((preflightRequests[0] as { candidate: { kind: string } }).candidate.kind).toBe('operations')
 
   // 刷新:bootstrap 返回已保存文档,摆放仍在
   await page.reload()
