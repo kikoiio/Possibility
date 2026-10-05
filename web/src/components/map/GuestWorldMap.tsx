@@ -66,7 +66,9 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   const timelinePending = useRef(false)
   const [editDoc, setEditDoc] = useState<import('@possibility/voxel-contract').VoxelDocument | null>(null)
   const [editVersion, setEditVersion] = useState<number | null>(null)
-  const [saveBusy, setSaveBusy] = useState(false)
+  const saveBusyRef = useRef(false)
+  const onCompatibilityRequiredRef = useRef(onCompatibilityRequired)
+  onCompatibilityRequiredRef.current = onCompatibilityRequired
   const [saveError, setSaveError] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   async function regenerateDemo() {
@@ -80,9 +82,10 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     } catch (error) { setSaveError(error instanceof Error ? error.message : '重新生成失败') }
     finally { setRegenerating(false) }
   }
-  async function saveSpace(next: import('@possibility/voxel-contract').VoxelDocument) {
-    if (!editable || saveBusy) return
-    setSaveBusy(true); setSaveError('')
+  const saveSpace = useCallback(async (next: import('@possibility/voxel-contract').VoxelDocument) => {
+    if (!editable || saveBusyRef.current) return
+    saveBusyRef.current = true
+    setSaveError('')
     try {
       const current = await worldSceneApi.get(liveSnapshot.world.id)
       const version = editVersion ?? (current.status === 'ready' ? current.version : 0)
@@ -93,11 +96,11 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
       setEditDoc(null)
     } catch (error) {
       // A1(W18):整包兼容阻断 → 打开与单空间相同的修复旅程;当前场景保持不变
-      if (error instanceof ApiError && error.status === 422 && error.errorCode === 'compatibility-required') onCompatibilityRequired?.()
+      if (error instanceof ApiError && error.status === 422 && error.errorCode === 'compatibility-required') onCompatibilityRequiredRef.current?.()
       setSaveError(error instanceof Error ? error.message : '空间保存失败')
     }
-    finally { setSaveBusy(false) }
-  }
+    finally { saveBusyRef.current = false }
+  }, [editable, liveSnapshot.world.id, editVersion, voxelSpaces, spaceId])
   async function switchTimeline(nextId: string) {
     if (nextId === liveSnapshot.currentTimelineId || timelinePending.current) return
     timelinePending.current = true
