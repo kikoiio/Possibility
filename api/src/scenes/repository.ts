@@ -6,6 +6,13 @@ import {
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { demoBaselines, worldSceneRevisions, worldScenes } from '../db/schema'
+import {
+  buildCommitGuardStatement,
+  buildCommitWriteProof,
+  buildInitialWriteProof,
+  loadSceneWriteProofFacts,
+  type SceneWriteProofRequest,
+} from './compatibility/write-proof'
 
 /** 存储层文档（S2 起）:体素信封或多空间体素包;2D 场景已退役 */
 export type StoredSceneDocument = SerializedVoxelDocument | SerializedVoxelSpaces
@@ -56,7 +63,18 @@ export async function listSceneVersions(db: Db, worldId: string, limit = 30) {
     .from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, worldId)).orderBy(desc(worldSceneRevisions.version)).limit(Math.max(1, Math.min(100, limit))).all()
   return rows
 }
-export async function commitScene(db: Db, input: { worldId: string; expectedVersion: number; requestId: string; document: StoredSceneDocument; summary: string; kind: string; allowBaseline?: boolean }): Promise<StoredScene> {
+export async function commitScene(db: Db, input: {
+  worldId: string
+  expectedVersion: number
+  requestId: string
+  document: StoredSceneDocument
+  summary: string
+  kind: string
+  allowBaseline?: boolean
+  compatibilityJson?: string | null
+  /** Compatibility confirm execution identity, re-checked by the insert gate. */
+  compatibility?: SceneWriteProofRequest
+}): Promise<StoredScene> {
   const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
     .where(and(eq(demoBaselines.worldId, input.worldId), eq(demoBaselines.status, 'active'))).get()
   if (baseline && !input.allowBaseline) throw new SceneConflict('公共演示基线只读，请先进入访客体验副本')
@@ -75,14 +93,24 @@ export async function commitScene(db: Db, input: { worldId: string; expectedVers
   const document: StoredSceneDocument = normalized
   const themeId = voxelThemeId(document)
   const serialized = JSON.stringify(document)
+  // A1 B16：写入依据只由服务端从权威资料构造，随修订一同持久化
+  const proof = await buildCommitWriteProof(db, {
+    worldId: input.worldId, candidate: { version, contentHash }, ...(input.compatibility ? { compatibility: input.compatibility } : {}),
+  })
+  const guard = buildCommitGuardStatement(db, {
+    revisionId: id, worldId: input.worldId, version, requestId: input.requestId, baseline: proof.baseline,
+  })
   try {
     if (current) await db.batch([
-      db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: actual, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, createdAt: now }),
+      db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: actual, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.update(worldScenes).set({ currentVersion: version, themeId, updatedAt: now }).where(and(eq(worldScenes.worldId, input.worldId), eq(worldScenes.currentVersion, actual))),
+      guard,
     ])
     else await db.batch([
+      // 首版同样先插入有依据的新修订、后创建当前指针，避免误用普通旧版本闸门
+      db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: null, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.insert(worldScenes).values({ worldId: input.worldId, currentVersion: version, themeId, updatedAt: now }),
-      db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: null, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, createdAt: now }),
+      guard,
     ])
   } catch (error) { throw new SceneConflict(error instanceof Error ? error.message : undefined) }
   return { document, version, contentHash, createdAt: now }
@@ -92,8 +120,11 @@ export async function initialSceneStatements(db: Db, worldId: string, document: 
   const doc = structuredClone(document)
   const themeId = voxelThemeId(doc)
   const contentHash = await hashText(JSON.stringify({ document: doc, version: 1 }))
+  // A1 B16/B17：首版修订携带服务端构造的 initial 依据，且先于当前指针落库
+  const facts = await loadSceneWriteProofFacts(db, worldId)
+  const proof = buildInitialWriteProof(facts, { candidate: { version: 1, contentHash } })
   return [
+    db.insert(worldSceneRevisions).values({ id: crypto.randomUUID(), worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
     db.insert(worldScenes).values({ worldId, currentVersion: 1, themeId, updatedAt: now }),
-    db.insert(worldSceneRevisions).values({ id: crypto.randomUUID(), worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary: '开始生活时的场景', kind: 'initial', createdAt: now }),
   ]
 }

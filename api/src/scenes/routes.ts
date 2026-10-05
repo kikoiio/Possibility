@@ -25,6 +25,9 @@ import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { userReservation } from '../engine/guard'
 import { restoreSceneVersion } from './service'
+import { loadWorldSceneBindings } from './compatibility/context'
+import { SceneCompatibilityServiceError, validateStoredSceneCandidate } from './compatibility/service'
+import { reportView } from './compatibility/http'
 
 export const scenesRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 scenesRoutes.use('*', async (c, next) => {
@@ -50,6 +53,9 @@ const err = (c: Context<{ Bindings: Env; Variables: AuthVariables }>, error: unk
   if (error instanceof SceneRepairError) {
     const status = error.code === 'world_missing' ? 404 : 409
     return c.json({ error: error.message, errorCode: error.code }, status)
+  }
+  if (error instanceof SceneCompatibilityServiceError) {
+    return c.json({ error: error.message, errorCode: error.code, ...(error.report ? { report: reportView(error.report) ?? undefined } : {}) }, error.status as 409 | 422)
   }
   return c.json({ error: error instanceof Error ? error.message : '场景处理失败' }, 400)
 }
@@ -172,6 +178,16 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
       }
       document = JSON.parse(serialize(doc)) as SerializedVoxelDocument
     } else return c.json({ error: '文档不是序列化体素信封或空间包' }, 422)
+    // A1:普通保存也必须通过完整信封校验——未编辑空间、绑定与连接一并检查。
+    const saveBindings = await loadWorldSceneBindings(db, world.id)
+    const validation = await validateStoredSceneCandidate(db, { worldId: world.id, document, access: { bindings: saveBindings } })
+    if (validation.status !== 'valid') {
+      return c.json({
+        error: validation.status === 'invalid' ? '场景未通过完整校验，请先处理兼容问题' : '场景检查未完成，不能保存',
+        errorCode: validation.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete',
+        report: reportView(validation.report) ?? undefined,
+      }, 422)
+    }
     const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
       .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active'))).get()
     const allowBaseline = !!baseline && world.isDemo && user.role === 'admin'
@@ -213,9 +229,14 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
       const normalized = JSON.parse(serialize(generated)) as SerializedVoxelDocument
       spaces.push({ ...spec, document: normalized })
     }
+    const regenerated = { ...source, spaces }
+    const regeneration = await validateStoredSceneCandidate(db, { worldId: world.id, document: regenerated, access: { bindings: await loadWorldSceneBindings(db, world.id) } })
+    if (regeneration.status !== 'valid') {
+      return c.json({ error: '重新生成的场景未通过完整校验，未保存任何内容', errorCode: regeneration.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete', report: reportView(regeneration.report) ?? undefined }, 502)
+    }
     const result = await commitScene(db, {
       worldId: world.id, expectedVersion: body.expectedVersion!, requestId: body.requestId,
-      document: { ...source, spaces }, summary: '管理员重新生成演示体素世界', kind: 'voxel-regenerate', allowBaseline: true,
+      document: regenerated, summary: '管理员重新生成演示体素世界', kind: 'voxel-regenerate', allowBaseline: true,
     })
     await db.update(demoBaselines).set({ sceneVersion: result.version, contentHash: result.contentHash })
       .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active')))
@@ -232,6 +253,6 @@ scenesRoutes.post('/worlds/:worldId/scene/restore', async c => {
   if (!world) return c.json({ error: '世界不存在' }, 404)
   const body = await c.req.json<{ requestId?: string; expectedVersion?: number; targetVersion?: number }>().catch(() => null)
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !Number.isSafeInteger(body.targetVersion)) return c.json({ error: '恢复参数不完整' }, 400)
-  try { return c.json(await restoreSceneVersion(db, { worldId: world.id, requestId: body.requestId, expectedVersion: body.expectedVersion!, targetVersion: body.targetVersion! })) }
+  try { return c.json(await restoreSceneVersion(db, { worldId: world.id, requestId: body.requestId, expectedVersion: body.expectedVersion!, targetVersion: body.targetVersion!, access: { bindings: await loadWorldSceneBindings(db, world.id) } })) }
   catch (error) { return err(c, error) }
 })

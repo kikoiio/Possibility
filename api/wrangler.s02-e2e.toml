@@ -12,3 +12,7 @@ ENVIRONMENT = "s02-e2e"
 LLM_BASE_URL = "http://e2e-provider-disabled.invalid/v1"
 LLM_API_KEY = "s02-e2e-fixture"
 LLM_MODEL = "s02-fixture"
+# A1(B68): deterministic compatibility-fixture planner. Default off; the isolated launcher
+# (scripts/start-s02-e2e.mjs scene-compatibility-legacy) overrides via --var. Ignored unless
+# ENVIRONMENT=s02-e2e, and never taken from HTTP bodies.
+SCENE_COMPATIBILITY_FIXTURE = "off"

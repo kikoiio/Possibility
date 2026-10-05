@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono'
-import { deserialize } from '@possibility/voxel-contract'
+import { applyEdits, deserialize, ensureAssetPlacementIds, isSerializedVoxelSpaces, serialize, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { resolveWorldScope } from '../access/world-scope'
 import { createDb } from '../db/client'
@@ -11,8 +11,13 @@ import { LlmContractError } from '../llm/contracts'
 import type { Env } from '../index'
 import { planEdits, EditPlannerError } from './edit-planner'
 import { buildEditPlannerMessages } from './prompts'
+import { readCurrentScene } from '../scenes/repository'
+import { loadWorldSceneBindings } from '../scenes/compatibility/context'
+import { inspectSceneCompatibility, validateStoredSceneCandidate } from '../scenes/compatibility/service'
+import { reportView } from '../scenes/compatibility/http'
+import { compatibilityFixturePlannerComplete } from '../scenes/e2e-fixture'
 
-type EditPlanFailureKind = 'permission' | 'input' | 'budget' | 'config' | 'planning' | 'service'
+type EditPlanFailureKind = 'permission' | 'input' | 'budget' | 'config' | 'planning' | 'service' | 'compatibility' | 'conflict'
 
 function editPlanFailure(
   c: Context<{ Bindings: Env; Variables: AuthVariables }>,
@@ -23,6 +28,16 @@ function editPlanFailure(
   nextStep?: string,
 ) {
   return c.json({ error, kind, retryable, ...(nextStep ? { nextStep } : {}) }, status)
+}
+
+function stableText(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableText).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableText(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
 }
 
 /** 体素世界 AI 编辑规划（F17）：意图 + 当前文档 → EditOperation[]（预览确认后由客户端应用） */
@@ -62,21 +77,72 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
     return editPlanFailure(c, 400, 'input', '当前世界文档无法读取。', false,
       '重新加载场景后再试。')
   }
+  // A1(B52):模型配置/预算之前先核对权威场景——客户端文档必须对应真实当前基底,
+  // 且既有场景必须通过完整检查;无效旧场景直接返回兼容诊断,模型调用为 0。
+  const bindings = await loadWorldSceneBindings(db, body.worldId)
+  const access = { bindings }
+  const current = await readCurrentScene(db, body.worldId)
+  if (!current) {
+    return editPlanFailure(c, 409, 'conflict', '世界还没有已保存的场景。', false,
+      '请先为这个世界创建场景。')
+  }
+  const inspection = await inspectSceneCompatibility(db, { worldId: body.worldId, access })
+  if (inspection.status !== 'ready') {
+    return c.json({ error: inspection.error.message, kind: 'compatibility', retryable: false, errorCode: inspection.error.code, nextStep: '请先完成场景兼容检查。' }, inspection.status === 'missing' ? 404 : 422)
+  }
+  if (inspection.report.status !== 'valid') {
+    return c.json({
+      error: inspection.report.status === 'invalid' ? '当前场景存在既存问题，请先完成兼容修复' : '当前场景检查未完成，不能规划编辑',
+      kind: 'compatibility', retryable: false,
+      errorCode: inspection.report.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete',
+      report: reportView(inspection.report) ?? undefined,
+      nextStep: '打开场景兼容检查并完成修复后再继续原来的改造。',
+    }, 422)
+  }
+  const spaces = isSerializedVoxelSpaces(current.document) ? current.document.spaces : null
+  const clientHash = stableText(JSON.parse(body.document))
+  const matched = spaces
+    ? spaces.find(space => stableText(space.document) === clientHash)
+    : (stableText(current.document) === clientHash ? { id: 'single', document: current.document } : null)
+  if (!matched) {
+    return editPlanFailure(c, 409, 'conflict', '当前文档与已保存场景不一致，请重新加载后再试。', false,
+      '刷新场景后再发起改造。')
+  }
+  const baseDoc = deserialize(JSON.stringify(matched.document))
   let source: LlmConfigSource = 'env'
   try {
     const resolution = await resolveLlmConfig(db, c.env, { userId: user.id, worldId: body.worldId },
       userReservation(db, user.id, budgetFromEnv(c.env), 'scene'))
     source = resolution.source
-    const ops = await planEdits(doc, body.intent.trim(), {
-      complete: (messages) => complete(resolution.config, messages, {
+    // A1(B68):仅 s02-e2e 显式兼容 fixture 模式注入确定性测试提供者;模式只取环境变量,
+    // 绝不取 HTTP body。auth、resolveLlmConfig、预算/调用记录、planEdits 与 B69 预检原样保留。
+    const fixtureComplete = compatibilityFixturePlannerComplete(c.env)
+    const ops = await planEdits(baseDoc, body.intent.trim(), {
+      complete: fixtureComplete ?? ((messages) => complete(resolution.config, messages, {
         maxTokens: 4000,
         requestId: body.requestId,
         responseFormat: { type: 'json_object' },
         thinking: { type: 'disabled' },
-      }),
+      })),
       buildMessages: buildEditPlannerMessages,
     })
-    return c.json({ ops })
+    // A1(B69):规划成功不是许可——在权威基底上组装完整候选并通过完整预检才返回依据。
+    const applied = applyEdits(baseDoc, ops)
+    const edited = ensureAssetPlacementIds(applied.document)
+    const candidate = spaces
+      ? { ...(current.document as SerializedVoxelSpaces), spaces: spaces.map(space => space.id === matched.id ? { ...space, document: JSON.parse(serialize(edited)) as typeof space.document } : space) }
+      : JSON.parse(serialize(edited)) as typeof current.document
+    const preflight = await validateStoredSceneCandidate(db, { worldId: body.worldId, document: candidate, access })
+    if (preflight.status !== 'valid') {
+      return c.json({
+        error: preflight.status === 'invalid' ? '改造结果未通过完整校验，请调整描述后重试' : '改造结果检查未完成，请重试',
+        kind: 'planning', retryable: true,
+        errorCode: preflight.status === 'invalid' ? 'scene-invalid' : 'validation-incomplete',
+        report: reportView(preflight.report) ?? undefined,
+        nextStep: '保留或修改描述后，点击“重试生成预览”。',
+      }, 422)
+    }
+    return c.json({ ops, previewBasis: preflight.basis })
   } catch (error) {
     if (error instanceof BudgetRefusal) {
       return editPlanFailure(c, error.status, 'budget', error.message, false,

@@ -20,6 +20,7 @@ import { mapRoutes } from './map/routes'
 import { demoRoutes } from './demo/routes'
 import { settingsRoutes } from './settings/routes'
 import { voxelRoutes } from './voxel/routes'
+import { compatibilityRoutes } from './scenes/compatibility/routes'
 import { cleanupExpiredGuestData } from './demo/cleanup'
 import { createDb } from './db/client'
 import { memoryRepairRoutes } from './admin/memory-repair-routes'
@@ -58,6 +59,9 @@ export interface Env {
   RETRIEVAL_CANDIDATE_ANNOTATED?: string
   /** Internal per-invocation fence; set only by runTick, never supplied by deployment config. */
   ENGINE_TICK_LEASE_TOKEN?: string
+  /** A1(B68): deterministic compatibility-fixture planner mode. Honored only when
+   * ENVIRONMENT=s02-e2e; set solely by the isolated e2e launcher, never from HTTP bodies. */
+  SCENE_COMPATIBILITY_FIXTURE?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -78,6 +82,7 @@ app.route('/api/engine', engineRoutes)
 app.route('/api', voxelRoutes) // /api/voxel/*：体素 AI 编辑规划
 app.route('/api', mapRoutes)
 app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
+app.route('/api', compatibilityRoutes) // 场景兼容性检查、草稿与确认
 // These routes accept either a login or a tightly scoped guest sandbox token.
 app.route('/api', personaRoutes)
 app.route('/api', sceneRoutes)

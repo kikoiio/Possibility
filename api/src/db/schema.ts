@@ -72,8 +72,68 @@ export const worldSceneRevisions = sqliteTable('world_scene_revisions', {
   documentJson: text('document_json').notNull(),
   summary: text('summary').notNull(),
   kind: text('kind').notNull(),
+  compatibilityJson: text('compatibility_json'),
+  validationJson: text('validation_json'),
+  commitGuard: integer('commit_guard', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull(),
 }, t => [uniqueIndex('world_scene_revision_version').on(t.worldId, t.version), uniqueIndex('world_scene_revision_request').on(t.worldId, t.requestId), index('world_scene_revision_history').on(t.worldId, t.version)])
+
+/** Durable compatibility inspection/repair work, separate from scene history. */
+export const sceneCompatibilityDrafts = sqliteTable('scene_compatibility_drafts', {
+  id: text('id').primaryKey(),
+  draftRequestId: text('draft_request_id').notNull(),
+  actorKey: text('actor_key').notNull(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  purpose: text('purpose').notNull(),
+  targetJson: text('target_json').notNull(),
+  basisJson: text('basis_json').notNull(),
+  status: text('status').notNull().default('building'),
+  candidateJson: text('candidate_json'),
+  changesJson: text('changes_json').notNull().default('[]'),
+  reportJson: text('report_json'),
+  inputFingerprint: text('input_fingerprint').notNull(),
+  buildLeaseToken: text('build_lease_token'),
+  buildLeaseUntil: text('build_lease_until'),
+  buildAttempt: integer('build_attempt').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('scene_compatibility_draft_scope').on(t.worldId, t.actorKey, t.draftRequestId),
+  index('scene_compatibility_draft_status').on(t.worldId, t.status, t.updatedAt),
+])
+
+/** Durable idempotency journal for compatibility commits. */
+export const sceneCompatibilityRequests = sqliteTable('scene_compatibility_requests', {
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  requestId: text('request_id').notNull(),
+  actorKey: text('actor_key').notNull(),
+  draftId: text('draft_id').notNull().references(() => sceneCompatibilityDrafts.id),
+  requestFingerprint: text('request_fingerprint').notNull(),
+  attempt: integer('attempt').notNull().default(0),
+  state: text('state').notNull().default('submitting'),
+  leaseToken: text('lease_token'),
+  leaseUntil: text('lease_until'),
+  resultVersion: integer('result_version'),
+  failureCode: text('failure_code'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  primaryKey({ columns: [t.worldId, t.requestId] }),
+  index('scene_compatibility_request_state').on(t.worldId, t.state, t.updatedAt),
+])
+
+/** Published rule fingerprints used by future compatibility commit gates. */
+export const sceneValidationPolicy = sqliteTable('scene_validation_policy', {
+  id: text('id').primaryKey(),
+  rulesVersion: text('rules_version').notNull(),
+  assetManifestHash: text('asset_manifest_hash').notNull(),
+  templateCatalogHash: text('template_catalog_hash').notNull(),
+  publishedAt: text('published_at').notNull(),
+})
+
+export type SceneCompatibilityDraft = typeof sceneCompatibilityDrafts.$inferSelect
+export type SceneCompatibilityRequest = typeof sceneCompatibilityRequests.$inferSelect
+export type SceneValidationPolicy = typeof sceneValidationPolicy.$inferSelect
 
 /** Cross-Worker single-flight guard for the autonomous engine tick. */
 export const engineTickLeases = sqliteTable('engine_tick_leases', {
