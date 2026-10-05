@@ -6,10 +6,12 @@ import { expect, test, type Page, type Locator } from '@playwright/test'
  * 390×844 手机视口，从真实多空间世界（a1-legacy-spaces-world，GuestWorldMap 路径）
  * 入口展开诊断与变化清单，并完成一次真实保存。
  *
- * 入口说明（与任务书的取舍）：桌面 W38 已把多空间世界的一次性 repair-current
- * 用掉（当前已转 valid），而历史 v1 永远 invalid，因此本用例经「历史 → v1 →
- * 恢复到此版本」进入同一套多空间诊断/预览/确认旅程——入口仍是多空间地图内的
- * 真实按钮（scene-history-entry），诊断与变化清单同样覆盖整个空间包。
+ * 入口说明（自给自足）：多空间世界的一次性 repair-current 在全量运行时已被
+ * 桌面 W38 用掉（当前转 valid，v1 成为历史），独立运行时 v1 仍是当前版本、
+ * 历史行无「恢复到此版本」按钮。因此本用例先核对修订数：仅 1 条时先经
+ * 「场景检查」完成一次真实 repair-current（v1 转为历史），再走「历史 → v1 →
+ * 恢复到此版本」的 restore-history 旅程——两条路径都是多空间地图内的真实按钮
+ * （scene-check-entry / scene-history-entry），诊断与变化清单同样覆盖整个空间包。
  * 与桌面 spec 共享同一隔离持久库；版本号一律相对断言。
  */
 
@@ -50,6 +52,23 @@ test('移动多空间入口：390×844 展开诊断与变化清单并完成一�
   await login(page)
   await page.goto(`/worlds/${SPACES_WORLD}`)
   await expect(page.getByTestId('scene-history-entry')).toBeVisible({ timeout: 120_000 })
+
+  // 自给自足：仅 1 条修订时 v1 仍是当前版本(独立运行/全量顺序不同),
+  // 先经「场景检查」完成真实 repair-current,把 invalid 的 v1 转为历史
+  if (await revisionCount(page, SPACES_WORLD) === 1) {
+    await page.getByTestId('scene-check-entry').click()
+    const repair = page.getByRole('dialog', { name: '场景兼容检查' })
+    await expect(repair).toBeVisible()
+    await expect(repair).toContainText('修复当前场景')
+    await expect(repair).toContainText('检查完成', { timeout: 30_000 })
+    await repair.getByRole('button', { name: '构建修复预览' }).click()
+    await expect(repair).toContainText('修复预览', { timeout: 30_000 })
+    await repair.getByRole('button', { name: '确认保存为新版本' }).click()
+    await expect(repair).toContainText(/已保存为新版本 v\d+（场景修复）/, { timeout: 60_000 })
+    await repair.getByRole('button', { name: '关闭兼容检查' }).click()
+    await expect(repair).toHaveCount(0)
+  }
+
   const before = await sceneVersion(page, SPACES_WORLD)
   const rowsBefore = await revisionCount(page, SPACES_WORLD)
 
