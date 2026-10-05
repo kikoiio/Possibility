@@ -12,6 +12,7 @@ import {
   type SceneCommitResult,
   type SceneEditPreflightResult,
   type SceneInspectionResult,
+  type SceneIssue,
   type SceneRepairAudit,
   type SceneSourceRef,
   type SceneTarget,
@@ -173,7 +174,16 @@ export async function preflightSceneEdit(db: Db, input: ScenePreflightInput): Pr
     const source = sourceFor(input.worldId, current)
     const context = await loadSceneValidationContext(db, input.worldId, source, input.access)
     const budget = sceneBudget(input.budget)
-    const report = await validateSceneEnvelope(materialized.envelope, context, budget, controlWithDefaults(input.control), 'edit')
+    let report = await validateSceneEnvelope(materialized.envelope, context, budget, controlWithDefaults(input.control), 'edit')
+    if (report.status === 'invalid') {
+      // 既存/编辑来源区分(spec 23):候选中与当前场景相同的既存问题标 'existing',
+      // 仅本次编辑引入的保留 'edit',前端据此决定直接打开修复旅程还是只反馈编辑被拒。
+      const storedDecoded = decodeSceneCompatibility(current.document)
+      if (storedDecoded.status === 'ready') {
+        const existingReport = await validateSceneEnvelope(storedDecoded.envelope, context, budget, controlWithDefaults(input.control), 'existing')
+        report = attributeExistingIssues(report, new Set(existingReport.issues.map(issueIdentity)))
+      }
+    }
     const hash = await candidateHash(input.candidate)
     const basis = basisFor(source, current.version, context, hash, current.contentHash, await readBaselineBasis(db, input.worldId))
     if (report.status === 'valid') return { status: 'valid', basis: { ...basis, candidateHash: hash }, report }
@@ -211,6 +221,30 @@ export async function validateStoredSceneCandidate(
 
 function requestFailure(code: SceneCompatibilityFailure['code'], message: string, report?: SceneCompatibilityReport): SceneCompatibilityFailure {
   return { code, message, action: 'recheck', ...(report ? { report } : {}) }
+}
+
+/** 与 origin/ordinal 无关的问题身份:同一缺陷在候选与原场景两次校验中应得同一键。 */
+function issueIdentity(issue: SceneIssue): string {
+  return [
+    issue.code,
+    issue.spaceId ?? 'scene',
+    issue.objectId ?? '',
+    issue.placementId ?? '',
+    issue.at ? `${issue.at.x},${issue.at.y},${issue.at.z}` : '',
+  ].join('|')
+}
+
+/** 候选报告里与原场景既存问题一致的条目标 'existing'(id 同步改写),其余保留 'edit'。 */
+function attributeExistingIssues(report: SceneCompatibilityReport, existing: Set<string>): SceneCompatibilityReport {
+  return {
+    ...report,
+    issues: report.issues.map((issue) => {
+      if (!existing.has(issueIdentity(issue))) return issue
+      const parts = issue.id.split('|')
+      parts[1] = 'existing'
+      return { ...issue, origin: 'existing' as const, id: parts.join('|') }
+    }),
+  }
 }
 
 function fallbackBasis(input: CreateDraftInput): SceneValidationBasis {

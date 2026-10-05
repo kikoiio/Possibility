@@ -21,6 +21,7 @@ import {
   confirmCompatibility,
   createCompatibilityDraft,
   inspectSceneCompatibility,
+  preflightSceneEdit,
   readCompatibilityRequest,
 } from './service'
 import { toSceneCompatibilityDraftView } from './repository'
@@ -171,6 +172,39 @@ describe('scene compatibility service', () => {
     expect(result.status).toBe('unsupported')
     if (result.status === 'ready') return
     expect(result.error.code).toBe('format-unsupported')
+  })
+
+  it('3.5 preflight 来源区分: 既存问题标 existing,本次编辑引入的保留 edit', async () => {
+    const f = await seedWorld()
+    const stored = collisionDocument('veg-flower-a')
+    await seedScene(f, 'w1', stored)
+
+    // 候选与原场景相同 → 唯一问题为既存
+    const same = await preflightSceneEdit(f.db, {
+      worldId: 'w1', candidate: { kind: 'document', document: stored }, access: access(), control: control(),
+    })
+    expect(same.status).toBe('invalid')
+    if (same.status !== 'invalid') return
+    expect(same.report.issues.length).toBeGreaterThan(0)
+    expect(same.report.issues.every(issue => issue.origin === 'existing')).toBe(true)
+    expect(same.report.issues.every(issue => issue.id.includes('|existing|'))).toBe(true)
+
+    // 候选在原既存碰撞上再引入一处新碰撞 → 既存保留 existing,新引入为 edit
+    const worse = structuredClone(stored)
+    worse.assetPlacements!.push({ id: 'asset-2', assetId: 'veg-flower-a', anchor: [1, 0, 1], rotation: 0, seed: 2 })
+    const added = await preflightSceneEdit(f.db, {
+      worldId: 'w1', candidate: { kind: 'document', document: worse }, access: access(), control: control(),
+    })
+    expect(added.status).toBe('invalid')
+    if (added.status !== 'invalid') return
+    const origins = added.report.issues.map(issue => issue.origin)
+    expect(origins).toContain('existing')
+    expect(origins).toContain('edit')
+    // 原既存碰撞(asset-1 vs keeper)仍标 existing;asset-1↔asset-2 成对重叠为本次新引入,标 edit
+    const keeperOverlap = added.report.issues.find(issue => issue.placementId === 'asset-1' && issue.objectId === 'keeper')
+    expect(keeperOverlap?.origin).toBe('existing')
+    const pairOverlap = added.report.issues.find(issue => issue.summary.includes('asset-2'))
+    expect(pairOverlap?.origin).toBe('edit')
   })
 
   it('4. repair-current: 可修复场景产出 ready 草稿,确认前不产生新修订', async () => {
