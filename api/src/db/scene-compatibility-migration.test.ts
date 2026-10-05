@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { and, eq } from 'drizzle-orm'
+import type { BatchItem } from 'drizzle-orm/batch'
 import { describe, expect, it } from 'vitest'
 import { createDb } from './client'
 import {
@@ -23,7 +24,7 @@ import {
   worlds,
 } from './schema'
 import { createTestDb } from '../test/db'
-import { commitScene, initialSceneStatements } from '../scenes/repository'
+import { commitScene, cloneSceneStatements, initialSceneStatements } from '../scenes/repository'
 import { loadWorldSceneBindings } from '../scenes/compatibility/context'
 import {
   buildCommitGuardStatement,
@@ -31,6 +32,7 @@ import {
   buildCloneCopyWriteProof,
   buildInitialWriteProof,
   buildValidWriteProof,
+  computeFallbackSceneWritePolicy,
   loadSceneWriteProofFacts,
   resolveSceneWritePolicy,
   SCENE_WRITE_PROOF_SCHEMA,
@@ -38,6 +40,10 @@ import {
   type SceneWriteProof,
   type SceneWriteProofRequest,
 } from '../scenes/compatibility/write-proof'
+import {
+  activateScenePolicy,
+  ScenePolicyActivationRefusal,
+} from '../../../scripts/activate-scene-policy'
 import {
   cancelCompatibilityDraft,
   confirmCompatibility,
@@ -133,6 +139,12 @@ function currentRevisionRow(sqlite: DatabaseSync, worldId: string): { version: n
 
 function revisionAt(sqlite: DatabaseSync, worldId: string, version: number): Record<string, unknown> | undefined {
   return sqlite.prepare('SELECT * FROM world_scene_revisions WHERE world_id = ? AND version = ?').get(worldId, version) as Record<string, unknown> | undefined
+}
+
+/** 与 repository.hashStoredDocument 同一口径：对（解析后的文档 + 修订版本）整体哈希。 */
+async function hashStoredDocumentJson(documentJson: string, version: number): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ document: JSON.parse(documentJson), version })))
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function revisionInsert(db: Db, input: { id: string; worldId: string; version: number; parentVersion: number | null; requestId: string; contentHash: string; proof: SceneWriteProof }) {
@@ -717,6 +729,131 @@ describe('A1 baseline commit batch', () => {
       expect(currentRevisionRow(sqlite, 'w1').version).toBe(2)
       const after = await db.select().from(demoBaselines).where(eq(demoBaselines.id, 'base-1')).get()
       expect(after).toMatchObject({ sceneVersion: 2, contentHash: committed.contentHash })
+    } finally { close() }
+  })
+})
+
+describe('A1 clone gate', () => {
+  it('克隆工厂：批内 clone-copy 证明指向源/目标、哈希按新文档重算、绑定不符整批回滚', async () => {
+    const { db, sqlite, close } = createTestDb()
+    try {
+      await seedUser(db, 'u-src')
+      await seedUser(db, 'u-dst')
+      await seedWorld(db, 'w-src', 'u-src', '[{"name":"书房"}]')
+      await db.insert(persons).values({ id: 'p-src', userId: 'u-src', name: '阿澜', modelJson: '{}', createdAt: NOW })
+      await db.insert(worldPersons).values({ worldId: 'w-src', personId: 'p-src', joinedAt: NOW })
+      // 源场景携带人物绑定引用：克隆重映射会改变文档字节，哈希必须按新文档重算
+      const sourceDocument = compatibilityFixtureRepairedBasis()
+      sourceDocument.objects[0]!.binding = { kind: 'person', personId: 'p-src' }
+      await db.batch(await initialSceneStatements(db, 'w-src', sourceDocument, 'w-src-init'))
+      await commitScene(db, {
+        worldId: 'w-src', expectedVersion: 1, requestId: 'w-src-edit',
+        document: sourceDocument, summary: '编辑', kind: 'voxel-edit',
+      })
+      await activatePolicy(sqlite)
+
+      const sourcePointer = (await db.select().from(worldScenes).where(eq(worldScenes.worldId, 'w-src')).get())!
+      const sourceRevisions = await db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, 'w-src')).all()
+      expect(sourceRevisions).toHaveLength(2)
+
+      const cloneBatch = async (targetWorldId: string, personId: string, pendingPersonIds: string[]) => [
+        db.insert(worlds).values({
+          id: targetWorldId, userId: 'u-dst', name: targetWorldId, description: 'd',
+          locationsJson: '[{"name":"书房"}]', status: 'running' as const, isDemo: false, callsToday: 0, createdAt: NOW,
+        }),
+        db.insert(persons).values({ id: personId, userId: 'u-dst', name: '阿澜副本', modelJson: '{}', createdAt: NOW }),
+        db.insert(worldPersons).values({ worldId: targetWorldId, personId, joinedAt: NOW }),
+        ...await cloneSceneStatements(db, {
+          sourceWorldId: 'w-src', targetWorldId, targetOwnerId: 'u-dst',
+          pendingBindings: { personIds: pendingPersonIds, locations: [{ name: '书房' }] },
+          pointer: sourcePointer, revisions: sourceRevisions,
+          revisionIdFor: async row => `clone-rev-${targetWorldId}-${row.version}`,
+          requestIdFor: async row => `clone-req-${targetWorldId}-${row.version}`,
+          remapDocument: json => json.replaceAll('p-src', personId),
+        }),
+      ]
+
+      // 正例：策略激活下克隆批成功，目标指针与全部历史修订同批落库
+      await db.batch(await cloneBatch('w-dst', 'p-dst', ['p-dst']) as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
+      expect(currentRevisionRow(sqlite, 'w-dst').version).toBe(2)
+      const cloned = await db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, 'w-dst')).all()
+      expect(cloned).toHaveLength(2)
+      const sourceByVersion = new Map(sourceRevisions.map(row => [row.version, row]))
+      for (const row of cloned) {
+        const proof = JSON.parse(row.validationJson!) as SceneWriteProof
+        // 生成明确 provenance：clone-copy 指向源世界修订，归属目标 owner，不复用源行的 initial/valid 依据
+        expect(proof.mode).toBe('clone-copy')
+        if (proof.mode !== 'clone-copy') continue
+        expect(proof.source).toEqual({ worldId: 'w-src', version: row.version, contentHash: sourceByVersion.get(row.version)!.contentHash })
+        expect(proof.targetOwnerId).toBe('u-dst')
+        expect(proof.candidate).toEqual({ version: row.version, contentHash: row.contentHash })
+        // 身份重映射生效且哈希对应新文档（与源行哈希不同）
+        expect(row.documentJson).toContain('p-dst')
+        expect(row.documentJson).not.toContain('p-src')
+        expect(row.contentHash).toBe(await hashStoredDocumentJson(row.documentJson, row.version))
+        expect(row.contentHash).not.toBe(sourceByVersion.get(row.version)!.contentHash)
+        expect(row.commitGuard).toBe(true)
+      }
+
+      // 反例：待创建绑定快照少于真实成员 → 插入闸门 ABORT，世界/成员/场景整批回滚
+      await expect(db.batch(await cloneBatch('w-dst-bad', 'p-dst-2', []) as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])).rejects.toThrow(/scene_revision_binding_mismatch/)
+      expect(await db.select().from(worlds).where(eq(worlds.id, 'w-dst-bad')).get()).toBeUndefined()
+      expect(await db.select().from(persons).where(eq(persons.id, 'p-dst-2')).get()).toBeUndefined()
+      expect(await db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, 'w-dst-bad')).all()).toEqual([])
+      expect(await db.select().from(worldScenes).where(eq(worldScenes.worldId, 'w-dst-bad')).get()).toBeUndefined()
+    } finally { close() }
+  })
+})
+
+describe('A1 explicit policy activation', () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..')
+
+  it('指纹不符拒绝激活且不留行；激活脚本为纯 INSERT（无 OR REPLACE 覆盖语义）', async () => {
+    const { sqlite, close } = createTestDb()
+    try {
+      await expect(activateScenePolicy(sqlite, { expected: { assetManifestHash: 'bogus-hash' } }))
+        .rejects.toThrow(ScenePolicyActivationRefusal)
+      await expect(activateScenePolicy(sqlite, { expected: { assetManifestHash: 'bogus-hash' } }))
+        .rejects.toThrow(/指纹与发布票据不符/)
+      expect((sqlite.prepare('SELECT COUNT(*) AS n FROM scene_validation_policy').get() as { n: number }).n).toBe(0)
+      // 静态保证：激活语句是纯 INSERT，拒绝 INSERT OR REPLACE 的降级/覆盖语义（B33）
+      const scriptSource = readFileSync(join(repoRoot, 'scripts/activate-scene-policy.ts'), 'utf8')
+      expect(scriptSource).not.toMatch(/INSERT\s+OR\s+REPLACE\s+INTO/i)
+      expect(scriptSource).toMatch(/INSERT INTO scene_validation_policy/)
+    } finally { close() }
+  })
+
+  it('指纹相符激活成功并留核实凭据；已有 active 行拒绝重复激活与降级', async () => {
+    const { db, sqlite, close } = createTestDb()
+    try {
+      const computed = await computeFallbackSceneWritePolicy()
+      const receipt = await activateScenePolicy(sqlite, {
+        expected: { ...computed },
+        publishedAt: NOW,
+      })
+      // 核实凭据：指纹 + publishedAt + 凭据哈希
+      expect(receipt).toMatchObject({ id: 'active', ...computed, publishedAt: NOW })
+      expect(receipt.receiptHash).toMatch(/^[0-9a-f]{64}$/)
+      const stored = sqlite.prepare("SELECT * FROM scene_validation_policy WHERE id = 'active'").get() as
+        { rules_version: string; asset_manifest_hash: string; template_catalog_hash: string; published_at: string }
+      expect(stored).toMatchObject({
+        rules_version: computed.rulesVersion,
+        asset_manifest_hash: computed.assetManifestHash,
+        template_catalog_hash: computed.templateCatalogHash,
+        published_at: NOW,
+      })
+      // 激活后服务端解析口径切换到 active 行
+      expect(await resolveSceneWritePolicy(db)).toEqual(computed)
+
+      // 已有 active：即使指纹相符、仅时间不同的重复激活也拒绝（不覆盖）
+      await expect(activateScenePolicy(sqlite, { expected: { ...computed }, publishedAt: '2030-01-01T00:00:00.000Z' }))
+        .rejects.toThrow(/拒绝降级或覆盖/)
+      // 降级形态：携带旧版本指纹预期的激活同样被拒，且原有行不变
+      await expect(activateScenePolicy(sqlite, { expected: { rulesVersion: 'legacy-v0' } }))
+        .rejects.toThrow(ScenePolicyActivationRefusal)
+      const after = sqlite.prepare("SELECT * FROM scene_validation_policy WHERE id = 'active'").get() as { published_at: string }
+      expect(after.published_at).toBe(NOW)
+      expect((sqlite.prepare('SELECT COUNT(*) AS n FROM scene_validation_policy').get() as { n: number }).n).toBe(1)
     } finally { close() }
   })
 })

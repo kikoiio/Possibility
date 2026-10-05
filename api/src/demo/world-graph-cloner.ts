@@ -6,6 +6,7 @@ import {
   persons, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts,
   worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits,
 } from '../db/schema'
+import { cloneSceneStatements } from '../scenes/repository'
 
 export interface CloneWorldGraphInput {
   sourceWorldId: string
@@ -195,11 +196,28 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     sourceDialogueId: row.sourceDialogueId ? dialogueIds.get(row.sourceDialogueId) ?? null : null,
   }))), chunk => db.insert(commitments).values(chunk))
   pushInChunks(statements, visitRows.map(row => ({ ...row, userId: input.targetOwnerId, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(worldVisits).values(chunk))
-  pushInChunks(statements, sceneRows.map(row => ({ ...row, worldId })), chunk => db.insert(worldScenes).values(chunk))
-  pushInChunks(statements, await Promise.all(sceneRevisionRows.map(async row => ({ ...row,
-    id: await stableId(input.requestId, 'scene-revision', row.id), worldId,
-    requestId: await stableId(input.requestId, 'scene-request', row.requestId), documentJson: remapSceneJson(row.documentJson, personIds),
-  }))), chunk => db.insert(worldSceneRevisions).values(chunk))
+  // A1 B32：场景修订/指针经批内工厂接入——新 clone-copy 依据（来源指向源世界）、
+  // 按重映射文档重算哈希、批内后置断言；不再裸 insert 携带源行旧证明与旧哈希。
+  const sourceLocations = (() => {
+    try {
+      const parsed = JSON.parse(source.locationsJson ?? '[]')
+      return Array.isArray(parsed) ? parsed.flatMap(item =>
+        item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string'
+          ? [{ name: (item as { name: string }).name, ...(typeof (item as { stableId?: unknown }).stableId === 'string' ? { stableId: (item as { stableId: string }).stableId } : {}) }]
+          : []) : []
+    } catch { return [] }
+  })()
+  statements.push(...await cloneSceneStatements(db, {
+    sourceWorldId: source.id,
+    targetWorldId: worldId,
+    targetOwnerId: input.targetOwnerId,
+    pendingBindings: { personIds: [...personIds.values()], locations: sourceLocations },
+    pointer: sceneRows[0] ?? null,
+    revisions: sceneRevisionRows,
+    revisionIdFor: row => stableId(input.requestId, 'scene-revision', row.id),
+    requestIdFor: row => stableId(input.requestId, 'scene-request', row.requestId),
+    remapDocument: json => remapSceneJson(json, personIds),
+  }))
   // S2/F5：体素事件投影(ID 重键 vep:{新时间线}:{clusterKey})与分叉快照,载荷内人物/时间线/事件引用统一重映射
   const refIds = new Map<string, string>([...personIds, ...timelineIds, ...eventIds])
   pushInChunks(statements, projectionRows.map(row => ({

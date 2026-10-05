@@ -7,6 +7,7 @@ import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { demoBaselines, worldSceneRevisions, worldScenes } from '../db/schema'
 import {
+  buildCloneCopyWriteProof,
   buildCommitGuardStatement,
   buildCommitWriteProof,
   buildInitialWriteProof,
@@ -190,4 +191,92 @@ export async function initialSceneStatements(db: Db, worldId: string, document: 
     // B30 步骤2 最终断言：批内核对外层世界/成员/地点与依据快照一致，不符则 guard=0 整批回滚
     buildCommitGuardStatement(db, { revisionId, worldId, version: 1, requestId, baseline: proof.baseline, expectedBindings: facts.bindings }),
   ]
+}
+
+export interface CloneSceneStatementsInput {
+  sourceWorldId: string
+  targetWorldId: string
+  targetOwnerId: string
+  /**
+   * 目标世界（与场景同批创建、尚未落库）的待创建绑定快照（B30 同款口径）：
+   * 克隆批内读库只能得到空集合，必须由调用方显式给出重映射后的成员与地点。
+   */
+  pendingBindings: PendingSceneBindings
+  /** 源世界的当前场景指针；源世界无场景时传 null（此时 revisions 也必须为空）。 */
+  pointer: typeof worldScenes.$inferSelect | null
+  /** 源世界的全部场景修订。 */
+  revisions: Array<typeof worldSceneRevisions.$inferSelect>
+  /** 目标修订 id/请求 id 分配器（调用方掌握确定性重放口径）。 */
+  revisionIdFor: (source: typeof worldSceneRevisions.$inferSelect) => Promise<string>
+  requestIdFor: (source: typeof worldSceneRevisions.$inferSelect) => Promise<string>
+  /** 身份重映射后的文档 JSON（人物/时间线引用已由调用方改写）。 */
+  remapDocument: (documentJson: string) => string
+  issuedAt?: string
+}
+
+/**
+ * A1 B31：克隆批内证明与语句工厂。
+ *
+ * 只返回语句，不独立落库——调用方把返回的修订/指针/断言语句拼进外层克隆批，
+ * 与身份重映射后的世界/成员同批提交，任何一处失败整批回滚。
+ *
+ * 与裸复制的差别：
+ *  - 每条修订生成新的 clone-copy 依据（来源指向源世界修订、归属校验目标 owner），
+ *    绝不逐字携带源行的旧依据（旧依据的 source.worldId 指向源世界，策略激活后必然
+ *    source_mismatch ABORT，且等于把"源场景有效"的声明伪造到目标世界）；
+ *  - contentHash 按重映射后的新文档 + 原版本号重算，与目标世界的存储文档一致；
+ *  - 末尾附批内后置断言（指针/修订/基线/绑定复核），断言落空则整批回滚。
+ */
+export async function cloneSceneStatements(db: Db, input: CloneSceneStatementsInput): Promise<BatchItem<'sqlite'>[]> {
+  if (!input.pointer && input.revisions.length === 0) return []
+  if (!input.pointer || input.revisions.length === 0) {
+    throw new Error('克隆源场景资料不一致：指针与修订必须同时存在')
+  }
+  const revisions = [...input.revisions].sort((a, b) => a.version - b.version)
+  const current = revisions.find(row => row.version === input.pointer!.currentVersion)
+  if (!current) throw new Error('克隆源场景资料不一致：当前版本修订不存在')
+
+  const facts: SceneWriteProofFacts = {
+    policy: await resolveSceneWritePolicy(db),
+    bindings: await buildPendingSceneBindings(input.pendingBindings),
+    baseline: null,
+    current: null,
+  }
+  const now = input.issuedAt ?? new Date().toISOString()
+  const statements: BatchItem<'sqlite'>[] = []
+  let currentRevisionId: string | null = null
+  let currentRequestId: string | null = null
+  for (const row of revisions) {
+    const documentJson = input.remapDocument(row.documentJson)
+    // 按复制后的 document+version 重算哈希，与 hashStoredDocument 口径一致
+    const contentHash = await hashText(JSON.stringify({ document: JSON.parse(documentJson), version: row.version }))
+    const proof = buildCloneCopyWriteProof(facts, {
+      source: { worldId: input.sourceWorldId, version: row.version, contentHash: row.contentHash },
+      targetOwnerId: input.targetOwnerId,
+      candidate: { version: row.version, contentHash },
+      issuedAt: now,
+    })
+    const revisionId = await input.revisionIdFor(row)
+    const requestId = await input.requestIdFor(row)
+    if (row.version === current.version) {
+      currentRevisionId = revisionId
+      currentRequestId = requestId
+    }
+    statements.push(db.insert(worldSceneRevisions).values({
+      id: revisionId, worldId: input.targetWorldId, version: row.version, parentVersion: row.parentVersion,
+      requestId, contentHash, documentJson, summary: row.summary, kind: row.kind,
+      compatibilityJson: row.compatibilityJson, validationJson: JSON.stringify(proof), commitGuard: true,
+      createdAt: row.createdAt,
+    }))
+  }
+  statements.push(db.insert(worldScenes).values({
+    worldId: input.targetWorldId, currentVersion: input.pointer.currentVersion,
+    themeId: input.pointer.themeId, updatedAt: now,
+  }))
+  // 后置断言：目标指针/当前修订/无基线/批内世界与成员绑定复核，落空则整批回滚
+  statements.push(buildCommitGuardStatement(db, {
+    revisionId: currentRevisionId!, worldId: input.targetWorldId, version: current.version,
+    requestId: currentRequestId!, baseline: null, expectedBindings: facts.bindings,
+  }))
+  return statements
 }

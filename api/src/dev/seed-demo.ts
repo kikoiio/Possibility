@@ -1,42 +1,70 @@
 import { and, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { demoBaselines, persons, personStates, timelines, universeEvidence, users, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
+import { demoBaselines, persons, personStates, timelines, universeEvidence, users, worldPersons, worlds } from '../db/schema'
 import type { PersonModel } from '../agent/types'
-import { isSerializedVoxelSpaces, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import {
+  decodeSceneCompatibility,
+  isSerializedVoxelSpaces,
+  sceneBudget,
+  validateSceneEnvelope,
+  type SceneWorkControl,
+  type SerializedVoxelSpaces,
+} from '@possibility/voxel-contract'
 import { initialSceneStatements, isVoxelScenePayload, readCurrentScene } from '../scenes/repository'
-import seedBundle from '../demo/mist-manor-voxel-spaces.json'
+import { deriveSceneBindings, loadSceneValidationContext } from '../scenes/compatibility/context'
+// A1 P27/B55：新初始化只用经验证副本；原始 mist-manor-voxel-spaces.json 保留为原始失败 fixture
+import seedBundle from '../demo/mist-manor-voxel-spaces.validated.json'
 
 /** spec 附录：演示世界「雾影庄」完整设定（D15：手写人物卡，不走蒸馏） */
 
 const WORLD_NAME = '雾影庄'
 
-async function hashText(text: string): Promise<string> {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join('')
+/**
+ * B55：新初始化按实际世界绑定复验 validated 副本（P27 产物以空人物集制备，
+ * 此处用真实落库的成员/地点派生绑定再验一次）。复验不过即抛错中止 seed，
+ * 不静默回退原始包、不写无证明场景。
+ */
+async function assertDemoBundleValidForWorld(db: Db, worldId: string, bundle: SerializedVoxelSpaces): Promise<void> {
+  const decoded = decodeSceneCompatibility(bundle)
+  if (decoded.status !== 'ready') throw new Error('演示体素种子包无法解码')
+  const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
+  const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
+  let parsedLocations: unknown[] = []
+  try {
+    const parsed = JSON.parse(world?.locationsJson ?? '[]')
+    if (Array.isArray(parsed)) parsedLocations = parsed
+  } catch { /* 损坏地点集在下方复验中自然失败 */ }
+  const locations = parsedLocations.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const value = item as { name?: unknown; stableId?: unknown }
+    return typeof value.name === 'string' ? [{ name: value.name, ...(typeof value.stableId === 'string' ? { stableId: value.stableId } : {}) }] : []
+  })
+  const bindings = deriveSceneBindings({ document: bundle, personIds: people.map(person => person.personId), locations })
+  const context = await loadSceneValidationContext(db, worldId, { worldId, version: 0, contentHash: '' }, { bindings })
+  const control: SceneWorkControl = {
+    signal: new AbortController().signal,
+    nowMs: () => Date.now(),
+    yieldControl: async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)) },
+  }
+  const report = await validateSceneEnvelope(decoded.envelope, context, sceneBudget(), control, 'edit')
+  if (report.status !== 'valid') {
+    throw new Error(`演示体素种子包未通过实际世界绑定复验：${report.status}（${report.issueCount} 项问题）`)
+  }
 }
 
-/** 演示场景（S2 起）：体素多空间包种子;2D 生成器已退役,非体素旧场景以种子包覆盖升级 */
+/** 演示场景（S2 起）：体素多空间包种子；B55 起仅新初始化写入，既有场景（含非体素旧场景）一律保留 */
 async function ensureDemoScene(db: Db, worldId: string) {
   const current = await readCurrentScene(db, worldId)
-  if (current && isVoxelScenePayload(current.document)) return
-  const bundle = seedBundle as unknown as SerializedVoxelSpaces
-  if (!isSerializedVoxelSpaces(bundle)) throw new Error('演示体素种子包损坏')
-  if (!current) {
-    await db.batch(await initialSceneStatements(db, worldId, bundle, `demo-scene-${worldId}`))
+  if (current) {
+    if (!isVoxelScenePayload(current.document)) {
+      console.warn(`[seed-demo] 世界 ${worldId} 存在非体素旧场景，按 B55 保留原样，不再自动覆盖`)
+    }
     return
   }
-  const version = current.version + 1
-  const now = new Date().toISOString()
-  await db.batch([
-    db.insert(worldSceneRevisions).values({
-      id: crypto.randomUUID(), worldId, version, parentVersion: current.version,
-      requestId: `mist-manor-voxel-seed-${worldId}-v${version}`,
-      contentHash: await hashText(JSON.stringify({ document: bundle, version })),
-      documentJson: JSON.stringify(bundle),
-      summary: '体素场景种子包覆盖（2D 退役）', kind: 'voxel-seed', createdAt: now,
-    }),
-    db.update(worldScenes).set({ currentVersion: version, themeId: bundle.spaces[0]?.document.theme ?? 'mist-manor', updatedAt: now }).where(eq(worldScenes.worldId, worldId)),
-  ])
+  const bundle = seedBundle as unknown as SerializedVoxelSpaces
+  if (!isSerializedVoxelSpaces(bundle)) throw new Error('演示体素种子包损坏')
+  await assertDemoBundleValidForWorld(db, worldId, bundle)
+  await db.batch(await initialSceneStatements(db, worldId, bundle, `demo-scene-${worldId}`))
 }
 
 async function ensureDemoBaseline(db: Db, worldId: string, timelineId: string) {

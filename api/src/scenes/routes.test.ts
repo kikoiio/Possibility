@@ -7,8 +7,14 @@ import { LlmContractError } from '../llm/contracts'
 import { WorldGeneratorError } from '../voxel/generate'
 import { CONTENT_ISSUE_COPY } from './error-copy'
 import { createWorldFixture } from '../test/world-fixture'
-import { persons, timelines, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
+import { persons, timelines, users, worldPersons, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
 import { eq } from 'drizzle-orm'
+import { createTestDb } from '../test/db'
+import { seedDemoWorld } from '../dev/seed-demo'
+import type { SceneWriteProof } from './compatibility/write-proof'
+import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compatibility-fixture'
+import validatedSeedBundle from '../demo/mist-manor-voxel-spaces.validated.json'
+import originalSeedBundle from '../demo/mist-manor-voxel-spaces.json'
 
 /** 合法体素信封:平地 + 可选摆放 op */
 function voxelEnvelope(...ops: Parameters<typeof applyEdits>[1]): SerializedVoxelDocument {
@@ -288,5 +294,71 @@ describe('scene HTTP routes', () => {
     expect(rejected.status).toBe(422)
     const body = await rejected.json() as { issues: Array<{ code: string }> }
     expect(body.issues.some((i) => i.code === 'asset-overlap')).toBe(true)
+  })
+})
+
+/** A1 B55/P27：演示 seed 只用 validated 副本，按实际世界绑定复验，不再覆盖既有场景 */
+describe('A1 demo initialization', () => {
+  const SEED_NOW = '2026-10-05T00:00:00.000Z'
+  async function seedDocumentHash(documentJson: string): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ document: JSON.parse(documentJson), version: 1 })))
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  it('策略激活下 seed 新初始化成功：首版为 validated 副本并携带 initial 证明', async () => {
+    const fixture = createTestDb()
+    try {
+      await fixture.db.insert(users).values({ id: 'admin', username: 'admin', passwordHash: 'x', createdAt: SEED_NOW })
+      fixture.sqlite.exec(await buildTestPolicyActivationSql())
+      const result = await seedDemoWorld(fixture.db)
+      expect(result.created).toBe(true)
+
+      const pointer = await fixture.db.select().from(worldScenes).where(eq(worldScenes.worldId, result.worldId)).get()
+      expect(pointer?.currentVersion).toBe(1)
+      const revisions = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, result.worldId)).all()
+      expect(revisions).toHaveLength(1)
+      const row = revisions[0]!
+      // 首版文档即 validated 副本（不是原始失败 fixture），哈希与文档一致
+      expect(JSON.parse(row.documentJson)).toEqual(JSON.parse(JSON.stringify(validatedSeedBundle)))
+      expect(row.documentJson).not.toBe(JSON.stringify(originalSeedBundle))
+      expect(row.contentHash).toBe(await seedDocumentHash(row.documentJson))
+      const proof = JSON.parse(row.validationJson!) as SceneWriteProof
+      expect(proof.mode).toBe('initial')
+      // 证明绑定覆盖真实落库的演示世界成员与地点（6 人物 + 7 地点）
+      expect(proof.bindings.personIds).toHaveLength(6)
+      expect(proof.bindings.locations).toEqual(['大厅', '书房', '后山散步道', '图书室', '温室花房', '门房小屋', '餐厅'].sort())
+      expect(row.commitGuard).toBe(true)
+    } finally { fixture.close() }
+  })
+
+  it('既有非体素场景不再被种子覆盖', async () => {
+    const fixture = createTestDb()
+    try {
+      await fixture.db.insert(users).values({ id: 'admin', username: 'admin', passwordHash: 'x', createdAt: SEED_NOW })
+      // 预置旧演示世界（非体素旧场景 + 时间线），在策略激活前写入（旧历史允许无证明）
+      const worldId = 'legacy-demo-world'
+      await fixture.db.insert(worlds).values({
+        id: worldId, userId: 'admin', name: '雾影庄', description: 'd', locationsJson: '[]',
+        status: 'running', isDemo: true, callsToday: 0, createdAt: SEED_NOW,
+      })
+      await fixture.db.insert(timelines).values({
+        id: 'legacy-demo-main', worldId, parentTimelineId: null, forkScenarioJson: null,
+        simNow: SEED_NOW, createdAt: SEED_NOW, status: 'active', ancestorIdsJson: '[]',
+      })
+      await fixture.db.insert(worldSceneRevisions).values({
+        id: 'legacy-rev-1', worldId, version: 1, parentVersion: null, requestId: 'legacy-init',
+        contentHash: 'legacy-hash', documentJson: '{"format":"legacy-2d"}', summary: '旧场景', kind: 'legacy', createdAt: SEED_NOW,
+      })
+      await fixture.db.insert(worldScenes).values({ worldId, currentVersion: 1, themeId: 'legacy', updatedAt: SEED_NOW })
+      fixture.sqlite.exec(await buildTestPolicyActivationSql())
+
+      const result = await seedDemoWorld(fixture.db)
+      expect(result.created).toBe(false)
+      // 旧场景原样保留：无新修订、文档不变（旧覆盖分支在策略激活下必然 proof_required ABORT）
+      const revisions = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, worldId)).all()
+      expect(revisions).toHaveLength(1)
+      expect(revisions[0]!.documentJson).toBe('{"format":"legacy-2d"}')
+      expect((await fixture.db.select().from(worldScenes).where(eq(worldScenes.worldId, worldId)).get())?.currentVersion).toBe(1)
+    } finally { fixture.close() }
   })
 })

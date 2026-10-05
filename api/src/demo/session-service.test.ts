@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTestDb } from '../test/db'
 import { and, eq } from 'drizzle-orm'
-import { demoBaselines, demoSandboxes, events, guestSessions, persons, timelines, users, worlds } from '../db/schema'
+import { demoBaselines, demoSandboxes, events, guestSessions, persons, timelines, users, worldSceneRevisions, worlds } from '../db/schema'
 import { seedDemoWorld } from '../dev/seed-demo'
 import { claimGuestSession, ClaimVerificationError, createGuestSession, resetGuestSession, resumeGuestSession } from './session-service'
 import { cleanupExpiredGuestData } from './cleanup'
 import * as cloneVerification from './clone-verification'
+import type { SceneWriteProof } from '../scenes/compatibility/write-proof'
+import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compatibility-fixture'
 
 async function demoFixture() {
   const fixture = createTestDb()
@@ -190,5 +192,37 @@ describe('guest demo sandbox lifecycle', () => {
     expect((await fixture.db.select().from(worlds).where(eq(worlds.userId, winningWorld!.userId)).all()).map(world => world.id))
       .toEqual([winner.worldId])
     fixture.close()
+  })
+})
+
+/** A1 B32：策略激活后 claim 克隆链路（克隆 + 核验 + 落库）保持可用 */
+describe('A1 clone compatibility', () => {
+  it('策略激活下 claim 克隆成功：证明指向沙盒世界与认领账号，核验通过', async () => {
+    const fixture = await demoFixture()
+    try {
+      await fixture.db.insert(users).values({ id: 'member', username: 'member', passwordHash: 'x', createdAt: '2026-09-28T00:00:00.000Z' })
+      fixture.sqlite.exec(await buildTestPolicyActivationSql())
+      // 沙盒克隆与 claim 克隆都在策略激活后发生；旧裸插入路径会被闸门 ABORT
+      const guest = await createGuestSession(fixture.db, 'a1-claim-guest')
+      const claimed = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'a1-claim' })
+      expect(claimed).toMatchObject({ kind: 'claimed', replayed: false })
+      if (claimed?.kind !== 'claimed') throw new Error('claim should succeed')
+
+      const revisions = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, claimed.worldId)).all()
+      expect(revisions.length).toBeGreaterThan(0)
+      for (const row of revisions) {
+        const proof = JSON.parse(row.validationJson!) as SceneWriteProof
+        expect(proof.mode).toBe('clone-copy')
+        if (proof.mode !== 'clone-copy') continue
+        // claim 克隆来源是访客沙盒世界，归属是认领账号
+        expect(proof.source.worldId).toBe(guest.worldId)
+        expect(proof.targetOwnerId).toBe('member')
+      }
+      // 幂等重放仍返回同一世界，不产生新修订
+      const replay = await claimGuestSession(fixture.db, { token: guest.token!, userId: 'member', requestId: 'a1-claim' })
+      expect(replay).toEqual({ ...claimed, replayed: true })
+      expect((await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, claimed.worldId)).all()).length)
+        .toBe(revisions.length)
+    } finally { fixture.close() }
   })
 })

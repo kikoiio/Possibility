@@ -10,7 +10,7 @@ import {
 import { libraryManifest } from '../../voxel/library-manifest'
 import type { Db } from '../../db/client'
 import { sceneValidationPolicy, worlds, worldPersons } from '../../db/schema'
-import { readCurrentScene } from '../repository'
+import { readCurrentScene, type StoredSceneDocument } from '../repository'
 
 export interface SceneValidationAccess {
   /** Authoritative bindings resolved by the caller after access checks. */
@@ -73,23 +73,19 @@ function jsonArray(value: string | null | undefined): unknown[] {
 }
 
 /**
- * Authoritative bindings derived from the owned world and its stored scene.
- * Never derived from request payloads. Person/location bindings come from the
- * world's own residents/locations matched against scene carriers; locked and
- * semantically bound objects/placements become protected with explicit reasons.
+ * 纯派生：从（候选或已存储）场景文档与世界成员/地点资料推导绑定上下文。
+ * 与 DB 无关——loadWorldSceneBindings 用已存储场景调用，演示 seed 等新初始化
+ * 路径用待写入的候选文档调用（此时库中尚无场景可读）。
  */
-export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<SceneBindingContext> {
-  const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
-  const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
-  const scene = await readCurrentScene(db, worldId)
-  const locations = jsonArray(world?.locationsJson).flatMap(item => {
-    if (!item || typeof item !== 'object') return []
-    const value = item as { name?: unknown; stableId?: unknown }
-    return typeof value.name === 'string' ? [{ name: value.name, ...(typeof value.stableId === 'string' ? { stableId: value.stableId } : {}) }] : []
-  })
-  const spaces = scene && isSerializedVoxelSpaces(scene.document)
-    ? scene.document.spaces.map(space => ({ spaceId: space.id, document: space.document }))
-    : scene && isSerializedVoxelDocument(scene.document) ? [{ spaceId: 'single', document: scene.document }] : []
+export function deriveSceneBindings(input: {
+  document: StoredSceneDocument | null
+  personIds: string[]
+  locations: Array<{ name: string; stableId?: string }>
+}): SceneBindingContext {
+  const { personIds, locations } = input
+  const spaces = input.document && isSerializedVoxelSpaces(input.document)
+    ? input.document.spaces.map(space => ({ spaceId: space.id, document: space.document }))
+    : input.document && isSerializedVoxelDocument(input.document) ? [{ spaceId: 'single', document: input.document }] : []
   const locationBindings: SceneBindingContext['locationBindings'] = []
   const personBindings: SceneBindingContext['personBindings'] = []
   const entries: SceneBindingContext['entries'] = []
@@ -110,7 +106,7 @@ export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<S
     }
     for (const object of document.objects as Array<{ id: string; binding?: { kind?: string; personId?: string } }>) {
       if (locked.has(object.id)) protectedObjects.push({ spaceId: space.spaceId, objectId: object.id, reasons: ['锁定对象'] })
-      if (object.binding?.kind === 'person' && object.binding.personId && people.some(person => person.personId === object.binding?.personId)) {
+      if (object.binding?.kind === 'person' && object.binding.personId && personIds.some(personId => personId === object.binding?.personId)) {
         personBindings.push({ spaceId: space.spaceId, objectId: object.id, personId: object.binding.personId })
         protectedObjects.push({ spaceId: space.spaceId, objectId: object.id, reasons: ['人物载体'] })
       }
@@ -122,7 +118,7 @@ export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<S
     }
   }
   return {
-    personIds: people.map(person => person.personId),
+    personIds,
     locations,
     protectedObjects,
     protectedPlacements,
@@ -130,4 +126,26 @@ export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<S
     personBindings,
     entries,
   }
+}
+
+/**
+ * Authoritative bindings derived from the owned world and its stored scene.
+ * Never derived from request payloads. Person/location bindings come from the
+ * world's own residents/locations matched against scene carriers; locked and
+ * semantically bound objects/placements become protected with explicit reasons.
+ */
+export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<SceneBindingContext> {
+  const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
+  const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
+  const scene = await readCurrentScene(db, worldId)
+  const locations = jsonArray(world?.locationsJson).flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const value = item as { name?: unknown; stableId?: unknown }
+    return typeof value.name === 'string' ? [{ name: value.name, ...(typeof value.stableId === 'string' ? { stableId: value.stableId } : {}) }] : []
+  })
+  return deriveSceneBindings({
+    document: scene?.document ?? null,
+    personIds: people.map(person => person.personId),
+    locations,
+  })
 }
