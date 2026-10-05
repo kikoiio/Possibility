@@ -171,7 +171,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
       if (state.state !== 'idle' && state.state !== 'diagnosed' && state.state !== 'conflict' && state.state !== 'unknown') {
         requireState('idle', 'diagnosed', 'conflict', 'unknown')
       }
-      const request = state.requestId ?? requestId()
+      const request = state.state === 'conflict' ? requestId() : state.requestId ?? requestId()
       publish(updateState(state, {
         state: 'checking',
         requestId: request,

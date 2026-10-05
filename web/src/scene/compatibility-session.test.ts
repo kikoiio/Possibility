@@ -202,4 +202,31 @@ describe('compatibility session', () => {
     expect(submit).toHaveBeenCalledTimes(1)
     expect(session.snapshot().state).toBe('completed')
   })
+
+  it('allocates a fresh draft request after a conflict recheck', async () => {
+    const ids = ['request-1', 'request-2']
+    const inspect = vi.fn(async () => inspection)
+    const createDraft = vi.fn(async () => draft())
+    const session = createCompatibilitySession({
+      scope,
+      client: client({
+        inspect,
+        createDraft,
+        submit: vi.fn(async (): Promise<SceneCompatibilityRequestResponse> => ({
+          status: 'not-committed',
+          attempt: 1,
+          retryAllowed: false,
+          error: { code: 'scene-changed', message: 'Scene changed', action: 'recheck' },
+        })),
+      }),
+      requestId: () => ids.shift() ?? 'request-extra',
+    })
+    await session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 3 })
+    await session.build()
+    await session.submit()
+    expect(session.snapshot().state).toBe('conflict')
+    await session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 4 })
+    await session.build()
+    expect(createDraft).toHaveBeenLastCalledWith(expect.objectContaining({ draftRequestId: 'request-2' }))
+  })
 })
