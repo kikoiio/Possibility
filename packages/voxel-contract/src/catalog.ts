@@ -81,7 +81,7 @@ export const mistManorObjectTemplates: ObjectTemplate[] = [
     cell(0, 0, 0, 'wood-plank'), cell(1, 0, 0, 'wood-plank'), cell(2, 0, 0, 'wood-plank'),
     cell(0, 1, 0, 'wood-log'), cell(2, 1, 0, 'wood-log'),
     cell(0, 2, 0, 'wood-plank'), cell(1, 2, 0, 'wood-plank'), cell(2, 2, 0, 'wood-plank'),
-  ] },
+  ], nonWalkableCavities: [{ x: 1, y: 1, z: 0 }] },
   { objectType: 'well', name: '水井', cells: [...box(2, 1, 2, 'stone'), cell(0, 1, 0, 'wood-log'), cell(1, 1, 0, 'wood-log'), cell(0, 1, 1, 'roof-tile'), cell(1, 1, 1, 'roof-tile')] },
   { objectType: 'flower-bed', name: '花坛', cells: [cell(0, 0, 0, 'flower'), cell(1, 0, 0, 'flower'), cell(0, 0, 1, 'flower'), cell(1, 0, 1, 'flower')] },
 ]

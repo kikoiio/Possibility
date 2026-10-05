@@ -143,6 +143,8 @@ export interface ObjectTemplate {
   name: string
   // 模板占据的格子（相对 anchor），每格一个方块 id
   cells: Array<{ offset: VoxelCoord; block: string }>
+  // 模板内部不可行走的开放腔体（相对 anchor）
+  nonWalkableCavities?: VoxelCoord[]
 }
 
 // ── 编辑操作（F16, F17 共用）───────────────────
