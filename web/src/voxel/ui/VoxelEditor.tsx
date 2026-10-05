@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validateEdit, type EditOperation, type VoxelCoord } from '@possibility/voxel-contract'
+import { validateEdit, type EditOperation, type VoxelCoord, type VoxelDocument } from '@possibility/voxel-contract'
 import type { VoxelEngine } from '../engine'
 import { Picker } from '../engine'
-import type { EditController } from '../bridge/edit-controller'
+import type { EditController, PreflightBasis } from '../bridge/edit-controller'
 import WarehousePanel from './WarehousePanel'
 import AssetPanel from './AssetPanel'
 import AiEditPanel from './AiEditPanel'
@@ -12,7 +12,7 @@ export interface VoxelEditorProps {
   engine: VoxelEngine
   controller: EditController
   /** AI 编辑规划（产品层接 /api/voxel/edit-plan） */
-  planEdits?: (intent: string) => Promise<EditOperation[]>
+  planEdits?: (intent: string) => Promise<import('../plan-edits').EditPlan>
   /** 无编辑工具激活时的观察点击（居民/地点/空间导航，T28）；返回 true 表示已消费 */
   interact?: (clientX: number, clientY: number) => boolean
   /** 平台闸门（T29）：false 时隐藏全部编辑入口 */
@@ -38,9 +38,13 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
   const [armedAssetId, setArmedAssetId] = useState<string | null>(null)
   const [selectedObject, setSelectedObject] = useState<{ id: string; label: string } | null>(null)
   const [selectedPlacement, setSelectedPlacement] = useState<{ id: string; label: string } | null>(null)
-  const [aiPending, setAiPending] = useState<EditOperation[] | null>(null)
+  // A1(W22):AI 预览携带服务端 previewBasis 与预览时的文档引用,确认时消费同一依据
+  const [aiPending, setAiPending] = useState<{ ops: EditOperation[]; basis: PreflightBasis | null; doc: VoxelDocument } | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [rejection, setRejection] = useState<string | null>(null)
+  // A1(W22):异步预检在飞期间禁止重复应用(双击/连点/多入口)
+  const applyInFlight = useRef(false)
+  const [checking, setChecking] = useState(false)
   const aiGhost = useRef<{ dismiss(): void } | null>(null)
   const assetDrag = useRef<AssetDrag | null>(null)
 
@@ -56,10 +60,23 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
     return { ray, picker: engine.picker }
   }, [engine])
 
-  const applyWithNotice = useCallback((ops: EditOperation[]) => {
-    const outcome = controller.applyOps(ops)
-    if (!outcome.ok) showRejection(outcome.issues[0]?.message ?? '编辑被拒绝')
-    return outcome.ok
+  // A1(W20/W22):统一异步应用入口——预检先于引擎变更;阻断(invalid/incomplete/conflict/unavailable)
+  // 只反馈不应用;在飞期间后续调用直接拒绝,防止重复应用。
+  const applyWithNotice = useCallback(async (ops: EditOperation[], options: { basis?: PreflightBasis | null; basisDoc?: VoxelDocument } = {}): Promise<boolean> => {
+    if (applyInFlight.current) {
+      showRejection('正在检查上一笔编辑，请稍候再试。')
+      return false
+    }
+    applyInFlight.current = true
+    setChecking(true)
+    try {
+      const outcome = await controller.applyOpsAsync(ops, options)
+      if (!outcome.ok) showRejection(outcome.blocked?.message ?? outcome.issues[0]?.message ?? '编辑被拒绝')
+      return outcome.ok
+    } finally {
+      applyInFlight.current = false
+      setChecking(false)
+    }
   }, [controller, showRejection])
 
   const placementOf = useCallback((placementId: string) => {
@@ -84,7 +101,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
     return validateEdit(doc, ops, undefined, engine.assetsManifest ?? undefined)
   }, [engine])
 
-  const handleClick = useCallback((clientX: number, clientY: number) => {
+  const handleClick = useCallback(async (clientX: number, clientY: number) => {
     if (aiPending) return // 预览待确认期间锁定画布编辑
     if (tool === null) {
       interact?.(clientX, clientY) // 观察模式：居民 / 地点 / 空间导航
@@ -99,7 +116,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
         if (!hit) return
         const anchor = Picker.placementCell(hit)
         // 放置后保持 armed 可连续放置,Esc 解除
-        applyWithNotice([{ kind: 'place-asset', assetId: armedAssetId, anchor, rotation: 0 }])
+        void applyWithNotice([{ kind: 'place-asset', assetId: armedAssetId, anchor, rotation: 0 }])
         return
       }
       if (selectedPlacement) {
@@ -111,7 +128,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
         const hit = ctx.picker.pickVoxel(ctx.ray)
         if (!hit) return
         const anchor = Picker.placementCell(hit)
-        if (applyWithNotice([{ kind: 'move-asset', placementId: selectedPlacement.id, anchor }])) selectPlacement(null)
+        if (await applyWithNotice([{ kind: 'move-asset', placementId: selectedPlacement.id, anchor }])) selectPlacement(null)
         return
       }
       const placementId = ctx.picker.pickAsset(ctx.ray)
@@ -123,14 +140,14 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
       if (armedType) {
         if (!hit) return
         const anchor = Picker.placementCell(hit)
-        const ok = applyWithNotice([{ kind: 'place-object', objectType: armedType, anchor, rotation: 0 }])
+        const ok = await applyWithNotice([{ kind: 'place-object', objectType: armedType, anchor, rotation: 0 }])
         if (ok) setArmedType(null)
         return
       }
       if (selectedObject) {
         if (!hit) return
         const anchor = Picker.placementCell(hit)
-        const ok = applyWithNotice([{ kind: 'move-object', objectId: selectedObject.id, anchor }])
+        const ok = await applyWithNotice([{ kind: 'move-object', objectId: selectedObject.id, anchor }])
         if (ok) setSelectedObject(null)
         return
       }
@@ -179,15 +196,17 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
         const hit = ctx?.picker.pickVoxel(ctx.ray)
         const anchor = hit ? Picker.placementCell(hit) : null
         const placement = placementOf(drag.placementId)
-        const ok = anchor && placement
-          && placementIssues([{ kind: 'move-asset', placementId: drag.placementId, anchor }]).length === 0
-          && applyWithNotice([{ kind: 'move-asset', placementId: drag.placementId, anchor }])
-        if (!ok && placement) {
-          engine.assets.previewTransform(drag.placementId, drag.originAnchor, drag.originRotation)
-        }
+        void (async () => {
+          const ok = anchor && placement
+            && placementIssues([{ kind: 'move-asset', placementId: drag.placementId, anchor }]).length === 0
+            && await applyWithNotice([{ kind: 'move-asset', placementId: drag.placementId, anchor }])
+          if (!ok && placement) {
+            engine.assets.previewTransform(drag.placementId, drag.originAnchor, drag.originRotation)
+          }
+        })()
         return
       }
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) <= CLICK_SLOP_PX) handleClick(e.clientX, e.clientY)
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) <= CLICK_SLOP_PX) void handleClick(e.clientX, e.clientY)
     }
     const onPointerMove = (e: PointerEvent) => {
       if (hoverRaf) return
@@ -264,7 +283,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
         const placement = placementOf(selectedPlacement.id)
         if (!placement) return
         const rotation = ((placement.rotation + 1) % 4) as 0 | 1 | 2 | 3
-        applyWithNotice([{
+        void applyWithNotice([{
           kind: 'move-asset',
           placementId: selectedPlacement.id,
           anchor: { x: placement.anchor[0], y: placement.anchor[1], z: placement.anchor[2] },
@@ -292,8 +311,8 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
       const hit = ctx?.picker.pickVoxel(ctx.ray)
       if (!hit) return
       const anchor = Picker.placementCell(hit)
-      if (assetId) applyWithNotice([{ kind: 'place-asset', assetId, anchor, rotation: 0 }])
-      else if (objectType) applyWithNotice([{ kind: 'place-object', objectType, anchor, rotation: 0 }])
+      if (assetId) void applyWithNotice([{ kind: 'place-asset', assetId, anchor, rotation: 0 }])
+      else if (objectType) void applyWithNotice([{ kind: 'place-object', objectType, anchor, rotation: 0 }])
     }
     canvas.addEventListener('dragover', onDragOver)
     canvas.addEventListener('drop', onDrop)
@@ -308,7 +327,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
     aiGhost.current = null
   }
 
-  const handleAiPreview = (ops: EditOperation[]) => {
+  const handleAiPreview = (ops: EditOperation[], basis: PreflightBasis | null) => {
     setAiError(null)
     const doc = engine.world?.doc
     if (!doc) return
@@ -319,16 +338,19 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
     }
     dismissAiGhost()
     aiGhost.current = engine.feedback?.showGhost(ops) ?? null
-    setAiPending(ops)
+    // A1(W21):记录预览时的文档引用——确认时若场景已变,依据失效须重新预览
+    setAiPending({ ops, basis, doc })
   }
 
   const handleAiConfirm = () => {
     if (!aiPending) return
-    const ok = applyWithNotice(aiPending)
-    if (ok) {
-      dismissAiGhost()
-      setAiPending(null)
-    }
+    // A1(W22):确认消费预览时的同一 basis;场景已变由控制器按 conflict 阻断,不重复应用
+    void applyWithNotice(aiPending.ops, { basis: aiPending.basis, basisDoc: aiPending.doc }).then(ok => {
+      if (ok) {
+        dismissAiGhost()
+        setAiPending(null)
+      }
+    })
   }
 
   const handleAiCancel = () => {
@@ -364,7 +386,11 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
             onPick={(t) => setArmedType(armedType === t ? null : t)}
             selectedObject={selectedObject}
             onRemoveSelected={() => {
-              if (selectedObject && applyWithNotice([{ kind: 'remove-object', objectId: selectedObject.id }])) setSelectedObject(null)
+              if (selectedObject) {
+                void applyWithNotice([{ kind: 'remove-object', objectId: selectedObject.id }]).then(ok => {
+                  if (ok) setSelectedObject(null)
+                })
+              }
             }}
             onDeselect={() => setSelectedObject(null)}
           />
@@ -379,7 +405,7 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
               const placement = selectedPlacement ? placementOf(selectedPlacement.id) : null
               if (!selectedPlacement || !placement) return
               const rotation = ((placement.rotation + 1) % 4) as 0 | 1 | 2 | 3
-              applyWithNotice([{
+              void applyWithNotice([{
                 kind: 'move-asset',
                 placementId: selectedPlacement.id,
                 anchor: { x: placement.anchor[0], y: placement.anchor[1], z: placement.anchor[2] },
@@ -387,7 +413,11 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
               }])
             }}
             onRemoveSelected={() => {
-              if (selectedPlacement && applyWithNotice([{ kind: 'remove-asset', placementId: selectedPlacement.id }])) selectPlacement(null)
+              if (selectedPlacement) {
+                void applyWithNotice([{ kind: 'remove-asset', placementId: selectedPlacement.id }]).then(ok => {
+                  if (ok) selectPlacement(null)
+                })
+              }
             }}
             onDeselect={() => selectPlacement(null)}
           />
@@ -412,6 +442,11 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
           {toolButton('asset', '资产')}
           {planEdits && toolButton('ai', 'AI 改造')}
           {toolButton('world', '世界')}
+        </div>
+      )}
+      {checking && (
+        <div className="pointer-events-auto absolute bottom-14 right-3 rounded bg-sky-900/80 px-3 py-2 text-xs text-sky-100" data-testid="voxel-edit-checking" role="status">
+          正在检查候选场景…
         </div>
       )}
       {rejection && (

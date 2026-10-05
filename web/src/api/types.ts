@@ -551,3 +551,61 @@ export interface EventEvidenceDetail {
 }
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces, WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'
+
+/* ===== A1 场景兼容:共享 DTO 直接复用契约包,不再私有重复定义 ===== */
+
+export type {
+  CompatibilityPurpose,
+  SceneCandidate,
+  SceneCommitReceipt,
+  SceneCompatibilityDraftView,
+  SceneCompatibilityFailureView,
+  SceneCompatibilityRequestResponse,
+  SceneEditPreflightResult,
+  SceneInspectionResult,
+  SceneInspectionResultReady,
+  SceneIssuePage,
+  SceneRepairChangePage,
+  SceneTarget,
+  SceneValidationBasis,
+  SceneValidationReportView,
+} from '@possibility/voxel-contract'
+
+import type { CompatibilityPurpose, SceneTarget, SceneValidationBasis } from '@possibility/voxel-contract'
+
+/** 创建兼容修复草稿的输入;actorKey/bindings/basis 均由服务端派生,客户端不得携带。 */
+export interface CreateSceneCompatibilityDraftParams {
+  draftRequestId: string
+  purpose: CompatibilityPurpose
+  target: SceneTarget
+  expectedCurrentVersion: number
+}
+
+/** 确认提交的输入;仅草稿/请求标识与乐观并发期望,无客户端权威字段。 */
+export interface ConfirmSceneCompatibilityParams {
+  draftId: string
+  requestId: string
+  expectedCurrentVersion: number
+  expectedAttempt: number
+}
+
+/** 提交结果未知时的恢复输入;同样只含标识与期望版本。 */
+export interface RecoverSceneCompatibilityParams {
+  draftId: string
+  expectedCurrentVersion: number
+  expectedAttempt: number
+}
+
+/** 变化清单/问题分页预留参数(端点当前固定截断 256 条,接入分页后随 query 下发)。 */
+export interface SceneCompatibilityPageQuery {
+  limit?: number
+  offset?: number
+}
+
+/**
+ * 普通体素保存的预览基准(类型层预留):后端 POST /worlds/:id/scene/voxel-revision
+ * 尚未接受 previewBasis 字段,接入前 worldSceneApi.commitVoxel 不携带该字段。
+ */
+export interface CommitVoxelSceneOptions {
+  previewBasis?: SceneValidationBasis
+}

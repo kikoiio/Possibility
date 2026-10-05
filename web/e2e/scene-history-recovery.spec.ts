@@ -14,6 +14,46 @@ const revisions = [
   { version: 1, parentVersion: null, summary: '开始生活时的场景', kind: 'initial', createdAt: '2026-10-01T00:00:00.000Z' },
 ]
 
+/** A1(W46):历史恢复前的真实 precheck——有效目标走原快速通道。 */
+const inspectionValid = {
+  status: 'ready',
+  source: { worldId: 'world-1', version: 1, contentHash: 'hash-v1' },
+  basis: {
+    expectedCurrentVersion: 2,
+    currentContentHash: 'hash-v2',
+    contextFingerprint: 'ctx',
+    bindingHash: 'bind',
+    rulesVersion: 'rules-1',
+    assetManifestHash: 'assets-1',
+    templateCatalogHash: 'templates-1',
+    baseline: null,
+    source: { worldId: 'world-1', version: 1, contentHash: 'hash-v1' },
+    candidateHash: null,
+  },
+  report: {
+    status: 'valid', issues: [], issueCount: 0, countIsExact: true,
+    ruleNotes: { items: [], total: 0, hasMore: false },
+    checkedSpaceIds: ['exterior'], pendingSpaceIds: [], rulesVersion: 'rules-1',
+  },
+  canCreateRepairDraft: false,
+}
+
+/** A1(W46):无效历史目标——不再直接恢复,而是打开独立修复预览旅程。 */
+const inspectionInvalid = {
+  ...inspectionValid,
+  report: {
+    status: 'invalid',
+    issues: {
+      items: [{ id: 'issue-1', code: 'unsupported-object', severity: 'blocker', origin: 'existing', spaceId: 'exterior', at: { x: 4, y: 5, z: 4 }, objectId: 'stone-lantern-1', summary: '石灯悬空，缺少支撑。', suggestion: '移除或放回地面。' }],
+      offset: 0, limit: 20, total: 1, countIsExact: true, hasMore: false,
+    },
+    issueCount: 1, countIsExact: true,
+    ruleNotes: { items: [], total: 0, hasMore: false },
+    checkedSpaceIds: ['exterior'], pendingSpaceIds: [], rulesVersion: 'rules-1',
+  },
+  canCreateRepairDraft: true,
+}
+
 async function openWorld(page: Page) {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
@@ -91,6 +131,7 @@ test('restore failures are identified separately from history read failures', as
   let restoreFails = true
   await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
   await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionValid }))
   await page.route('**/api/worlds/world-1/scene/restore', route => restoreFails
     ? route.fulfill({ status: 500, json: { error: 'internal restore detail' } })
     : route.fulfill({ json: { version: 3 } }))
@@ -104,6 +145,52 @@ test('restore failures are identified separately from history read failures', as
   restoreFails = false
   await dialog.getByRole('button', { name: '恢复到此版本' }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('an invalid history target opens the repair preview journey instead of restoring directly', async ({ page }) => {
+  await openWorld(page)
+  let restoreCalls = 0
+  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
+  await page.route('**/api/worlds/world-1/scene/restore', route => { restoreCalls += 1; return route.fulfill({ json: { version: 3 } }) })
+
+  await page.getByRole('button', { name: '历史' }).click()
+  const dialog = page.getByRole('dialog', { name: '场景历史' })
+  await dialog.getByRole('button', { name: '恢复到此版本' }).click()
+
+  // A1(W19/W46):无效目标不调用原 restore,历史面板关闭,打开独立兼容修复旅程。
+  const compatDialog = page.getByRole('dialog', { name: '场景兼容检查' })
+  await expect(compatDialog).toBeVisible()
+  await expect(compatDialog).toContainText('恢复历史场景')
+  await expect(compatDialog).toContainText('历史版本 v1')
+  await expect(compatDialog).toContainText('发现阻断问题')
+  await expect(compatDialog).toContainText('石灯悬空，缺少支撑。')
+  await expect(compatDialog.getByRole('button', { name: '构建修复预览' })).toBeVisible()
+  expect(restoreCalls).toBe(0)
+
+  // 取消保留当前场景:关闭旅程不 reset 出任何新版本请求,也不触发 restore。
+  await compatDialog.getByRole('button', { name: '关闭兼容检查' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(restoreCalls).toBe(0)
+})
+
+test('an incomplete history target check stays in the history panel with a retryable message', async ({ page }) => {
+  await openWorld(page)
+  let restoreCalls = 0
+  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: {
+    ...inspectionValid,
+    report: { ...inspectionValid.report, status: 'incomplete', pendingSpaceIds: ['greenhouse'] },
+  } }))
+  await page.route('**/api/worlds/world-1/scene/restore', route => { restoreCalls += 1; return route.fulfill({ json: { version: 3 } }) })
+
+  await page.getByRole('button', { name: '历史' }).click()
+  const dialog = page.getByRole('dialog', { name: '场景历史' })
+  await dialog.getByRole('button', { name: '恢复到此版本' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('所选版本检查未完成，暂时不能恢复')
+  expect(restoreCalls).toBe(0)
 })
 
 test('closing history ignores a delayed response from the previous open request', async ({ page }) => {

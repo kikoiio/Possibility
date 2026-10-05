@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
+import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, TimelineComparison, TimelineInfo, WorldSnapshot,
+  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
 import { SceneHistoryPanel, type SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
+import { SceneCompatibilityPanel } from '../components/scene/SceneCompatibilityPanel'
+import { SceneRepairPreview } from '../components/scene/SceneRepairPreview'
+import { createCompatibilitySession, type CompatibilitySession, type CompatibilitySessionClient } from '../scene/compatibility-session'
+import type { CompatibilityContinuation } from '../scene/compatibility-store'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
@@ -12,7 +16,8 @@ import VoxelViewport from '../voxel/VoxelViewport'
 import type { OrbitPose } from '../voxel/engine'
 import { parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
 import { serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
-import { planEditsViaApi } from '../voxel/plan-edits'
+import { planEditsViaApi, EditPlanRequestError } from '../voxel/plan-edits'
+import type { VoxelEngine } from '../voxel/engine'
 import AlignedTimeline from '../components/world/AlignedTimeline'
 import { buildAlignedAxis, filterAt, type AxisMarker } from '../world/alignedTimeline'
 import TimelineSwitcher from '../components/world/TimelineSwitcher'
@@ -77,6 +82,40 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [restoreError, setRestoreError] = useState('')
   const restoreRequestId = useRef(0)
   useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
+  // A1 场景兼容:诊断/修复草稿/确认/结果恢复全部经会话状态机驱动,面板只读展示 continuation。
+  const [compatContinuation, setCompatContinuation] = useState<CompatibilityContinuation | null>(null)
+  const compatSessionRef = useRef<CompatibilitySession | null>(null)
+  useEffect(() => {
+    const client: CompatibilitySessionClient = {
+      inspect: input => sceneCompatibilityApi.inspection(worldId, input.target.kind === 'history' ? { version: input.target.version } : {}),
+      createDraft: input => sceneCompatibilityApi.createDraft(worldId, {
+        draftRequestId: input.draftRequestId,
+        purpose: input.purpose,
+        target: input.target,
+        expectedCurrentVersion: input.expectedCurrentVersion,
+      }),
+      submit: input => sceneCompatibilityApi.confirm(worldId, {
+        draftId: input.draftId,
+        requestId: input.requestId,
+        expectedCurrentVersion: input.expectedCurrentVersion,
+        expectedAttempt: input.expectedAttempt,
+      }),
+      query: input => sceneCompatibilityApi.readRequest(worldId, input.requestId),
+      recover: input => sceneCompatibilityApi.recoverRequest(worldId, input.requestId, {
+        draftId: input.draftId,
+        expectedCurrentVersion: input.expectedCurrentVersion,
+        expectedAttempt: input.expectedAttempt,
+      }),
+    }
+    const session = createCompatibilitySession({ scope: { actorKey: guest ? 'guest' : 'account', worldId }, client })
+    compatSessionRef.current = session
+    const unsubscribe = session.subscribe(setCompatContinuation)
+    setCompatContinuation(session.snapshot())
+    return () => {
+      unsubscribe()
+      if (compatSessionRef.current === session) compatSessionRef.current = null
+    }
+  }, [worldId, guest])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [forkPrefill, setForkPrefill] = useState<{ key: string; whatIf: string; simTime: string } | null>(null)
@@ -476,18 +515,56 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       if (requestId === sceneHistoryRequestId.current) sceneHistoryLoading.current = false
     }
   }
+  // A1:打开兼容检查旅程(修复当前/恢复历史)。会话内已发布失败/未知状态,面板据此展示,此处不再重复报错。
+  async function openCompatibility(purpose: CompatibilityPurpose, target: SceneTarget) {
+    closeSceneHistory()
+    const session = compatSessionRef.current
+    if (!session) return
+    try {
+      const current = await worldSceneApi.get(worldId)
+      const expectedCurrentVersion = current.status === 'ready' ? current.version : 0
+      await session.check({ purpose, target, expectedCurrentVersion })
+    } catch {
+      // 会话已将检查失败/未知状态写入 continuation;提交结果未知时身份保留,可经面板恢复。
+    }
+  }
+  function closeCompatibility() {
+    const session = compatSessionRef.current
+    if (!session) { setCompatContinuation(null); return }
+    const state = session.snapshot().state
+    // A8.2:提交中/结果未知不 reset——恢复身份(requestId/draftId/attempt)必须保留,仅收起面板。
+    if (state === 'submitting' || state === 'unknown') setCompatContinuation(null)
+    else session.reset()
+  }
   async function restoreVersion(version: number) {
     if (sceneHistoryState.status !== 'ready' || restoringRevision) return
     const requestId = ++restoreRequestId.current
     setRestoringRevision(true)
     setRestoreError('')
     try {
-      await worldSceneApi.restore(worldId, sceneHistoryState.currentVersion, version)
-      closeSceneHistory()
-      voxelVersionRef.current = null
-      void read()
+      // A1:恢复前先检查目标历史版本——有效走原快速通道,无效进入完整 A1 修复旅程。
+      const inspection = await sceneCompatibilityApi.inspection(worldId, { version })
+      if (requestId !== restoreRequestId.current) return
+      if (inspection.report.status === 'valid' && !inspection.canCreateRepairDraft) {
+        await worldSceneApi.restore(worldId, sceneHistoryState.currentVersion, version)
+        closeSceneHistory()
+        voxelVersionRef.current = null
+        void read()
+      } else if (inspection.report.status === 'invalid' && inspection.canCreateRepairDraft) {
+        void openCompatibility('restore-history', { kind: 'history', version })
+      } else {
+        setRestoreError('所选版本检查未完成，暂时不能恢复，请稍后重试。')
+      }
     } catch (e) {
-      if (requestId === restoreRequestId.current) setRestoreError('无法恢复到所选版本，请重试。')
+      if (requestId === restoreRequestId.current) {
+        if (e instanceof ApiError && e.status === 422 && e.errorCode === 'compatibility-required') {
+          void openCompatibility('restore-history', { kind: 'history', version })
+        } else if (e instanceof ApiError && e.status === 422 && e.errorCode === 'validation-incomplete') {
+          setRestoreError('所选版本检查未完成，暂时不能恢复，请稍后重试。')
+        } else {
+          setRestoreError('无法恢复到所选版本，请重试。')
+        }
+      }
       if (e instanceof ApiError && e.status === 409) void read()
     } finally { if (requestId === restoreRequestId.current) setRestoringRevision(false) }
   }
@@ -506,10 +583,28 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       voxelVersionRef.current = saved.version
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) { voxelVersionRef.current = null; setError('场景有新版本，请重新加载后再继续。'); void read() }
+      else if (e instanceof ApiError && e.status === 422 && e.errorCode === 'compatibility-required') void openCompatibility('repair-current', { kind: 'current' })
       else if (e instanceof ApiError && e.status === 422) setError(`体素场景未通过校验：${e.issues?.[0]?.message ?? e.message}`)
       else setError(e instanceof Error ? e.message : '体素保存失败')
     }
   }, [worldId, read])
+
+  // A1(W20):编辑候选统一走服务端完整预检;回调身份须稳定(VoxelViewport 以 preflightEdits 为装配依赖)。
+  const preflightSceneCandidate = useCallback((candidate: SceneCandidate) => sceneCompatibilityApi.preflight(worldId, candidate), [worldId])
+  // A1(W31):手动编辑被既存问题(origin=existing)阻断时,直接打开修复旅程;本次编辑问题只留在编辑器反馈里。
+  const handleEditBlocked = useCallback((blocked: import('../voxel/bridge/edit-controller').PreflightBlocked) => {
+    if (blocked.kind !== 'invalid' || !blocked.report) return
+    const issues = Array.isArray(blocked.report.issues) ? blocked.report.issues : []
+    if (issues.some(issue => issue.origin === 'existing')) void openCompatibility('repair-current', { kind: 'current' })
+  }, [worldId])
+  // A1(W21):AI 规划命中服务端模型前闸门(422 compatibility-required)时,直接打开修复旅程,原输入保留在面板里。
+  const planSceneEdits = useCallback((engine: VoxelEngine, intent: string) =>
+    planEditsViaApi(engine, worldId, intent).catch(error => {
+      if (error instanceof EditPlanRequestError && error.errorCode === 'compatibility-required') {
+        void openCompatibility('repair-current', { kind: 'current' })
+      }
+      throw error
+    }), [worldId])
 
   // S1 分屏渲染(体素):左右各绑一线,标题/时钟/事件流各归各线,相机联动可开关
   const sideInfo = (snap: WorldSnapshot | null): TimelineInfo | null =>
@@ -666,7 +761,47 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     </div>
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
-  if (voxelSpaces) return <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} claimPending={claimPending} editable={canEditScene} planEdits={canEditScene ? (engine, intent) => planEditsViaApi(engine, worldId, intent) : undefined} />
+
+  // A1 兼容面板:单空间/多空间(GuestWorldMap)共用同一会话与同一面板,只读预览按草稿惰性加载。
+  const compatDraft = compatContinuation?.draft ?? null
+  const compatSourceVersion = compatContinuation?.source?.version ?? null
+  const compatPreview = compatContinuation?.state === 'preview' && compatDraft && compatSourceVersion !== null
+    ? <SceneRepairPreview
+        key={compatDraft.id}
+        spaces={compatDraft.previewSpaces}
+        loadSourceSpace={(sid, signal) => sceneCompatibilityApi.readSourceSpace(worldId, compatSourceVersion, sid, signal).then(res => res.document)}
+        loadCandidateSpace={(sid, signal) => sceneCompatibilityApi.readDraftSpace(worldId, compatDraft.id, sid, signal).then(res => res.document)}
+        changes={compatDraft.changes.items}
+        ruleNotes={compatDraft.report?.ruleNotes.items ?? []}
+        timeZone={snapshot.world.timeZone}
+      />
+    : undefined
+  const compatPanel = compatContinuation && compatContinuation.state !== 'idle'
+    ? <SceneCompatibilityPanel
+        continuation={compatContinuation}
+        canEdit={canEditScene && !readonly}
+        preview={compatPreview}
+        onBuild={() => void compatSessionRef.current?.build().catch(() => undefined)}
+        onConfirm={() => void compatSessionRef.current?.submit().catch(() => undefined)}
+        onRecheck={() => {
+          const { purpose, target } = compatContinuation
+          if (purpose && target) void openCompatibility(purpose, target)
+        }}
+        onQueryResult={() => void compatSessionRef.current?.queryResult().catch(() => undefined)}
+        onClose={closeCompatibility}
+      />
+    : null
+
+  if (voxelSpaces) return <>
+    <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} claimPending={claimPending} editable={canEditScene}
+      planEdits={canEditScene ? planSceneEdits : undefined}
+      preflightEdits={canEditScene ? preflightSceneCandidate : undefined}
+      onCompatibilityRequired={() => void openCompatibility('repair-current', { kind: 'current' })}
+      onOpenHistory={guest ? undefined : () => { if (sceneHistoryState.status === 'closed') void loadRevisionList() }}
+      onOpenCompatibility={guest ? undefined : () => void openCompatibility('repair-current', { kind: 'current' })} />
+    {sceneHistoryState.status !== 'closed' && <SceneHistoryPanel state={sceneHistoryState} restoring={restoringRevision} restoreError={restoreError} onRestore={version => void restoreVersion(version)} onRetry={() => void loadRevisionList()} onClose={closeSceneHistory} />}
+    {compatPanel}
+  </>
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
     const rebuildHref = personId
@@ -717,6 +852,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
 
   return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
     {sceneHistoryState.status !== 'closed' && <SceneHistoryPanel state={sceneHistoryState} restoring={restoringRevision} restoreError={restoreError} onRestore={version => void restoreVersion(version)} onRetry={() => void loadRevisionList()} onClose={closeSceneHistory} />}
+    {compatPanel}
     <header className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.16em] text-[#849183]">{snapshot.world.name}{snapshot.world.isDemo ? ' · 演示世界' : ''}</p><h1 className="font-story text-xl text-[#2d4435]">{mode === 'possibility' ? '另一种可能' : '这里正在生活'}</h1></div><div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor="map-world-switcher">切换世界</label><select id="map-world-switcher" aria-label="切换世界" value={worldId} onChange={event => {
         const selectedWorld = worldChoices.find(world => world.id === event.target.value)
@@ -747,6 +883,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       <button onClick={() => setLlmConfigOpen(v => !v)} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">LLM</button>
       {(running || !evidenceReadonly) && <button onClick={() => void handlePauseResume()} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">{running ? '暂停' : '继续'}</button>}
       <button onClick={() => { if (sceneHistoryState.status === 'closed') void loadRevisionList() }} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">历史</button>
+      {!guest && <button data-testid="scene-check-entry" onClick={() => void openCompatibility('repair-current', { kind: 'current' })} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">场景检查</button>}
       <button onClick={() => navigate('/settings')} className="rounded-full border border-[#d7ded3] bg-white/85 px-4 py-2 text-xs text-[#536558]">设置</button>
       <button onClick={() => void handleArchiveWorld()} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#849184]">归档</button>
       <button aria-label="退出登录" title="退出登录" onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="rounded-full border border-[#d7ded3] bg-white/85 px-3 py-2 text-xs text-[#536558]">退出</button>
@@ -797,7 +934,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     )}
     <div className="flex min-h-0 flex-1 gap-3"><div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="owner-map-stage">
       {mode === 'possibility' && !isSmall ? renderSplitView() : mode === 'possibility' ? renderSmallSplit()
-        : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable={canEditScene} planEdits={canEditScene ? (engine, intent) => planEditsViaApi(engine, worldId, intent) : undefined} onSave={saveVoxel}
+        : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable={canEditScene} planEdits={canEditScene ? planSceneEdits : undefined} preflightEdits={canEditScene ? preflightSceneCandidate : undefined} onEditBlocked={handleEditBlocked} onSave={saveVoxel}
             onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
             onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
       {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard

@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applyEdits, clampTerrainParams, createBlockRegistry, createEmptyWorld, generateTerrainCells, getBlock,
   writeTerrainCells,
+  type SceneEditPreflightResult, type SceneIssue, type SceneValidationReport,
   type VoxelDocument,
 } from '@possibility/voxel-contract'
 import type { AtlasJson } from '../engine/atlas'
 import { VoxelEngine } from '../engine'
-import { EditController } from '../bridge/edit-controller'
+import { EditController, type PreflightBasis, type PreflightBlocked } from '../bridge/edit-controller'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })
 
@@ -106,6 +107,210 @@ describe('EditController', () => {
     expect(saved).toHaveLength(1)
     controller.flushSave() // 无 pending，不重复保存
     expect(saved).toHaveLength(1)
+    engine.dispose()
+  })
+})
+
+describe('EditController × A1 完整候选预检(W20/W25/W26)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const basisStub = (hash = 'sha256:test'): PreflightBasis => ({
+    expectedCurrentVersion: 1,
+    currentContentHash: 'current-hash',
+    source: { worldId: 'world-1', version: 1, contentHash: 'current-hash' },
+    candidateHash: hash,
+    rulesVersion: 'rules-1',
+    assetManifestHash: 'assets-1',
+    templateCatalogHash: 'templates-1',
+    bindingHash: 'bindings-1',
+    contextFingerprint: 'context-1',
+    baseline: null,
+  })
+
+  const issueStub = (origin: SceneIssue['origin'], summary: string): SceneIssue => ({
+    id: `issue-${origin}`,
+    code: 'asset-unsupported',
+    origin,
+    category: 'structure',
+    spaceId: null,
+    summary,
+    suggestion: '调整后再试',
+    blocking: true,
+  })
+
+  const reportStub = (status: SceneValidationReport['status'], issues: SceneIssue[] = []): SceneValidationReport => ({
+    status,
+    issues,
+    issueCount: issues.length,
+    countIsExact: true,
+    stopReason: null,
+    checkedSpaceIds: ['exterior'],
+    pendingSpaceIds: [],
+    workUnitsUsed: 1,
+    elapsedMs: 1,
+    ruleNotes: { items: [], total: 0, hasMore: false },
+  })
+
+  const validResult = (hash?: string): SceneEditPreflightResult => ({ status: 'valid', basis: basisStub(hash), report: reportStub('valid') })
+
+  it('配置预检后同步入口拒绝执行,引擎与保存均不变(W20)', () => {
+    const engine = headlessEngine()
+    const controller = new EditController({ engine, preflight: async () => validResult() })
+    const outcome = controller.applyOps([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], false)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.issues[0].code).toBe('invalid-meta')
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('air')
+    expect(controller.saves).toBe(0)
+    engine.dispose()
+  })
+
+  it('invalid 预检:不 apply、不 autosave、原场景保留,阻断通知带出来源(W25)', async () => {
+    const engine = headlessEngine()
+    const blocked: PreflightBlocked[] = []
+    const saved: unknown[] = []
+    const controller = new EditController({
+      engine,
+      save: doc => { saved.push(doc) },
+      preflight: async () => ({ status: 'invalid', report: reportStub('invalid', [issueStub('edit', '石灯悬空')]) }),
+      onPreflightBlocked: b => blocked.push(b),
+    })
+    const outcome = await controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('invalid')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]!.message).toContain('本次编辑未通过完整校验')
+    expect(blocked[0]!.message).toContain('石灯悬空')
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('air')
+    vi.advanceTimersByTime(1000)
+    expect(controller.saves).toBe(0)
+    expect(saved).toHaveLength(0)
+    engine.dispose()
+  })
+
+  it('incomplete 预检:同样不 apply、不保存,反馈检查未完成(W25)', async () => {
+    const engine = headlessEngine()
+    const controller = new EditController({
+      engine,
+      preflight: async () => ({ status: 'incomplete', report: reportStub('incomplete') }),
+    })
+    const outcome = await controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('incomplete')
+    expect(outcome.ok === false && outcome.blocked?.message).toContain('检查未完成')
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('air')
+    vi.advanceTimersByTime(1000)
+    expect(controller.saves).toBe(0)
+    engine.dispose()
+  })
+
+  it('valid 候选才应用,保存消费同一 basis(W25)', async () => {
+    const engine = headlessEngine()
+    const saves: Array<{ basis: PreflightBasis | null | undefined }> = []
+    const controller = new EditController({
+      engine,
+      save: (_doc, basis) => { saves.push({ basis }) },
+      preflight: async () => validResult('sha256:candidate-1'),
+    })
+    const outcome = await controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(true)
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('stone')
+    controller.flushSave()
+    expect(saves).toHaveLength(1)
+    expect(saves[0]!.basis?.candidateHash).toBe('sha256:candidate-1')
+    engine.dispose()
+  })
+
+  it('迟到的预检结果不得应用到已变化的场景(W25 序号守卫)', async () => {
+    const engine = headlessEngine()
+    let gate: ((result: SceneEditPreflightResult) => void) | null = null
+    let calls = 0
+    const controller = new EditController({
+      engine,
+      preflight: () => new Promise<SceneEditPreflightResult>(resolve => {
+        calls += 1
+        if (calls === 1) gate = resolve
+        else resolve(validResult('sha256:second'))
+      }),
+    })
+    const first = controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    // 第二笔编辑先完成预检并应用,场景序号随之推进
+    const second = await controller.applyOpsAsync([{ kind: 'set-block', at: at(6, 1, 6), block: 'stone' }], { feedback: false })
+    expect(second.ok).toBe(true)
+    // 第一笔的迟到结果:场景已变 → conflict 阻断,不重复应用
+    gate!(validResult('sha256:first'))
+    const firstOutcome = await first
+    expect(firstOutcome.ok).toBe(false)
+    expect(firstOutcome.ok === false && firstOutcome.blocked?.kind).toBe('conflict')
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('air')
+    expect(engine.world!.getBlock(at(6, 1, 6))).toBe('stone')
+    engine.dispose()
+  })
+
+  it('已知 basis 且文档未变时直接消费,不重复预检;文档已变按 conflict 阻断(W22/W26)', async () => {
+    const engine = headlessEngine()
+    let preflightCalls = 0
+    const controller = new EditController({
+      engine,
+      preflight: async () => { preflightCalls += 1; return validResult() },
+    })
+    const previewDoc = engine.world!.doc
+    const basis = basisStub('sha256:ai-plan')
+    const applied = await controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { basis, basisDoc: previewDoc, feedback: false })
+    expect(applied.ok).toBe(true)
+    expect(preflightCalls).toBe(0)
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('stone')
+
+    // 场景已变(上一笔已应用),旧预览依据失效:不应用、不重复预检
+    const stale = await controller.applyOpsAsync([{ kind: 'set-block', at: at(7, 1, 7), block: 'stone' }], { basis, basisDoc: previewDoc, feedback: false })
+    expect(stale.ok).toBe(false)
+    expect(stale.ok === false && stale.blocked?.kind).toBe('conflict')
+    expect(stale.ok === false && stale.blocked?.message).toContain('重新生成预览')
+    expect(preflightCalls).toBe(0)
+    expect(engine.world!.getBlock(at(7, 1, 7))).toBe('air')
+    engine.dispose()
+  })
+
+  it('既存问题与本次编辑问题来源区分(W26)', async () => {
+    const engine = headlessEngine()
+    const existingBlocked: PreflightBlocked[] = []
+    const existingController = new EditController({
+      engine,
+      preflight: async () => ({ status: 'invalid', report: reportStub('invalid', [issueStub('existing', '旧石灯悬空')]) }),
+      onPreflightBlocked: b => existingBlocked.push(b),
+    })
+    const outcome = await existingController.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(false)
+    expect(existingBlocked[0]!.message).toContain('既存问题')
+    expect(existingBlocked[0]!.message).toContain('兼容修复')
+    engine.dispose()
+  })
+
+  it('预检服务不可用:不应用、不保存,反馈不可用(W26)', async () => {
+    const engine = headlessEngine()
+    const controller = new EditController({
+      engine,
+      preflight: async () => { throw new Error('网络错误') },
+    })
+    const outcome = await controller.applyOpsAsync([{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('unavailable')
+    expect(engine.world!.getBlock(at(5, 1, 5))).toBe('air')
+    vi.advanceTimersByTime(1000)
+    expect(controller.saves).toBe(0)
+    engine.dispose()
+  })
+
+  it('本地校验失败不发起预检(W26 不重复无效调用)', async () => {
+    const engine = headlessEngine()
+    let preflightCalls = 0
+    const controller = new EditController({
+      engine,
+      preflight: async () => { preflightCalls += 1; return validResult() },
+    })
+    const outcome = await controller.applyOpsAsync([{ kind: 'set-block', at: at(40, 1, 1), block: 'stone' }], { feedback: false })
+    expect(outcome.ok).toBe(false)
+    expect(preflightCalls).toBe(0)
     engine.dispose()
   })
 })

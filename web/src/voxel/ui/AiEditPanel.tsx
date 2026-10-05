@@ -1,33 +1,44 @@
 import { useState } from 'react'
 import type { EditOperation } from '@possibility/voxel-contract'
-import { EditPlanRequestError } from '../plan-edits'
+import { EditPlanRequestError, type EditPlan } from '../plan-edits'
+import type { PreflightBasis } from '../bridge/edit-controller'
 
 export interface AiEditPanelProps {
-  /** 调用规划器（产品层接 api；开发页可 stub），返回通过校验的操作 */
-  planEdits(intent: string): Promise<EditOperation[]>
-  onPreview(ops: EditOperation[]): void
+  /** 调用规划器（产品层接 api；开发页可 stub），返回通过服务端完整预检的操作与依据 */
+  planEdits(intent: string): Promise<EditPlan>
+  onPreview(ops: EditOperation[], basis: PreflightBasis | null): void
   onConfirm(): void
   onCancel(): void
   pending: boolean
   error: string | null
 }
 
+const KIND_STAGE: Record<string, string> = {
+  compatibility: '场景兼容检查',
+  conflict: '依据冲突',
+  budget: '额度',
+  permission: '权限',
+  config: '模型配置',
+  planning: '规划',
+}
+
 /** AI 对话编辑窗：输入意图 → 幽灵预览 → 确认应用 / 取消丢弃（F17, AC14） */
 export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel, pending, error }: AiEditPanelProps) {
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<{ message: string; nextStep?: string; retryable: boolean } | null>(null)
+  const [failure, setFailure] = useState<{ message: string; nextStep?: string; retryable: boolean; stage?: string } | null>(null)
 
   const submit = async () => {
     if (!intent.trim() || busy) return
     setBusy(true)
     try {
-      const ops = await planEdits(intent.trim())
+      // A1(W21):规划期间输入文字保留;失败只更新反馈,不清空意图
+      const plan = await planEdits(intent.trim())
       setFailure(null)
-      onPreview(ops)
+      onPreview(plan.ops, plan.previewBasis)
     } catch (cause) {
       setFailure(cause instanceof EditPlanRequestError
-        ? { message: cause.message, nextStep: cause.nextStep, retryable: cause.retryable }
+        ? { message: cause.message, nextStep: cause.nextStep, retryable: cause.retryable, stage: KIND_STAGE[cause.kind] }
         : { message: 'AI 改造暂时失败，请稍后重试。', retryable: true })
     } finally {
       setBusy(false)
@@ -56,6 +67,7 @@ export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel,
         {busy ? '规划中…' : failure?.retryable ? '重试生成预览' : '生成预览'}
       </button>
       {(error || failure) && <div className="rounded bg-red-900/60 p-2 text-red-200" data-testid="voxel-ai-error" role="status">
+        {failure?.stage && <span className="mr-1 rounded bg-red-800/80 px-1 py-0.5 text-[10px] text-red-100">{failure.stage}</span>}
         {error ?? failure?.message}
         {failure?.nextStep && <p className="mt-1 text-red-100/80">{failure.nextStep}</p>}
       </div>}

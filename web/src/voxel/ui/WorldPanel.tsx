@@ -77,14 +77,28 @@ export default function WorldPanel({ engine, controller }: WorldPanelProps) {
 
   const patch = (p: Partial<TerrainForm>) => setForm((f) => ({ ...f, ...p }))
 
+  // A1(W23):调参/风格变化只写本地表单;完整候选预检通过才落场景,阻断保留原场景与待选参数
+  const [busy, setBusy] = useState(false)
   const handleRegen = () => {
-    const outcome = controller.regenerateTerrain(formToParams(form))
-    setIssues(outcome.ok ? outcome.issues : outcome.issues)
+    if (busy) return
+    setBusy(true)
+    void controller.regenerateTerrainAsync(formToParams(form))
+      .then(outcome => setIssues(outcome.ok ? outcome.issues : outcome.blocked
+        ? [{ code: 'invalid-meta', message: outcome.blocked.message }]
+        : outcome.issues))
+      .finally(() => setBusy(false))
   }
 
   const applyStyle = (preset: string, tw = tweaks) => {
+    if (busy) return
+    setBusy(true)
     const style: StylePackRef = { preset, tweaks: { ...tw } }
-    controller.setStyle(style)
+    void controller.setStyleAsync(style)
+      .then(outcome => {
+        if (!outcome.ok && outcome.blocked) setIssues([{ code: 'invalid-meta', message: outcome.blocked.message }])
+        else setIssues(null)
+      })
+      .finally(() => setBusy(false))
   }
 
   const commitTweaks = () => applyStyle(engine.getStyle()?.preset ?? 'default')
@@ -144,11 +158,12 @@ export default function WorldPanel({ engine, controller }: WorldPanelProps) {
             </button>
           </div>
           <button
-            className="mt-1 rounded bg-sky-600 px-2 py-1 text-white hover:bg-sky-500"
+            className="mt-1 rounded bg-sky-600 px-2 py-1 text-white hover:bg-sky-500 disabled:opacity-50"
             data-testid="voxel-regen-button"
+            disabled={busy}
             onClick={handleRegen}
           >
-            重新生成地形
+            {busy ? '检查并生成中…' : '重新生成地形'}
           </button>
           <div className="text-zinc-500">重生成会覆盖地形层(含手工改过的地形格),建筑与物体保留</div>
           {issues !== null && (

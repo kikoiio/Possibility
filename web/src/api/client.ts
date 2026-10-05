@@ -194,6 +194,17 @@ import type {
   TimelineComparison,
 } from './types'
 import type { SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, VoxelSceneDraftResponse } from './types'
+import type {
+  ConfirmSceneCompatibilityParams,
+  CreateSceneCompatibilityDraftParams,
+  RecoverSceneCompatibilityParams,
+  SceneCandidate,
+  SceneCompatibilityDraftView,
+  SceneCompatibilityPageQuery,
+  SceneCompatibilityRequestResponse,
+  SceneEditPreflightResult,
+  SceneInspectionResultReady,
+} from './types'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
@@ -354,6 +365,75 @@ export const worldSceneApi = {
   regenerateDemo: (worldId: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number; document: SerializedVoxelSpaces }>(`/api/worlds/${worldId}/scene/voxel-regenerate`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId }) }),
   history: (worldId: string) => apiFetch<{ revisions: { version: number; parentVersion: number | null; summary: string; kind: string; createdAt: string }[] }>(`/api/worlds/${worldId}/scene/revisions`),
   restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
+}
+
+/**
+ * A1 场景兼容:检查/候选预检/修复草稿生命周期/提交确认与结果恢复。
+ * 全部走 apiFetch:结构化中文错误(errorCode+message)以 ApiError 抛出,支持 abort 信号。
+ * actorKey、bindings、basis 等权威字段一律由服务端派生,客户端入参不含这些字段。
+ */
+export const sceneCompatibilityApi = {
+  /** 当前或历史版本的兼容检查;非 ready 结果由服务端以 404/422 结构化错误返回。 */
+  inspection: (worldId: string, options: { version?: number; signal?: AbortSignal } = {}) =>
+    apiFetch<SceneInspectionResultReady>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/inspection${options.version ? `?version=${options.version}` : ''}`,
+      { signal: options.signal },
+    ),
+  /** 完整候选(operations 或 document)编辑前预检。 */
+  preflight: (worldId: string, candidate: SceneCandidate, signal?: AbortSignal) =>
+    apiFetch<SceneEditPreflightResult>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/preflight`,
+      { method: 'POST', body: JSON.stringify({ candidate }), signal },
+    ),
+  createDraft: (worldId: string, params: CreateSceneCompatibilityDraftParams, signal?: AbortSignal) =>
+    apiFetch<SceneCompatibilityDraftView>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts`,
+      { method: 'POST', body: JSON.stringify(params), signal },
+    ),
+  /** 读取草稿预览;page(limit/offset)为分页预留,端点接入分页后生效。 */
+  readDraft: (worldId: string, draftId: string, options: { page?: SceneCompatibilityPageQuery; signal?: AbortSignal } = {}) => {
+    const query = new URLSearchParams()
+    if (options.page?.limit !== undefined) query.set('limit', String(options.page.limit))
+    if (options.page?.offset !== undefined) query.set('offset', String(options.page.offset))
+    const suffix = query.size > 0 ? `?${query.toString()}` : ''
+    return apiFetch<SceneCompatibilityDraftView>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}${suffix}`,
+      { signal: options.signal },
+    )
+  },
+  cancelDraft: (worldId: string, draftId: string, signal?: AbortSignal) =>
+    apiFetch<SceneCompatibilityDraftView>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}/cancel`,
+      { method: 'POST', signal },
+    ),
+  confirm: (worldId: string, params: ConfirmSceneCompatibilityParams, signal?: AbortSignal) =>
+    apiFetch<SceneCompatibilityRequestResponse>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/confirm`,
+      { method: 'POST', body: JSON.stringify(params), signal },
+    ),
+  readRequest: (worldId: string, requestId: string, signal?: AbortSignal) =>
+    apiFetch<SceneCompatibilityRequestResponse>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/requests/${encodeURIComponent(requestId)}`,
+      { signal },
+    ),
+  /** 同请求恢复:仅在提交结果未知时用同一 requestId 重试,不产生新权威字段。 */
+  recoverRequest: (worldId: string, requestId: string, params: RecoverSceneCompatibilityParams, signal?: AbortSignal) =>
+    apiFetch<SceneCompatibilityRequestResponse>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/requests/${encodeURIComponent(requestId)}/recover`,
+      { method: 'POST', body: JSON.stringify(params), signal },
+    ),
+  /** 按空间惰性读取草稿候选(修复后)文档,供只读预览。 */
+  readDraftSpace: (worldId: string, draftId: string, spaceId: string, signal?: AbortSignal) =>
+    apiFetch<{ spaceId: string; side: 'candidate'; document: unknown }>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}/spaces/${encodeURIComponent(spaceId)}`,
+      { signal },
+    ),
+  /** 按空间惰性读取来源(修复前)版本文档,供只读预览。 */
+  readSourceSpace: (worldId: string, version: number, spaceId: string, signal?: AbortSignal) =>
+    apiFetch<{ spaceId: string; side: 'source'; version: number; document: unknown }>(
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/source/${version}/spaces/${encodeURIComponent(spaceId)}`,
+      { signal },
+    ),
 }
 
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */

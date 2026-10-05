@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
-import type { EditOperation, VoxelDocument, WorldEvent } from '@possibility/voxel-contract'
+import type { SceneCandidate, SceneEditPreflightResult, VoxelDocument, WorldEvent } from '@possibility/voxel-contract'
 import { nearestStandable, VoxelEngine, WebGL2UnavailableError, type OrbitPose } from './engine'
-import { EditController } from './bridge/edit-controller'
+import { EditController, type PreflightBlocked } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'
 import { OverlayDriver } from './bridge/overlay-driver'
 import { PlatformGate } from './bridge/platform-gate'
 import { registerEngineProbe, unregisterEngineProbe, type VoxelProbeTarget } from './probe-registry'
+import type { EditPlan } from './plan-edits'
 import VoxelEditor from './ui/VoxelEditor'
 import WalkHud from './ui/WalkHud'
 import EventOverlay, { useEventClickRouting } from './ui/EventOverlay'
@@ -24,7 +25,11 @@ export interface VoxelViewportProps {
   /** 编辑入口（create 模式）；移动端由 PlatformGate 兜底隐藏 */
   editable?: boolean
   /** AI 编辑规划（产品层接 /api/voxel/edit-plan）；视口注入内部引擎，共享 plan-edits.ts 帮助器可直接传入 */
-  planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditOperation[]>
+  planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditPlan>
+  /** A1(W20):完整候选预检（产品层接 /api/worlds/:id/scene/compatibility/preflight）;配置后编辑先预检再应用 */
+  preflightEdits?: (candidate: SceneCandidate) => Promise<SceneEditPreflightResult>
+  /** A1(W31):预检阻断上报(既存问题导致的 invalid 由产品层打开修复旅程);编辑器自身已有即时反馈 */
+  onEditBlocked?: (blocked: PreflightBlocked) => void
   onSave?: (doc: VoxelDocument) => void
   onEnterSpace?: (spaceId: string) => void
   onSelectPerson?: (personId: string) => void
@@ -65,7 +70,7 @@ function poseNearlyEqual(a: OrbitPose, b: OrbitPose): boolean {
  * 引擎装配 + N4 分阶段加载进度 + 覆盖层/交互/编辑的桥接。
  */
 export default function VoxelViewport({
-  document: doc, spaceId, overlay, events, editable = false, planEdits, onSave,
+  document: doc, spaceId, overlay, events, editable = false, planEdits, preflightEdits, onEditBlocked, onSave,
   onEnterSpace, onSelectPerson, onSelectLocation, personNames, timeZone,
   instanceId = 'main', probePrimary, cameraPose, onCameraChange, onCameraModeChange, fitContainer = false,
 }: VoxelViewportProps) {
@@ -85,6 +90,9 @@ export default function VoxelViewport({
   onCameraChangeRef.current = onCameraChange
   const onCameraModeChangeRef = useRef(onCameraModeChange)
   onCameraModeChangeRef.current = onCameraModeChange
+  // A1:阻断上报走 ref——控制器装配一次,回调身份变化不触发引擎重挂载
+  const onEditBlockedRef = useRef(onEditBlocked)
+  onEditBlockedRef.current = onEditBlocked
   const [controller, setController] = useState<EditController | null>(null)
   const [progress, setProgress] = useState<LoadProgress | null>({ percent: 5, label: '正在准备渲染环境…' })
   const [ready, setReady] = useState(false)
@@ -166,7 +174,7 @@ export default function VoxelViewport({
         if (overlayRef.current) driverRef.current.apply(overlayRef.current)
 
         if (editable && gate.showEditing && onSave) {
-          setController(new EditController({ engine, canEdit: gate.canEdit, save: onSave }))
+          setController(new EditController({ engine, canEdit: gate.canEdit, save: onSave, preflight: preflightEdits, spaceId, onPreflightBlocked: blocked => onEditBlockedRef.current?.(blocked) }))
         }
         setReady(true)
         setProgress(null)
@@ -185,8 +193,8 @@ export default function VoxelViewport({
       engineRef.current = null
       unregisterEngineProbe(probes, instanceId, engine)
     }
-    // editable/onSave/gate 装配一次；doc 变化时整体重挂载
-  }, [doc, spaceId, editable, gate, onSave, instanceId, primary])
+    // editable/onSave/gate/preflight 装配一次；doc 变化时整体重挂载
+  }, [doc, spaceId, editable, gate, onSave, preflightEdits, instanceId, primary])
 
   // 生活覆盖层 → 引擎（时间 / 天气 / 居民）
   useEffect(() => {
