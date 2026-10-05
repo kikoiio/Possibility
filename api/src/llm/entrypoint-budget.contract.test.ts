@@ -27,6 +27,9 @@ const clientCallFiles = [
   'engine/steps/schedule.ts',
   'engine/steps/summary.ts',
   'scene/routes.ts',
+  // A1(B68): e2e fixture 的确定性提供者，形状含 complete( 但只在 s02-e2e 显式
+  // fixture 模式下注入，从不调用真实 LLM client；已评审，列入清单防止扫描漏报。
+  'scenes/e2e-fixture.ts',
   'scenes/routes.ts',
   'scenes/voxel-draft.ts',
   'settings/routes.ts',
@@ -99,8 +102,12 @@ describe('LLM provider-budget entrypoint contract', () => {
       const source = readSource(relative)
       expect(source, relative).toContain('deps.complete(messages)')
     }
-    for (const relative of ['scenes/routes.ts', 'scenes/voxel-draft.ts', 'voxel/routes.ts']) {
+    for (const relative of ['scenes/routes.ts', 'scenes/voxel-draft.ts']) {
       expect(readSource(relative), relative).toMatch(/complete:\s*(?:messages\s*=>|\(messages\)\s*=>)\s*complete\(config,/)
     }
+    // voxel/routes.ts 允许 B68 fixture 提供者兜底在前，但回退分支必须包装已解析的 resolution.config。
+    const voxelRoutes = readSource('voxel/routes.ts')
+    expect(voxelRoutes, 'voxel/routes.ts').toContain('compatibilityFixturePlannerComplete(c.env)')
+    expect(voxelRoutes, 'voxel/routes.ts').toContain('complete: fixtureComplete ?? ((messages) => complete(resolution.config,')
   })
 })
