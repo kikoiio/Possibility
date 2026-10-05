@@ -102,7 +102,8 @@ export function SceneRepairPreview({
     </div>
 
     <div className="relative min-h-[240px] flex-1 overflow-hidden rounded-xl border border-[#dfe4d9] bg-[#f4f6f0]">
-      {doc && <VoxelViewport
+      {/* absolute 撑满 relative 容器：h-full 在仅靠 min-height 撑高的容器里会塌成 0，画布随之 0 高 */}
+      {doc && <div className="absolute inset-0"><VoxelViewport
         key={`${spaceId}:${side}`}
         document={doc}
         spaceId={spaceId}
@@ -110,7 +111,7 @@ export function SceneRepairPreview({
         instanceId={`repair-preview-${spaceId}`}
         probePrimary={false}
         fitContainer
-      />}
+      /></div>}
       {loading && <p role="status" className="absolute inset-0 grid place-items-center text-sm text-[#798579]">正在加载预览…</p>}
       {error && <div role="alert" className="absolute inset-0 grid place-items-center p-4 text-center">
         <p className="text-sm text-[#8a5147]">{error}</p>
