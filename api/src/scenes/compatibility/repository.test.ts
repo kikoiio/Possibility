@@ -25,7 +25,7 @@ import {
   toSceneCompatibilityDraftView,
   toSceneCompatibilityRequestView,
 } from './repository'
-import { commitScene } from '../repository'
+import { commitScene, SceneConflict } from '../repository'
 import { createTestDb } from '../../test/db'
 import {
   sceneCompatibilityDrafts,
@@ -551,6 +551,73 @@ describe('scene compatibility repository', () => {
       })
       const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR)
       expect(view).toEqual({ status: 'unknown', retryAllowed: false })
+    })
+  })
+
+  describe('A1 namespace replay', () => {
+    it('普通编辑与兼容请求同 requestId 不返回对方结果，同用途重发仍命中重放', async () => {
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'ns-seed',
+        document: voxelEnvelope(), summary: 'seed', kind: 'initial',
+      })
+      const edited = await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'ns-edit',
+        document: voxelEnvelope(), summary: 'edit', kind: 'voxel-edit',
+      })
+      // 同 ID 同用途同内容重发：返回原结果（既有幂等契约不变）
+      const replay = await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'ns-edit',
+        document: voxelEnvelope(), summary: 'edit', kind: 'voxel-edit',
+      })
+      expect(replay.version).toBe(edited.version)
+      expect(replay.contentHash).toBe(edited.contentHash)
+      expect(await revisionCount(fixture)).toBe(2)
+      // 兼容确认以同一 requestId + 同一文档到达：明确拒绝，不得返回普通编辑结果
+      const { draft } = await createReadyDraft(fixture)
+      const audit = auditFor(draft, 'ns-edit')
+      await expect(commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'ns-edit',
+        document: voxelEnvelope(), summary: 'compat confirm', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(audit),
+        compatibility: { draftId: draft.id, requestId: 'ns-edit', attempt: 0, leaseToken: 'lt-0', leaseUntil: '2026-02-01T00:00:30.000Z' },
+      })).rejects.toThrow(SceneConflict)
+      expect(await revisionCount(fixture)).toBe(2)
+    })
+
+    it('兼容请求先行后普通编辑同 ID 同样被拒；同草稿新 attempt 重试命中重放', async () => {
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'ns-seed',
+        document: voxelEnvelope(), summary: 'seed', kind: 'initial',
+      })
+      const { draft } = await createReadyDraft(fixture)
+      const compatInput = {
+        worldId: WORLD, expectedVersion: 1, requestId: 'ns-compat',
+        document: voxelEnvelope(), summary: 'compat confirm', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(auditFor(draft, 'ns-compat')),
+      }
+      const committed = await commitScene(fixture.db, {
+        ...compatInput,
+        compatibility: { draftId: draft.id, requestId: 'ns-compat', attempt: 0, leaseToken: 'lt-0', leaseUntil: '2026-02-01T00:00:30.000Z' },
+      })
+      // 普通编辑同 ID 同内容：拒绝
+      await expect(commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'ns-compat',
+        document: voxelEnvelope(), summary: 'edit', kind: 'voxel-edit',
+      })).rejects.toThrow(SceneConflict)
+      // 崩溃恢复：同用途同内容以新 attempt/租约重试，返回原修订（租约字段不属于命名空间）
+      const retried = await commitScene(fixture.db, {
+        ...compatInput,
+        compatibility: { draftId: draft.id, requestId: 'ns-compat', attempt: 1, leaseToken: 'lt-1', leaseUntil: '2026-02-01T00:01:30.000Z' },
+      })
+      expect(retried.version).toBe(committed.version)
+      expect(retried.contentHash).toBe(committed.contentHash)
+      expect(await revisionCount(fixture)).toBe(2)
+      // 同 ID 换成另一份草稿身份：拒绝
+      await expect(commitScene(fixture.db, {
+        ...compatInput,
+        compatibilityJson: JSON.stringify({ ...auditFor(draft, 'ns-compat'), draftId: 'draft-other' }),
+        compatibility: { draftId: 'draft-other', requestId: 'ns-compat', attempt: 0, leaseToken: 'lt-2', leaseUntil: '2026-02-01T00:00:30.000Z' },
+      })).rejects.toThrow(SceneConflict)
     })
   })
 

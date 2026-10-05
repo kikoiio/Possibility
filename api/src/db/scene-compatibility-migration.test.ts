@@ -689,3 +689,34 @@ describe('A1 insert compatibility gate', () => {
     } finally { close() }
   })
 })
+
+describe('A1 baseline commit batch', () => {
+  it('基线重指向与新修订同批：零行基线更新回滚整批', async () => {
+    const { db, sqlite, close } = createTestDb()
+    try {
+      await seedUser(db, 'u1')
+      await seedWorldWithScene(db, 'w1', 'u1')
+      await db.insert(demoBaselines).values({ id: 'base-1', worldId: 'w1', sceneVersion: 1, contentHash: 'bh-1', status: 'active', createdAt: NOW })
+      // 正例：修订、当前指针、基线引用同批推进，guard 断言新基线引用保持 1
+      const committed = await commitScene(db, {
+        worldId: 'w1', expectedVersion: 1, requestId: 'regen-1',
+        document: compatibilityFixtureRepairedBasis(), summary: '再生成', kind: 'voxel-regenerate',
+        allowBaseline: true, baselineUpdate: { baselineId: 'base-1' },
+      })
+      expect(committed.version).toBe(2)
+      expect(revisionAt(sqlite, 'w1', 2)!.commit_guard).toBe(1)
+      const baseline = await db.select().from(demoBaselines).where(eq(demoBaselines.id, 'base-1')).get()
+      expect(baseline).toMatchObject({ sceneVersion: 2, contentHash: committed.contentHash })
+      // 假故障：基线 id 不存在 → 批内更新零行不显式失败 → guard 置 0 触发回滚，修订/指针/基线均不变
+      await expect(commitScene(db, {
+        worldId: 'w1', expectedVersion: 2, requestId: 'regen-2',
+        document: compatibilityFixtureRepairedBasis(), summary: '再生成', kind: 'voxel-regenerate',
+        allowBaseline: true, baselineUpdate: { baselineId: 'missing-baseline' },
+      })).rejects.toThrow(/scene_revision_commit_guard_failed/)
+      expect(revisionAt(sqlite, 'w1', 3)).toBeUndefined()
+      expect(currentRevisionRow(sqlite, 'w1').version).toBe(2)
+      const after = await db.select().from(demoBaselines).where(eq(demoBaselines.id, 'base-1')).get()
+      expect(after).toMatchObject({ sceneVersion: 2, contentHash: committed.contentHash })
+    } finally { close() }
+  })
+})

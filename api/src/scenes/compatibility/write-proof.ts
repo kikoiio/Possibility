@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
-import type { SceneSourceRef } from '@possibility/voxel-contract'
+import type { SceneBindingContext, SceneSourceRef } from '@possibility/voxel-contract'
 import type { Db } from '../../db/client'
 import { demoBaselines, sceneValidationPolicy, worldSceneRevisions, worldScenes } from '../../db/schema'
 import { libraryManifest } from '../../voxel/library-manifest'
@@ -30,6 +30,38 @@ export interface SceneWriteProofBindings {
   personIds: string[]
   locations: string[]
   bindingHash: string
+}
+
+/** Pending member/location snapshot for a world created in the same outer batch (B30). */
+export interface PendingSceneBindings {
+  personIds: string[]
+  locations: { name: string; stableId?: string }[]
+}
+
+/**
+ * Binding snapshot for a not-yet-committed world: same shape loadWorldSceneBindings
+ * returns right after the outer batch lands (no scene yet, so no derived carrier
+ * or protection entries). The authority gate compares personIds/locations only;
+ * bindingHash stays consistent with the post-commit facts loader.
+ */
+export async function buildPendingSceneBindings(input: PendingSceneBindings): Promise<SceneWriteProofBindings> {
+  const context: SceneBindingContext = {
+    personIds: [...input.personIds],
+    locations: input.locations.map(location => ({
+      name: location.name,
+      ...(typeof location.stableId === 'string' ? { stableId: location.stableId } : {}),
+    })),
+    protectedObjects: [],
+    protectedPlacements: [],
+    locationBindings: [],
+    personBindings: [],
+    entries: [],
+  }
+  return {
+    personIds: [...input.personIds].sort(),
+    locations: input.locations.map(location => location.name).sort(),
+    bindingHash: await hashJson(context),
+  }
 }
 
 export interface SceneWriteProofBaseline {
@@ -231,6 +263,11 @@ export interface CommitGuardInput {
   requestId: string
   baseline: SceneWriteProofBaseline | null
   authority?: SceneWriteAuthority
+  /**
+   * B30 最终断言：首版与外层世界/成员同批写入时，核对批内真实落库的
+   * 世界/成员/地点与依据快照一致（与 0037 authority_gate 同一口径）。
+   */
+  expectedBindings?: SceneWriteProofBindings
 }
 
 /**
@@ -250,6 +287,14 @@ export function buildCommitGuardStatement(db: Db, input: CommitGuardInput) {
     conditions.push(sql`EXISTS (SELECT 1 FROM demo_baselines WHERE world_id = ${input.worldId} AND id = ${baseline.id} AND status = ${baseline.status} AND scene_version = ${baseline.sceneVersion} AND content_hash = ${baseline.contentHash})`)
   } else {
     conditions.push(sql`NOT EXISTS (SELECT 1 FROM demo_baselines WHERE world_id = ${input.worldId})`)
+  }
+  if (input.expectedBindings) {
+    const expected = input.expectedBindings
+    conditions.push(sql`EXISTS (SELECT 1 FROM worlds WHERE id = ${input.worldId})`)
+    conditions.push(sql`(SELECT COUNT(*) FROM world_persons WHERE world_id = ${input.worldId}) = ${expected.personIds.length}`)
+    conditions.push(sql`NOT EXISTS (SELECT 1 FROM json_each(${JSON.stringify(expected.personIds)}) AS je WHERE NOT EXISTS (SELECT 1 FROM world_persons AS wp WHERE wp.world_id = ${input.worldId} AND wp.person_id = je.value))`)
+    conditions.push(sql`(SELECT COUNT(*) FROM json_each((SELECT locations_json FROM worlds WHERE id = ${input.worldId}))) = ${expected.locations.length}`)
+    conditions.push(sql`NOT EXISTS (SELECT 1 FROM json_each((SELECT locations_json FROM worlds WHERE id = ${input.worldId})) AS wl WHERE NOT EXISTS (SELECT 1 FROM json_each(${JSON.stringify(expected.locations)}) AS pl WHERE pl.value = json_extract(wl.value, '$.name')))`)
   }
   const authority = input.authority
   if (authority?.sessionToken) {

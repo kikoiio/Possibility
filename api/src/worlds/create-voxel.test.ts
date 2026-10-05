@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, serialize, type EditOperation, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
 import { createTestDb } from '../test/db'
-import { persons, sessions, users, worldSceneRevisions } from '../db/schema'
+import { persons, sessions, users, worldPersons, worldSceneRevisions, worlds } from '../db/schema'
+import { initialSceneStatements } from '../scenes/repository'
+import type { SceneWriteProof } from '../scenes/compatibility/write-proof'
+import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compatibility-fixture'
 import { worldsRoutes } from './routes'
 
 const NOW = '2026-10-01T00:00:00.000Z'
@@ -76,5 +79,73 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
     const res = await post(createBody({ scene: broken, sceneRequestId: 'req-create-3' }))
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验') })
+  })
+})
+
+describe('A1 initial scene', () => {
+  /** 给首版信封的 spot-0 载体加人物绑定 */
+  function envelopeWithPersonBinding(personId: string): SerializedVoxelDocument {
+    const doc = voxelEnvelope(LOCATIONS.map(l => l.name))
+    const objects = doc.objects.map((object, i) => i === 0 ? { ...object, binding: { kind: 'person' as const, personId } } : object)
+    return { ...doc, objects }
+  }
+
+  it('策略激活后带成员创建成功：首版依据携带批内绑定快照（B30/B54）', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    const res = await post(createBody({ sceneRequestId: 'req-a1-active' }))
+    expect(res.status).toBe(200)
+    const { id } = await res.json() as { id: string }
+    const members = await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, id)).all()
+    expect(members.map(member => member.personId)).toEqual(['p1'])
+    const revision = await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, id)).get()
+    expect(revision).toBeTruthy()
+    expect(revision!.commitGuard).toBe(true)
+    const proof = JSON.parse(revision!.validationJson!) as SceneWriteProof
+    expect(proof.mode).toBe('initial')
+    expect(proof.bindings.personIds).toEqual(['p1'])
+    expect(proof.bindings.locations).toEqual(LOCATIONS.map(l => l.name).sort())
+  })
+
+  it('场景语句失败时世界/成员整批回滚（B54）', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    const worldId = 'w-a1-rollback'
+    // 与路由同序的批：世界先写、场景语句随后；快照声明的成员不在批内 → authority gate 拒绝 → 整批回滚
+    await expect(f.db.batch([
+      f.db.insert(worlds).values({
+        id: worldId, userId: 'u', name: '回滚世界', description: 'd',
+        locationsJson: JSON.stringify(LOCATIONS), status: 'running', isDemo: false, callsToday: 0, createdAt: NOW,
+      }),
+      ...await initialSceneStatements(f.db, worldId, voxelEnvelope(LOCATIONS.map(l => l.name)), 'req-a1-rollback', { personIds: ['p1'], locations: LOCATIONS }),
+    ])).rejects.toThrow(/scene_revision_binding_mismatch/)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, worldId)).get()).toBeUndefined()
+    expect(await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, worldId)).all()).toHaveLength(0)
+  })
+
+  it('绑定快照与批内实际资料不符被拒且不残留（B30 最终断言）', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    const worldId = 'w-a1-mismatch'
+    // 批内写入成员 p1，快照却声明 p-stranger → 插入闸门拒绝，世界/成员不残留
+    await expect(f.db.batch([
+      f.db.insert(worlds).values({
+        id: worldId, userId: 'u', name: '错快照世界', description: 'd',
+        locationsJson: JSON.stringify(LOCATIONS), status: 'running', isDemo: false, callsToday: 0, createdAt: NOW,
+      }),
+      f.db.insert(worldPersons).values({ worldId, personId: 'p1', joinedAt: NOW }),
+      ...await initialSceneStatements(f.db, worldId, voxelEnvelope(LOCATIONS.map(l => l.name)), 'req-a1-mismatch', { personIds: ['p-stranger'], locations: LOCATIONS }),
+    ])).rejects.toThrow(/scene_revision_binding_mismatch/)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, worldId)).get()).toBeUndefined()
+    expect(await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()).toHaveLength(0)
+  })
+
+  it('人物绑定预检：场景绑定未选定人物 → 400；绑定选定人物 → 200（B54/P17）', async () => {
+    await setup()
+    const stranger = await post(createBody({ scene: envelopeWithPersonBinding('p-stranger'), sceneRequestId: 'req-a1-stranger' }))
+    expect(stranger.status).toBe(400)
+    expect(await stranger.json()).toMatchObject({ error: expect.stringContaining('人物绑定') })
+    const own = await post(createBody({ scene: envelopeWithPersonBinding('p1'), sceneRequestId: 'req-a1-own' }))
+    expect(own.status).toBe(200)
   })
 })

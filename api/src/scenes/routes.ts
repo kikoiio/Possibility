@@ -234,12 +234,14 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
     if (regeneration.status !== 'valid') {
       return c.json({ error: '重新生成的场景未通过完整校验，未保存任何内容', errorCode: regeneration.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete', report: reportView(regeneration.report) ?? undefined }, 502)
     }
+    // A1 B28：基线重指向与新修订同一批写入；任一步失败整批回滚，不留指向旧版本的崩溃窗口
+    const activeBaseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
+      .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active'))).get()
     const result = await commitScene(db, {
       worldId: world.id, expectedVersion: body.expectedVersion!, requestId: body.requestId,
       document: regenerated, summary: '管理员重新生成演示体素世界', kind: 'voxel-regenerate', allowBaseline: true,
+      ...(activeBaseline ? { baselineUpdate: { baselineId: activeBaseline.id } } : {}),
     })
-    await db.update(demoBaselines).set({ sceneVersion: result.version, contentHash: result.contentHash })
-      .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active')))
     return c.json(result)
   } catch (error) {
     if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)

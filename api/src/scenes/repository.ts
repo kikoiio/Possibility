@@ -10,7 +10,12 @@ import {
   buildCommitGuardStatement,
   buildCommitWriteProof,
   buildInitialWriteProof,
+  buildPendingSceneBindings,
   loadSceneWriteProofFacts,
+  resolveSceneWritePolicy,
+  type PendingSceneBindings,
+  type SceneWriteProofBaseline,
+  type SceneWriteProofFacts,
   type SceneWriteProofRequest,
 } from './compatibility/write-proof'
 
@@ -28,6 +33,44 @@ function voxelThemeId(doc: SerializedVoxelDocument | SerializedVoxelSpaces): str
 }
 export interface StoredScene { document: StoredSceneDocument; version: number; contentHash: string; createdAt: string }
 export class SceneConflict extends Error { constructor(message = '场景已被其他操作更新，请重新加载') { super(message); this.name = 'SceneConflict' } }
+
+/**
+ * A1 B29：提交用途命名空间 = kind + 兼容审计 purpose + 草稿身份。
+ * 执行租约字段（attempt/leaseToken）不参与：崩溃后以新 attempt 重试同一确认
+ * 仍属同一用途，应命中重放；普通编辑与兼容请求同 requestId 则明确拒绝。
+ */
+function auditNamespace(compatibilityJson: string | null | undefined): { purpose: string | null; draftId: string | null } {
+  if (!compatibilityJson) return { purpose: null, draftId: null }
+  try {
+    const audit = JSON.parse(compatibilityJson) as { purpose?: unknown; draftId?: unknown }
+    return {
+      purpose: typeof audit.purpose === 'string' ? audit.purpose : null,
+      draftId: typeof audit.draftId === 'string' ? audit.draftId : null,
+    }
+  } catch { return { purpose: null, draftId: null } }
+}
+
+function proofRequestDraftId(validationJson: string | null | undefined): string | null {
+  if (!validationJson) return null
+  try {
+    const proof = JSON.parse(validationJson) as { request?: { draftId?: unknown } | null }
+    return typeof proof.request?.draftId === 'string' ? proof.request.draftId : null
+  } catch { return null }
+}
+
+function commitNamespaceKey(parts: { kind: string; purpose: string | null; draftId: string | null }): string {
+  return JSON.stringify([parts.kind, parts.purpose, parts.draftId])
+}
+
+function commitInputNamespace(input: { kind: string; compatibilityJson?: string | null; compatibility?: SceneWriteProofRequest }): string {
+  const audit = auditNamespace(input.compatibilityJson)
+  return commitNamespaceKey({ kind: input.kind, purpose: audit.purpose, draftId: input.compatibility?.draftId ?? audit.draftId })
+}
+
+function commitRowNamespace(row: { kind: string; compatibilityJson: string | null; validationJson: string | null }): string {
+  const audit = auditNamespace(row.compatibilityJson)
+  return commitNamespaceKey({ kind: row.kind, purpose: audit.purpose, draftId: proofRequestDraftId(row.validationJson) ?? audit.draftId })
+}
 
 async function hashText(text: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
@@ -74,6 +117,8 @@ export async function commitScene(db: Db, input: {
   compatibilityJson?: string | null
   /** Compatibility confirm execution identity, re-checked by the insert gate. */
   compatibility?: SceneWriteProofRequest
+  /** A1 B28：演示基线重指向与修订同批写入；批内 guard 断言新基线引用。 */
+  baselineUpdate?: { baselineId: string }
 }): Promise<StoredScene> {
   const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
     .where(and(eq(demoBaselines.worldId, input.worldId), eq(demoBaselines.status, 'active'))).get()
@@ -82,6 +127,8 @@ export async function commitScene(db: Db, input: {
   const normalized = structuredClone(input.document)
   const contentHash = await hashStoredDocument(normalized, input.expectedVersion + 1)
   if (prior) {
+    // B29：跨用途同 ID 明确拒绝，不返回对方结果；同用途同内容重发仍返回原结果
+    if (commitRowNamespace(prior) !== commitInputNamespace(input)) throw new SceneConflict('同一 request ID 已用于其他场景用途')
     if (prior.contentHash !== contentHash) throw new SceneConflict('同一 request ID 不能提交不同场景内容')
     return { document: JSON.parse(prior.documentJson) as StoredSceneDocument, version: prior.version, contentHash: prior.contentHash, createdAt: prior.createdAt }
   }
@@ -97,34 +144,50 @@ export async function commitScene(db: Db, input: {
   const proof = await buildCommitWriteProof(db, {
     worldId: input.worldId, candidate: { version, contentHash }, ...(input.compatibility ? { compatibility: input.compatibility } : {}),
   })
+  // B28：基线重指向入批时 guard 断言新引用；依据内仍是提交前基线（插入闸门在基线更新前核对）
+  const guardBaseline: SceneWriteProofBaseline | null = input.baselineUpdate
+    ? { id: input.baselineUpdate.baselineId, status: 'active', sceneVersion: version, contentHash }
+    : proof.baseline
   const guard = buildCommitGuardStatement(db, {
-    revisionId: id, worldId: input.worldId, version, requestId: input.requestId, baseline: proof.baseline,
+    revisionId: id, worldId: input.worldId, version, requestId: input.requestId, baseline: guardBaseline,
   })
+  const baselineStatement = input.baselineUpdate
+    ? db.update(demoBaselines).set({ sceneVersion: version, contentHash })
+      .where(and(eq(demoBaselines.id, input.baselineUpdate.baselineId), eq(demoBaselines.worldId, input.worldId), eq(demoBaselines.status, 'active')))
+    : null
   try {
     if (current) await db.batch([
       db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: actual, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.update(worldScenes).set({ currentVersion: version, themeId, updatedAt: now }).where(and(eq(worldScenes.worldId, input.worldId), eq(worldScenes.currentVersion, actual))),
+      ...(baselineStatement ? [baselineStatement] : []),
       guard,
     ])
     else await db.batch([
       // 首版同样先插入有依据的新修订、后创建当前指针，避免误用普通旧版本闸门
       db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: null, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.insert(worldScenes).values({ worldId: input.worldId, currentVersion: version, themeId, updatedAt: now }),
+      ...(baselineStatement ? [baselineStatement] : []),
       guard,
     ])
   } catch (error) { throw new SceneConflict(error instanceof Error ? error.message : undefined) }
   return { document, version, contentHash, createdAt: now }
 }
-export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>]> {
+export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string, pendingBindings?: PendingSceneBindings): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>, BatchItem<'sqlite'>]> {
   const now = new Date().toISOString()
   const doc = structuredClone(document)
   const themeId = voxelThemeId(doc)
   const contentHash = await hashText(JSON.stringify({ document: doc, version: 1 }))
-  // A1 B16/B17：首版修订携带服务端构造的 initial 依据，且先于当前指针落库
-  const facts = await loadSceneWriteProofFacts(db, worldId)
+  // A1 B16/B17：首版修订携带服务端构造的 initial 依据，且先于当前指针落库。
+  // A1 B30：外层同批创建世界时由调用方显式传入待创建绑定快照——此时世界/成员尚未落库，读库只会得到空集合。
+  const facts: SceneWriteProofFacts = pendingBindings
+    ? { policy: await resolveSceneWritePolicy(db), bindings: await buildPendingSceneBindings(pendingBindings), baseline: null, current: null }
+    : await loadSceneWriteProofFacts(db, worldId)
   const proof = buildInitialWriteProof(facts, { candidate: { version: 1, contentHash } })
+  const revisionId = crypto.randomUUID()
   return [
-    db.insert(worldSceneRevisions).values({ id: crypto.randomUUID(), worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
+    db.insert(worldSceneRevisions).values({ id: revisionId, worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
     db.insert(worldScenes).values({ worldId, currentVersion: 1, themeId, updatedAt: now }),
+    // B30 步骤2 最终断言：批内核对外层世界/成员/地点与依据快照一致，不符则 guard=0 整批回滚
+    buildCommitGuardStatement(db, { revisionId, worldId, version: 1, requestId, baseline: proof.baseline, expectedBindings: facts.bindings }),
   ]
 }

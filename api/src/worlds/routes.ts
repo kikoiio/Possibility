@@ -98,6 +98,13 @@ worldsRoutes.post('/', async (c) => {
       if (boundLocations.size !== locations.length || locations.some(l => !boundLocations.has(l.name))) {
         return c.json({ error: '体素场景地点绑定必须与世界地点完全一致' }, 400)
       }
+      // B54/P17：人物绑定预检——场景内人物载体必须属于本次选定的人物（不要求每个人物都有载体，但错人明确拒绝）
+      const requestedPersons = new Set(personIds)
+      const boundPersons = new Set(doc.objects.flatMap(object =>
+        object.binding?.kind === 'person' && object.binding.personId ? [object.binding.personId] : []))
+      if ([...boundPersons].some(id => !requestedPersons.has(id))) {
+        return c.json({ error: '体素场景人物绑定必须属于本次选定的人物' }, 400)
+      }
       body.scene = JSON.parse(serialize(doc)) as SerializedVoxelDocument
     } else {
       // S2:2D 场景文档已退役,不再接受
@@ -187,7 +194,8 @@ worldsRoutes.post('/', async (c) => {
     db.insert(universeEvidence).values({ timelineId: mainTimelineId, level: 'complete', assessedVersion: 0,
       baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
-  if (body.scene && body.sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, body.sceneRequestId))
+  // B30/B54：首版场景语句拼入同一批；绑定快照取本次待创建的成员/地点（此时尚未落库，不能读库）
+  if (body.scene && body.sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, body.sceneRequestId, { personIds, locations }))
   await db.batch(statements)
   return c.json({ id: worldId, timelineId: mainTimelineId })
 })
