@@ -18,3 +18,4 @@ api/wrangler.staging-test.toml
 
 # LLM 重建产物与本地批处理输出
 out/
+.worktrees/

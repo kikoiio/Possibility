@@ -20,6 +20,8 @@ async function fixture(page: Page, options: Options = {}) {
   })
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }))
   await page.addInitScript(() => { localStorage.setItem('possibility_token', 'e2e-token'); localStorage.setItem('possibility:flag:voxel', '1') })
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'visitor', username: '访客' } } }))
+  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 1, document } }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '行动世界' }] } }))
   await page.route('**/api/worlds/world-1?**', route => {
     counters.snapshots++

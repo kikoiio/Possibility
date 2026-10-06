@@ -2,6 +2,8 @@
  * S3 共享选中卡:多空间访客地图与单空间 owner 路径共用(F1 两路径同类型反馈)。
  * 纯展示组件;导览等副作用由调用方在自己的选中回调里处理。
  */
+import { useEffect } from 'react'
+
 export interface MapSelectionCardProps {
   person: { id: string; name: string; location: string; activity: string } | null
   locationName: string | null
@@ -15,6 +17,14 @@ export interface MapSelectionCardProps {
 }
 
 export default function MapSelectionCard({ person, locationName, locationDescription, peopleHere, fallbackLabel, onClose, onEnter }: MapSelectionCardProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return <section className="pointer-events-auto absolute right-3 top-24 z-20 w-[min(21rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5" data-testid="map-selection-card">
     <div className="flex items-start justify-between gap-2">
       <div>

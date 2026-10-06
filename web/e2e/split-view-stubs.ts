@@ -87,6 +87,8 @@ export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } =
       localStorage.setItem('possibility_token', 'e2e-token')
       localStorage.setItem('possibility:flag:voxel', '1')
     }),
+    page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { id: 'owner-1', username: 'owner' } } })),
+    page.route('**/api/worlds/world-1/scene', (route) => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDocument } })),
     page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } })),
     // 列表页和 owner 地图会并行读取人物；漏掉此 stub 会打到本机 API 401 并清除测试 token。
     page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [] } })),

@@ -113,8 +113,8 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, behav
   const res = await fetch(path, { ...options, headers })
   if (res.status === 401) {
     const hadToken = !!token
-    if (hadToken) clearToken()
-    else if (!guestRequestContext) clearGuestToken()
+    if (hadToken && behavior.redirectOnUnauthorized !== false) clearToken()
+    else if (!hadToken && !guestRequestContext) clearGuestToken()
     const data = await readApiErrorEnvelope(res)
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
     if (hadToken && behavior.redirectOnUnauthorized !== false && !location.pathname.startsWith('/login')) location.href = '/login'
@@ -363,7 +363,8 @@ export const guestMapApi = {
 }
 
 export const authApi = {
-  me: () => apiFetch<{ user: { id: string; username: string } }>('/api/auth/me'),
+  me: (options?: { redirectOnUnauthorized?: boolean }) =>
+    apiFetch<{ user: { id: string; username: string } }>('/api/auth/me', {}, options),
 }
 
 export const demoApi = {
@@ -405,7 +406,8 @@ export const worldSceneApi = {
     `/api/worlds/${encodeURIComponent(worldId)}/scene/voxel-revision`,
     { method: 'POST', body: JSON.stringify({ expectedVersion: 0, requestId, document, repair: true }) },
   ),
-  get: (worldId: string) => apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`),
+  get: (worldId: string, options?: { redirectOnUnauthorized?: boolean }) =>
+    apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`, {}, options),
   // S2b:体素整文档保存通道（T10 服务端 voxel-revision 端点）
   commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument | SerializedVoxelSpaces, spaceId?: string) => apiFetch<{ document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document, ...(spaceId ? { spaceId } : {}) }) }),
   regenerateDemo: (worldId: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number; document: SerializedVoxelSpaces }>(`/api/worlds/${worldId}/scene/voxel-regenerate`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId }) }),
@@ -430,6 +432,7 @@ export const sceneCompatibilityApi = {
     apiFetch<SceneEditPreflightResult>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/preflight`,
       { method: 'POST', body: JSON.stringify({ candidate }), signal },
+      { redirectOnUnauthorized: false },
     ),
   createDraft: (worldId: string, params: CreateSceneCompatibilityDraftParams, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityDraftView>(

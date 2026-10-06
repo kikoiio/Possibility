@@ -1,12 +1,14 @@
-// S2b 第一视角 HUD(F1/F4):模式切换按钮、准星、操作提示条、切换失败提示
+// S2b 第一视角 HUD(F1/F4):模式切换按钮、准星、操作提示条、切换失败提示、室内天花板遮罩
 export interface WalkHudProps {
   mode: 'orbit' | 'walk'
   onToggle(): void
   /** 切换失败原因(落点找不到等),短暂展示 */
   notice?: string | null
+  /** 是否处于室内/天花板覆盖环境 (Phase 3) */
+  isIndoor?: boolean
 }
 
-export default function WalkHud({ mode, onToggle, notice }: WalkHudProps) {
+export default function WalkHud({ mode, onToggle, notice, isIndoor = false }: WalkHudProps) {
   return (
     <>
       <button
@@ -27,6 +29,13 @@ export default function WalkHud({ mode, onToggle, notice }: WalkHudProps) {
       )}
       {mode === 'walk' && (
         <>
+          {/* 室内第一视角天花板遮罩 (Phase 3) */}
+          {isIndoor && (
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 via-black/25 to-transparent transition-opacity duration-300"
+              data-testid="voxel-ceiling-mask"
+            />
+          )}
           {/* 准星(F4:屏幕中心射线选中) */}
           <div className="pointer-events-none absolute inset-0 grid place-items-center" data-testid="voxel-crosshair">
             <div className="h-3 w-3 rounded-full border border-white/80 bg-white/20" />

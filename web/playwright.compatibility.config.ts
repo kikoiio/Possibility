@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const apiPort = Number(process.env.PLAYWRIGHT_COMPAT_API_PORT ?? 8798)
 const webPort = Number(process.env.PLAYWRIGHT_COMPAT_WEB_PORT ?? 15198)
-const persistTo = process.env.PLAYWRIGHT_COMPAT_PERSIST_TO ?? '/tmp/possibility-a1-compatibility-e2e'
+const persistTo = process.env.PLAYWRIGHT_COMPAT_PERSIST_TO ?? `/tmp/possibility-a1-compatibility-e2e-${process.pid}`
 
 const swiftshaderArgs = ['--use-gl=swiftshader', '--no-sandbox']
 

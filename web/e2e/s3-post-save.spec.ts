@@ -169,6 +169,8 @@ test.describe('S3 单空间 owner 路径选中卡(F1/F2)', () => {
       simNow: guestSnapshot.simNow, timeZone: 'UTC', createdAt: '2026-09-28T12:00:00.000Z',
     }] } }))
     await page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [{ id: 'person-host', name: '主人', createdAt: '2026-09-01T00:00:00.000Z' }] } }))
+    await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { id: 'person-host', username: '主人' } } }))
+    await page.route('**/api/worlds/world-1/scene', (route) => route.fulfill({ json: { status: 'ready', document: exteriorDoc } }))
     await page.route('**/api/worlds/world-1/stream**', (route) => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
     await page.route('**/api/worlds/world-1/map/bootstrap**', (route) => route.fulfill({ json: {
       access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },

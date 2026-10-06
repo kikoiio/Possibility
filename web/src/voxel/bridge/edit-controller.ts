@@ -91,6 +91,7 @@ export class EditController {
     // S2b:清单可用时摆放 op 走严格校验(assetId 存在性/footprint)
     const issues = validateEdit(doc, ops, undefined, this.engine.assetsManifest ?? undefined)
     if (issues.length > 0) {
+      this.engine.feedback?.showValidationFailure(ops)
       this.opts.onRejected?.(issues)
       return { ok: false, issues }
     }
@@ -135,6 +136,7 @@ export class EditController {
     }
     const issues = validateEdit(doc, ops, undefined, this.engine.assetsManifest ?? undefined)
     if (issues.length > 0) {
+      this.engine.feedback?.showValidationFailure(ops)
       this.opts.onRejected?.(issues)
       return { ok: false, issues }
     }
