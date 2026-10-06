@@ -841,16 +841,121 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         onClose={closeCompatibility}
       />
     : null
+  const worldStatus = snapshot.world.status
+  const running = worldStatus === 'running'
+  const capped = worldStatus === 'capped'
+  const archived = worldStatus === 'archived'
+  const evidenceReadonly = snapshot.evidence.level !== 'complete'
+  const canInteract = !readonly && !guest && !evidenceReadonly
 
   if (voxelSpaces) return <>
-    <GuestWorldMap voxelSpaces={voxelSpaces} snapshot={snapshot} overlay={overlay} initialSpaceId={resumeSpaceId} initialMode={resumeMode} guest={guest} claimPending={claimPending} editable={canEditScene}
+    <GuestWorldMap
+      voxelSpaces={voxelSpaces}
+      snapshot={snapshot}
+      overlay={overlay}
+      initialSpaceId={resumeSpaceId}
+      initialMode={resumeMode}
+      guest={guest}
+      claimPending={claimPending}
+      editable={canEditScene}
       planEdits={canEditScene ? planSceneEdits : undefined}
       preflightEdits={canEditScene ? preflightSceneCandidate : undefined}
       onCompatibilityRequired={() => void openCompatibility('repair-current', { kind: 'current' })}
       onOpenHistory={guest ? undefined : () => { if (sceneHistoryState.status === 'closed') void loadRevisionList() }}
-      onOpenCompatibility={guest ? undefined : () => void openCompatibility('repair-current', { kind: 'current' })} />
-    {sceneHistoryState.status !== 'closed' && <SceneHistoryPanel state={sceneHistoryState} restoring={restoringRevision} restoreError={restoreError} onRestore={version => void restoreVersion(version)} onRetry={() => void loadRevisionList()} onClose={closeSceneHistory} />}
+      onOpenCompatibility={guest ? undefined : () => void openCompatibility('repair-current', { kind: 'current' })}
+      onInject={canInteract ? () => setInjectOpen(v => !v) : undefined}
+      onPresence={canInteract ? () => setPresenceOpen(true) : undefined}
+      onLife={() => setLifeOpen(true)}
+      onPauseResume={(running || !evidenceReadonly) ? () => void handlePauseResume() : undefined}
+      onArchive={!guest ? () => void handleArchiveWorld() : undefined}
+      onLlmConfig={!guest ? () => setLlmConfigOpen(v => !v) : undefined}
+      onCompare={snapshot.timelines.length > 1 ? () => { setCompareInitial(null); setCompareOpen(true) } : undefined}
+      running={running}
+      canInteract={canInteract}
+    />
+    {sceneHistoryState.status !== 'closed' && (
+      <SceneHistoryPanel
+        state={sceneHistoryState}
+        restoring={restoringRevision}
+        restoreError={restoreError}
+        onRestore={version => void restoreVersion(version)}
+        onRetry={() => void loadRevisionList()}
+        onClose={closeSceneHistory}
+      />
+    )}
     {compatPanel}
+    {(forkHint ?? (search.get('forkFrom') ? { sourceId: search.get('forkFrom')!, newId: activeTimelineId } : null)) && !guest && (
+      <div className="fixed inset-x-4 top-16 z-drawer sm:top-20">
+        <ForkCompareHint
+          worldId={worldId}
+          sourceId={(forkHint ?? { sourceId: search.get('forkFrom')! }).sourceId}
+          newId={forkHint?.newId ?? activeTimelineId}
+          name={forkHint?.name}
+          whatIf={forkHint?.whatIf}
+          actionSummary={forkHint?.action?.summary}
+          refreshError={forkRefreshError}
+          onRetry={forkHint ? () => void refreshForkResult(forkHint) : undefined}
+          onCompare={forkHint ? () => { if (!forkRefreshError) { setCompareInitial({ left: forkHint.sourceId, right: forkHint.newId }); setCompareOpen(true) } } : undefined}
+          onDismiss={() => {
+            setForkHint(null)
+            if (search.get('forkFrom')) { const params = new URLSearchParams(search); params.delete('forkFrom'); setSearch(params, { replace: true }) }
+          }}
+        />
+      </div>
+    )}
+    {injectOpen && canInteract && (
+      <div className="fixed inset-x-4 top-20 z-modal mx-auto max-w-xl rounded-2xl border border-ink-line bg-paper/95 p-4 shadow-2xl backdrop-blur-md sm:top-24" data-testid="inject-overlay">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs text-ink-faint">叙事干预会写入当前宇宙历史，并由居民在后续生活中自行感知和回应；它不等同于直接改变环境事实。</p>
+          <button type="button" onClick={() => setInjectOpen(false)} className="text-xs text-ink-faint hover:text-ink">关闭</button>
+        </div>
+        <InjectBox onInject={handleInject} />
+      </div>
+    )}
+    {lifeOpen && activeTimelineId && (
+      <LifePanel
+        worldId={worldId}
+        timelineId={activeTimelineId}
+        timeZone={snapshot.world.timeZone}
+        onClose={() => setLifeOpen(false)}
+        onForkAtMoment={(simTime, premise) => {
+          setLifeOpen(false)
+          setForkPrefill({ key: crypto.randomUUID(), whatIf: premise, simTime })
+        }}
+      />
+    )}
+    {compareOpen && activeTimelineId && snapshot.timelines.length > 1 && (
+      <ComparePanel
+        worldId={worldId}
+        currentTimelineId={activeTimelineId}
+        timelines={snapshot.timelines}
+        initialLeftTimelineId={compareInitial?.left}
+        initialRightTimelineId={compareInitial?.right}
+        onClose={() => setCompareOpen(false)}
+      />
+    )}
+    {presenceOpen && activeTimelineId && (
+      <ScenePanel
+        key={`${worldId}:${activeTimelineId}`}
+        worldId={worldId}
+        timelineId={activeTimelineId}
+        timeZone={snapshot.world.timeZone}
+        worldStatus={snapshot.world.status}
+        readOnly={snapshot.evidence.level !== 'complete'}
+        locations={snapshot.world.locations}
+        initialLocation={presenceLocation ?? ''}
+        onClose={() => { setPresenceOpen(false); setPresenceLocation(null) }}
+      />
+    )}
+    {llmConfigOpen && (
+      <div className="fixed inset-x-4 top-20 z-modal mx-auto max-w-2xl rounded-2xl border border-ink-line bg-paper p-5 shadow-2xl backdrop-blur-md sm:top-24">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-story text-base text-ink">LLM 配置</h3>
+          <button type="button" onClick={() => setLlmConfigOpen(false)} className="text-xs text-ink-faint hover:text-ink">关闭</button>
+        </div>
+        <WorldLlmConfigPanel worldId={worldId} />
+      </div>
+    )}
   </>
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
@@ -871,12 +976,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     )
   }
 
-  const worldStatus = snapshot.world.status
-  const running = worldStatus === 'running'
-  const capped = worldStatus === 'capped'
-  const archived = worldStatus === 'archived'
-  const evidenceReadonly = snapshot.evidence.level !== 'complete'
-  const canInteract = !readonly && !guest && !evidenceReadonly
   async function regenerateDemo() {
     if (!snapshot || regeneratingDemo || !window.confirm('重新生成所有演示空间？当前场景将保留在历史版本中。')) return
     setRegeneratingDemo(true); setRegenerateError('')

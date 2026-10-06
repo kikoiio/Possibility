@@ -20,8 +20,7 @@ import { formatWorldTime } from '../../lib/world-time'
 import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../../lib/world-disambiguation'
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
 
-/** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
-export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, initialMode = 'life', guest = true, claimPending = false, editable = false, planEdits, preflightEdits, onCompatibilityRequired, onOpenHistory, onOpenCompatibility }: {
+export interface GuestWorldMapProps {
   voxelSpaces: SerializedVoxelSpaces
   snapshot: WorldSnapshot
   overlay: SceneLifeOverlay | null
@@ -31,15 +30,49 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
   claimPending?: boolean
   editable?: boolean
   planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditPlan>
-  /** A1(W18):多空间与单空间共用同一兼容入口;当前空间只作为编辑目标,预检/诊断覆盖整个包 */
   preflightEdits?: (candidate: SceneCandidate) => Promise<SceneEditPreflightResult>
-  /** A1(W18):保存/编辑命中兼容阻断(422 compatibility-required)时打开修复旅程 */
+  /** A1(W18):多空间与单空间共用同一兼容入口;当前空间只作为编辑目标,预检/诊断覆盖整个包 */
   onCompatibilityRequired?: () => void
   /** A1(W18):多空间场景历史入口(与单空间共用 WorldCanvasPage 的历史面板) */
   onOpenHistory?: () => void
   /** A1(W18):当前场景兼容诊断入口 */
   onOpenCompatibility?: () => void
-}) {
+  onInject?: () => void
+  onPresence?: () => void
+  onLife?: () => void
+  onPauseResume?: () => void
+  onArchive?: () => void
+  onLlmConfig?: () => void
+  onCompare?: () => void
+  running?: boolean
+  canInteract?: boolean
+}
+
+/** 多空间体素地图(S2 起唯一形态):外景 ↔ 室内,访客沙盒与拥有者共用 */
+export function GuestWorldMap({
+  voxelSpaces,
+  snapshot,
+  overlay,
+  initialSpaceId,
+  initialMode = 'life',
+  guest = true,
+  claimPending = false,
+  editable = false,
+  planEdits,
+  preflightEdits,
+  onCompatibilityRequired,
+  onOpenHistory,
+  onOpenCompatibility,
+  onInject,
+  onPresence,
+  onLife,
+  onPauseResume,
+  onArchive,
+  onLlmConfig,
+  onCompare,
+  running,
+  canInteract,
+}: GuestWorldMapProps) {
   const navigate = useNavigate()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
   const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
@@ -270,15 +303,28 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
-        {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}{onOpenHistory && <button data-testid="scene-history-entry" onClick={onOpenHistory} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">历史</button>}{onOpenCompatibility && <button data-testid="scene-check-entry" onClick={onOpenCompatibility} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">场景检查</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
-          const selectedWorld = worldChoices.find(world => world.id === event.target.value)
-          if (event.target.value === '__new__') navigate('/worlds/new')
-          else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
-        }} className="max-w-40 rounded-full border border-white/45 bg-[#263a31]/70 px-3 py-2 text-xs text-white">
-          <option value={liveSnapshot.world.id}>{liveSnapshot.world.name} · 当前 · {worldStatusLabel({ ...liveSnapshot.world, hasScene: true })}</option>
-          {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name} · {worldPersonLabel(world.personNames)} · {worldStatusLabel(world)}</option>)}
-          <option value="__new__" className="text-[#263a31]">创建世界</option>
-        </select><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button></div>}
+        {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button></div> : <div className="flex items-center gap-2">
+          {canInteract && onInject && <button onClick={onInject} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">干预</button>}
+          {canInteract && onPresence && <button onClick={onPresence} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">在场</button>}
+          {onLife && <button onClick={onLife} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">你不在时</button>}
+          {liveSnapshot.timelines.length > 1 && onCompare && <button onClick={onCompare} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">对照宇宙</button>}
+          {onLlmConfig && <button onClick={onLlmConfig} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">LLM</button>}
+          {onPauseResume && <button onClick={onPauseResume} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{running ? '暂停' : '继续'}</button>}
+          {editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}
+          {onOpenHistory && <button data-testid="scene-history-entry" onClick={onOpenHistory} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">历史</button>}
+          {onOpenCompatibility && <button data-testid="scene-check-entry" onClick={onOpenCompatibility} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">场景检查</button>}
+          <select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
+            const selectedWorld = worldChoices.find(world => world.id === event.target.value)
+            if (event.target.value === '__new__') navigate('/worlds/new')
+            else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
+          }} className="max-w-40 rounded-full border border-white/45 bg-[#263a31]/70 px-3 py-2 text-xs text-white">
+            <option value={liveSnapshot.world.id}>{liveSnapshot.world.name} · 当前 · {worldStatusLabel({ ...liveSnapshot.world, hasScene: true })}</option>
+            {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name} · {worldPersonLabel(world.personNames)} · {worldStatusLabel(world)}</option>)}
+            <option value="__new__" className="text-[#263a31]">创建世界</option>
+          </select>
+          <button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button>
+          {onArchive && <button onClick={onArchive} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs text-white/70 backdrop-blur-md">归档</button>}
+        </div>}
       </header>
       <div className="pointer-events-auto absolute left-3 top-32 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5 sm:top-24">
         {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (

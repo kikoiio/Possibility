@@ -592,7 +592,37 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
           </button>
         </div>
 
-        {error && <p className="border-b border-red-100 bg-red-50 px-5 py-2 text-xs text-red-600">{error}</p>}
+        {error && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100 bg-red-50 px-5 py-2 text-xs text-red-600">
+            <span>{error}</span>
+            <div className="flex items-center gap-2">
+              {pendingRef.current && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (persona) {
+                      clearPendingSceneRequest(pendingStorageKey(worldId, timelineId, persona.id))
+                    }
+                    pendingRef.current = null
+                    setBusy(false)
+                    setError('已取消未完成请求，可重新输入。')
+                  }}
+                  className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                >
+                  取消待定交谈
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setError('')}
+                className="text-red-400 hover:text-red-700"
+                aria-label="关闭提示"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         {personaLoading ? (
           <p className="p-5 text-sm text-ink-faint">加载中…</p>
@@ -636,26 +666,38 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
           <>
             {/* 已落籍：到场交谈 */}
             <div className="flex flex-wrap items-center gap-2 border-b border-ink-line/60 px-5 py-2.5">
-              <span className="text-xs text-ink-faint">{persona.location ? `你在 ${persona.location} · 前往` : '选择进入地点'}</span>
-              <select
-                aria-label="进入地点"
-                value={location}
-                disabled={busy || moving}
-                onChange={(e) => setLocation(e.target.value)}
-                className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs text-ink-soft outline-none"
-              >
-                <option value="" disabled>选择地点</option>
-                {actionLocations.map((l) => {
-                  const count = board?.[l.name]
-                  return (
-                    <option key={l.name} value={l.name}>
-                      {l.name}
-                      {count != null ? (count > 0 ? `（${count} 人可交谈）` : '（都在忙或睡着）') : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              {persona.location !== location && <button onClick={() => void handlePosition()} disabled={moving || !location} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{moving ? '到场中…' : persona.location ? '移动' : '进入'}</button>}
+              <span className="text-xs text-ink-faint">
+                {persona.location ? `你在 ${persona.location}` : '未进入地点'}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <select
+                  aria-label="进入地点"
+                  value={location}
+                  disabled={busy || moving}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs text-ink-soft outline-none"
+                >
+                  <option value="" disabled>选择地点</option>
+                  {actionLocations.map((l) => {
+                    const count = board?.[l.name]
+                    return (
+                      <option key={l.name} value={l.name}>
+                        {l.name}
+                        {count != null ? (count > 0 ? `（${count} 人可交谈）` : '（都在忙或睡着）') : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+                {persona.location !== location && (
+                  <button
+                    onClick={() => void handlePosition()}
+                    disabled={moving || !location}
+                    className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50"
+                  >
+                    {moving ? '到场中…' : persona.location ? '移动' : '进入'}
+                  </button>
+                )}
+              </div>
               <span className="ml-auto text-xs text-ink-faint">
                 你是 <span className="font-story text-ink-soft">{persona.name}</span>
               </span>
