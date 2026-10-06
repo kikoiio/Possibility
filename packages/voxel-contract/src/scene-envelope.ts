@@ -15,6 +15,15 @@ import type {
 /** The private key used for a single-space envelope. It is not a user-facing space id. */
 export const SINGLE_SPACE_ID = 'single'
 
+/** Limits for scenes accepted by the compatibility decoder (A1/R01). */
+export const SCENE_COMPATIBILITY_LIMITS = Object.freeze({
+  width: 256,
+  height: 64,
+  depth: 256,
+  spaces: 8,
+  jsonUtf8Bytes: 1_500_000,
+})
+
 type RawDocument = SerializedVoxelDocument | SerializedVoxelSpaces
 
 type DecodeFailure = {
@@ -50,9 +59,24 @@ function issue(
 
 function parseInput(value: unknown): { raw: unknown; parsed: unknown } | DecodeFailure {
   if (value === undefined || value === null) return issue('missing', 'missing-scene', '场景资料不存在', '请重新加载场景后再试')
+  let json: string
+  if (typeof value === 'string') {
+    json = value
+  } else {
+    try {
+      const serialized = JSON.stringify(value)
+      if (typeof serialized !== 'string') throw new Error('not JSON serializable')
+      json = serialized
+    } catch {
+      return issue('corrupt', 'invalid-json', '场景资料无法序列化为 JSON', '保留原资料并从可用场景版本重新加载')
+    }
+  }
+  if (new TextEncoder().encode(json).byteLength > SCENE_COMPATIBILITY_LIMITS.jsonUtf8Bytes) {
+    return issue('unsupported', 'unsupported-format', `场景 JSON UTF-8 大小超过支持上限 ${SCENE_COMPATIBILITY_LIMITS.jsonUtf8Bytes} bytes`, '保留原资料并使用支持更大场景的处理流程')
+  }
   if (typeof value !== 'string') return { raw: value, parsed: value }
   try {
-    return { raw: value, parsed: JSON.parse(value) }
+    return { raw: value, parsed: JSON.parse(json) }
   } catch {
     return issue('corrupt', 'invalid-json', '场景资料不是有效 JSON', '保留原资料并从可用场景版本重新加载')
   }
@@ -65,6 +89,15 @@ function decodeDocument(raw: unknown): VoxelDocument | DecodeFailure {
       return issue('unsupported', 'unsupported-document-version', '场景文档版本不受支持', '使用支持该版本的场景适配器或保留原版本')
     }
     return issue('corrupt', 'invalid-document-envelope', '场景文档信封不完整或格式损坏', '保留原资料并从可用场景版本重新加载')
+  }
+  const size = (raw as { size?: unknown }).size
+  if (typeof size === 'object' && size !== null) {
+    const dimensions = size as Record<string, unknown>
+    if ((Number.isInteger(dimensions.width) && (dimensions.width as number) > SCENE_COMPATIBILITY_LIMITS.width)
+      || (Number.isInteger(dimensions.height) && (dimensions.height as number) > SCENE_COMPATIBILITY_LIMITS.height)
+      || (Number.isInteger(dimensions.depth) && (dimensions.depth as number) > SCENE_COMPATIBILITY_LIMITS.depth)) {
+      return issue('unsupported', 'unsupported-size', `场景尺寸超过支持上限 ${SCENE_COMPATIBILITY_LIMITS.width}×${SCENE_COMPATIBILITY_LIMITS.height}×${SCENE_COMPATIBILITY_LIMITS.depth}`, '保留原资料并使用支持该尺寸的场景处理流程')
+    }
   }
   try {
     return deserialize(JSON.stringify(raw))
@@ -82,6 +115,9 @@ function decodeSpaces(raw: SerializedVoxelSpaces):
   | DecodeFailure {
   if (!Array.isArray(raw.spaces) || raw.spaces.length === 0) {
     return issue('corrupt', 'missing-spaces', '多空间场景没有可读取的空间', '保留原资料并从可用场景版本重新加载')
+  }
+  if (raw.spaces.length > SCENE_COMPATIBILITY_LIMITS.spaces) {
+    return issue('unsupported', 'unsupported-format', `多空间场景数量超过支持上限 ${SCENE_COMPATIBILITY_LIMITS.spaces}`, '保留原资料并使用支持更多空间的场景处理流程')
   }
   if (typeof raw.defaultSpaceId !== 'string' || raw.defaultSpaceId.length === 0) {
     return issue('corrupt', 'missing-default-space', '多空间场景缺少默认空间', '保留原资料并从可用场景版本重新加载')
@@ -178,6 +214,16 @@ export function decodeSceneCompatibility(document: unknown): SceneDecodeResult |
     return { status: 'ready', envelope: envelopeFromRaw(raw, 'spaces', decoded.spaces) }
   }
   if (typeof raw === 'object' && raw !== null && 'format' in raw) {
+    const knownFormat = raw as { format?: unknown; version?: unknown }
+    if (knownFormat.format === 'voxel-document') {
+      // Keep a recognized document format with an unknown version distinct from
+      // an unrelated scene representation. decodeDocument returns the typed issue.
+      const decoded = decodeDocument(raw)
+      if (hasFailure(decoded)) return decoded
+    }
+    if (knownFormat.format === 'voxel-spaces' && knownFormat.version !== 1) {
+      return issue('unsupported', 'unsupported-spaces-version', '多空间场景版本不受支持', '使用支持该版本的场景适配器或保留原版本')
+    }
     return issue('unsupported', 'unsupported-scene-format', '场景表现格式不受当前体素适配器支持', '保留原资料并使用对应表现格式的处理流程')
   }
   return issue('corrupt', 'missing-scene-format', '场景资料缺少可识别的格式标记', '保留原资料并从可用场景版本重新加载')

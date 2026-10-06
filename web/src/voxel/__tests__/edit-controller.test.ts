@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  applyEdits, clampTerrainParams, createBlockRegistry, createEmptyWorld, generateTerrainCells, getBlock,
+  applyEdits, clampTerrainParams, createBlockRegistry, createEmptyWorld, decodeSceneCompatibility, deserialize,
+  DEFAULT_SCENE_BUDGET, generateTerrainCells, getBlock, createSceneWorkControl, serialize, validateSceneEnvelope,
   writeTerrainCells,
-  type SceneEditPreflightResult, type SceneIssue, type SceneValidationReport,
-  type VoxelDocument,
+  type EditOperation, type SceneEditPreflightResult, type SceneIssue, type SceneValidationReport,
+  type SceneValidationContext, type VoxelDocument,
 } from '@possibility/voxel-contract'
+import type { AssetManifest } from '@possibility/voxel-contract'
 import type { AtlasJson } from '../engine/atlas'
 import { VoxelEngine } from '../engine'
 import { EditController, type PreflightBasis, type PreflightBlocked } from '../bridge/edit-controller'
@@ -128,15 +130,22 @@ describe('EditController × A1 完整候选预检(W20/W25/W26)', () => {
     baseline: null,
   })
 
-  const issueStub = (origin: SceneIssue['origin'], summary: string): SceneIssue => ({
-    id: `issue-${origin}`,
-    code: 'asset-unsupported',
+  const issueStub = (
+    origin: SceneIssue['origin'],
+    summary: string,
+    details: Pick<SceneIssue, 'code' | 'category'> & Partial<Pick<SceneIssue, 'reason'>> = {
+      code: 'asset-unsupported', category: 'structure',
+    },
+  ): SceneIssue => ({
+    id: `issue-${origin}-${details.code}`,
+    code: details.code,
     origin,
-    category: 'structure',
+    category: details.category,
     spaceId: null,
     summary,
     suggestion: '调整后再试',
     blocking: true,
+    ...(details.reason ? { reason: details.reason } : {}),
   })
 
   const reportStub = (status: SceneValidationReport['status'], issues: SceneIssue[] = []): SceneValidationReport => ({
@@ -185,6 +194,283 @@ describe('EditController × A1 完整候选预检(W20/W25/W26)', () => {
     vi.advanceTimersByTime(1000)
     expect(controller.saves).toBe(0)
     expect(saved).toHaveLength(0)
+    engine.dispose()
+  })
+
+  const a42GateIssues: Array<[string, SceneIssue]> = [
+    ['结构问题', issueStub('edit', '石墙结构存在重叠', { code: 'object-overlap', category: 'structure' })],
+    ['资产碰撞', issueStub('edit', '花卉资产与石灯笼发生碰撞', { code: 'asset-overlap', category: 'asset', reason: 'collision' })],
+    ['资产缺支撑', issueStub('edit', '花卉资产下方缺少支撑', { code: 'asset-overlap', category: 'asset', reason: 'unsupported' })],
+    ['绑定问题', issueStub('edit', '人物居民未绑定到载体', { code: 'binding-mismatch', category: 'binding' })],
+    ['连接问题', issueStub('edit', '跨空间入口目标不存在', { code: 'connection-invalid', category: 'connection' })],
+    ['通行问题', issueStub('edit', '入口净高不足，无法通行', { code: 'walk-clearance', category: 'walkability' })],
+  ]
+
+  it.each(a42GateIssues)('A4.2 控制器闸门：%s 独立阻断且保留原场景', async (_name, issue) => {
+    const engine = headlessEngine()
+    const originalDoc = engine.world!.doc
+    const originalSerialized = serialize(originalDoc)
+    const apply = vi.spyOn(engine, 'applyEditResult')
+    const save = vi.fn()
+    const blocked: PreflightBlocked[] = []
+    const controller = new EditController({
+      engine,
+      save,
+      preflight: async () => ({ status: 'invalid', report: reportStub('invalid', [issue]) }),
+      onPreflightBlocked: value => blocked.push(value),
+    })
+
+    const outcome = await controller.applyOpsAsync(
+      [{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }],
+      { feedback: false },
+    )
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('invalid')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]!.report?.issues).toEqual([issue])
+    expect(blocked[0]!.message).toContain('本次编辑未通过完整校验')
+    expect(blocked[0]!.message).toContain(issue.summary)
+    expect(apply).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1_000)
+    expect(controller.saves).toBe(0)
+    expect(engine.world!.doc).toBe(originalDoc)
+    expect(serialize(engine.world!.doc)).toBe(originalSerialized)
+
+    controller.dispose()
+    engine.dispose()
+  })
+
+  it('A4.2:真实场景规则报告阻断缺支撑编辑,不应用也不保存', async () => {
+    const engine = headlessEngine()
+    const assets: AssetManifest = {
+      version: 2,
+      assets: {
+        'test-hut': {
+          id: 'test-hut', category: 'building', url: '/hut.glb', footprint: [2, 2], height: 2,
+          thumbnail: '/hut.png', sway: 0,
+        },
+      },
+    }
+    const placed = applyEdits(engine.world!.doc, [{
+      kind: 'place-asset', assetId: 'test-hut', anchor: at(10, 1, 10), rotation: 0, placementId: 'hut-a',
+    }]).document
+    engine.loadDocument(placed)
+    const originalDoc = engine.world!.doc
+    const originalSerialized = serialize(originalDoc)
+    const apply = vi.spyOn(engine, 'applyEditResult')
+    const save = vi.fn()
+    const blocked: PreflightBlocked[] = []
+    const context: SceneValidationContext = {
+      rulesVersion: 'a4.2-controller-integration',
+      assets,
+      assetManifestHash: 'a4.2-assets',
+      templateCatalogHash: 'a4.2-templates',
+      bindingHash: 'a4.2-bindings',
+      contextFingerprint: 'a4.2-context',
+      bindings: {
+        personIds: [], locations: [], protectedObjects: [], protectedPlacements: [],
+        locationBindings: [], personBindings: [], entries: [],
+      },
+    }
+    const preflightEvidence: { report?: SceneValidationReport } = {}
+    const controller = new EditController({
+      engine,
+      save,
+      onPreflightBlocked: value => blocked.push(value),
+      preflight: async candidate => {
+        if (candidate.kind !== 'operations') throw new Error('expected operations candidate')
+        // applyEdits writes through section objects, so isolate its input from the live engine document.
+        const candidateBase = deserialize(serialize(engine.world!.doc))
+        const candidateDoc = applyEdits(candidateBase, candidate.operations).document
+        const decoded = decodeSceneCompatibility(JSON.parse(serialize(candidateDoc)))
+        if (decoded.status !== 'ready') throw new Error('could not decode candidate scene')
+        preflightEvidence.report = await validateSceneEnvelope(
+          decoded.envelope, context, DEFAULT_SCENE_BUDGET, createSceneWorkControl({ yieldControl: async () => {} }), 'edit',
+        )
+        return preflightEvidence.report.status === 'invalid'
+          ? { status: 'invalid', report: preflightEvidence.report }
+          : preflightEvidence.report.status === 'incomplete'
+            ? { status: 'incomplete', report: preflightEvidence.report }
+            : validResult()
+      },
+    })
+    const supportRemoval = [
+      { kind: 'set-block' as const, at: at(10, 0, 10), block: 'air' },
+      { kind: 'set-block' as const, at: at(11, 0, 10), block: 'air' },
+      { kind: 'set-block' as const, at: at(10, 0, 11), block: 'air' },
+      { kind: 'set-block' as const, at: at(11, 0, 11), block: 'air' },
+    ]
+
+    const outcome = await controller.applyOpsAsync(supportRemoval, { feedback: false })
+
+    expect(preflightEvidence.report?.status).toBe('invalid')
+    const unsupportedIssue = preflightEvidence.report?.issues.find(issue => issue.code === 'asset-overlap')
+    expect(unsupportedIssue).toMatchObject({
+      code: 'asset-overlap', origin: 'edit', category: 'asset', reason: 'unsupported', at: at(10, 1, 10),
+    })
+    expect(unsupportedIssue?.summary).toContain('support')
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('invalid')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]!.report).toBe(preflightEvidence.report)
+    expect(blocked[0]!.message).toContain(unsupportedIssue!.summary)
+    expect(apply).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1_000)
+    expect(controller.saves).toBe(0)
+    expect(engine.world!.doc).toBe(originalDoc)
+    expect(serialize(engine.world!.doc)).toBe(originalSerialized)
+
+    controller.dispose()
+    engine.dispose()
+  })
+
+  const a42RealGateScenarios: Array<{
+    name: string
+    code: string
+    category: SceneIssue['category']
+    reason?: SceneIssue['reason']
+    summary: RegExp
+    at?: ReturnType<typeof at>
+    operations: EditOperation[]
+    prepare?: (engine: VoxelEngine) => void
+    configure?: (context: SceneValidationContext) => void
+  }> = [
+    {
+      name: '结构', code: 'floating-object', category: 'structure', summary: /floating-lantern/,
+      at: at(5, 1, 5),
+      prepare: engine => engine.loadDocument(applyEdits(engine.world!.doc, [{
+        kind: 'place-object', objectType: 'stone-lantern', anchor: at(5, 1, 5), rotation: 0, objectId: 'floating-lantern',
+      }]).document),
+      operations: [{ kind: 'set-block', at: at(5, 0, 5), block: 'air' }],
+    },
+    {
+      name: '资产碰撞', code: 'asset-overlap', category: 'asset', reason: 'collision', summary: /collision-hut-a|collision-hut-b/,
+      at: at(12, 1, 12),
+      operations: [
+        { kind: 'place-asset', assetId: 'test-hut', anchor: at(12, 1, 12), rotation: 0, placementId: 'collision-hut-a' },
+        { kind: 'place-asset', assetId: 'test-hut', anchor: at(12, 1, 12), rotation: 0, placementId: 'collision-hut-b' },
+      ],
+    },
+    {
+      name: '资产缺支撑', code: 'asset-overlap', category: 'asset', reason: 'unsupported', summary: /support/,
+      at: at(20, 4, 20),
+      operations: [{ kind: 'place-asset', assetId: 'test-hut', anchor: at(20, 4, 20), rotation: 0, placementId: 'unsupported-hut' }],
+    },
+    {
+      name: '人物绑定', code: 'binding-mismatch', category: 'binding', summary: /person-expected.*person-carrier/,
+      operations: [{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }],
+      configure: (context: SceneValidationContext) => context.bindings.personBindings.push({
+        spaceId: 'single', objectId: 'person-carrier', personId: 'person-expected',
+      }),
+    },
+    {
+      name: '地点绑定', code: 'binding-mismatch', category: 'binding', summary: /Kitchen.*location-carrier/,
+      operations: [{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }],
+      configure: (context: SceneValidationContext) => context.bindings.locationBindings.push({
+        spaceId: 'single', carrierId: 'location-carrier', location: { name: 'Kitchen', stableId: 'kitchen' },
+      }),
+    },
+    {
+      name: '连接无效', code: 'connection-invalid', category: 'connection', summary: /missing-target/,
+      at: at(0, 1, 3),
+      operations: [{ kind: 'set-block', at: at(5, 1, 5), block: 'stone' }],
+      configure: (context: SceneValidationContext) => context.bindings.entries.push({
+        fromSpaceId: 'single', toSpaceId: 'missing-target', at: at(0, 1, 3),
+      }),
+    },
+    {
+      name: '通行净空', code: 'walk-clearance', category: 'walkability', summary: /净空不足/,
+      at: at(0, 1, 0),
+      operations: [{ kind: 'set-block', at: at(0, 2, 0), block: 'stone' }],
+    },
+  ]
+
+  it.each(a42RealGateScenarios)('A4.2 真实验证器门禁：$name 报告阻断且文档/版本/持久历史不变', async scenario => {
+    const engine = headlessEngine()
+    scenario.prepare?.(engine)
+    const originalDoc = engine.world!.doc
+    const originalSerialized = serialize(originalDoc)
+    const originalVersion = originalDoc.version
+    const apply = vi.spyOn(engine, 'applyEditResult')
+    const save = vi.fn()
+    const blocked: PreflightBlocked[] = []
+    const assets: AssetManifest = {
+      version: 2,
+      assets: {
+        'test-hut': {
+          id: 'test-hut', category: 'building', url: '/hut.glb', footprint: [2, 2], height: 2,
+          thumbnail: '/hut.png', sway: 0,
+        },
+      },
+    }
+    const context: SceneValidationContext = {
+      rulesVersion: 'a4.2-controller-gate-matrix',
+      assets,
+      assetManifestHash: 'a4.2-controller-assets',
+      templateCatalogHash: 'a4.2-controller-templates',
+      bindingHash: 'a4.2-controller-bindings',
+      contextFingerprint: 'a4.2-controller-context',
+      bindings: {
+        personIds: [], locations: [], protectedObjects: [], protectedPlacements: [],
+        locationBindings: [], personBindings: [], entries: [],
+      },
+    }
+    scenario.configure?.(context)
+    const evidence: { report?: SceneValidationReport } = {}
+    const controller = new EditController({
+      engine,
+      save,
+      onPreflightBlocked: value => blocked.push(value),
+      preflight: async candidate => {
+        if (candidate.kind !== 'operations') throw new Error('expected operations candidate')
+        // Build the actual edited candidate on an isolated copy, then use the real scene validator.
+        const candidateBase = deserialize(serialize(engine.world!.doc))
+        const candidateDoc = applyEdits(candidateBase, candidate.operations).document
+        const decoded = decodeSceneCompatibility(JSON.parse(serialize(candidateDoc)))
+        if (decoded.status !== 'ready') throw new Error('could not decode candidate scene')
+        evidence.report = await validateSceneEnvelope(
+          decoded.envelope, context, DEFAULT_SCENE_BUDGET,
+          createSceneWorkControl({ yieldControl: async () => {} }), 'edit',
+        )
+        return evidence.report.status === 'invalid'
+          ? { status: 'invalid', report: evidence.report }
+          : evidence.report.status === 'incomplete'
+            ? { status: 'incomplete', report: evidence.report }
+            : validResult()
+      },
+    })
+
+    const outcome = await controller.applyOpsAsync(scenario.operations, { feedback: false })
+
+    expect(evidence.report?.status).toBe('invalid')
+    const issue = evidence.report?.issues.find(candidate => candidate.code === scenario.code)
+    expect(issue).toBeDefined()
+    expect(issue).toMatchObject({
+      code: scenario.code, origin: 'edit', category: scenario.category, spaceId: 'single',
+      ...(scenario.reason ? { reason: scenario.reason } : {}),
+      ...(scenario.at ? { at: scenario.at } : {}),
+      blocking: true,
+    })
+    expect(issue?.summary).toMatch(scenario.summary)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.blocked?.kind).toBe('invalid')
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]!.report).toBe(evidence.report)
+    expect(blocked[0]!.message).toContain(issue!.summary)
+    expect(apply).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1_000)
+    controller.flushSave()
+    expect(controller.saves).toBe(0)
+    expect(save).not.toHaveBeenCalled()
+    expect(engine.world!.doc).toBe(originalDoc)
+    expect(engine.world!.doc.version).toBe(originalVersion)
+    expect(serialize(engine.world!.doc)).toBe(originalSerialized)
+
+    controller.dispose()
     engine.dispose()
   })
 

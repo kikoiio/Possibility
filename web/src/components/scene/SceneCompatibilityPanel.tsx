@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   SceneIssue,
   SceneRepairChange,
@@ -7,19 +7,20 @@ import type {
   SceneValidationReportView,
 } from '@possibility/voxel-contract'
 import type { CompatibilityContinuation } from '../../scene/compatibility-store'
+import { sceneCompatibilityApi } from '../../api/client'
 
 const PAGE_SIZE = 20
 const RULE_NOTE_LIMIT = 64
 
-interface Paged<T> { items: T[]; total: number; hasMore: boolean; countIsExact: boolean }
+interface Paged<T> { items: T[]; total: number; offset: number; limit: number; hasMore: boolean; countIsExact: boolean }
 
 function issuesOf(report: SceneValidationReport | SceneValidationReportView | null | undefined): Paged<SceneIssue> | null {
   if (!report) return null
   const raw = report.issues
   if (Array.isArray(raw)) {
-    return { items: raw, total: report.issueCount, hasMore: report.issueCount > raw.length, countIsExact: report.countIsExact }
+    return { items: raw, total: report.issueCount, offset: 0, limit: raw.length, hasMore: report.issueCount > raw.length, countIsExact: report.countIsExact }
   }
-  return { items: raw.items, total: raw.total, hasMore: raw.hasMore, countIsExact: raw.countIsExact ?? report.countIsExact }
+  return { items: raw.items, total: raw.total, offset: raw.offset, limit: raw.limit, hasMore: raw.hasMore, countIsExact: raw.countIsExact ?? report.countIsExact }
 }
 
 function notesOf(report: SceneValidationReport | SceneValidationReportView | null | undefined): { items: SceneRuleNote[]; total: number; hasMore: boolean } {
@@ -77,17 +78,21 @@ function coordText(at: { x: number; y: number; z: number }): string {
   return `(${at.x}, ${at.y}, ${at.z})`
 }
 
-function Pager({ page, pageCount, onPage }: { page: number; pageCount: number; onPage: (page: number) => void }) {
-  if (pageCount <= 1) return null
+export function Pager({ offset, limit, total, hasMore, countIsExact = true, onPage, busy }: { offset: number; limit: number; total: number; hasMore: boolean; countIsExact?: boolean; onPage?: (offset: number) => void; busy?: boolean }) {
+  if (!onPage || (offset === 0 && !hasMore)) return null
+  const page = Math.floor(offset / Math.max(1, limit))
+  const pageCount = Math.max(page + 1, Math.ceil(total / Math.max(1, limit)), hasMore ? page + 2 : page + 1)
   return <div className="mt-2 flex items-center gap-2 text-xs text-[#748176]">
-    <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className="rounded-full border border-[#d4ded3] px-2 py-0.5 disabled:opacity-40">上一页</button>
-    <span>{page + 1} / {pageCount}</span>
-    <button type="button" disabled={page >= pageCount - 1} onClick={() => onPage(page + 1)} className="rounded-full border border-[#d4ded3] px-2 py-0.5 disabled:opacity-40">下一页</button>
+    <button type="button" disabled={page === 0 || busy} onClick={() => onPage(Math.max(0, offset - limit))} className="rounded-full border border-[#d4ded3] px-2 py-0.5 disabled:opacity-40">上一页</button>
+    <span>{countIsExact ? `${page + 1} / ${pageCount}` : `第 ${page + 1} 页`}</span>
+    <button type="button" disabled={!hasMore || busy} onClick={() => onPage(offset + limit)} className="rounded-full border border-[#d4ded3] px-2 py-0.5 disabled:opacity-40">下一页</button>
   </div>
 }
 
-function IssueList({ issues }: { issues: Paged<SceneIssue> }) {
-  const { page, setPage, visible, pageCount } = useLocalPage(issues.items)
+function IssueList({ issues, onPage, busy }: { issues: Paged<SceneIssue>; onPage?: (offset: number) => void; busy?: boolean }) {
+  const local = useLocalPage(issues.items)
+  const serverPaged = !!onPage
+  const visible = serverPaged ? issues.items : local.visible
   return <div>
     <h3 className="text-sm font-medium text-[#3f5646]">阻断问题（{issues.countIsExact ? issues.total : `至少 ${issues.total}`} 条）</h3>
     {!visible.length
@@ -99,13 +104,15 @@ function IssueList({ issues }: { issues: Paged<SceneIssue> }) {
         </p>
         {issue.suggestion && <p className="mt-1 text-[11px] text-[#6b7a6f]">{issue.suggestion}</p>}
       </li>)}</ul>}
-    <Pager page={page} pageCount={pageCount} onPage={setPage} />
+    <Pager offset={serverPaged ? issues.offset : local.page * PAGE_SIZE} limit={serverPaged ? issues.limit : PAGE_SIZE} total={serverPaged ? issues.total : issues.items.length} hasMore={serverPaged ? issues.hasMore : local.page < local.pageCount - 1} countIsExact={issues.countIsExact} onPage={onPage ? (offset) => onPage(offset) : (offset) => local.setPage(Math.floor(offset / PAGE_SIZE))} busy={busy} />
     {issues.hasMore && <p className="mt-2 text-[11px] text-[#859085]">还有未显示的问题；未展示全部不影响检查结论。</p>}
   </div>
 }
 
-function ChangeList({ changes }: { changes: Paged<SceneRepairChange> }) {
-  const { page, setPage, visible, pageCount } = useLocalPage(changes.items)
+function ChangeList({ changes, onPage, busy }: { changes: Paged<SceneRepairChange>; onPage?: (offset: number) => void; busy?: boolean }) {
+  const local = useLocalPage(changes.items)
+  const serverPaged = !!onPage
+  const visible = serverPaged ? changes.items : local.visible
   return <div>
     <h3 className="text-sm font-medium text-[#3f5646]">本次修复变化（{changes.total} 项）</h3>
     {!visible.length
@@ -118,7 +125,7 @@ function ChangeList({ changes }: { changes: Paged<SceneRepairChange> }) {
           {change.kind === 'set-block' ? ` · ${coordText(change.at)}` : ''}
         </p>
       </li>)}</ul>}
-    <Pager page={page} pageCount={pageCount} onPage={setPage} />
+    <Pager offset={serverPaged ? changes.offset : local.page * PAGE_SIZE} limit={serverPaged ? changes.limit : PAGE_SIZE} total={serverPaged ? changes.total : changes.items.length} hasMore={serverPaged ? changes.hasMore : local.page < local.pageCount - 1} countIsExact={changes.countIsExact} onPage={onPage ? (offset) => onPage(offset) : (offset) => local.setPage(Math.floor(offset / PAGE_SIZE))} busy={busy} />
     {changes.hasMore && <p className="mt-2 text-[11px] text-[#859085]">还有未显示的变化；最终以确认时的完整复验为准。</p>}
   </div>
 }
@@ -162,10 +169,47 @@ export function SceneCompatibilityPanel({ continuation, canEdit, preview, onBuil
   const { state, inspection, draft, failure, receipt, message } = continuation
   const busy = state === 'checking' || state === 'building' || state === 'submitting'
   const report = draft?.report ?? inspection?.report ?? failure?.report ?? null
-  const issues = useMemo(() => issuesOf(report), [report])
+  const [issuePage, setIssuePage] = useState<Paged<SceneIssue> | null>(null)
+  const [changePage, setChangePage] = useState<Paged<SceneRepairChange> | null>(null)
+  const [pageLoading, setPageLoading] = useState<'issues' | 'changes' | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+  useEffect(() => {
+    setIssuePage(null)
+    setChangePage(null)
+    setPageError(null)
+  }, [draft?.id])
+  const issues = useMemo(() => issuePage ?? issuesOf(report), [issuePage, report])
   const changes = useMemo<Paged<SceneRepairChange> | null>(() => draft ? {
-    items: draft.changes.items, total: draft.changes.total, hasMore: draft.changes.hasMore, countIsExact: true,
-  } : null, [draft])
+    items: changePage?.items ?? draft.changes.items,
+    offset: changePage?.offset ?? draft.changes.offset,
+    limit: changePage?.limit ?? draft.changes.limit,
+    total: changePage?.total ?? draft.changes.total,
+    hasMore: changePage?.hasMore ?? draft.changes.hasMore,
+    countIsExact: true,
+  } : null, [draft, changePage])
+
+  async function loadPage(kind: 'issues' | 'changes', offset: number) {
+    if (!draft || pageLoading) return
+    setPageLoading(kind)
+    setPageError(null)
+    try {
+      const result = await sceneCompatibilityApi.readDraft(continuation.scope.worldId, draft.id, {
+        page: {
+          limit: PAGE_SIZE,
+          issuesOffset: kind === 'issues' ? offset : issues?.offset ?? 0,
+          changesOffset: kind === 'changes' ? offset : changes?.offset ?? 0,
+        },
+      })
+      if (kind === 'issues' && result.report) {
+        setIssuePage({ ...result.report.issues, countIsExact: result.report.issues.countIsExact ?? result.report.countIsExact })
+      }
+      if (kind === 'changes') setChangePage({ ...result.changes, countIsExact: true })
+    } catch {
+      setPageError('分页内容加载失败，请重试。')
+    } finally {
+      setPageLoading(null)
+    }
+  }
 
   return <div className="fixed inset-0 z-40 grid place-items-center bg-[#26382c]/25 p-4" onClick={onClose}>
     <section role="dialog" aria-modal="true" aria-label="场景兼容检查" className="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[#dfe4d9] bg-[#fffefa] p-5 shadow-xl" onClick={event => event.stopPropagation()}>
@@ -175,7 +219,7 @@ export function SceneCompatibilityPanel({ continuation, canEdit, preview, onBuil
       </header>
 
       <p role="status" aria-live="polite" className="mt-2 text-sm text-[#496153]">{STATE_LABEL[state]}{busy ? ' 请稍候，重复点击不会启动第二份工作。' : ''}</p>
-      {continuation.target?.kind === 'history' && <p className="mt-1 text-[11px] text-[#859085]">目标：历史版本 v{continuation.target.version}。确认只会新增一个当前版本，原历史保持不变。</p>}
+      {continuation.target?.kind === 'history' && <p className="mt-1 text-[11px] text-[#859085]">目标：历史版本 v{continuation.target.version}。场景几何属于世界共享；恢复不会切换各时间线的生活记录或时间。确认只会新增一个当前版本，原历史保持不变。</p>}
       {continuation.source && <p className="mt-1 text-[11px] text-[#859085]">来源版本：v{continuation.source.version}</p>}
 
       {message && <p role="alert" className="mt-3 rounded-lg bg-[#f6f1e6] px-3 py-2 text-sm text-[#7a6844]">{message}</p>}
@@ -189,11 +233,12 @@ export function SceneCompatibilityPanel({ continuation, canEdit, preview, onBuil
           <h3 className="text-sm font-medium text-[#3f5646]">检查结果：{reportStatusLabel(report.status)}</h3>
           <SpaceProgress report={report} />
         </div>
-        {issues && issues.total > 0 && <IssueList issues={issues} />}
+        {issues && issues.total > 0 && <IssueList issues={issues} onPage={draft ? offset => void loadPage('issues', offset) : undefined} busy={pageLoading !== null} />}
         <RuleNoteList report={report} />
       </div>}
 
-      {changes && <div className="mt-4"><ChangeList changes={changes} /></div>}
+      {changes && <div className="mt-4"><ChangeList changes={changes} onPage={draft ? offset => void loadPage('changes', offset) : undefined} busy={pageLoading !== null} /></div>}
+      {pageError && <p role="alert" className="mt-2 text-xs text-red-700">{pageError}</p>}
 
       {preview && <div className="mt-4 min-h-[280px]">{preview}</div>}
 

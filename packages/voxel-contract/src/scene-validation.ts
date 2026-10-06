@@ -5,7 +5,7 @@ import { rotatedOffsets } from './edits'
 import { byteCount, createSceneWorkCounter } from './scene-work'
 import { getBlock, inBounds } from './sections'
 import { validateDocument } from './validation'
-import { validateWalkability } from './walkability'
+import { validateWalkabilityWithStatsAsync } from './walkability'
 import type {
   SceneCompatibilityEnvelope, SceneIssue, SceneRuleNote, SceneStopReason, SceneValidationContext,
   SceneValidationReport, SceneWorkBudget, SceneWorkControl,
@@ -182,14 +182,21 @@ export async function validateSceneEnvelope(
   control: SceneWorkControl,
   origin: SceneIssue['origin'] = 'existing',
 ): Promise<SceneValidationReport> {
-  const started = control.nowMs()
-  const counter = createSceneWorkCounter({ ...control, budget })
+  // Snapshot a possibly computed operation deadline exactly once; nested walkability
+  // checks in this same validation share it, while later repair validations get fresh caps.
+  const workControl = { ...control }
+  const started = workControl.nowMs()
+  const counter = createSceneWorkCounter({ ...workControl, budget })
   const issues: SceneIssue[] = []
   const notes: SceneRuleNote[] = []
   const checkedSpaceIds: string[] = []
   let pendingSpaceIds = envelope.spaces.map((space) => space.spaceId)
   let stop: SceneStopReason | null = null
   let ordinal = 0
+  let visitedCellsUsed = 0
+  let workspaceBytesUsed = 0
+  let workAtLastYield = 0
+  let yieldedAt = workControl.nowMs()
 
   const add = (raw: RawIssue, spaceId: string | null): boolean => {
     if (issues.length >= budget.maxCollectedIssues) {
@@ -202,7 +209,11 @@ export async function validateSceneEnvelope(
   }
   const tick = async (units = 1): Promise<boolean> => {
     if (!counter.work(units)) return false
-    if (counter.workUnits % Math.max(1, Math.min(256, budget.maxWorkUnits || 1)) === 0) await control.yieldControl()
+    if (counter.workUnits - workAtLastYield >= 512 || workControl.nowMs() - yieldedAt >= 8) {
+      await workControl.yieldControl()
+      workAtLastYield = counter.workUnits
+      yieldedAt = workControl.nowMs()
+    }
     return !counter.shouldStop()
   }
 
@@ -212,24 +223,70 @@ export async function validateSceneEnvelope(
     if (context.assets === undefined) stop = 'context-unavailable'
     for (const space of envelope.spaces) {
       if (stop || checkedSpaceIds.length >= budget.maxSpaces || !(await tick())) break
-      pendingSpaceIds = pendingSpaceIds.filter((id) => id !== space.spaceId)
       const registry: BlockRegistry = createBlockRegistry(space.document.theme)
       const structural = validateDocument(space.document, registry, contextAssetManifest(context))
       for (const issue of structural) {
         if (!(await tick()) || !add(issue, space.spaceId)) break
       }
       if (stop || counter.shouldStop()) break
-      if (budget.maxVisitedPerFlood <= 0 || !(await tick(space.document.objectCells.reduce((sum, entry) => sum + entry.cells.length, 0) + 1))) {
+      if (!(await tick())) {
         stop = counter.stopReason === 'cancelled' ? 'cancelled'
-          : counter.stopReason === 'work-limit' ? 'work-limit' : 'visit-limit'
+          : counter.stopReason === 'deadline' ? 'deadline' : 'work-limit'
         break
       }
-      const walking = validateWalkability(space.document, registry, { maxVisited: budget.maxVisitedPerFlood })
-      for (const issue of walking) {
+      const furnitureNotes = notesForFurniture(space.spaceId, space.document)
+      const declaredEntryCells = new Set([
+        ...space.document.spaceEntries.map(entry => key(entry.at)),
+        ...context.bindings.entries.filter(entry => entry.fromSpaceId === space.spaceId).map(entry => key(entry.at)),
+      ])
+      const verifiedFurnitureCavities = new Set(furnitureNotes
+        .filter(note => note.at && !declaredEntryCells.has(key(note.at)))
+        .map(note => key(note.at!)))
+      let walkabilityWorkReported = 0
+      const walking = await validateWalkabilityWithStatsAsync(
+        space.document, registry, {
+          maxVisited: budget.maxVisitedPerFlood,
+          maxWorkspaceBytes: budget.maxWorkspaceBytes,
+        }, {
+          ...workControl,
+          consumeWork: (units: number) => {
+            walkabilityWorkReported += units
+            return counter.work(units)
+          },
+          consumeWorkspace: (bytes: number) => {
+            workspaceBytesUsed = Math.max(workspaceBytesUsed, bytes)
+            return bytes <= budget.maxWorkspaceBytes
+          },
+        },
+      )
+      visitedCellsUsed += walking.visitedCells
+      workspaceBytesUsed = Math.max(workspaceBytesUsed, walking.workspaceBytesPeak)
+      if (!counter.work(walking.workUnits - walkabilityWorkReported)) {
+        stop = counter.stopReason === 'cancelled' ? 'cancelled'
+          : counter.stopReason === 'deadline' ? 'deadline'
+            : counter.stopReason === 'workspace-limit' ? 'workspace-limit' : 'work-limit'
+        break
+      }
+      if (workspaceBytesUsed > budget.maxWorkspaceBytes) {
+        stop = 'workspace-limit'
+        break
+      }
+      if (!walking.complete) {
+        stop = walking.stopReason === 'cancelled' ? 'cancelled'
+          : walking.stopReason === 'deadline' ? 'deadline'
+            : walking.stopReason === 'workspace-limit' ? 'workspace-limit'
+              : walking.stopReason === 'work-limit' ? 'work-limit' : 'visit-limit'
+        break
+      }
+      for (const issue of walking.issues) {
+        // A physically exact, non-entry template cavity is explanatory metadata, not a
+        // one-cell passage. Suppress only the clearance false positive at that exact cell.
+        if (issue.code === 'walk-clearance' && issue.at && verifiedFurnitureCavities.has(key(issue.at))) continue
         if (!(await tick()) || !add(issue, space.spaceId)) break
       }
-      notes.push(...notesForFurniture(space.spaceId, space.document))
+      notes.push(...furnitureNotes)
       checkedSpaceIds.push(space.spaceId)
+      pendingSpaceIds = pendingSpaceIds.filter((id) => id !== space.spaceId)
     }
     if (!stop && pendingSpaceIds.length === 0) {
       for (const result of [...bindingIssues(envelope.spaces, context), ...connectionIssues(envelope.spaces, context)]) {
@@ -249,7 +306,7 @@ export async function validateSceneEnvelope(
           : reason === 'workspace-limit' ? 'workspace-limit'
             : reason === 'visit-limit' ? 'visit-limit' : 'work-limit'
   }
-  if (control.signal.aborted) stop = 'cancelled'
+  if (workControl.signal.aborted) stop = 'cancelled'
   const complete = stop === null && pendingSpaceIds.length === 0
   return {
     status: complete ? (issues.length === 0 ? 'valid' : 'invalid') : 'incomplete',
@@ -260,7 +317,9 @@ export async function validateSceneEnvelope(
     checkedSpaceIds,
     pendingSpaceIds,
     workUnitsUsed: counter.workUnits,
-    elapsedMs: Math.max(0, control.nowMs() - started),
+    workspaceBytesUsed,
+    visitedCellsUsed,
+    elapsedMs: Math.max(0, workControl.nowMs() - started),
     ruleNotes: { items: notes.slice(0, 64), total: notes.length, hasMore: notes.length > 64 },
   }
 }

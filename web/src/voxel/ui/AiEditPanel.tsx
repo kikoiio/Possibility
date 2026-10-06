@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { EditOperation } from '@possibility/voxel-contract'
+import type { EditOperation, SceneValidationReportView } from '@possibility/voxel-contract'
 import { EditPlanRequestError, type EditPlan } from '../plan-edits'
 import type { PreflightBasis } from '../bridge/edit-controller'
 
@@ -26,7 +26,7 @@ const KIND_STAGE: Record<string, string> = {
 export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel, pending, error }: AiEditPanelProps) {
   const [intent, setIntent] = useState('')
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<{ message: string; nextStep?: string; retryable: boolean; stage?: string } | null>(null)
+  const [failure, setFailure] = useState<{ message: string; nextStep?: string; retryable: boolean; stage?: string; report?: SceneValidationReportView } | null>(null)
 
   const submit = async () => {
     if (!intent.trim() || busy) return
@@ -38,7 +38,7 @@ export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel,
       onPreview(plan.ops, plan.previewBasis)
     } catch (cause) {
       setFailure(cause instanceof EditPlanRequestError
-        ? { message: cause.message, nextStep: cause.nextStep, retryable: cause.retryable, stage: KIND_STAGE[cause.kind] }
+        ? { message: cause.message, nextStep: cause.nextStep, retryable: cause.retryable, stage: KIND_STAGE[cause.kind], report: cause.report }
         : { message: 'AI 改造暂时失败，请稍后重试。', retryable: true })
     } finally {
       setBusy(false)
@@ -69,6 +69,13 @@ export default function AiEditPanel({ planEdits, onPreview, onConfirm, onCancel,
       {(error || failure) && <div className="rounded bg-red-900/60 p-2 text-red-200" data-testid="voxel-ai-error" role="status">
         {failure?.stage && <span className="mr-1 rounded bg-red-800/80 px-1 py-0.5 text-[10px] text-red-100">{failure.stage}</span>}
         {error ?? failure?.message}
+        {failure?.report?.issues.items.length ? <ul className="mt-2 list-disc space-y-1 pl-5" aria-label="改造方案诊断">
+          {failure.report.issues.items.slice(0, 5).map(issue => <li key={issue.id}>
+            {[issue.spaceId ? `空间 ${issue.spaceId}` : null, issue.at ? `(${issue.at.x}, ${issue.at.y}, ${issue.at.z})` : null].filter(Boolean).join(' · ')}
+            {[issue.spaceId, issue.at].some(Boolean) ? '：' : ''}{issue.summary} 建议：{issue.suggestion}
+          </li>)}
+          {failure.report.issues.total > failure.report.issues.items.length && <li>其余 {failure.report.issues.total - failure.report.issues.items.length} 项诊断未展开。</li>}
+        </ul> : null}
         {failure?.nextStep && <p className="mt-1 text-red-100/80">{failure.nextStep}</p>}
       </div>}
       {pending && (

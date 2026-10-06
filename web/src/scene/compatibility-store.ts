@@ -133,6 +133,28 @@ function readEnvelope(storage: CompatibilityStorage): StoredEnvelope {
   }
 }
 
+/**
+ * On authentication identity changes, discard private draft/preview metadata.
+ * Keep only an unresolved submit identity so the same actor can recover a result
+ * after signing back in; the value is still scoped by actor and world and contains
+ * no candidate, scene document, or credential.
+ */
+export function pruneCompatibilityContinuationsForAuthChange(storage = browserStorage()): void {
+  if (!storage) return
+  try {
+    const envelope = readEnvelope(storage)
+    for (const [key, record] of Object.entries(envelope.records)) {
+      if (!isContinuation(record) || (record.state !== 'submitting' && record.state !== 'unknown')) {
+        delete envelope.records[key]
+      }
+    }
+    if (Object.keys(envelope.records).length === 0) storage.removeItem(COMPATIBILITY_STORE_KEY)
+    else storage.setItem(COMPATIBILITY_STORE_KEY, JSON.stringify(envelope))
+  } catch {
+    // Authentication changes must not be blocked by best-effort private metadata cleanup.
+  }
+}
+
 function isContinuation(value: unknown): value is CompatibilityContinuation {
   if (!isObject(value) || value.version !== COMPATIBILITY_STORE_VERSION || !isObject(value.scope)) return false
   if (typeof value.scope.actorKey !== 'string' || typeof value.scope.worldId !== 'string') return false

@@ -62,6 +62,8 @@ export interface Env {
   /** A1(B68): deterministic compatibility-fixture planner mode. Honored only when
    * ENVIRONMENT=s02-e2e; set solely by the isolated e2e launcher, never from HTTP bodies. */
   SCENE_COMPATIBILITY_FIXTURE?: string
+  /** Only the isolated A1 browser launcher may enable a deterministic phone-chat reply. */
+  A1_E2E_LIFE_FIXTURE?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()

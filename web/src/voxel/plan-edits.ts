@@ -1,4 +1,5 @@
 import { serialize, type EditOperation, type SceneValidationBasis } from '@possibility/voxel-contract'
+import type { SceneValidationReportView } from '@possibility/voxel-contract'
 import { getToken } from '../api/client'
 import type { VoxelEngine } from './engine'
 
@@ -17,6 +18,7 @@ export class EditPlanRequestError extends Error {
     readonly retryable: boolean,
     readonly nextStep?: string,
     readonly errorCode?: string,
+    readonly report?: SceneValidationReportView,
   ) {
     super(message)
     this.name = 'EditPlanRequestError'
@@ -50,11 +52,12 @@ export async function planEditsViaApi(engine: VoxelEngine, worldId: string, inte
     retryable?: boolean
     nextStep?: string
     errorCode?: string
+    report?: SceneValidationReportView
   }
   if (!res.ok || !body.ops) {
     const kind = body.kind ?? (res.status === 401 || res.status === 403 || res.status === 404 ? 'permission' : 'service')
     const retryable = body.retryable ?? (kind === 'service' || kind === 'planning')
-    throw new EditPlanRequestError(body.error ?? `AI 改造请求失败（${res.status}）。`, kind, retryable, body.nextStep, body.errorCode)
+    throw new EditPlanRequestError(body.error ?? `AI 改造请求失败（${res.status}）。`, kind, retryable, body.nextStep, body.errorCode, body.report)
   }
   return { ops: body.ops, previewBasis: body.previewBasis ?? null }
 }

@@ -71,6 +71,41 @@ describe('compatibility session', () => {
     expect(storage.values.get(COMPATIBILITY_STORE_KEY)).not.toContain('candidate')
   })
 
+  it('discards an inspection response after the owning page disposes the session', async () => {
+    const storage = memoryStorage()
+    let resolveInspection!: (value: SceneInspectionResult) => void
+    const delayed = new Promise<SceneInspectionResult>(resolve => { resolveInspection = resolve })
+    const session = createCompatibilitySession({
+      scope, client: client({ inspect: vi.fn(() => delayed) }),
+      store: createCompatibilityStore({ storage }), requestId: () => 'request-1',
+    })
+    const notifications: string[] = []
+    session.subscribe(value => notifications.push(value.state))
+    const checking = session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 3 })
+    const notificationsBeforeDispose = [...notifications]
+    const storedBeforeDispose = storage.values.get(COMPATIBILITY_STORE_KEY)
+    session.dispose()
+    resolveInspection(inspection)
+    await checking
+    expect(session.snapshot().state).toBe('checking')
+    expect(notifications).toEqual(notificationsBeforeDispose)
+    expect(storage.values.get(COMPATIBILITY_STORE_KEY)).toBe(storedBeforeDispose)
+  })
+
+  it('does not let a reset be overwritten by an older inspection response', async () => {
+    let resolveInspection!: (value: SceneInspectionResult) => void
+    const delayed = new Promise<SceneInspectionResult>(resolve => { resolveInspection = resolve })
+    const session = createCompatibilitySession({
+      scope, client: client({ inspect: vi.fn(() => delayed) }), requestId: () => 'request-1',
+    })
+    const checking = session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 3 })
+    session.reset()
+    resolveInspection(inspection)
+    await checking
+    expect(session.snapshot().state).toBe('idle')
+    expect(session.snapshot().requestId).toBeNull()
+  })
+
   it('returns to preview for a retryable not-committed response', async () => {
     const response: SceneCompatibilityRequestResponse = { status: 'not-committed', attempt: 1, nextAttempt: 2, retryAllowed: true }
     const session = createCompatibilitySession({ scope, client: client({ submit: vi.fn(async () => response) }), requestId: () => 'request-1' })
@@ -157,6 +192,28 @@ describe('compatibility session', () => {
     expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ expectedAttempt: 2, requestId: 'request-1' }))
   })
 
+  it('recovers a missing request row without submitting until the user explicitly retries', async () => {
+    const pending: SceneCompatibilityRequestResponse = { status: 'submitting', attempt: 1, retryAllowed: false }
+    const missing: SceneCompatibilityRequestResponse = { status: 'missing', retryAllowed: false }
+    const retryable: SceneCompatibilityRequestResponse = { status: 'not-committed', attempt: 0, nextAttempt: 1, retryAllowed: true }
+    const submit = vi.fn(async () => pending)
+    const recover = vi.fn(async () => retryable)
+    const stub = client({ submit, query: vi.fn(async () => missing), recover })
+    const session = createCompatibilitySession({ scope, client: stub, requestId: () => 'request-1' })
+    await session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 3 })
+    await session.build()
+    await session.submit()
+    await session.queryResult()
+    expect(recover).toHaveBeenCalledWith({
+      worldId: scope.worldId, requestId: 'request-1', draftId: 'draft-1', expectedCurrentVersion: 3, expectedAttempt: 0,
+    })
+    expect(session.snapshot().state).toBe('preview')
+    expect(session.snapshot().nextAttempt).toBe(1)
+    expect(submit).toHaveBeenCalledTimes(1)
+    await session.submit()
+    expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ requestId: 'request-1', expectedAttempt: 1 }))
+  })
+
   it('moves to unknown when queryResult finds no recoverable record', async () => {
     const pending: SceneCompatibilityRequestResponse = { status: 'submitting', attempt: 1, retryAllowed: false }
     const missing: SceneCompatibilityRequestResponse = { status: 'missing', retryAllowed: false }
@@ -186,6 +243,33 @@ describe('compatibility session', () => {
     await expect(session.queryResult()).rejects.toThrow('network down')
     expect(query).toHaveBeenCalledTimes(2)
     expect(submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let an older failed query replace a newer completed receipt', async () => {
+    const pending: SceneCompatibilityRequestResponse = { status: 'submitting', attempt: 1, retryAllowed: false }
+    const completed: SceneCompatibilityRequestResponse = {
+      status: 'completed', attempt: 1,
+      result: { worldId: scope.worldId, version: 4, contentHash: 'result-hash', requestId: 'request-1', outcome: 'repaired-current', source: basis.source, rulesVersion: 'rules-1' },
+    }
+    let rejectFirst!: (error: Error) => void
+    const firstQuery = new Promise<SceneCompatibilityRequestResponse>((_resolve, reject) => { rejectFirst = reject })
+    const query = vi.fn()
+      .mockReturnValueOnce(firstQuery)
+      .mockResolvedValueOnce(completed)
+    const session = createCompatibilitySession({
+      scope, client: client({ submit: vi.fn(async () => pending), query }), requestId: () => 'request-1',
+    })
+    await session.check({ purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 3 })
+    await session.build()
+    await session.submit()
+
+    const staleQuery = session.queryResult()
+    await session.queryResult()
+    expect(session.snapshot().state).toBe('completed')
+    rejectFirst(new Error('stale network failure'))
+    await staleQuery
+    expect(session.snapshot().state).toBe('completed')
+    expect(session.snapshot().receipt?.requestId).toBe('request-1')
   })
 
   it('sends only one submit for a double click', async () => {

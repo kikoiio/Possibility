@@ -5,7 +5,6 @@ import type {
   SceneCompatibilityRequestView,
   SceneCommitReceipt,
   SceneInspectionResult,
-  SceneRepairChange,
   SceneValidationReport,
 } from '@possibility/voxel-contract'
 
@@ -26,13 +25,36 @@ export function reportView(report: SceneValidationReport | null) {
   }
 }
 
-function changesView(changes: SceneRepairChange[]) {
-  const items = changes.slice(0, 256)
-  return { items, offset: 0, limit: items.length, total: changes.length, hasMore: changes.length > items.length }
+export interface DraftPageQuery {
+  limit?: number
+  offset?: number
+  issuesOffset?: number
+  changesOffset?: number
+}
+
+function page<T>(items: T[], offset: number, limit: number) {
+  const visible = items.slice(offset, offset + limit)
+  return { items: visible, offset, limit, total: items.length, hasMore: offset + visible.length < items.length }
+}
+
+function reportPage(report: SceneValidationReport | null, offset: number, limit: number) {
+  if (!report) return null
+  const retainedIssues = report.issues.slice(0, 256)
+  return {
+    ...report,
+    issues: {
+      ...page(retainedIssues, offset, limit),
+      total: report.issueCount,
+      countIsExact: report.countIsExact,
+    },
+  }
 }
 
 /** Public draft DTO. Candidate scene data and execution identity never cross this boundary. */
-export function toDraftView(draft: SceneCompatibilityDraft): SceneCompatibilityDraftView {
+export function toDraftView(draft: SceneCompatibilityDraft, query: DraftPageQuery = {}): SceneCompatibilityDraftView {
+  const limit = Math.max(1, Math.min(50, Math.trunc(query.limit ?? 20)))
+  const issuesOffset = Math.max(0, Math.trunc(query.issuesOffset ?? query.offset ?? 0))
+  const changesOffset = Math.max(0, Math.trunc(query.changesOffset ?? query.offset ?? 0))
   const candidate = draft.candidate as { spaces?: Array<{ id?: string; name?: string }> } | null
   return {
     id: draft.id,
@@ -45,10 +67,31 @@ export function toDraftView(draft: SceneCompatibilityDraft): SceneCompatibilityD
       spaceId: space.id ?? '', name: space.name ?? space.id ?? '',
     })).filter(space => space.spaceId.length > 0) ?? (draft.candidate ? [{ spaceId: 'single', name: '场景' }] : []),
     canConfirm: draft.status === 'ready' && draft.candidate !== null && draft.report?.status === 'valid',
-    changes: changesView(draft.changes),
-    report: reportView(draft.report),
+    changes: page(draft.changes, changesOffset, limit),
+    report: reportPage(draft.report, issuesOffset, limit),
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
+  }
+}
+
+/** Parse independent list cursors for GET /drafts/:draftId. */
+export function parseDraftPageQuery(query: Record<string, string | undefined>): DraftPageQuery | null {
+  const parse = (raw: string | undefined): number | null | undefined => {
+    if (raw === undefined) return undefined
+    if (!/^\d+$/.test(raw)) return null
+    const value = Number(raw)
+    return Number.isSafeInteger(value) ? value : null
+  }
+  const limit = parse(query.limit)
+  const offset = parse(query.offset)
+  const issuesOffset = parse(query.issuesOffset)
+  const changesOffset = parse(query.changesOffset)
+  if (limit === null || offset === null || issuesOffset === null || changesOffset === null) return null
+  return {
+    limit: Math.max(1, Math.min(50, limit ?? 20)),
+    offset,
+    issuesOffset,
+    changesOffset,
   }
 }
 

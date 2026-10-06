@@ -11,6 +11,7 @@ import { libraryManifest } from '../../voxel/library-manifest'
 import type { Db } from '../../db/client'
 import { sceneValidationPolicy, worlds, worldPersons } from '../../db/schema'
 import { readCurrentScene, type StoredSceneDocument } from '../repository'
+import { stableJson } from './stable-json'
 
 export interface SceneValidationAccess {
   /** Authoritative bindings resolved by the caller after access checks. */
@@ -26,6 +27,11 @@ export interface SceneValidationAccess {
 
 async function hash(value: unknown): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)))
+  return [...new Uint8Array(bytes)].map((part) => part.toString(16).padStart(2, '0')).join('')
+}
+
+async function hashBindings(value: unknown): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stableJson(value)))
   return [...new Uint8Array(bytes)].map((part) => part.toString(16).padStart(2, '0')).join('')
 }
 
@@ -48,7 +54,7 @@ export async function loadSceneValidationContext(
 
   const assetManifestHash = access.assetManifestHash ?? policy?.assetManifestHash ?? await hash(assets)
   const templateCatalogHash = access.templateCatalogHash ?? policy?.templateCatalogHash ?? await hash('mist-manor-template-catalog-v1')
-  const bindingHash = access.bindingHash ?? await hash(access.bindings)
+  const bindingHash = access.bindingHash ?? await hashBindings(access.bindings)
   const rulesVersion = access.rulesVersion ?? policy?.rulesVersion ?? 'voxel-scene-validation-v1'
   const contextFingerprint = access.contextFingerprint ?? await hash({
     rulesVersion, assetManifestHash, templateCatalogHash, bindingHash,
@@ -137,7 +143,14 @@ export function deriveSceneBindings(input: {
 export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<SceneBindingContext> {
   const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
   const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
-  const scene = await readCurrentScene(db, worldId)
+  let scene: Awaited<ReturnType<typeof readCurrentScene>> = null
+  try {
+    scene = await readCurrentScene(db, worldId)
+  } catch (error) {
+    // Let the compatibility decoder classify an unparsable stored document as corrupt.
+    // Other failures (including a missing current revision index) still abort context loading.
+    if (!(error instanceof Error) || error.message !== '场景文档损坏：无法解析已保存版本') throw error
+  }
   const locations = jsonArray(world?.locationsJson).flatMap(item => {
     if (!item || typeof item !== 'object') return []
     const value = item as { name?: unknown; stableId?: unknown }

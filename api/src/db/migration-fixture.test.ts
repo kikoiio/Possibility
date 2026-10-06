@@ -113,8 +113,8 @@ describe('A1 e2e legacy fixture', () => {
         scenes: rows(sqlite, 'world_scenes', 'world_id'),
         baselines: rows(sqlite, 'demo_baselines', 'id'),
       }
-      expect(snapshot.worldPersons).toHaveLength(3) // 多归属：ada 属于两个世界
-      expect(snapshot.revisions).toHaveLength(4) // 旧单空间 + 有效对照 + 演示基线 + 旧双空间
+      expect(snapshot.worldPersons).toHaveLength(5) // 旧多归属对照 + 书架/E01 隔离副本归属
+      expect(snapshot.revisions).toHaveLength(9) // 原始/多空间、书架与E01副本及三类不可解旧资料
       expect(snapshot.baselines).toHaveLength(1)
 
       // 3. 完整新迁移 + 显式安装测试发布策略（不关触发器、不改旧行）

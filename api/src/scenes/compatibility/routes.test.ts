@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type SceneIssue, type SceneRepairChange, type SceneValidationReport, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import { compatibilityRoutes } from './routes'
-import { commitScene } from '../repository'
+import { commitScene, readCurrentScene } from '../repository'
 import { createWorldFixture } from '../../test/world-fixture'
-import { worldSceneRevisions } from '../../db/schema'
+import {
+  demoBaselines, sceneCompatibilityDrafts, sceneCompatibilityRequests, sessions, users, worldSceneRevisions, worlds,
+} from '../../db/schema'
 
 type Fixture = Awaited<ReturnType<typeof createWorldFixture>>
 type Ops = Parameters<typeof applyEdits>[1]
@@ -34,6 +36,16 @@ function repairableEnvelope(): SerializedVoxelDocument {
 
 async function seedScene(f: Fixture, document: SerializedVoxelDocument, requestId = 'seed-1') {
   return commitScene(f.db, { worldId: 'home-world', expectedVersion: 0, requestId, document, summary: 'seed', kind: 'initial' })
+}
+
+async function seedActiveDemoBaseline(f: Fixture) {
+  await f.db.update(worlds).set({ isDemo: true }).where(eq(worlds.id, 'home-world'))
+  const scene = await seedScene(f, repairableEnvelope())
+  await f.db.insert(demoBaselines).values({
+    id: 'baseline-home', worldId: 'home-world', sceneVersion: scene.version, contentHash: scene.contentHash,
+    status: 'active', createdAt: '2026-10-05T00:00:00.000Z', retiredAt: null,
+  })
+  return scene
 }
 
 function call(f: Fixture, path: string, init?: RequestInit) {
@@ -259,6 +271,93 @@ describe('compatibility HTTP routes', () => {
       expect(confirm.status).not.toBe(200)
       expect(await revisionCount(f)).toBe(1)
     })
+
+    it('pages draft issues and changes independently with bounded defaults and complete cursors', async () => {
+      const f = await createWorldFixture(); fixtures.push(f)
+      await seedScene(f, repairableEnvelope())
+      const created = await post(f, `${base}/drafts`, {
+        draftRequestId: 'draft-paging-1', purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+      })
+      expect(created.ok).toBe(true)
+      const { id } = await created.json() as { id: string }
+      const stored = await f.db.select().from(sceneCompatibilityDrafts).where(eq(sceneCompatibilityDrafts.id, id)).get()
+      expect(stored?.reportJson).toBeTruthy()
+      expect(stored?.changesJson).toBeTruthy()
+      const report = JSON.parse(stored!.reportJson!) as SceneValidationReport
+      const sourceIssue = report.issues[0] ?? {
+        id: 'source', code: 'scene-invalid', origin: 'existing', category: 'structure', spaceId: 'single',
+        summary: 'issue', suggestion: 'repair', blocking: true,
+      } satisfies SceneIssue
+      const sourceChange = (JSON.parse(stored!.changesJson!) as SceneRepairChange[])[0]
+      expect(sourceChange).toBeTruthy()
+      const issues = Array.from({ length: 67 }, (_, index) => ({ ...sourceIssue, id: `issue-${index}` }))
+      const changes = Array.from({ length: 57 }, (_, index) => ({ ...sourceChange, id: `change-${index}` }))
+      report.issues = issues
+      report.issueCount = issues.length
+      report.countIsExact = true
+      report.ruleNotes = {
+        items: Array.from({ length: 64 }, (_, index) => ({
+          code: 'furniture-cavity' as const, spaceId: 'single', objectId: `object-${index}`,
+          at: { x: index, y: 1, z: 1 }, message: 'note',
+        })),
+        total: 65,
+        hasMore: true,
+      }
+      await f.db.update(sceneCompatibilityDrafts).set({ reportJson: JSON.stringify(report), changesJson: JSON.stringify(changes) })
+        .where(eq(sceneCompatibilityDrafts.id, id))
+
+      const readPage = async (query = '') => {
+        const response = await call(f, `${base}/drafts/${id}${query}`, { headers: owner })
+        expect(response.status).toBe(200)
+        return await response.json() as {
+          candidate?: unknown
+          report: { issues: { items: SceneIssue[]; offset: number; limit: number; total: number; countIsExact: boolean; hasMore: boolean }; ruleNotes: { items: unknown[]; total: number; hasMore: boolean } }
+          changes: { items: SceneRepairChange[]; offset: number; limit: number; total: number; hasMore: boolean }
+        }
+      }
+      const first = await readPage()
+      expect(first.report.issues).toMatchObject({ offset: 0, limit: 20, total: 67, countIsExact: true, hasMore: true })
+      expect(first.report.issues.items.map(item => item.id)).toEqual(issues.slice(0, 20).map(item => item.id))
+      expect(first.changes).toMatchObject({ offset: 0, limit: 20, total: 57, hasMore: true })
+      expect(first.changes.items.map(item => item.id)).toEqual(changes.slice(0, 20).map(item => item.id))
+      expect(first.report.ruleNotes).toMatchObject({ total: 65, hasMore: true })
+      expect(first.report.ruleNotes.items).toHaveLength(64)
+      expect(first.candidate).toBeUndefined()
+
+      const maxPage = await readPage('?limit=80&issuesOffset=20&changesOffset=20')
+      expect(maxPage.report.issues).toMatchObject({ offset: 20, limit: 50, total: 67, countIsExact: true, hasMore: false })
+      expect(maxPage.changes).toMatchObject({ offset: 20, limit: 50, total: 57, hasMore: false })
+      expect([...first.report.issues.items, ...maxPage.report.issues.items].map(item => item.id))
+        .toEqual(issues.map(item => item.id))
+      expect([...first.changes.items, ...maxPage.changes.items].map(item => item.id))
+        .toEqual(changes.map(item => item.id))
+
+      const independent = await readPage('?limit=7&issuesOffset=40&changesOffset=10')
+      expect(independent.report.issues).toMatchObject({ offset: 40, limit: 7, total: 67, hasMore: true })
+      expect(independent.report.issues.items.map(item => item.id)).toEqual(issues.slice(40, 47).map(item => item.id))
+      expect(independent.changes).toMatchObject({ offset: 10, limit: 7, total: 57, hasMore: true })
+      expect(independent.changes.items.map(item => item.id)).toEqual(changes.slice(10, 17).map(item => item.id))
+      expect((await call(f, `${base}/drafts/${id}?offset=-1`, { headers: owner })).status).toBe(400)
+    })
+
+    it('classifies draft publication storage errors as 500 and does not echo SQL parameters', async () => {
+      const f = await createWorldFixture(); fixtures.push(f)
+      const document = repairableEnvelope()
+      await seedScene(f, document)
+      f.sqlite.exec(`CREATE TRIGGER fail_draft_publish_route BEFORE UPDATE OF status ON scene_compatibility_drafts
+        WHEN NEW.status = 'ready' BEGIN SELECT RAISE(ABORT, 'injected draft publish failure'); END`)
+
+      const response = await post(f, `${base}/drafts`, {
+        draftRequestId: 'draft-storage-error', purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+      })
+      expect(response.status).toBe(500)
+      const body = await response.json() as { errorCode: string; error: string }
+      expect(body.errorCode).toBe('storage-failure')
+      expect(body.error).toContain('存储故障')
+      expect(body.error).not.toContain('Failed query')
+      expect(body.error).not.toContain(JSON.stringify(document))
+      expect(await revisionCount(f)).toBe(1)
+    })
   })
 
   describe('confirmation', () => {
@@ -291,6 +390,124 @@ describe('compatibility HTTP routes', () => {
       expect(replayedBody.result).toEqual(result.result)
       expect(await revisionCount(f)).toBe(2)
     })
+
+    it('A9.2 拒绝普通物主对 active demo baseline 建草稿/确认，忽略伪造授权字段且不改持久状态', async () => {
+      const f = await createWorldFixture(); fixtures.push(f)
+      const seeded = await seedActiveDemoBaseline(f)
+      const baselineBefore = await f.db.select().from(demoBaselines).where(eq(demoBaselines.id, 'baseline-home')).get()
+
+      const deniedDraft = await post(f, `${base}/drafts`, {
+        draftRequestId: 'baseline-user-draft', purpose: 'repair-current', target: { kind: 'current' },
+        expectedCurrentVersion: 1, allowBaseline: true, adminUserId: 'owner',
+      })
+      expect(deniedDraft.status).toBe(403)
+      expect(await f.db.select().from(sceneCompatibilityDrafts)).toHaveLength(0)
+
+      // An admin can create the candidate, but a role change before confirmation removes authority.
+      await f.db.update(users).set({ role: 'admin' }).where(eq(users.id, 'owner'))
+      const created = await post(f, `${base}/drafts`, {
+        draftRequestId: 'baseline-admin-draft', purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+      })
+      expect(created.status).toBe(200)
+      const draft = await created.json() as { id: string; status: string }
+      expect(draft.status).toBe('ready')
+      await f.db.update(users).set({ role: 'user' }).where(eq(users.id, 'owner'))
+
+      const deniedConfirm = await post(f, `${base}/confirm`, {
+        draftId: draft.id, requestId: 'baseline-user-confirm', expectedCurrentVersion: 1, expectedAttempt: 0,
+        allowBaseline: true, adminUserId: 'owner',
+      })
+      expect(deniedConfirm.status).toBe(403)
+      expect(await revisionCount(f)).toBe(1)
+      expect(await readCurrentScene(f.db, 'home-world')).toEqual(seeded)
+      expect(await f.db.select().from(demoBaselines).where(eq(demoBaselines.id, 'baseline-home')).get()).toEqual(baselineBefore)
+      expect(await f.db.select().from(sceneCompatibilityRequests)).toHaveLength(0)
+      expect((await f.db.select().from(sceneCompatibilityDrafts)).find(row => row.id === draft.id)?.status).toBe('ready')
+    })
+
+    it('A9.2 authenticated admin owner confirms a repair and advances active baseline in the commit batch', async () => {
+      const f = await createWorldFixture(); fixtures.push(f)
+      const seeded = await seedActiveDemoBaseline(f)
+      await f.db.update(users).set({ role: 'admin' }).where(eq(users.id, 'owner'))
+
+      const created = await post(f, `${base}/drafts`, {
+        draftRequestId: 'baseline-admin-success-draft', purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+      })
+      expect(created.status).toBe(200)
+      const draft = await created.json() as { id: string; status: string }
+      expect(draft.status).toBe('ready')
+
+      const confirmed = await post(f, `${base}/confirm`, {
+        draftId: draft.id, requestId: 'baseline-admin-success-request', expectedCurrentVersion: 1, expectedAttempt: 0,
+        // These untrusted fields cannot grant access; this succeeds only from the authenticated admin row.
+        allowBaseline: false, adminUserId: 'attacker',
+      })
+      expect(confirmed.status).toBe(200)
+      const result = await confirmed.json() as {
+        status: string; result: { version: number; contentHash: string; requestId: string }
+      }
+      expect(result).toMatchObject({
+        status: 'completed', result: { version: 2, requestId: 'baseline-admin-success-request' },
+      })
+      expect(await revisionCount(f)).toBe(2)
+      expect(await readCurrentScene(f.db, 'home-world')).toMatchObject({
+        version: 2, contentHash: result.result.contentHash,
+      })
+      expect(await f.db.select().from(demoBaselines).where(eq(demoBaselines.id, 'baseline-home')).get()).toMatchObject({
+        sceneVersion: 2, contentHash: result.result.contentHash, status: 'active',
+      })
+      const history = await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, 'home-world')).all()
+      const committedRevision = history.find(row => row.version === 2)
+      expect(committedRevision).toMatchObject({ version: 2, parentVersion: 1, contentHash: result.result.contentHash })
+      expect(committedRevision!.contentHash).not.toBe(seeded.contentHash)
+    })
+
+    it.each(['session revoked', 'session expired', 'world ownership changed'] as const)(
+      'rechecks %s inside the final write batch and rolls back the scene', async authorizationChange => {
+        const f = await createWorldFixture(); fixtures.push(f)
+        const seeded = await seedScene(f, repairableEnvelope())
+        const created = await post(f, `${base}/drafts`, {
+          draftRequestId: `auth-race-${authorizationChange.replaceAll(' ', '-')}`,
+          purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+        })
+        expect(created.ok).toBe(true)
+        const draft = await created.json() as { id: string; status: string }
+        expect(draft.status).toBe('ready')
+        let changed = false
+        const dbWithAuthorizationRace = new Proxy(f.env.DB, {
+          get(target, property, receiver) {
+            if (property === 'batch') return async (statements: Parameters<typeof f.env.DB.batch>[0]) => {
+              if (!changed) {
+                changed = true
+                if (authorizationChange === 'session revoked') {
+                  await f.db.delete(sessions).where(eq(sessions.token, 'owner-token'))
+                } else if (authorizationChange === 'session expired') {
+                  await f.db.update(sessions).set({ expiresAt: '2000-01-01T00:00:00.000Z' })
+                    .where(eq(sessions.token, 'owner-token'))
+                } else {
+                  await f.db.update(worlds).set({ userId: 'other' }).where(eq(worlds.id, 'home-world'))
+                }
+              }
+              const batch = Reflect.get(target, property, target) as typeof f.env.DB.batch
+              return batch.call(target, statements)
+            }
+            return Reflect.get(target, property, receiver)
+          },
+        }) as typeof f.env.DB
+
+        const response = await compatibilityRoutes.request(`${base}/confirm`, {
+          method: 'POST', headers: owner,
+          body: JSON.stringify({ draftId: draft.id, requestId: `auth-race-request-${authorizationChange.replaceAll(' ', '-')}`, expectedCurrentVersion: 1, expectedAttempt: 0 }),
+        }, { ...f.env, DB: dbWithAuthorizationRace })
+
+        expect(response.ok).toBe(true)
+        const result = await response.json() as { status: string; error?: { code: string } }
+        expect(result.status).toBe('not-committed')
+        expect(result.error?.code).toBe('storage-failure')
+        expect(await revisionCount(f)).toBe(1)
+        expect(await readCurrentScene(f.db, 'home-world')).toEqual(seeded)
+      },
+    )
   })
 
   describe('request recovery', () => {

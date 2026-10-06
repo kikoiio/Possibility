@@ -568,16 +568,16 @@ describe('A1 insert authority gate', () => {
 
       // 鉴权 SQL 条件：有效会话 + 归属一致时写入成功
       await db.insert(sessions).values({ token: 's1', userId: 'u1', expiresAt: '2027-01-01T00:00:00.000Z' })
-      const ok = await commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-ok', authority: { sessionToken: 's1', sessionNow: NOW, ownerUserId: 'u1' } })
+      const ok = await commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-ok', authority: { sessionToken: 's1', ownerUserId: 'u1' } })
       expect(ok.version).toBe(2)
       // 会话失效：删除会话后同一请求身份在写入时拒绝并回滚
       await db.delete(sessions).where(eq(sessions.token, 's1'))
-      await expect(commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-session-lost', authority: { sessionToken: 's1', sessionNow: NOW, ownerUserId: 'u1' } }))
+      await expect(commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-session-lost', authority: { sessionToken: 's1', ownerUserId: 'u1' } }))
         .rejects.toThrow(/scene_revision_commit_guard_failed/)
       expect(currentRevisionRow(sqlite, 'w1').version).toBe(2)
       // 过期会话同样拒绝
       await db.insert(sessions).values({ token: 's2', userId: 'u1', expiresAt: '2026-01-01T00:00:00.000Z' })
-      await expect(commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-session-expired', authority: { sessionToken: 's2', sessionNow: NOW, ownerUserId: 'u1' } }))
+      await expect(commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-session-expired', authority: { sessionToken: 's2', ownerUserId: 'u1' } }))
         .rejects.toThrow(/scene_revision_commit_guard_failed/)
       // 世界归属变化：owner 复核不符时拒绝
       await expect(commitViaGate(db, sqlite, { worldId: 'w1', requestId: 'auth-owner-changed', authority: { ownerUserId: 'u2' } }))

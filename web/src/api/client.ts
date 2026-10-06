@@ -1,7 +1,30 @@
+import { pruneCompatibilityContinuationsForAuthChange } from '../scene/compatibility-store'
+
 const TOKEN_KEY = 'possibility_token'
 const GUEST_TOKEN_KEY = 'possibility_guest_token'
 const GUEST_CLAIM_PENDING_KEY = 'possibility_guest_claim_pending'
+const AUTH_IDENTITY_CHANGE_EVENT = 'possibility:auth-identity-change'
 let guestRequestContext = false
+
+function announceAuthIdentityChange(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_IDENTITY_CHANGE_EVENT))
+}
+
+export function subscribeAuthIdentityChange(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === TOKEN_KEY || event.key === GUEST_TOKEN_KEY) {
+      pruneCompatibilityContinuationsForAuthChange()
+      listener()
+    }
+  }
+  window.addEventListener(AUTH_IDENTITY_CHANGE_EVENT, listener)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(AUTH_IDENTITY_CHANGE_EVENT, listener)
+    window.removeEventListener('storage', onStorage)
+  }
+}
 
 /** Scope otherwise shared API clients to the guest route while it is mounted. */
 export function setGuestRequestContext(active: boolean): void { guestRequestContext = active }
@@ -10,17 +33,40 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+export function getGuestToken(): string | null { return localStorage.getItem(GUEST_TOKEN_KEY) }
+
 export function setToken(token: string): void {
+  const previous = localStorage.getItem(TOKEN_KEY)
+  const changed = previous !== token
   localStorage.setItem(TOKEN_KEY, token)
+  if (changed) {
+    if (previous !== null) pruneCompatibilityContinuationsForAuthChange()
+    announceAuthIdentityChange()
+  }
 }
 
 export function clearToken(): void {
+  const changed = localStorage.getItem(TOKEN_KEY) !== null
+  if (changed) pruneCompatibilityContinuationsForAuthChange()
   localStorage.removeItem(TOKEN_KEY)
+  if (changed) announceAuthIdentityChange()
 }
 
-export function getGuestToken(): string | null { return localStorage.getItem(GUEST_TOKEN_KEY) }
-export function setGuestToken(token: string): void { localStorage.setItem(GUEST_TOKEN_KEY, token) }
-export function clearGuestToken(): void { localStorage.removeItem(GUEST_TOKEN_KEY) }
+export function setGuestToken(token: string): void {
+  const previous = localStorage.getItem(GUEST_TOKEN_KEY)
+  const changed = previous !== token
+  localStorage.setItem(GUEST_TOKEN_KEY, token)
+  if (changed) {
+    if (previous !== null) pruneCompatibilityContinuationsForAuthChange()
+    announceAuthIdentityChange()
+  }
+}
+export function clearGuestToken(): void {
+  const changed = localStorage.getItem(GUEST_TOKEN_KEY) !== null
+  if (changed) pruneCompatibilityContinuationsForAuthChange()
+  localStorage.removeItem(GUEST_TOKEN_KEY)
+  if (changed) announceAuthIdentityChange()
+}
 export function isGuestClaimPending(): boolean { return localStorage.getItem(GUEST_CLAIM_PENDING_KEY) === '1' }
 export function setGuestClaimPending(pending: boolean): void {
   if (pending) localStorage.setItem(GUEST_CLAIM_PENDING_KEY, '1')
@@ -390,11 +436,13 @@ export const sceneCompatibilityApi = {
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts`,
       { method: 'POST', body: JSON.stringify(params), signal },
     ),
-  /** 读取草稿预览;page(limit/offset)为分页预留,端点接入分页后生效。 */
+  /** 读取草稿预览;问题与修复变化使用独立服务端分页游标。 */
   readDraft: (worldId: string, draftId: string, options: { page?: SceneCompatibilityPageQuery; signal?: AbortSignal } = {}) => {
     const query = new URLSearchParams()
     if (options.page?.limit !== undefined) query.set('limit', String(options.page.limit))
     if (options.page?.offset !== undefined) query.set('offset', String(options.page.offset))
+    if (options.page?.issuesOffset !== undefined) query.set('issuesOffset', String(options.page.issuesOffset))
+    if (options.page?.changesOffset !== undefined) query.set('changesOffset', String(options.page.changesOffset))
     const suffix = query.size > 0 ? `?${query.toString()}` : ''
     return apiFetch<SceneCompatibilityDraftView>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}${suffix}`,

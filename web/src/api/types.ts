@@ -596,10 +596,12 @@ export interface RecoverSceneCompatibilityParams {
   expectedAttempt: number
 }
 
-/** 变化清单/问题分页预留参数(端点当前固定截断 256 条,接入分页后随 query 下发)。 */
+/** 草稿问题与修复变化各自分页；offset 可分别指定，也可用 offset 同时设置。 */
 export interface SceneCompatibilityPageQuery {
   limit?: number
   offset?: number
+  issuesOffset?: number
+  changesOffset?: number
 }
 
 /**

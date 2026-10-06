@@ -13,6 +13,7 @@ const config = 'wrangler.s02-e2e.toml'
 const LEGACY_DATA_MODE = 'scene-compatibility-legacy'
 const LEGACY_MIGRATION_CEILING = 36
 const FIXTURE_MODE_VALUE = 'compatibility-legacy'
+const fixtureProfile = dataMode === LEGACY_DATA_MODE ? 'compatibility-life-v1' : 'standard'
 const KNOWN_MODES = new Set(['standard', LEGACY_DATA_MODE])
 
 if (!KNOWN_MODES.has(dataMode)) {
@@ -59,7 +60,7 @@ async function probeServiceIdentity() {
 const healthy = await probeServiceIdentity()
 if (healthy) {
   const marker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) : null
-  if (marker?.mode === dataMode && marker?.port === Number(port)) {
+  if (marker?.mode === dataMode && marker?.port === Number(port) && marker?.fixtureProfile === fixtureProfile) {
     console.log(`复用已在运行的 s02-e2e 服务（mode=${dataMode}, port=${port}, pid=${marker.pid}）`)
     process.exit(0)
   }
@@ -106,11 +107,13 @@ const devArgs = ['wrangler', 'dev', '--config', config, '--ip', '127.0.0.1', '--
 if (dataMode === LEGACY_DATA_MODE) {
   // 仅 s02-e2e 的明确 deterministic fixture 模式（模式取自启动参数 → 环境变量，绝不取 HTTP body）
   devArgs.push('--var', `SCENE_COMPATIBILITY_FIXTURE:${FIXTURE_MODE_VALUE}`)
+  // Enables only the deterministic reply used by the authenticated A1 conversation journey.
+  devArgs.push('--var', 'A1_E2E_LIFE_FIXTURE:on')
 }
 const server = spawn('npx', devArgs, { cwd: packageRoot, stdio: 'inherit' })
 
 mkdirSync(persistTo, { recursive: true })
-writeFileSync(markerPath, JSON.stringify({ mode: dataMode, port: Number(port), pid: server.pid, startedAt: new Date().toISOString() }))
+writeFileSync(markerPath, JSON.stringify({ mode: dataMode, port: Number(port), fixtureProfile, pid: server.pid, startedAt: new Date().toISOString() }))
 
 function cleanup() {
   try { rmSync(markerPath, { force: true }) } catch { /* best effort */ }

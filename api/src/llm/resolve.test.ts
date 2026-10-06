@@ -28,6 +28,22 @@ describe('resolveLlmConfig', () => {
     expect(source).toBe('env')
   })
 
+  it('A1 deterministic chat provider is available only in the isolated compatibility E2E mode', async () => {
+    const e2e = await resolveLlmConfig(fixture.db, { ...env, ENVIRONMENT: 's02-e2e',
+      SCENE_COMPATIBILITY_FIXTURE: 'compatibility-legacy', A1_E2E_LIFE_FIXTURE: 'on' }, { userId: 'u', worldId: 'w' })
+    expect(e2e.config.provider).toBeDefined()
+    const response = await e2e.config.provider!.fetch(new Request('http://fixture.test'))
+    expect(await response.text()).toContain('我收到了庭院维护的消息')
+
+    for (const disabled of [
+      { ...env, ENVIRONMENT: 'production', SCENE_COMPATIBILITY_FIXTURE: 'compatibility-legacy', A1_E2E_LIFE_FIXTURE: 'on' },
+      { ...env, ENVIRONMENT: 's02-e2e', SCENE_COMPATIBILITY_FIXTURE: 'off', A1_E2E_LIFE_FIXTURE: 'on' },
+      { ...env, ENVIRONMENT: 's02-e2e', SCENE_COMPATIBILITY_FIXTURE: 'compatibility-legacy', A1_E2E_LIFE_FIXTURE: 'off' },
+    ]) {
+      expect((await resolveLlmConfig(fixture.db, disabled, { userId: 'u', worldId: 'w' })).config.provider).toBeUndefined()
+    }
+  })
+
   it('用户全量覆盖,source=user', async () => {
     await fixture.db.insert(userLlmConfigs).values({
       userId: 'u', baseUrl: 'https://user.example.com', apiKey: 'user-key', model: 'user-model', updatedAt: NOW,

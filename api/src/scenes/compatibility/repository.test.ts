@@ -11,6 +11,8 @@ import {
   cancelSceneCompatibilityDraft,
   claimSceneCompatibilityDraftBuild,
   claimSceneCompatibilityRequest,
+  cleanupExpiredSceneCompatibilityDrafts,
+  COMPATIBILITY_MAX_ROW_BYTES,
   completeSceneCompatibilityRequest,
   createSceneCompatibilityDraft,
   failSceneCompatibilityRequest,
@@ -168,6 +170,90 @@ function collectKeys(value: unknown, into = new Set<string>()): Set<string> {
   return into
 }
 
+/** Mirrors the JSON object field order passed to the draft INSERT size guard. */
+function serializedDraftInsertBytes(values: {
+  id: string
+  draftRequestId: string
+  actorKey: string
+  worldId: string
+  purpose: string
+  targetJson: string
+  basisJson: string
+  status: string
+  candidateJson: string | null
+  changesJson: string
+  reportJson: string | null
+  inputFingerprint: string
+  buildLeaseToken: string | null
+  buildLeaseUntil: string | null
+  buildAttempt: number
+  createdAt: string
+  updatedAt: string
+}): number {
+  return new TextEncoder().encode(JSON.stringify(values)).byteLength
+}
+
+function serializedStoredDraftBytes(row: typeof sceneCompatibilityDrafts.$inferSelect): number {
+  return serializedDraftInsertBytes({
+    id: row.id,
+    draftRequestId: row.draftRequestId,
+    actorKey: row.actorKey,
+    worldId: row.worldId,
+    purpose: row.purpose,
+    targetJson: row.targetJson,
+    basisJson: row.basisJson,
+    status: row.status,
+    candidateJson: row.candidateJson,
+    changesJson: row.changesJson,
+    reportJson: row.reportJson,
+    inputFingerprint: row.inputFingerprint,
+    buildLeaseToken: row.buildLeaseToken,
+    buildLeaseUntil: row.buildLeaseUntil,
+    buildAttempt: row.buildAttempt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  })
+}
+
+function draftInputForSerializedSize(targetBytes: number, draftRequestId: string) {
+  const initial = makeDraftInput({
+    draftRequestId,
+    basis: makeBasis({ contextFingerprint: '' }),
+  })
+  const makeInsertValues = (input: ReturnType<typeof makeDraftInput>) => ({
+    // UUID length is fixed; the generated id has the same encoded length.
+    id: 'x'.repeat(36),
+    draftRequestId: input.draftRequestId,
+    actorKey: input.actorKey,
+    worldId: input.worldId,
+    purpose: input.purpose,
+    targetJson: JSON.stringify(input.target),
+    basisJson: JSON.stringify(input.basis),
+    status: 'building',
+    candidateJson: null,
+    changesJson: '[]',
+    reportJson: null,
+    // SHA-256 fingerprints always have this fixed ASCII length.
+    inputFingerprint: `sha256:${'0'.repeat(64)}`,
+    buildLeaseToken: null,
+    buildLeaseUntil: null,
+    buildAttempt: 0,
+    createdAt: input.now.toISOString(),
+    updatedAt: input.now.toISOString(),
+  })
+  const baseBytes = serializedDraftInsertBytes(makeInsertValues(initial))
+  const paddingBytes = targetBytes - baseBytes
+  if (paddingBytes < 0) throw new Error('Requested draft row size is smaller than its fixed fields')
+  const input = makeDraftInput({
+    draftRequestId,
+    basis: makeBasis({ contextFingerprint: 'x'.repeat(paddingBytes) }),
+  })
+  if (serializedDraftInsertBytes(makeInsertValues(input)) !== targetBytes) {
+    throw new Error('Unable to construct the requested serialized draft row size')
+  }
+  return input
+}
+
 describe('scene compatibility repository', () => {
   let fixture: Fixture
 
@@ -207,6 +293,37 @@ describe('scene compatibility repository', () => {
       await expect(createSceneCompatibilityDraft(fixture.db, makeDraftInput({
         purpose: 'restore-history', target: { kind: 'current' },
       }))).rejects.toBeInstanceOf(SceneCompatibilityRepositoryError)
+    })
+  })
+
+  describe('serialized compatibility draft row size boundary', () => {
+    it('accepts a real serialized draft row of exactly 1,900,000 bytes', async () => {
+      const input = draftInputForSerializedSize(COMPATIBILITY_MAX_ROW_BYTES, 'draft-size-limit-fit')
+      const created = await createSceneCompatibilityDraft(fixture.db, input)
+      const row = await fixture.db.select().from(sceneCompatibilityDrafts)
+        .where(eq(sceneCompatibilityDrafts.id, created.id)).get()
+
+      expect(row).toBeTruthy()
+      expect(serializedStoredDraftBytes(row!)).toBe(1_900_000)
+      expect(await fixture.db.select().from(sceneCompatibilityDrafts).all()).toHaveLength(1)
+      expect(await fixture.db.select().from(sceneCompatibilityRequests).all()).toHaveLength(0)
+      expect(await revisionCount(fixture)).toBe(0)
+    })
+
+    it('rejects a real serialized draft row at 1,900,001 bytes without partial records', async () => {
+      const input = draftInputForSerializedSize(COMPATIBILITY_MAX_ROW_BYTES + 1, 'draft-size-limit-over')
+      let failure: unknown
+      try {
+        await createSceneCompatibilityDraft(fixture.db, input)
+      } catch (error) {
+        failure = error
+      }
+      expect(failure).toBeInstanceOf(SceneCompatibilityRepositoryError)
+      expect(failure instanceof Error ? failure.message : '').toContain('超过存储大小限制')
+
+      expect(await fixture.db.select().from(sceneCompatibilityDrafts).all()).toHaveLength(0)
+      expect(await fixture.db.select().from(sceneCompatibilityRequests).all()).toHaveLength(0)
+      expect(await revisionCount(fixture)).toBe(0)
     })
   })
 
@@ -450,6 +567,73 @@ describe('scene compatibility repository', () => {
       expect(retry.attempt).toBe(1)
     })
 
+    it('rejects an already-entered attempt 0 after recovery and attempt 1 have committed', async () => {
+      const startedAt = new Date()
+      const expiredAt = new Date(startedAt.getTime() + 31_000)
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'seed-fenced',
+        document: voxelEnvelope(), summary: 'seed', kind: 'initial',
+      })
+      const { draft } = await createReadyDraft(fixture)
+      // Keep this fixture's ready draft inside its real-time retention window.
+      await fixture.db.update(sceneCompatibilityDrafts).set({ updatedAt: startedAt.toISOString() })
+        .where(eq(sceneCompatibilityDrafts.id, draft.id))
+      const first = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: startedAt }))
+      expect(first.claimed).toBe(true)
+
+      let reachedBatch!: () => void
+      let releaseBatch!: () => void
+      const atBatch = new Promise<void>(resolve => { reachedBatch = resolve })
+      const held = new Promise<void>(resolve => { releaseBatch = resolve })
+      let delayed = false
+      const oldDb = new Proxy(fixture.db, {
+        get(target, property, receiver) {
+          if (property === 'batch') return async (statements: Parameters<typeof fixture.db.batch>[0]) => {
+            if (!delayed) {
+              delayed = true
+              reachedBatch()
+              await held
+            }
+            const batch = Reflect.get(target, property, target) as typeof fixture.db.batch
+            return batch.call(target, statements)
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      }) as typeof fixture.db
+      const persist = (claim: typeof first, db: typeof fixture.db) => commitScene(db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'req-1', document: draft.candidate!,
+        summary: 'compat confirm', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(auditFor(draft, 'req-1')),
+        compatibility: {
+          draftId: draft.id, requestId: 'req-1', attempt: claim.attempt,
+          leaseToken: claim.leaseToken!, leaseUntil: claim.request.leaseUntil!,
+        },
+        compatibilityCompletion: { actorKey: ACTOR },
+      })
+      const staleAttempt = persist(first, oldDb)
+      await atBatch
+
+      const recovery = await recoverSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        expectedAttempt: 1, now: expiredAt,
+      }))
+      expect(recovery).toMatchObject({ status: 'not-committed', attempt: 0, nextAttempt: 1, retryAllowed: true })
+      const retry = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        expectedAttempt: 1, now: new Date(expiredAt.getTime() + 1_000),
+      }))
+      expect(retry).toMatchObject({ claimed: true, attempt: 1 })
+      const committed = await persist(retry, fixture.db)
+      await completeSceneCompatibilityRequest(fixture.db, {
+        worldId: WORLD, requestId: 'req-1', actorKey: ACTOR, attempt: retry.attempt,
+        leaseToken: retry.leaseToken!, resultVersion: committed.version,
+      })
+
+      releaseBatch()
+      await expect(staleAttempt).rejects.toBeInstanceOf(SceneConflict)
+      expect(await revisionCount(fixture)).toBe(2)
+      const receipt = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR)
+      expect(receipt).toMatchObject({ status: 'completed', attempt: 1 })
+    })
+
     it('rebuilds a completed result when the request row is missing but a matching revision exists', async () => {
       const { draft } = await createReadyDraft(fixture)
       const audit = auditFor(draft, 'req-lost')
@@ -473,6 +657,46 @@ describe('scene compatibility repository', () => {
       expect(await revisionCount(fixture)).toBe(before)
     })
 
+    it('keeps recovery unknown when a same-ID revision has a mismatched or corrupt audit', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      const mismatchedAudit = auditFor(draft, 'different-request-id')
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'req-bad-audit',
+        document: voxelEnvelope(), summary: 'uncertain compatibility write', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(mismatchedAudit),
+      })
+      const before = await revisionCount(fixture)
+
+      const view = await recoverSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        requestId: 'req-bad-audit', expectedAttempt: 0, now: at(1),
+      }))
+
+      expect(view).toEqual({ status: 'unknown', retryAllowed: false })
+      expect(await revisionCount(fixture)).toBe(before)
+      expect(await fixture.db.select().from(sceneCompatibilityRequests)
+        .where(eq(sceneCompatibilityRequests.requestId, 'req-bad-audit')).get()).toBeUndefined()
+    })
+
+    it('returns unknown without a retry grant when request storage reads fail', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      const before = await revisionCount(fixture)
+      const unreadable = new Proxy(fixture.db, {
+        get(target, property, receiver) {
+          if (property === 'select') return () => { throw new Error('injected storage read failure') }
+          return Reflect.get(target, property, receiver)
+        },
+      }) as typeof fixture.db
+
+      await expect(recoverSceneCompatibilityRequest(unreadable, claimInput(draft.id, {
+        requestId: 'req-read-failure', expectedAttempt: 0, now: at(1),
+      }))).resolves.toEqual({ status: 'unknown', retryAllowed: false })
+      await expect(readSceneCompatibilityRequest(unreadable, WORLD, 'req-read-failure', ACTOR))
+        .resolves.toEqual({ status: 'unknown', retryAllowed: false })
+      expect(await revisionCount(fixture)).toBe(before)
+      expect(await fixture.db.select().from(sceneCompatibilityRequests)
+        .where(eq(sceneCompatibilityRequests.requestId, 'req-read-failure')).get()).toBeUndefined()
+    })
+
     it('creates a retired attempt-0 row and grants nextAttempt 1 when both row and revision are missing', async () => {
       const { draft } = await createReadyDraft(fixture)
       const before = await revisionCount(fixture)
@@ -485,6 +709,13 @@ describe('scene compatibility repository', () => {
       const row = await fixture.db.select().from(sceneCompatibilityRequests)
         .where(eq(sceneCompatibilityRequests.requestId, 'req-never')).get()
       expect(row).toMatchObject({ attempt: 0, state: 'not-committed', leaseToken: null, resultVersion: null })
+      await expect(claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        requestId: 'req-never', expectedAttempt: 0, now: at(2),
+      }))).rejects.toBeInstanceOf(SceneCompatibilityRequestMismatch)
+      const nextAttempt = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        requestId: 'req-never', expectedAttempt: 1, now: at(2),
+      }))
+      expect(nextAttempt).toMatchObject({ claimed: true, attempt: 1 })
     })
   })
 
@@ -618,6 +849,191 @@ describe('scene compatibility repository', () => {
         compatibilityJson: JSON.stringify({ ...auditFor(draft, 'ns-compat'), draftId: 'draft-other' }),
         compatibility: { draftId: 'draft-other', requestId: 'ns-compat', attempt: 0, leaseToken: 'lt-2', leaseUntil: '2026-02-01T00:00:30.000Z' },
       })).rejects.toThrow(SceneConflict)
+    })
+  })
+
+  describe('A1 draft expiry', () => {
+    const WEEK_S = 7 * 24 * 60 * 60
+
+    it('refuses to claim an expired draft and creates no request row or revision', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      // 草稿最后更新于 at(2);恰好 7 天后即到期(边界 inclusive)
+      await expect(claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(2 + WEEK_S) })))
+        .rejects.toMatchObject({ code: 'draft-unavailable' })
+      expect(await fixture.db.select().from(sceneCompatibilityRequests).all()).toHaveLength(0)
+      expect(await revisionCount(fixture)).toBe(0)
+    })
+
+    it('claims a draft inside its retention window', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      const claim = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(2 + WEEK_S - 1) }))
+      expect(claim.claimed).toBe(true)
+      expect(claim.attempt).toBe(0)
+    })
+
+    it('still replays a completed request after its draft has expired', async () => {
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'seed-1',
+        document: voxelEnvelope(), summary: 'seed', kind: 'initial',
+      })
+      const { draft } = await createReadyDraft(fixture)
+      const claim = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(3) }))
+      const committed = await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'req-1',
+        document: draft.candidate!, summary: 'compat confirm', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(auditFor(draft, 'req-1')),
+        compatibility: {
+          draftId: draft.id, requestId: 'req-1', attempt: claim.attempt,
+          leaseToken: claim.leaseToken!, leaseUntil: claim.request.leaseUntil!,
+        },
+      })
+      await completeSceneCompatibilityRequest(fixture.db, {
+        worldId: WORLD, requestId: 'req-1', actorKey: ACTOR,
+        attempt: claim.attempt, leaseToken: claim.leaseToken!, resultVersion: committed.version, now: at(4),
+      })
+      // 草稿已过期,但已完成请求的重放不被到期拦截,也不新增修订
+      const replay = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(4 + WEEK_S) }))
+      expect(replay.claimed).toBe(false)
+      const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR, at(4 + WEEK_S))
+      expect(view.status).toBe('completed')
+      expect(await revisionCount(fixture)).toBe(2)
+    })
+
+    it('recover refuses nextAttempt for an expired draft and creates no retired row', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      const view = await recoverSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        requestId: 'req-never', expectedAttempt: 0, now: at(2 + WEEK_S),
+      }))
+      expect(view.status).toBe('not-committed')
+      if (view.status !== 'not-committed' || !('error' in view)) throw new Error('unreachable')
+      expect(view.retryAllowed).toBe(false)
+      expect(view.error.code).toBe('draft-unavailable')
+      expect(view.error.action).toBe('recheck')
+      expect(await fixture.db.select().from(sceneCompatibilityRequests).all()).toHaveLength(0)
+    })
+
+    it('recover fences the expired lease of an expired draft but refuses the retry grant', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(3) }))
+      const before = await revisionCount(fixture)
+      const view = await recoverSceneCompatibilityRequest(fixture.db, claimInput(draft.id, {
+        expectedAttempt: 1, now: at(2 + WEEK_S),
+      }))
+      expect(view.status).toBe('not-committed')
+      if (view.status !== 'not-committed' || !('error' in view)) throw new Error('unreachable')
+      expect(view.retryAllowed).toBe(false)
+      expect(view.error.code).toBe('draft-unavailable')
+      const row = await fixture.db.select().from(sceneCompatibilityRequests)
+        .where(eq(sceneCompatibilityRequests.requestId, 'req-1')).get()
+      expect(row?.state).toBe('not-committed')
+      expect(row?.leaseToken).toBeNull()
+      expect(await revisionCount(fixture)).toBe(before)
+    })
+
+    it('cleans up to ten expired unsubmitted drafts per world and keeps journaled or fresh drafts', async () => {
+      // 11 条过期未提交草稿
+      for (let i = 0; i < 11; i += 1) {
+        await createSceneCompatibilityDraft(fixture.db, makeDraftInput({ draftRequestId: `old-${i}` }))
+      }
+      // 过期但有提交中请求日志 → 不清
+      const submitting = await createReadyDraft(fixture, { draftRequestId: 'journaled-submitting' })
+      await claimSceneCompatibilityRequest(fixture.db, claimInput(submitting.draft.id, { requestId: 'req-sub', now: at(3) }))
+      // 过期但有失败(未知排查用)请求日志 → 不清
+      const failed = await createReadyDraft(fixture, { draftRequestId: 'journaled-failed' })
+      const failedClaim = await claimSceneCompatibilityRequest(fixture.db, claimInput(failed.draft.id, { requestId: 'req-fail', now: at(3) }))
+      await failSceneCompatibilityRequest(fixture.db, {
+        worldId: WORLD, requestId: 'req-fail', actorKey: ACTOR,
+        attempt: failedClaim.attempt, leaseToken: failedClaim.leaseToken!, failureCode: 'storage-failure', now: at(4),
+      })
+      // 未到期草稿 → 不清
+      await createSceneCompatibilityDraft(fixture.db, makeDraftInput({ draftRequestId: 'fresh-1', now: at(2 * 24 * 3600) }))
+      // 另一世界的过期草稿 → 不在本世界清理范围
+      await fixture.db.insert(worlds).values({ id: 'w2', userId: 'u1', name: 'Other', description: '' })
+      await createSceneCompatibilityDraft(fixture.db, makeDraftInput({ worldId: 'w2', draftRequestId: 'old-w2' }))
+
+      const cleanupNow = at(8 * 24 * 3600)
+      const first = await cleanupExpiredSceneCompatibilityDrafts(fixture.db, WORLD, cleanupNow)
+      expect(first).toBe(8)
+      const remaining = await fixture.db.select({ id: sceneCompatibilityDrafts.id }).from(sceneCompatibilityDrafts)
+        .where(eq(sceneCompatibilityDrafts.worldId, WORLD)).all()
+      expect(remaining).toHaveLength(6)
+      const second = await cleanupExpiredSceneCompatibilityDrafts(fixture.db, WORLD, cleanupNow)
+      expect(second).toBe(3)
+      const after = await fixture.db.select({ id: sceneCompatibilityDrafts.id }).from(sceneCompatibilityDrafts)
+        .where(eq(sceneCompatibilityDrafts.worldId, WORLD)).all()
+      expect(after).toHaveLength(3)
+      const otherWorld = await fixture.db.select({ id: sceneCompatibilityDrafts.id }).from(sceneCompatibilityDrafts)
+        .where(eq(sceneCompatibilityDrafts.worldId, 'w2')).all()
+      expect(otherWorld).toHaveLength(1)
+    })
+  })
+
+  describe('A1 expired lease read fence', () => {
+    it('fences an expired submitting lease and grants the next attempt when no revision landed', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id))
+      const before = await revisionCount(fixture)
+      const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR, at(31))
+      expect(view).toEqual({ status: 'not-committed', attempt: 0, nextAttempt: 1, retryAllowed: true })
+      expect(await revisionCount(fixture)).toBe(before)
+      const row = await fixture.db.select().from(sceneCompatibilityRequests)
+        .where(eq(sceneCompatibilityRequests.requestId, 'req-1')).get()
+      expect(row?.state).toBe('not-committed')
+      expect(row?.leaseToken).toBeNull()
+      // 读取栅栏授予的 nextAttempt 可立即重取执行权
+      const retry = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { expectedAttempt: 1, now: at(32) }))
+      expect(retry.claimed).toBe(true)
+      expect(retry.attempt).toBe(1)
+    })
+
+    it('keeps submitting while the lease is still valid and does not fence', async () => {
+      const { draft } = await createReadyDraft(fixture)
+      const claim = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id))
+      const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR, at(1))
+      expect(view).toEqual({ status: 'submitting', attempt: 0, retryAllowed: false })
+      const row = await fixture.db.select().from(sceneCompatibilityRequests)
+        .where(eq(sceneCompatibilityRequests.requestId, 'req-1')).get()
+      expect(row?.state).toBe('submitting')
+      expect(row?.leaseToken).toBe(claim.leaseToken)
+    })
+
+    it('returns completed when the revision landed even though the lease expired', async () => {
+      await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 0, requestId: 'seed-1',
+        document: voxelEnvelope(), summary: 'seed', kind: 'initial',
+      })
+      const { draft } = await createReadyDraft(fixture)
+      const claim = await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(3) }))
+      // 修订落库但请求行仍停留在 submitting(完成回执丢失的场景)
+      const committed = await commitScene(fixture.db, {
+        worldId: WORLD, expectedVersion: 1, requestId: 'req-1',
+        document: draft.candidate!, summary: 'compat confirm', kind: 'compatibility-repair',
+        compatibilityJson: JSON.stringify(auditFor(draft, 'req-1')),
+        compatibility: {
+          draftId: draft.id, requestId: 'req-1', attempt: claim.attempt,
+          leaseToken: claim.leaseToken!, leaseUntil: claim.request.leaseUntil!,
+        },
+      })
+      const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR, at(34))
+      expect(view.status).toBe('completed')
+      if (view.status !== 'completed') throw new Error('unreachable')
+      expect(view.result.version).toBe(committed.version)
+      expect(view.result.requestId).toBe('req-1')
+    })
+
+    it('does not grant a retry through read once the fenced draft has expired', async () => {
+      const WEEK_S = 7 * 24 * 60 * 60
+      const { draft } = await createReadyDraft(fixture)
+      await claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { now: at(3) }))
+      const view = await readSceneCompatibilityRequest(fixture.db, WORLD, 'req-1', ACTOR, at(2 + WEEK_S))
+      expect(view.status).toBe('not-committed')
+      if (view.status !== 'not-committed' || !('error' in view)) throw new Error('unreachable')
+      expect(view.retryAllowed).toBe(false)
+      expect(view.error.code).toBe('draft-unavailable')
+      expect(view.error.action).toBe('recheck')
+      // 草稿已过期:被授予的旧 attempt 也无法再取得执行权
+      await expect(claimSceneCompatibilityRequest(fixture.db, claimInput(draft.id, { expectedAttempt: 1, now: at(3 + WEEK_S) })))
+        .rejects.toMatchObject({ code: 'draft-unavailable' })
     })
   })
 

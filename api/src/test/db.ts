@@ -11,6 +11,7 @@ import type { Env } from '../index'
  */
 export function createTestDb() {
   const sqlite = new DatabaseSync(':memory:')
+  const queryLog: Array<{ query: string; params: unknown[] }> = []
   sqlite.exec('PRAGMA foreign_keys = ON')
   const dir = join(dirname(fileURLToPath(import.meta.url)), '../../drizzle')
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.sql')).sort()) {
@@ -24,6 +25,7 @@ export function createTestDb() {
     constructor(readonly query: string, readonly params: unknown[] = []) {}
     bind(...params: unknown[]) { return new Statement(this.query, params) }
     execute() {
+      queryLog.push({ query: this.query, params: [...this.params] })
       const stmt = sqlite.prepare(this.query)
       const results = stmt.all(...this.params as never[])
       return { success: true, results, meta: { changes: Number(sqlite.prepare('SELECT changes() AS n').get()!.n) } }
@@ -31,6 +33,7 @@ export function createTestDb() {
     async all() { return this.execute() }
     async run() { return this.execute() }
     async raw() {
+      queryLog.push({ query: this.query, params: [...this.params] })
       const stmt = sqlite.prepare(this.query)
       stmt.setReturnArrays(true)
       return stmt.all(...this.params as never[])
@@ -58,5 +61,5 @@ export function createTestDb() {
   const env: Env = {
     DB: d1, ENVIRONMENT: 'test', LLM_BASE_URL: 'https://llm.invalid', LLM_API_KEY: 'test', LLM_MODEL: 'test',
   }
-  return { db: createDb(d1), d1, sqlite, env, close: () => sqlite.close() }
+  return { db: createDb(d1), d1, sqlite, env, queryLog, close: () => sqlite.close() }
 }

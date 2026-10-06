@@ -19,6 +19,17 @@ export interface LlmResolution {
   verificationValid: boolean
 }
 
+/** Deterministic streaming reply for the real authenticated chat route in isolated A1 E2E.
+ * It is enabled only by the launcher, never by request data or a deployed environment. */
+function a1LifeFixtureProvider() {
+  const text = '我收到了庭院维护的消息，会把这段经历记下来。'
+  const chunks = [
+    { choices: [{ delta: { role: 'assistant', content: text }, finish_reason: null }] },
+    { choices: [{ delta: {}, finish_reason: 'stop' }] },
+  ].map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n'
+  return { fetch: async () => new Response(chunks, { headers: { 'content-type': 'text/event-stream' } }) }
+}
+
 interface PartialLlmFields {
   baseUrl?: string | null
   apiKey?: string | null
@@ -42,6 +53,9 @@ function parseWorldOverride(raw: string | null): PartialLlmFields {
 export async function resolveLlmConfig(
   db: Db,
   env: {
+    ENVIRONMENT?: string
+    SCENE_COMPATIBILITY_FIXTURE?: string
+    A1_E2E_LIFE_FIXTURE?: string
     LLM_BASE_URL: string
     LLM_API_KEY: string
     LLM_MODEL: string
@@ -84,7 +98,9 @@ export async function resolveLlmConfig(
     apiKeySource,
     apiKeyVerified: verificationValid,
     apiKeyVerificationFingerprint: verificationValid ? userRow?.verificationFingerprint : null,
-    provider: env.LLM_PROVIDER,
+    provider: env.LLM_PROVIDER ?? (env.ENVIRONMENT === 's02-e2e'
+      && env.SCENE_COMPATIBILITY_FIXTURE === 'compatibility-legacy'
+      && env.A1_E2E_LIFE_FIXTURE === 'on' ? a1LifeFixtureProvider() : undefined),
     reserve: resolvedReserve,
   }
   return { config, source, apiKeySource, verificationValid }

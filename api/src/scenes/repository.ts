@@ -5,7 +5,7 @@ import {
 } from '@possibility/voxel-contract'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
-import { demoBaselines, worldSceneRevisions, worldScenes } from '../db/schema'
+import { demoBaselines, sceneCompatibilityRequests, worldSceneRevisions, worldScenes } from '../db/schema'
 import {
   buildCloneCopyWriteProof,
   buildCommitGuardStatement,
@@ -16,6 +16,7 @@ import {
   resolveSceneWritePolicy,
   type PendingSceneBindings,
   type SceneWriteProofBaseline,
+  type SceneWriteAuthority,
   type SceneWriteProofFacts,
   type SceneWriteProofRequest,
 } from './compatibility/write-proof'
@@ -118,6 +119,10 @@ export async function commitScene(db: Db, input: {
   compatibilityJson?: string | null
   /** Compatibility confirm execution identity, re-checked by the insert gate. */
   compatibility?: SceneWriteProofRequest
+  /** Atomically complete a compatibility request with the scene revision. */
+  compatibilityCompletion?: { actorKey: string }
+  /** Final auth/ownership recheck, provided only by trusted server routes. */
+  authority?: SceneWriteAuthority
   /** A1 B28：演示基线重指向与修订同批写入；批内 guard 断言新基线引用。 */
   baselineUpdate?: { baselineId: string }
 }): Promise<StoredScene> {
@@ -151,16 +156,33 @@ export async function commitScene(db: Db, input: {
     : proof.baseline
   const guard = buildCommitGuardStatement(db, {
     revisionId: id, worldId: input.worldId, version, requestId: input.requestId, baseline: guardBaseline,
+    ...(input.authority ? { authority: input.authority } : {}),
+    ...(input.compatibility && input.compatibilityCompletion ? {
+      requestCompletion: { requestId: input.requestId, attempt: input.compatibility.attempt, resultVersion: version },
+    } : {}),
   })
   const baselineStatement = input.baselineUpdate
     ? db.update(demoBaselines).set({ sceneVersion: version, contentHash })
       .where(and(eq(demoBaselines.id, input.baselineUpdate.baselineId), eq(demoBaselines.worldId, input.worldId), eq(demoBaselines.status, 'active')))
+    : null
+  const requestCompletionStatement = input.compatibility && input.compatibilityCompletion
+    ? db.update(sceneCompatibilityRequests).set({
+      state: 'completed', resultVersion: version, leaseToken: null, leaseUntil: null, updatedAt: now,
+    }).where(and(
+      eq(sceneCompatibilityRequests.worldId, input.worldId),
+      eq(sceneCompatibilityRequests.requestId, input.requestId),
+      eq(sceneCompatibilityRequests.actorKey, input.compatibilityCompletion.actorKey),
+      eq(sceneCompatibilityRequests.attempt, input.compatibility.attempt),
+      eq(sceneCompatibilityRequests.leaseToken, input.compatibility.leaseToken),
+      eq(sceneCompatibilityRequests.state, 'submitting'),
+    ))
     : null
   try {
     if (current) await db.batch([
       db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: actual, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.update(worldScenes).set({ currentVersion: version, themeId, updatedAt: now }).where(and(eq(worldScenes.worldId, input.worldId), eq(worldScenes.currentVersion, actual))),
       ...(baselineStatement ? [baselineStatement] : []),
+      ...(requestCompletionStatement ? [requestCompletionStatement] : []),
       guard,
     ])
     else await db.batch([
@@ -168,6 +190,7 @@ export async function commitScene(db: Db, input: {
       db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: null, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
       db.insert(worldScenes).values({ worldId: input.worldId, currentVersion: version, themeId, updatedAt: now }),
       ...(baselineStatement ? [baselineStatement] : []),
+      ...(requestCompletionStatement ? [requestCompletionStatement] : []),
       guard,
     ])
   } catch (error) { throw new SceneConflict(error instanceof Error ? error.message : undefined) }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SceneRepairChange, SceneRuleNote, VoxelDocument } from '@possibility/voxel-contract'
 import VoxelViewport from '../../voxel/VoxelViewport'
 import { parseVoxelDocument } from '../../voxel/flags'
+import { activePreviewDocument, previewViewportKey, readonlyPreviewViewportProps, SceneRepairPreviewLifecycle } from './scene-repair-preview-lifecycle'
 
 export interface SceneRepairPreviewSpace { spaceId: string; name: string }
 
@@ -33,44 +34,49 @@ export function SceneRepairPreview({
 }: SceneRepairPreviewProps) {
   const [spaceId, setSpaceId] = useState(initialSpaceId ?? spaces[0]?.spaceId ?? '')
   const [side, setSide] = useState<Side>('after')
-  const [doc, setDoc] = useState<VoxelDocument | null>(null)
+  const [loadedDocument, setLoadedDocument] = useState<{ key: string; document: VoxelDocument } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const cacheRef = useRef(new Map<string, VoxelDocument>())
+  const lifecycleRef = useRef<SceneRepairPreviewLifecycle<VoxelDocument> | null>(null)
+  if (!lifecycleRef.current) lifecycleRef.current = new SceneRepairPreviewLifecycle<VoxelDocument>()
+  const loadersRef = useRef({ loadSourceSpace, loadCandidateSpace })
+  loadersRef.current = { loadSourceSpace, loadCandidateSpace }
+  const selectedKey = previewViewportKey(spaceId, side)
+  const doc = activePreviewDocument(loadedDocument, selectedKey)
 
   useEffect(() => {
     if (!spaceId) return
-    const key = `${spaceId}:${side}`
-    const cached = cacheRef.current.get(key)
+    const key = selectedKey
+    const lifecycle = lifecycleRef.current!
+    const cached = lifecycle.get(key)
     if (cached) {
-      setDoc(cached)
+      setLoadedDocument({ key, document: cached })
       setError(null)
       setLoading(false)
       return
     }
-    const controller = new AbortController()
+    // Unmount the previous VoxelViewport immediately so its renderer is disposed while
+    // the next source/candidate document is loading.
     setLoading(true)
     setError(null)
-    const load = side === 'before' ? loadSourceSpace : loadCandidateSpace
-    load(spaceId, controller.signal)
-      .then(raw => {
-        if (controller.signal.aborted) return
-        const parsed = parseVoxelDocument(raw)
-        if (!parsed) throw new Error('预览资料无法解析')
-        cacheRef.current.set(key, parsed)
-        setDoc(parsed)
+    const load = side === 'before' ? loadersRef.current.loadSourceSpace : loadersRef.current.loadCandidateSpace
+    return lifecycle.load(
+      key,
+      signal => load(spaceId, signal),
+      parseVoxelDocument,
+      parsed => {
+        setLoadedDocument({ key, document: parsed })
         setLoading(false)
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return
-        setDoc(null)
+      },
+      (cause: unknown) => {
+        setLoadedDocument(current => current?.key === key ? null : current)
         setError(cause instanceof Error ? cause.message : '预览加载失败')
         setLoading(false)
-      })
-    return () => controller.abort()
-  }, [spaceId, side, loadSourceSpace, loadCandidateSpace])
+      },
+    )
+  }, [spaceId, side, selectedKey])
 
-  useEffect(() => () => { cacheRef.current.clear() }, [])
+  useEffect(() => () => lifecycleRef.current?.dispose(), [])
 
   const spaceChanges = useMemo(() => changes.filter(change => change.spaceId === spaceId), [changes, spaceId])
   const spaceNotes = useMemo(() => ruleNotes.filter(note => note.spaceId === spaceId), [ruleNotes, spaceId])
@@ -104,13 +110,8 @@ export function SceneRepairPreview({
     <div className="relative min-h-[240px] flex-1 overflow-hidden rounded-xl border border-[#dfe4d9] bg-[#f4f6f0]">
       {/* absolute 撑满 relative 容器：h-full 在仅靠 min-height 撑高的容器里会塌成 0，画布随之 0 高 */}
       {doc && <div className="absolute inset-0"><VoxelViewport
-        key={`${spaceId}:${side}`}
-        document={doc}
-        spaceId={spaceId}
-        timeZone={timeZone}
-        instanceId={`repair-preview-${spaceId}`}
-        probePrimary={false}
-        fitContainer
+        key={previewViewportKey(spaceId, side)}
+        {...readonlyPreviewViewportProps(doc, spaceId, timeZone)}
       /></div>}
       {loading && <p role="status" className="absolute inset-0 grid place-items-center text-sm text-[#798579]">正在加载预览…</p>}
       {error && <div role="alert" className="absolute inset-0 grid place-items-center p-4 text-center">

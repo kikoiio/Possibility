@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, lte, lt, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { Db } from '../../db/client'
 import {
   sceneCompatibilityDrafts,
@@ -62,6 +62,8 @@ export interface PublishDraftInput {
   changes?: SceneRepairChange[]
   report?: SceneValidationReport | null
   basis?: SceneValidationBasis
+  /** Absolute UTC deadline for a ready publication; checked by SQLite at statement execution. */
+  deadlineAt?: Date
   now?: Date
 }
 
@@ -279,12 +281,24 @@ function failureForCode(code: NonNullable<ContractRequest['failureCode']>): Scen
     ? '场景已更新，请重新检查并预览'
     : code === 'basis-changed'
       ? '校验依据已变化，请重新检查并预览'
-      : '兼容请求未能保存场景'
+      : code === 'draft-unavailable'
+        ? '修复草稿已超过保留期，请重新检查'
+        : '兼容请求未能保存场景'
   return {
     code,
     message,
     action: retryable ? 'query-result' : 'recheck',
   }
+}
+
+/** R07: 草稿以最后一次更新起算保留期;恰好到期即视为已过期(与清理边界一致)。 */
+function draftExpired(draft: DraftRow, nowText: string): boolean {
+  const cutoff = new Date(new Date(nowText).getTime() - COMPATIBILITY_DRAFT_RETENTION_MS).toISOString()
+  return draft.updatedAt <= cutoff
+}
+
+function draftExpiredFailure(): SceneCompatibilityFailure {
+  return { code: 'draft-unavailable', message: '修复草稿已超过保留期，请重新检查', action: 'recheck' }
 }
 
 async function readDraftRow(db: Db, worldId: string, draftId: string, actorKey?: string): Promise<DraftRow | null> {
@@ -354,6 +368,14 @@ export async function readSceneCompatibilityDraft(db: Db, worldId: string, draft
   return row ? draftFromRow(row) : null
 }
 
+/** Resolves a draft creation whose insert response may have been delayed or lost. */
+export async function readSceneCompatibilityDraftByRequestId(
+  db: Db, worldId: string, actorKey: string, draftRequestId: string,
+): Promise<ContractDraft | null> {
+  const row = await readScopedDraft(db, worldId, actorKey, draftRequestId)
+  return row ? draftFromRow(row) : null
+}
+
 /** Claims construction with a fixed database-time lease and monotonically fenced attempt. */
 export async function claimSceneCompatibilityDraftBuild(
   db: Db,
@@ -397,15 +419,59 @@ export async function publishSceneCompatibilityDraft(db: Db, input: PublishDraft
     ...(basisJson === undefined ? {} : { basisJson }),
     buildLeaseToken: null, buildLeaseUntil: null, updatedAt: now,
   }
-  const rows = await db.update(sceneCompatibilityDrafts).set(setValues).where(and(
+  const guards = [
     eq(sceneCompatibilityDrafts.worldId, input.worldId), eq(sceneCompatibilityDrafts.id, input.draftId),
     eq(sceneCompatibilityDrafts.actorKey, input.actorKey), eq(sceneCompatibilityDrafts.status, 'building'),
     eq(sceneCompatibilityDrafts.buildAttempt, input.buildAttempt), eq(sceneCompatibilityDrafts.buildLeaseToken, input.buildLeaseToken),
     // A builder may publish only while its fixed lease is still valid.
     gt(sceneCompatibilityDrafts.buildLeaseUntil, now),
-  )).returning().all()
+  ]
+  if (input.deadlineAt) {
+    const deadlineText = input.deadlineAt.toISOString()
+    guards.push(sql`NOT EXISTS (
+      SELECT 1 FROM scene_compatibility_requests AS r
+      WHERE r.world_id = ${input.worldId} AND r.draft_id = ${input.draftId}
+    )`)
+    if (input.status === 'ready') {
+      guards.push(sql`strftime('%Y-%m-%dT%H:%M:%fZ', 'now') < ${deadlineText}`)
+    }
+  }
+  const rows = await db.update(sceneCompatibilityDrafts).set(setValues).where(and(...guards)).returning().all()
   if (rows.length !== 1) throw new SceneCompatibilityLeaseLost('草稿构建执行权已失效，不能发布结果')
   return draftFromRow(rows[0])
+}
+
+/**
+ * Deadline fencing after an awaited publish. Only an expired, unconfirmed draft
+ * can be downgraded; an existing request journal keeps its identity untouched.
+ */
+export async function blockExpiredSceneCompatibilityDraft(
+  db: Db,
+  input: {
+    worldId: string; draftId: string; actorKey: string; buildAttempt: number
+    deadlineAt: Date; report: SceneValidationReport; basis?: SceneValidationBasis
+    changes?: SceneRepairChange[]; now?: Date
+  },
+): Promise<ContractDraft | null> {
+  const now = nowIso(input.now)
+  const reportJson = json(input.report, '草稿报告')
+  const changesJson = json(input.changes ?? [], '草稿变化')
+  const basisJson = input.basis === undefined ? undefined : json(input.basis, '草稿依据')
+  const rows = await db.update(sceneCompatibilityDrafts).set({
+    status: 'blocked', candidateJson: null, changesJson, reportJson,
+    ...(basisJson === undefined ? {} : { basisJson }),
+    buildLeaseToken: null, buildLeaseUntil: null, updatedAt: now,
+  }).where(and(
+    eq(sceneCompatibilityDrafts.worldId, input.worldId), eq(sceneCompatibilityDrafts.id, input.draftId),
+    eq(sceneCompatibilityDrafts.actorKey, input.actorKey), eq(sceneCompatibilityDrafts.buildAttempt, input.buildAttempt),
+    inArray(sceneCompatibilityDrafts.status, ['building', 'ready']),
+    sql`strftime('%Y-%m-%dT%H:%M:%fZ', 'now') >= ${input.deadlineAt.toISOString()}`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM scene_compatibility_requests AS r
+      WHERE r.world_id = ${input.worldId} AND r.draft_id = ${input.draftId}
+    )`,
+  )).returning().all()
+  return rows.length === 1 ? draftFromRow(rows[0]) : null
 }
 
 /** Atomically cancels only a draft which has not entered submission. */
@@ -449,6 +515,10 @@ export async function claimSceneCompatibilityRequest(db: Db, input: ClaimSceneCo
   } else if (input.expectedAttempt !== 0) {
     throw new SceneCompatibilityRequestMismatch('首次请求 attempt 必须为 0')
   }
+  // R07/B34: 到期草稿不可取得新的提交执行权;已完成/在途请求的重放不受影响(上面已早退)。
+  if (draftExpired(draft, now)) {
+    throw new SceneCompatibilityRepositoryError('修复草稿已超过保留期，请重新检查', 'draft-unavailable')
+  }
   const token = crypto.randomUUID()
   if (!existing) {
     const values: typeof sceneCompatibilityRequests.$inferInsert = {
@@ -458,8 +528,36 @@ export async function claimSceneCompatibilityRequest(db: Db, input: ClaimSceneCo
     }
     try {
       assertRowSize(values)
-      await db.insert(sceneCompatibilityRequests).values(values)
-      return { request: requestFromRow(values as RequestRow), claimed: true, leaseToken: token, attempt: 0 }
+      // The draft may be atomically blocked for an expired build after the read
+      // above. INSERT..SELECT rechecks readiness in the same SQLite statement,
+      // so deadline blocking and a first confirm claim cannot both win.
+      const readyDraft = db.select({
+        worldId: sql<string>`${values.worldId}`.as('world_id'),
+        requestId: sql<string>`${values.requestId}`.as('request_id'),
+        actorKey: sql<string>`${values.actorKey}`.as('actor_key'),
+        draftId: sql<string>`${values.draftId}`.as('draft_id'),
+        requestFingerprint: sql<string>`${values.requestFingerprint}`.as('request_fingerprint'),
+        attempt: sql<number>`${values.attempt}`.as('attempt'),
+        state: sql<string>`${values.state}`.as('state'),
+        leaseToken: sql<string>`${values.leaseToken}`.as('lease_token'),
+        leaseUntil: sql<string>`${values.leaseUntil}`.as('lease_until'),
+        resultVersion: sql<number | null>`${values.resultVersion}`.as('result_version'),
+        failureCode: sql<string | null>`${values.failureCode}`.as('failure_code'),
+        createdAt: sql<string>`${values.createdAt}`.as('created_at'),
+        updatedAt: sql<string>`${values.updatedAt}`.as('updated_at'),
+      }).from(sceneCompatibilityDrafts).where(and(
+        eq(sceneCompatibilityDrafts.id, input.draftId), eq(sceneCompatibilityDrafts.worldId, input.worldId),
+        eq(sceneCompatibilityDrafts.actorKey, input.actorKey), eq(sceneCompatibilityDrafts.status, 'ready'),
+        sql`${sceneCompatibilityDrafts.candidateJson} IS NOT NULL`,
+      ))
+      const inserted = await db.insert(sceneCompatibilityRequests).select(readyDraft).returning().all()
+      if (inserted.length === 1) return { request: requestFromRow(inserted[0]), claimed: true, leaseToken: token, attempt: 0 }
+      const raced = await readRequestRow(db, input.worldId, input.requestId)
+      if (raced) {
+        if (raced.actorKey !== input.actorKey || raced.draftId !== input.draftId || raced.requestFingerprint !== requestFingerprint) throw new SceneCompatibilityRequestMismatch()
+        return { request: requestFromRow(raced), claimed: false, leaseToken: null, attempt: raced.attempt }
+      }
+      throw new SceneCompatibilityRepositoryError('草稿尚未准备好确认', 'draft-blocked')
     } catch (error) {
       const raced = await readRequestRow(db, input.worldId, input.requestId)
       if (!raced) throw error
@@ -473,6 +571,11 @@ export async function claimSceneCompatibilityRequest(db: Db, input: ClaimSceneCo
     eq(sceneCompatibilityRequests.worldId, input.worldId), eq(sceneCompatibilityRequests.requestId, input.requestId),
     eq(sceneCompatibilityRequests.actorKey, input.actorKey), eq(sceneCompatibilityRequests.requestFingerprint, requestFingerprint),
     eq(sceneCompatibilityRequests.attempt, existing.attempt), eq(sceneCompatibilityRequests.state, 'not-committed'),
+    sql`EXISTS (
+      SELECT 1 FROM scene_compatibility_drafts AS d
+      WHERE d.world_id = ${input.worldId} AND d.id = ${input.draftId}
+        AND d.actor_key = ${input.actorKey} AND d.status = 'ready' AND d.candidate_json IS NOT NULL
+    )`,
   )).returning().all()
   if (rows.length !== 1) throw new SceneCompatibilityLeaseLost('请求重试执行权已被其他执行者取得')
   return { request: requestFromRow(rows[0]), claimed: true, leaseToken: token, attempt: input.expectedAttempt }
@@ -483,8 +586,14 @@ export async function completeSceneCompatibilityRequest(db: Db, input: CompleteS
     eq(sceneCompatibilityRequests.worldId, input.worldId), eq(sceneCompatibilityRequests.requestId, input.requestId), eq(sceneCompatibilityRequests.actorKey, input.actorKey),
     eq(sceneCompatibilityRequests.attempt, input.attempt), eq(sceneCompatibilityRequests.leaseToken, input.leaseToken), eq(sceneCompatibilityRequests.state, 'submitting'),
   )).returning().all()
-  if (rows.length !== 1) throw new SceneCompatibilityLeaseLost()
-  return requestFromRow(rows[0])
+  if (rows.length === 1) return requestFromRow(rows[0])
+  // Compatibility scene commits may complete this journal row in their atomic
+  // scene/history batch. Keep this helper idempotent for that path and for replay.
+  const prior = await readRequestRow(db, input.worldId, input.requestId, input.actorKey)
+  if (prior?.state === 'completed' && prior.attempt === input.attempt && prior.resultVersion === input.resultVersion) {
+    return requestFromRow(prior)
+  }
+  throw new SceneCompatibilityLeaseLost()
 }
 
 export async function failSceneCompatibilityRequest(db: Db, input: FailSceneCompatibilityRequestInput): Promise<ContractRequest> {
@@ -496,42 +605,108 @@ export async function failSceneCompatibilityRequest(db: Db, input: FailSceneComp
   return requestFromRow(rows[0])
 }
 
-async function readRevisionResult(db: Db, worldId: string, requestId: string): Promise<SceneCommitResult | null> {
+type RevisionResultLookup =
+  | { status: 'missing' }
+  | { status: 'invalid' }
+  | { status: 'completed'; result: SceneCommitResult }
+
+async function readRevisionResult(db: Db, worldId: string, requestId: string): Promise<RevisionResultLookup> {
   const row = await db.select().from(worldSceneRevisions).where(and(eq(worldSceneRevisions.worldId, worldId), eq(worldSceneRevisions.requestId, requestId))).get()
-  if (!row) return null
-  const audit = parse<SceneRepairAudit | null>(row.compatibilityJson, '兼容审计', null)
-  if (!audit || audit.requestId !== requestId || audit.source.worldId !== worldId) return null
-  return {
-    worldId, version: row.version, contentHash: row.contentHash, requestId,
-    document: sceneDocument(parse<unknown>(row.documentJson, '场景修订'), '场景修订'),
-    outcome: audit.purpose === 'repair-current' ? 'repaired-current' : 'restored-history',
-    audit,
+  if (!row) return { status: 'missing' }
+  try {
+    const audit = parse<SceneRepairAudit | null>(row.compatibilityJson, '兼容审计', null)
+    if (!audit || audit.requestId !== requestId || audit.source.worldId !== worldId
+      || !['repair-current', 'restore-history'].includes(audit.purpose)) return { status: 'invalid' }
+    return {
+      status: 'completed',
+      result: {
+        worldId, version: row.version, contentHash: row.contentHash, requestId,
+        document: sceneDocument(parse<unknown>(row.documentJson, '场景修订'), '场景修订'),
+        outcome: audit.purpose === 'repair-current' ? 'repaired-current' : 'restored-history',
+        audit,
+      },
+    }
+  } catch {
+    // A revision with a damaged or mismatched audit is evidence of an uncertain
+    // write, never proof that the request did not commit.
+    return { status: 'invalid' }
   }
+}
+
+/**
+ * Maps a not-committed row to its public view, but only grants a retry when the
+ * underlying draft still exists and is inside its retention window (A8.6/R07).
+ */
+async function retryGrantFor(db: Db, row: RequestRow, nowText: string): Promise<SceneCompatibilityRequestView> {
+  const view = toSceneCompatibilityRequestView(requestFromRow(row))
+  if (view.status !== 'not-committed' || !view.retryAllowed) return view
+  const draft = await readDraftRow(db, row.worldId, row.draftId, row.actorKey)
+  if (!draft || draftExpired(draft, nowText)) {
+    return { status: 'not-committed', attempt: row.attempt, retryAllowed: false, error: draftExpiredFailure() }
+  }
+  return view
+}
+
+/** Atomically revokes an expired submitting lease. Returns false when another fencer won the race. */
+async function fenceExpiredLease(db: Db, row: RequestRow, nowText: string): Promise<RequestRow | null> {
+  const fenced = await db.update(sceneCompatibilityRequests).set({ state: 'not-committed', leaseToken: null, leaseUntil: null, updatedAt: nowText }).where(and(
+    eq(sceneCompatibilityRequests.worldId, row.worldId), eq(sceneCompatibilityRequests.requestId, row.requestId),
+    eq(sceneCompatibilityRequests.actorKey, row.actorKey), eq(sceneCompatibilityRequests.attempt, row.attempt),
+    eq(sceneCompatibilityRequests.state, 'submitting'),
+    row.leaseToken === null ? isNull(sceneCompatibilityRequests.leaseToken) : eq(sceneCompatibilityRequests.leaseToken, row.leaseToken),
+    lte(sceneCompatibilityRequests.leaseUntil, nowText),
+  )).returning().all()
+  return fenced.length === 1 ? fenced[0] : null
 }
 
 /** Rebuilds a successful result from immutable scene history; it does not trust draft retention. */
-export async function readSceneCompatibilityRequest(db: Db, worldId: string, requestId: string, actorKey?: string): Promise<SceneCompatibilityRequestView> {
+async function readSceneCompatibilityRequestInner(db: Db, worldId: string, requestId: string, actorKey?: string, now?: Date): Promise<SceneCompatibilityRequestView> {
   const row = await readRequestRow(db, worldId, requestId, actorKey)
   const revisionResult = await readRevisionResult(db, worldId, requestId)
-  if (!row) return revisionResult ? { status: 'completed', attempt: 0, result: revisionResult } : { status: 'missing', retryAllowed: false }
+  if (revisionResult.status === 'invalid') return { status: 'unknown', retryAllowed: false }
+  if (!row) return revisionResult.status === 'completed' ? { status: 'completed', attempt: 0, result: revisionResult.result } : { status: 'missing', retryAllowed: false }
   if (row.state === 'completed') {
-    if (!revisionResult) return { status: 'unknown', retryAllowed: false }
-    return { status: 'completed', attempt: row.attempt, result: revisionResult }
+    if (revisionResult.status !== 'completed') return { status: 'unknown', retryAllowed: false }
+    return { status: 'completed', attempt: row.attempt, result: revisionResult.result }
   }
-  return toSceneCompatibilityRequestView(requestFromRow(row))
+  const nowText = nowIso(now)
+  if (row.state === 'submitting' && row.leaseUntil !== null && row.leaseUntil <= nowText) {
+    // B25: 先以数据库时间原子栅栏过期租约,再核对同次成功修订;栅栏竞争失败给 unknown。
+    const fenced = await fenceExpiredLease(db, row, nowText)
+    if (!fenced) return { status: 'unknown', retryAllowed: false }
+    const landed = await readRevisionResult(db, worldId, requestId)
+    if (landed.status === 'invalid') return { status: 'unknown', retryAllowed: false }
+    if (landed.status === 'completed') return { status: 'completed', attempt: row.attempt, result: landed.result }
+    return retryGrantFor(db, fenced, nowText)
+  }
+  return retryGrantFor(db, row, nowText)
+}
+
+export async function readSceneCompatibilityRequest(db: Db, worldId: string, requestId: string, actorKey?: string, now?: Date): Promise<SceneCompatibilityRequestView> {
+  try {
+    return await readSceneCompatibilityRequestInner(db, worldId, requestId, actorKey, now)
+  } catch {
+    // A storage read failure cannot establish absence of a committed revision.
+    return { status: 'unknown', retryAllowed: false }
+  }
 }
 
 /** Fences an expired lease, then checks for a durable revision. It never submits a new revision. */
-export async function recoverSceneCompatibilityRequest(db: Db, input: ClaimSceneCompatibilityRequestInput): Promise<SceneCompatibilityRequestView> {
+async function recoverSceneCompatibilityRequestInner(db: Db, input: ClaimSceneCompatibilityRequestInput): Promise<SceneCompatibilityRequestView> {
   const now = nowIso(input.now)
   const before = await readRequestRow(db, input.worldId, input.requestId, input.actorKey)
   const revisionBefore = await readRevisionResult(db, input.worldId, input.requestId)
+  if (revisionBefore.status === 'invalid') return { status: 'unknown', retryAllowed: false }
   if (!before) {
-    if (revisionBefore) return { status: 'completed', attempt: 0, result: revisionBefore }
+    if (revisionBefore.status === 'completed') return { status: 'completed', attempt: 0, result: revisionBefore.result }
     const draft = await readDraftRow(db, input.worldId, input.draftId, input.actorKey)
     if (!draft) return { status: 'unknown', retryAllowed: false }
     const requestFingerprint = await requestFingerprintFor(db, input, draft)
     if (input.expectedAttempt !== 0) return { status: 'unknown', retryAllowed: false }
+    // A8.6/R07: 草稿已过期时不建立退休记录也不授予重试,要求重新检查
+    if (draftExpired(draft, now)) {
+      return { status: 'not-committed', attempt: 0, retryAllowed: false, error: draftExpiredFailure() }
+    }
     try {
       await db.insert(sceneCompatibilityRequests).values({
         worldId: input.worldId, requestId: input.requestId, actorKey: input.actorKey, draftId: input.draftId,
@@ -544,27 +719,31 @@ export async function recoverSceneCompatibilityRequest(db: Db, input: ClaimScene
     return { status: 'not-committed', attempt: 0, nextAttempt: 1, retryAllowed: true }
   }
   if (before.actorKey !== input.actorKey || before.draftId !== input.draftId) throw new SceneCompatibilityRequestMismatch()
-  if (revisionBefore) return { status: 'completed', attempt: before.attempt, result: revisionBefore }
-  if (before.state !== 'submitting') return toSceneCompatibilityRequestView(requestFromRow(before))
+  if (revisionBefore.status === 'completed') return { status: 'completed', attempt: before.attempt, result: revisionBefore.result }
+  if (before.state !== 'submitting') return retryGrantFor(db, before, now)
   if (!before.leaseUntil || before.leaseUntil > now) return { status: 'submitting', attempt: before.attempt, retryAllowed: false }
-  const fenced = await db.update(sceneCompatibilityRequests).set({ state: 'not-committed', leaseToken: null, leaseUntil: null, updatedAt: now }).where(and(
-    eq(sceneCompatibilityRequests.worldId, input.worldId), eq(sceneCompatibilityRequests.requestId, input.requestId),
-    eq(sceneCompatibilityRequests.actorKey, input.actorKey), eq(sceneCompatibilityRequests.attempt, before.attempt),
-    eq(sceneCompatibilityRequests.state, 'submitting'),
-    before.leaseToken === null ? isNull(sceneCompatibilityRequests.leaseToken) : eq(sceneCompatibilityRequests.leaseToken, before.leaseToken),
-    lte(sceneCompatibilityRequests.leaseUntil, now),
-  )).returning().all()
-  if (fenced.length !== 1) return { status: 'unknown', retryAllowed: false }
+  const fenced = await fenceExpiredLease(db, before, now)
+  if (!fenced) return { status: 'unknown', retryAllowed: false }
   const afterRevision = await readRevisionResult(db, input.worldId, input.requestId)
-  if (afterRevision) return { status: 'completed', attempt: before.attempt, result: afterRevision }
-  return { status: 'not-committed', attempt: before.attempt, nextAttempt: before.attempt + 1, retryAllowed: true }
+  if (afterRevision.status === 'invalid') return { status: 'unknown', retryAllowed: false }
+  if (afterRevision.status === 'completed') return { status: 'completed', attempt: before.attempt, result: afterRevision.result }
+  return retryGrantFor(db, fenced, now)
+}
+
+export async function recoverSceneCompatibilityRequest(db: Db, input: ClaimSceneCompatibilityRequestInput): Promise<SceneCompatibilityRequestView> {
+  try {
+    return await recoverSceneCompatibilityRequestInner(db, input)
+  } catch {
+    // Never grant a new attempt when request/revision/draft state could not be read.
+    return { status: 'unknown', retryAllowed: false }
+  }
 }
 
 /** Clears only expired, unsubmitted drafts in one world, bounded to ten rows. */
 export async function cleanupExpiredSceneCompatibilityDrafts(db: Db, worldId: string, now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - COMPATIBILITY_DRAFT_RETENTION_MS).toISOString()
   const rows = await db.select({ id: sceneCompatibilityDrafts.id }).from(sceneCompatibilityDrafts).where(and(
-    eq(sceneCompatibilityDrafts.worldId, worldId), lt(sceneCompatibilityDrafts.updatedAt, cutoff),
+    eq(sceneCompatibilityDrafts.worldId, worldId), lte(sceneCompatibilityDrafts.updatedAt, cutoff),
     inArray(sceneCompatibilityDrafts.status, ['building', 'ready', 'blocked', 'cancelled', 'superseded']),
   )).orderBy(desc(sceneCompatibilityDrafts.updatedAt)).limit(COMPATIBILITY_CLEANUP_LIMIT).all()
   if (!rows.length) return 0

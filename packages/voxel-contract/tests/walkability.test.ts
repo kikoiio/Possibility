@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyEdits, createBlockRegistry, createEmptyWorld, setBlockMut, validateWalkability,
+  applyEdits, createBlockRegistry, createEmptyWorld, setBlockMut, validateWalkability, validateWalkabilityWithStats,
 } from '../src'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })
@@ -183,6 +183,37 @@ describe('validateWalkability 总装(AC5)', () => {
 })
 
 describe('validateWalkability R2 连通性', () => {
+  it('reports a complete flood when the full small-map set exactly meets maxVisited', () => {
+    const doc = flatWorld(4, 4)
+    const result = validateWalkabilityWithStats(doc, registry, { maxVisited: 16 })
+
+    expect(result.complete).toBe(true)
+    expect(result.visitedCells).toBe(32) // 16 cells in each independent flood
+    expect(result.floods.withGaps).toMatchObject({ visited: 16, complete: true })
+    expect(result.floods.strict).toMatchObject({ visited: 16, complete: true })
+    expect(result.floods.withGaps.workspaceBytesPeak).toBeGreaterThan(0)
+    expect(result.floods.strict.workspaceBytesPeak).toBeGreaterThan(0)
+    expect(result.workspaceBytesPeak).toBeGreaterThanOrEqual(Math.max(
+      result.floods.withGaps.workspaceBytesPeak,
+      result.floods.strict.workspaceBytesPeak,
+    ))
+    expect(result.workUnits).toBeGreaterThan(result.visitedCells)
+    expect(validateWalkability(doc, registry, { maxVisited: 16 })).toEqual(result.issues)
+  })
+
+  it('marks a cap hit incomplete when the BFS still has queued/reachable cells', () => {
+    const doc = flatWorld(4, 4)
+    const result = validateWalkabilityWithStats(doc, registry, { maxVisited: 13 })
+
+    expect(result.complete).toBe(false)
+    expect(result.floods.withGaps).toMatchObject({ visited: 13, complete: false })
+    expect(result.floods.strict).toMatchObject({ visited: 13, complete: false })
+    expect(result.visitedCells).toBe(26)
+    expect(result.workUnits).toBeGreaterThan(result.visitedCells)
+    // The legacy API remains an issue array even when its internal BFS is capped.
+    expect(Array.isArray(validateWalkability(doc, registry, { maxVisited: 13 }))).toBe(true)
+  })
+
   it('开放世界中绑定物体可达 → 无 walk-connectivity', () => {
     const doc = flatWorld()
     const placed = applyEdits(doc, [

@@ -13,7 +13,7 @@ import {
 } from './service'
 import { createDb, type Db } from '../../db/client'
 import { authMiddleware, type AuthVariables } from '../../auth/middleware'
-import { worlds } from '../../db/schema'
+import { demoBaselines, worlds } from '../../db/schema'
 import type { Env } from '../../index'
 import type { SceneCandidate, SceneTarget, StoredSceneDocument } from '@possibility/voxel-contract'
 import { isSerializedVoxelDocument, isSerializedVoxelSpaces } from '@possibility/voxel-contract'
@@ -25,6 +25,7 @@ import {
   isCandidate,
   isPurpose,
   parseQueryTarget,
+  parseDraftPageQuery,
   parseTarget,
   toDraftView,
   toRequestView,
@@ -40,11 +41,38 @@ async function ownedWorld(db: Db, worldId: string, userId: string) {
   return await db.select().from(worlds).where(and(eq(worlds.id, worldId), eq(worlds.userId, userId))).get() ?? null
 }
 
+async function activeDemoBaseline(db: Db, worldId: string) {
+  return await db.select().from(demoBaselines).where(and(
+    eq(demoBaselines.worldId, worldId), eq(demoBaselines.status, 'active'),
+  )).get() ?? null
+}
+
+function canMaintainBaseline(
+  world: NonNullable<Awaited<ReturnType<typeof ownedWorld>>>,
+  user: AuthVariables['user'],
+): boolean {
+  return world.isDemo && world.userId === user.id && user.role === 'admin'
+}
+
+function baselineWriteDenied(c: RouteContext) {
+  return c.json(errorBody('world-unavailable', '公共演示基线仅管理员物主可维护'), 403)
+}
+
 function fail(c: RouteContext, error: unknown) {
-  const rawStatus = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 400
-  const status = [400, 401, 404, 409, 422, 500, 503].includes(rawStatus) ? rawStatus : 400
-  const message = error instanceof Error ? error.message : '兼容处理失败'
-  const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : 'storage-failure'
+  const candidateCode = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : null
+  const knownCodes = new Set([
+    'basis-changed', 'context-unavailable', 'draft-blocked', 'draft-unavailable', 'format-unsupported',
+    'repair-not-required', 'request-mismatch', 'scene-changed', 'scene-corrupt', 'scene-invalid',
+    'scene-missing', 'service-busy', 'storage-failure', 'validation-incomplete', 'world-unavailable',
+  ])
+  const code = candidateCode && knownCodes.has(candidateCode) ? candidateCode : 'storage-failure'
+  const message = code === 'storage-failure'
+    ? '场景兼容处理遇到存储故障；提交结果可能未知，请先查询请求状态。'
+    : error instanceof Error ? error.message : '兼容处理失败'
+  const rawStatus = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+    ? error.status
+    : code === 'storage-failure' ? 500 : 400
+  const status = [400, 401, 404, 409, 422, 500, 503].includes(rawStatus) ? rawStatus : 500
   return c.json(errorBody(code, message), status as 400 | 401 | 404 | 409 | 422 | 500 | 503)
 }
 
@@ -99,6 +127,9 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts', async c 
   const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
+    const baseline = await activeDemoBaseline(db, world.id)
+    const user = c.get('user')
+    if (baseline && !canMaintainBaseline(world, user)) return baselineWriteDenied(c)
     const bindings = await loadWorldSceneBindings(db, world.id)
     const draft = await createCompatibilityDraft(db, {
       worldId: world.id,
@@ -114,11 +145,16 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts', async c 
 })
 
 compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId', async c => {
+  const page = parseDraftPageQuery({
+    limit: c.req.query('limit'), offset: c.req.query('offset'),
+    issuesOffset: c.req.query('issuesOffset'), changesOffset: c.req.query('changesOffset'),
+  })
+  if (!page) return c.json(errorBody('request-mismatch', '分页参数无效'), 400)
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
     const draft = await readCompatibilityDraft(db, { worldId: world.id, draftId: c.req.param('draftId'), actorKey: c.get('user').id })
-    return c.json(toDraftView(draft))
+    return c.json(toDraftView(draft, page))
   } catch (error) { return fail(c, error) }
 })
 
@@ -138,6 +174,10 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/confirm', async c
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
+    const baseline = await activeDemoBaseline(db, world.id)
+    const user = c.get('user')
+    const mayWriteBaseline = Boolean(baseline && canMaintainBaseline(world, user))
+    if (baseline && !mayWriteBaseline) return baselineWriteDenied(c)
     const bindings = await loadWorldSceneBindings(db, world.id)
     const result = await confirmCompatibility(db, {
       worldId: world.id,
@@ -147,6 +187,15 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/confirm', async c
       expectedCurrentVersion: body.expectedCurrentVersion as number,
       expectedAttempt: body.expectedAttempt as number,
       access: { bindings },
+      ...(mayWriteBaseline && baseline ? {
+        allowBaseline: true,
+        baselineUpdate: { baselineId: baseline.id },
+      } : {}),
+      authority: {
+        sessionToken: c.req.header('Authorization')!.slice('Bearer '.length),
+        ownerUserId: c.get('user').id,
+        ...(mayWriteBaseline ? { adminUserId: user.id } : {}),
+      },
     })
     return c.json(toRequestView(result))
   } catch (error) { return fail(c, error) }
@@ -156,7 +205,8 @@ compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/requests/:requestI
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
-    const result = await readCompatibilityRequest(db, { worldId: world.id, requestId: c.req.param('requestId'), actorKey: c.get('user').id })
+    const bindings = await loadWorldSceneBindings(db, world.id)
+    const result = await readCompatibilityRequest(db, { worldId: world.id, requestId: c.req.param('requestId'), actorKey: c.get('user').id, access: { bindings } })
     return c.json(toRequestView(result))
   } catch (error) { return fail(c, error) }
 })

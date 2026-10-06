@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError, clearToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
+import { ApiError, authApi, clearToken, getGuestToken, getToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeAuthIdentityChange, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
   CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, TimelineComparison, TimelineInfo, WorldSnapshot,
 } from '../api/types'
@@ -8,6 +8,7 @@ import { SceneHistoryPanel, type SceneHistoryViewState } from '../components/sce
 import { SceneCompatibilityPanel } from '../components/scene/SceneCompatibilityPanel'
 import { SceneRepairPreview } from '../components/scene/SceneRepairPreview'
 import { createCompatibilitySession, type CompatibilitySession, type CompatibilitySessionClient } from '../scene/compatibility-session'
+import { startCompatibilityPolling } from '../scene/compatibility-polling'
 import type { CompatibilityContinuation } from '../scene/compatibility-store'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
@@ -84,8 +85,22 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
   // A1 场景兼容:诊断/修复草稿/确认/结果恢复全部经会话状态机驱动,面板只读展示 continuation。
   const [compatContinuation, setCompatContinuation] = useState<CompatibilityContinuation | null>(null)
+  const [compatReadyScope, setCompatReadyScope] = useState<{ worldId: string; authIdentityEpoch: number } | null>(null)
+  const [authIdentityEpoch, setAuthIdentityEpoch] = useState(0)
+  const authIdentityEpochRef = useRef(0)
   const compatSessionRef = useRef<CompatibilitySession | null>(null)
+  useEffect(() => subscribeAuthIdentityChange(() => {
+    authIdentityEpochRef.current += 1
+    setAuthIdentityEpoch(authIdentityEpochRef.current)
+  }), [])
   useEffect(() => {
+    let active = true
+    let unsubscribe: (() => void) | null = null
+    let session: CompatibilitySession | null = null
+    const identityEpoch = authIdentityEpoch
+    const identityToken = guest ? getGuestToken() : getToken()
+    setCompatReadyScope(null)
+    setCompatContinuation(null)
     const client: CompatibilitySessionClient = {
       inspect: input => sceneCompatibilityApi.inspection(worldId, input.target.kind === 'history' ? { version: input.target.version } : {}),
       createDraft: input => sceneCompatibilityApi.createDraft(worldId, {
@@ -107,15 +122,48 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         expectedAttempt: input.expectedAttempt,
       }),
     }
-    const session = createCompatibilitySession({ scope: { actorKey: guest ? 'guest' : 'account', worldId }, client })
-    compatSessionRef.current = session
-    const unsubscribe = session.subscribe(setCompatContinuation)
-    setCompatContinuation(session.snapshot())
+    const attachAuthorizedSession = async () => {
+      try {
+        const actorKey = guest ? 'guest' : (await authApi.me()).user.id
+        if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
+        // Do not load locally cached draft metadata until the server confirms this
+        // identity can read the requested world's current scene.
+        await worldSceneApi.get(worldId)
+        if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
+        session = createCompatibilitySession({ scope: { actorKey, worldId }, client })
+        compatSessionRef.current = session
+        unsubscribe = session.subscribe(setCompatContinuation)
+        setCompatContinuation(session.snapshot())
+        setCompatReadyScope({ worldId, authIdentityEpoch: identityEpoch })
+      } catch {
+        if (active) {
+          setCompatContinuation(null)
+          setCompatReadyScope(null)
+        }
+      }
+    }
+    void attachAuthorizedSession()
     return () => {
-      unsubscribe()
+      active = false
+      unsubscribe?.()
+      session?.dispose()
       if (compatSessionRef.current === session) compatSessionRef.current = null
     }
-  }, [worldId, guest])
+  }, [worldId, guest, authIdentityEpoch])
+  useEffect(() => {
+    const continuation = compatReadyScope?.worldId === worldId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
+      ? compatContinuation : null
+    const session = compatSessionRef.current
+    if (!session || continuation?.state !== 'submitting' || !continuation.requestId) return
+    return startCompatibilityPolling({
+      query: async () => { await session.queryResult() },
+      isVisible: () => document.visibilityState === 'visible',
+      subscribeVisibility: listener => {
+        document.addEventListener('visibilitychange', listener)
+        return () => document.removeEventListener('visibilitychange', listener)
+      },
+    })
+  }, [worldId, compatReadyScope, authIdentityEpoch, compatContinuation?.state, compatContinuation?.requestId])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [forkPrefill, setForkPrefill] = useState<{ key: string; whatIf: string; simTime: string } | null>(null)
@@ -763,9 +811,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
 
   // A1 兼容面板:单空间/多空间(GuestWorldMap)共用同一会话与同一面板,只读预览按草稿惰性加载。
-  const compatDraft = compatContinuation?.draft ?? null
-  const compatSourceVersion = compatContinuation?.source?.version ?? null
-  const compatPreview = compatContinuation?.state === 'preview' && compatDraft && compatSourceVersion !== null
+  const currentCompatContinuation = compatReadyScope?.worldId === worldId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
+    ? compatContinuation : null
+  const compatDraft = currentCompatContinuation?.draft ?? null
+  const compatSourceVersion = currentCompatContinuation?.source?.version ?? null
+  const compatPreview = currentCompatContinuation?.state === 'preview' && compatDraft && compatSourceVersion !== null
     ? <SceneRepairPreview
         key={compatDraft.id}
         spaces={compatDraft.previewSpaces}
@@ -776,15 +826,15 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         timeZone={snapshot.world.timeZone}
       />
     : undefined
-  const compatPanel = compatContinuation && compatContinuation.state !== 'idle'
+  const compatPanel = currentCompatContinuation && currentCompatContinuation.state !== 'idle'
     ? <SceneCompatibilityPanel
-        continuation={compatContinuation}
+        continuation={currentCompatContinuation}
         canEdit={canEditScene && !readonly}
         preview={compatPreview}
         onBuild={() => void compatSessionRef.current?.build().catch(() => undefined)}
         onConfirm={() => void compatSessionRef.current?.submit().catch(() => undefined)}
         onRecheck={() => {
-          const { purpose, target } = compatContinuation
+          const { purpose, target } = currentCompatContinuation
           if (purpose && target) void openCompatibility(purpose, target)
         }}
         onQueryResult={() => void compatSessionRef.current?.queryResult().catch(() => undefined)}

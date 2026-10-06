@@ -50,6 +50,8 @@ export interface CompatibilitySessionOptions {
 export interface CompatibilitySession {
   snapshot(): CompatibilityContinuation
   subscribe(listener: (snapshot: CompatibilityContinuation) => void): () => void
+  /** Invalidates pending work when the owning page/scope is removed. */
+  dispose(): void
   reset(): void
   check(input: CompatibilityCheckInput): Promise<CompatibilityContinuation>
   build(input?: Partial<Pick<CompatibilityBuildInput, 'draftRequestId'>>): Promise<CompatibilityContinuation>
@@ -143,12 +145,19 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
   const requestId = options.requestId ?? newRequestId
   const listeners = new Set<(snapshot: CompatibilityContinuation) => void>()
   let state = store.load(options.scope) ?? emptyCompatibilityContinuation(options.scope, now())
+  let generation = 0
+  let disposed = false
 
   function publish(next: CompatibilityContinuation): CompatibilityContinuation {
+    if (disposed) return structuredClone(state)
     state = next
     store.save(state)
     for (const listener of listeners) listener(state)
     return state
+  }
+
+  function isCurrent(operation: number): boolean {
+    return !disposed && operation === generation
   }
 
   function requireState(...allowed: CompatibilityState[]): void {
@@ -160,10 +169,18 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
   return {
     snapshot: () => structuredClone(state),
     subscribe(listener) {
+      if (disposed) return () => undefined
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    dispose() {
+      generation += 1
+      disposed = true
+      listeners.clear()
+    },
     reset() {
+      if (disposed) return
+      generation += 1
       store.clear(options.scope)
       publish(emptyCompatibilityContinuation(options.scope, now()))
     },
@@ -188,8 +205,10 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
         receipt: null,
         message: null,
       }, now))
+      const operation = ++generation
       try {
         const inspection = await options.client.inspect({ worldId: options.scope.worldId, ...input })
+        if (!isCurrent(operation)) return structuredClone(state)
         if (inspection.status === 'ready') {
           return publish(updateState(state, {
             state: 'diagnosed',
@@ -206,6 +225,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
           message: inspection.error.message,
         }, now))
       } catch (error) {
+        if (!isCurrent(operation)) return structuredClone(state)
         const failure = failureFromUnknown(error)
         const nextState = isConflict(failure) ? 'conflict' : 'unknown'
         publish(updateState(state, { state: nextState, failure: failure ?? null, message: error instanceof Error ? error.message : '检查结果未知。' }, now))
@@ -222,6 +242,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
       }
       const draftRequestId = input.draftRequestId ?? state.requestId ?? requestId()
       publish(updateState(state, { state: 'building', requestId: draftRequestId, message: null, failure: null }, now))
+      const operation = ++generation
       try {
         const draft = await options.client.createDraft({
           draftRequestId,
@@ -230,6 +251,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
           target: structuredClone(state.target),
           expectedCurrentVersion: state.expectedCurrentVersion,
         })
+        if (!isCurrent(operation)) return structuredClone(state)
         const summary: CompatibilityDraftSummary = toCompatibilityDraftSummary(draft)
         const nextState: CompatibilityState = draft.status === 'building' ? 'building' : 'preview'
         return publish(updateState(state, {
@@ -240,6 +262,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
           message: draft.canConfirm ? null : '修复草稿当前不能提交。',
         }, now))
       } catch (error) {
+        if (!isCurrent(operation)) return structuredClone(state)
         const failure = failureFromUnknown(error)
         const nextState = isConflict(failure) ? 'conflict' : 'unknown'
         publish(updateState(state, { state: nextState, failure: failure ?? null, message: error instanceof Error ? error.message : '草稿构建结果未知。' }, now))
@@ -255,6 +278,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
         throw new CompatibilitySessionError(state.message ?? '修复草稿当前不能提交。', state.state, state.failure ?? undefined)
       }
       publish(updateState(state, { state: 'submitting', message: null, failure: null }, now))
+      const operation = ++generation
       try {
         const response = await options.client.submit({
           worldId: options.scope.worldId,
@@ -263,6 +287,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
           expectedCurrentVersion: state.expectedCurrentVersion,
           expectedAttempt: state.nextAttempt ?? 0,
         })
+        if (!isCurrent(operation)) return structuredClone(state)
         if (response.status === 'completed') {
           return publish(updateState(state, { state: 'completed', receipt: structuredClone(response.result), message: null }, now))
         }
@@ -280,6 +305,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
         const nextState: CompatibilityState = response.status === 'unknown' ? 'unknown' : 'unknown'
         return publish(updateState(state, { state: nextState, message: '提交结果未知。' }, now))
       } catch (error) {
+        if (!isCurrent(operation)) return structuredClone(state)
         const failure = failureFromUnknown(error)
         const nextState = isConflict(failure) ? 'conflict' : 'unknown'
         publish(updateState(state, { state: nextState, failure: failure ?? null, message: error instanceof Error ? error.message : '提交结果未知。' }, now))
@@ -291,8 +317,23 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
       if (!state.requestId) {
         throw new CompatibilitySessionError('没有可查询的提交记录。', state.state)
       }
+      const operation = ++generation
       try {
-        const response = await options.client.query({ worldId: options.scope.worldId, requestId: state.requestId })
+        let response = await options.client.query({ worldId: options.scope.worldId, requestId: state.requestId })
+        if (!isCurrent(operation)) return structuredClone(state)
+        if ((response.status === 'missing' || response.status === 'unknown')
+          && state.draftId && state.expectedCurrentVersion !== null) {
+          // Explicit user query may recover a lost request row, but recovery only fences/grants;
+          // it never submits. A subsequent user click is required to retry.
+          response = await options.client.recover({
+            worldId: options.scope.worldId,
+            requestId: state.requestId,
+            draftId: state.draftId,
+            expectedCurrentVersion: state.expectedCurrentVersion,
+            expectedAttempt: state.nextAttempt ?? 0,
+          })
+          if (!isCurrent(operation)) return structuredClone(state)
+        }
         if (response.status === 'completed') {
           return publish(updateState(state, { state: 'completed', receipt: structuredClone(response.result), message: null }, now))
         }
@@ -316,6 +357,7 @@ export function createCompatibilitySession(options: CompatibilitySessionOptions)
         }
         return publish(updateState(state, { state: 'unknown', message: '提交结果未知。' }, now))
       } catch (error) {
+        if (!isCurrent(operation)) return structuredClone(state)
         publish(updateState(state, { state: 'unknown', message: error instanceof Error ? error.message : '提交结果未知。' }, now))
         throw new CompatibilitySessionError(state.message ?? '提交结果未知。', 'unknown')
       }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, serialize, type EditOperation, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
 import { createTestDb } from '../test/db'
-import { persons, sessions, users, worldPersons, worldSceneRevisions, worlds } from '../db/schema'
+import { persons, sessions, timelines, users, worldPersons, worldScenes, worldSceneRevisions, worlds } from '../db/schema'
 import { initialSceneStatements } from '../scenes/repository'
 import type { SceneWriteProof } from '../scenes/compatibility/write-proof'
 import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compatibility-fixture'
@@ -83,6 +83,14 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
 })
 
 describe('A1 initial scene', () => {
+  async function expectNoPartialWorldCreate(f: ReturnType<typeof createTestDb>) {
+    expect(await f.db.select().from(worlds).all()).toHaveLength(0)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(0)
+    expect(await f.db.select().from(worldPersons).all()).toHaveLength(0)
+    expect(await f.db.select().from(worldScenes).all()).toHaveLength(0)
+    expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(0)
+  }
+
   /** 给首版信封的 spot-0 载体加人物绑定 */
   function envelopeWithPersonBinding(personId: string): SerializedVoxelDocument {
     const doc = voxelEnvelope(LOCATIONS.map(l => l.name))
@@ -95,9 +103,12 @@ describe('A1 initial scene', () => {
     f.sqlite.exec(await buildTestPolicyActivationSql())
     const res = await post(createBody({ sceneRequestId: 'req-a1-active' }))
     expect(res.status).toBe(200)
-    const { id } = await res.json() as { id: string }
+    const { id, timelineId } = await res.json() as { id: string; timelineId: string }
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, id)).get()).toMatchObject({ id, userId: 'u' })
+    expect(await f.db.select().from(timelines).where(eq(timelines.id, timelineId)).get()).toMatchObject({ id: timelineId, worldId: id, parentTimelineId: null })
     const members = await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, id)).all()
     expect(members.map(member => member.personId)).toEqual(['p1'])
+    expect(await f.db.select().from(worldScenes).where(eq(worldScenes.worldId, id)).get()).toMatchObject({ worldId: id, currentVersion: 1 })
     const revision = await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, id)).get()
     expect(revision).toBeTruthy()
     expect(revision!.commitGuard).toBe(true)
@@ -105,6 +116,55 @@ describe('A1 initial scene', () => {
     expect(proof.mode).toBe('initial')
     expect(proof.bindings.personIds).toEqual(['p1'])
     expect(proof.bindings.locations).toEqual(LOCATIONS.map(l => l.name).sort())
+  })
+
+  it('真实创建入口：无效首版几何被拒且五类创建记录均无残留', async () => {
+    const f = await setup()
+    const base = createEmptyWorld({ width: 16, height: 16, depth: 16 }, 'mist-manor', 'create-voxel-invalid-initial')
+    const ops: EditOperation[] = [
+      { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
+      { kind: 'fill', from: { x: 0, y: 1, z: 0 }, to: { x: 15, y: 1, z: 15 }, block: 'stone' },
+    ]
+    const invalid = JSON.parse(serialize({
+      ...applyEdits(base, ops).document,
+      locations: LOCATIONS.map((location, i) => ({ name: location.name, objectId: `spot-${i}` })),
+    })) as SerializedVoxelDocument
+
+    const res = await post(createBody({ scene: invalid, sceneRequestId: 'req-a1-invalid-initial' }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验'), issues: expect.any(Array) })
+    await expectNoPartialWorldCreate(f)
+  })
+
+  it('真实创建入口：选定人物与场景绑定不符时不创建任何世界数据', async () => {
+    const f = await setup()
+    const res = await post(createBody({ scene: envelopeWithPersonBinding('p-stranger'), sceneRequestId: 'req-a1-binding-mismatch' }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('人物绑定') })
+    await expectNoPartialWorldCreate(f)
+  })
+
+  it('真实创建入口：批内成员与首版依据不符时整批回滚', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    // 模拟外层批次中的成员记录缺失；首版最终绑定断言必须使整批失败。
+    f.sqlite.exec(`CREATE TRIGGER omit_initial_world_member BEFORE INSERT ON world_persons
+      WHEN NEW.person_id = 'p1' BEGIN SELECT RAISE(IGNORE); END`)
+
+    const res = await post(createBody({ sceneRequestId: 'req-a1-binding-guard-failure' }))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    await expectNoPartialWorldCreate(f)
+  })
+
+  it('真实创建入口：后置首版修订插入失败时世界、timeline、成员和场景整体回滚', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    f.sqlite.exec(`CREATE TRIGGER fail_initial_scene_revision BEFORE INSERT ON world_scene_revisions
+      WHEN NEW.request_id = 'req-a1-late-initial-failure' BEGIN SELECT RAISE(ABORT, 'injected initial revision failure'); END`)
+
+    const res = await post(createBody({ sceneRequestId: 'req-a1-late-initial-failure' }))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    await expectNoPartialWorldCreate(f)
   })
 
   it('场景语句失败时世界/成员整批回滚（B54）', async () => {

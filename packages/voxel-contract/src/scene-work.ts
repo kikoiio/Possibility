@@ -12,6 +12,7 @@ export const DEFAULT_SCENE_BUDGET: Readonly<SceneWorkBudget> = Object.freeze({
   maxSerializedBytes: 1_500_000,
   maxSpaces: 8,
   maxRepairChanges: 64,
+  maxRepairWorkUnits: 48_000_000,
   maxDraftWallMs: 10_000,
 })
 
@@ -27,6 +28,7 @@ export function sceneBudget(overrides: Partial<SceneWorkBudget> = {}): SceneWork
     maxSerializedBytes: normalizeLimit(overrides.maxSerializedBytes, DEFAULT_SCENE_BUDGET.maxSerializedBytes),
     maxSpaces: normalizeLimit(overrides.maxSpaces, DEFAULT_SCENE_BUDGET.maxSpaces),
     maxRepairChanges: normalizeLimit(overrides.maxRepairChanges, DEFAULT_SCENE_BUDGET.maxRepairChanges ?? 64),
+    maxRepairWorkUnits: normalizeLimit(overrides.maxRepairWorkUnits, DEFAULT_SCENE_BUDGET.maxRepairWorkUnits ?? 48_000_000),
     maxDraftWallMs: normalizeLimit(overrides.maxDraftWallMs, DEFAULT_SCENE_BUDGET.maxDraftWallMs ?? 10_000),
   }
 }

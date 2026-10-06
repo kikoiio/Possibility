@@ -16,6 +16,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   compatibilityFixtureLegacyScene,
+  compatibilityFixtureBookshelfScene,
   compatibilityFixtureRepairedBasis,
 } from '../src/scenes/e2e-fixture'
 import { hashPassword } from '../src/auth/password'
@@ -57,8 +58,13 @@ function revisionStatements(worldId: string, document: unknown, requestId: strin
 export async function buildLegacyFixtureSql(): Promise<string> {
   const legacyScene = compatibilityFixtureLegacyScene()
   const basis = compatibilityFixtureRepairedBasis()
+  const bookshelfScene = {
+    ...compatibilityFixtureBookshelfScene(),
+    assetPlacements: [{ id: 'fixture-bookshelf-collision', assetId: 'veg-flower-a', anchor: [8, 1, 8], rotation: 0, seed: 7 }],
+  }
   const legacyHash = await revisionContentHash(legacyScene, 1)
   const basisHash = await revisionContentHash(basis, 1)
+  const bookshelfHash = await revisionContentHash(bookshelfScene, 1)
   const demoHash = await revisionContentHash(basis, 1)
   const legacyOwnerHash = await hashPassword(LEGACY_OWNER_PASSWORD)
   const secondOwnerHash = await hashPassword(SECOND_OWNER_PASSWORD)
@@ -81,20 +87,35 @@ export async function buildLegacyFixtureSql(): Promise<string> {
   ('a1-second-owner', 'a1-second-owner', ${sqlText(secondOwnerHash)}, 'user', ${sqlText(FIXTURE_TIME)});`,
     `INSERT INTO \`persons\` (\`id\`, \`user_id\`, \`name\`, \`model_json\`, \`is_user\`, \`created_at\`) VALUES
   ('a1-resident-ada', 'a1-legacy-owner', '阿澜', '{}', 0, ${sqlText(FIXTURE_TIME)}),
+  ('a1-e01-resident-ada', 'a1-legacy-owner', '阿澜', ${sqlText(JSON.stringify({
+    identity: [{ text: '照看石灯庭院的居民', provenance: 'known' }], behavior: [], speech: [], skills: [], memories: [],
+    relationships: [], boundaries: [], unknowns: [],
+  }))}, 0, ${sqlText(FIXTURE_TIME)}),
   ('a1-resident-ben', 'a1-second-owner', '阿柏', '{}', 0, ${sqlText(FIXTURE_TIME)});`,
     `INSERT INTO \`worlds\` (\`id\`, \`user_id\`, \`name\`, \`description\`, \`locations_json\`, \`status\`, \`pause_reason\`, \`is_demo\`, \`calls_today\`, \`llm_config_json\`, \`calls_day\`, \`last_user_activity_at\`, \`time_zone\`, \`created_at\`) VALUES
   ('a1-legacy-world', 'a1-legacy-owner', '旧石灯庭院', '带既存兼容问题的旧世界', ${sqlText(JSON.stringify([{ name: '石灯庭院', description: '旧场景里的石灯小院' }]))}, 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
   ('a1-second-world', 'a1-second-owner', '对照世界', '有效场景对照', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
   ('a1-demo-world', 'a1-legacy-owner', '演示基线世界', '基线对照资料', '[]', 'running', NULL, 1, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
-  ('a1-legacy-spaces-world', 'a1-legacy-owner', '旧双空间庭院', '多空间旧场景:外景有效,花房带既存碰撞', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)});`,
+  ('a1-legacy-spaces-world', 'a1-legacy-owner', '旧双空间庭院', '多空间旧场景:外景有效,花房带既存碰撞', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
+  ('a1-missing-scene-world', 'a1-legacy-owner', '缺场景旧世界', '旧世界记录存在但没有场景版本', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
+  ('a1-corrupt-scene-world', 'a1-legacy-owner', '损坏场景旧世界', '旧场景 JSON 无法解析', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-scene-world', 'a1-legacy-owner', '未知格式旧世界', '旧场景格式不受当前适配器支持', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-version-world', 'a1-legacy-owner', '未知版本旧世界', '旧体素场景版本不受支持', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)}),
+  ('a1-bookshelf-world', 'a1-legacy-owner', '书架兼容旅程', '家具内部格不可误判为通行入口', '[]', 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)});`,
     `INSERT INTO \`timelines\` (\`id\`, \`world_id\`, \`parent_timeline_id\`, \`fork_scenario_json\`, \`sim_now\`, \`created_at\`, \`status\`, \`ancestor_ids_json\`, \`last_real_tick_at\`, \`fork_snapshot_json\`) VALUES
   ('a1-legacy-main', 'a1-legacy-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', ${sqlText(FIXTURE_TIME)}, NULL),
   ('a1-second-main', 'a1-second-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
   ('a1-demo-main', 'a1-demo-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
-  ('a1-spaces-main', 'a1-legacy-spaces-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL);`,
+  ('a1-spaces-main', 'a1-legacy-spaces-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-missing-scene-main', 'a1-missing-scene-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-corrupt-scene-main', 'a1-corrupt-scene-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-unsupported-scene-main', 'a1-unsupported-scene-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-unsupported-version-main', 'a1-unsupported-version-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-bookshelf-main', 'a1-bookshelf-world', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL);`,
     // 多归属：同一人物属于两个世界
     `INSERT INTO \`world_persons\` (\`world_id\`, \`person_id\`, \`joined_at\`) VALUES
   ('a1-legacy-world', 'a1-resident-ada', ${sqlText(FIXTURE_TIME)}),
+  ('a1-legacy-spaces-world', 'a1-resident-ada', ${sqlText(FIXTURE_TIME)}),
   ('a1-second-world', 'a1-resident-ada', ${sqlText(FIXTURE_TIME)}),
   ('a1-second-world', 'a1-resident-ben', ${sqlText(FIXTURE_TIME)});`,
     // 生活保留：迁移后行程状态与记忆必须原样保留
@@ -104,8 +125,35 @@ export async function buildLegacyFixtureSql(): Promise<string> {
   ('a1-memory-1', 'a1-resident-ada', 'a1-legacy-main', 'event', '在石灯庭院里摆好了旧石灯。', ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 6, 0);`,
     ...revisionStatements('a1-legacy-world', legacyScene, 'a1-legacy-seed', legacyHash),
     ...revisionStatements('a1-second-world', basis, 'a1-second-seed', basisHash),
+    ...revisionStatements('a1-bookshelf-world', bookshelfScene, 'a1-bookshelf-seed', bookshelfHash),
+    `INSERT INTO \`universe_evidence\` (\`timeline_id\`, \`level\`, \`assessed_version\`, \`baseline_version\`, \`reason_codes_json\`, \`assessed_at\`) VALUES ('a1-bookshelf-main', 'complete', 0, 0, '["fixture_complete"]', ${sqlText(FIXTURE_TIME)});`,
     ...revisionStatements('a1-demo-world', basis, 'a1-demo-seed', demoHash),
     ...revisionStatements('a1-legacy-spaces-world', spacesScene, 'a1-spaces-seed', spacesHash),
+    // 明确的旧资料诊断对照：缺场景、不可解析 JSON、当前适配器不支持的格式。
+    // 原始异常资料在 0037 兼容迁移前写入，保证浏览器旅程面对真实持久旧数据。
+    `INSERT INTO \`world_scenes\` (\`world_id\`, \`current_version\`, \`theme_id\`, \`updated_at\`) VALUES
+  ('a1-corrupt-scene-world', 1, 'mist-manor', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-scene-world', 1, 'mist-manor', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-version-world', 1, 'mist-manor', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`world_scene_revisions\` (\`id\`, \`world_id\`, \`version\`, \`parent_version\`, \`request_id\`, \`content_hash\`, \`document_json\`, \`summary\`, \`kind\`, \`created_at\`) VALUES
+  ('a1-corrupt-scene-rev-1', 'a1-corrupt-scene-world', 1, NULL, 'a1-corrupt-scene-seed', 'fixture-corrupt-hash', '{not-valid-json', '隔离 fixture 损坏旧场景', 'initial', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-scene-rev-1', 'a1-unsupported-scene-world', 1, NULL, 'a1-unsupported-scene-seed', 'fixture-unsupported-hash', '{"format":"legacy-2d-scene","version":7}', '隔离 fixture 未知格式旧场景', 'initial', ${sqlText(FIXTURE_TIME)}),
+  ('a1-unsupported-version-rev-1', 'a1-unsupported-version-world', 1, NULL, 'a1-unsupported-version-seed', 'fixture-unsupported-version-hash', '{"format":"voxel-document","version":7}', '隔离 fixture 未知版本旧场景', 'initial', ${sqlText(FIXTURE_TIME)});`,
+    // E01 专用保存演示副本：原始同一多空间旧包，独立于 W28–W45 状态依赖。
+    `INSERT INTO \`worlds\` (\`id\`, \`user_id\`, \`name\`, \`description\`, \`locations_json\`, \`status\`, \`pause_reason\`, \`is_demo\`, \`calls_today\`, \`llm_config_json\`, \`calls_day\`, \`last_user_activity_at\`, \`time_zone\`, \`created_at\`) VALUES
+  ('a1-e01-demo-copy', 'a1-legacy-owner', '雾影庄保存副本', 'E01 原始多空间旧演示副本', ${sqlText(JSON.stringify([{ name: '石灯庭院', description: '旧场景里的石灯小院' }]))}, 'running', NULL, 0, 0, NULL, NULL, ${sqlText(FIXTURE_TIME)}, 'UTC', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`timelines\` (\`id\`, \`world_id\`, \`parent_timeline_id\`, \`fork_scenario_json\`, \`sim_now\`, \`created_at\`, \`status\`, \`ancestor_ids_json\`, \`last_real_tick_at\`, \`fork_snapshot_json\`) VALUES
+  ('a1-e01-main', 'a1-e01-demo-copy', NULL, NULL, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '[]', NULL, NULL),
+  ('a1-e01-branch', 'a1-e01-demo-copy', 'a1-e01-main', ${sqlText(JSON.stringify({ name: '石灯旁的另一种可能', whatIf: '维护消息晚一天送达', changedVariable: '维护消息到达时间' }))}, ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 'active', '["a1-e01-main"]', NULL, NULL);`,
+    `INSERT INTO \`world_persons\` (\`world_id\`, \`person_id\`, \`joined_at\`) VALUES ('a1-e01-demo-copy', 'a1-e01-resident-ada', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`universe_evidence\` (\`timeline_id\`, \`level\`, \`assessed_version\`, \`baseline_version\`, \`reason_codes_json\`, \`assessed_at\`) VALUES ('a1-e01-main', 'complete', 0, 0, '["fixture_complete"]', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`person_states\` (\`person_id\`, \`timeline_id\`, \`sim_time\`, \`location\`, \`activity\`, \`mood\`, \`goal\`, \`updated_real_at\`) VALUES ('a1-e01-resident-ada', 'a1-e01-main', ${sqlText(FIXTURE_TIME)}, '石灯庭院', '散步', '平静', '照看庭院', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`person_states\` (\`person_id\`, \`timeline_id\`, \`sim_time\`, \`location\`, \`activity\`, \`mood\`, \`goal\`, \`updated_real_at\`) VALUES ('a1-e01-resident-ada', 'a1-e01-branch', ${sqlText(FIXTURE_TIME)}, '石灯庭院', '整理花圃', '专注', '记录庭院变化', ${sqlText(FIXTURE_TIME)});`,
+    `INSERT INTO \`memories\` (\`id\`, \`person_id\`, \`timeline_id\`, \`type\`, \`content\`, \`sim_time\`, \`created_at\`, \`importance\`, \`summarized\`) VALUES
+  ('a1-e01-memory-1', 'a1-e01-resident-ada', 'a1-e01-main', 'event', '在石灯庭院里摆好了旧石灯。', ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 6, 0),
+  ('a1-e01-memory-branch', 'a1-e01-resident-ada', 'a1-e01-branch', 'event', '在另一种可能里整理了花圃。', ${sqlText(FIXTURE_TIME)}, ${sqlText(FIXTURE_TIME)}, 5, 0);`,
+    `INSERT INTO \`universe_evidence\` (\`timeline_id\`, \`level\`, \`assessed_version\`, \`baseline_version\`, \`reason_codes_json\`, \`assessed_at\`) VALUES ('a1-e01-branch', 'complete', 0, 0, '["fixture_complete"]', ${sqlText(FIXTURE_TIME)});`,
+    ...revisionStatements('a1-e01-demo-copy', spacesScene, 'a1-e01-seed', spacesHash),
     // 基线对照：active 演示基线指向 demo 世界首版
     `INSERT INTO \`demo_baselines\` (\`id\`, \`world_id\`, \`scene_version\`, \`content_hash\`, \`status\`, \`created_at\`, \`retired_at\`) VALUES
   ('a1-demo-baseline', 'a1-demo-world', 1, ${sqlText(demoHash)}, 'active', ${sqlText(FIXTURE_TIME)}, NULL);`,

@@ -1,12 +1,14 @@
 import { applyEdits } from './edits'
+import { AIR, getBlock, inBounds } from './sections'
 import { applySceneRepairChangesToRaw } from './scene-envelope'
-import { createSceneWorkCounter } from './scene-work'
+import { byteCount, createSceneWorkCounter, DEFAULT_SCENE_BUDGET, sceneBudget } from './scene-work'
 import { validateSceneEnvelope } from './scene-validation'
 import type {
   SceneCompatibilityEnvelope,
   SceneIssue,
   SceneRepairChange,
   SceneRepairResult,
+  SceneStopReason,
   SceneValidationContext,
   SceneValidationReport,
   SceneWorkBudget,
@@ -21,10 +23,6 @@ const clone = <T>(value: T): T => {
 }
 
 const key = (at: VoxelCoord): string => `${at.x},${at.y},${at.z}`
-const compareCoord = (a: VoxelCoord, b: VoxelCoord): number => a.x - b.x || a.y - b.y || a.z - b.z
-const distance = (a: VoxelCoord, b: VoxelCoord): number => (
-  Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z)
-)
 
 function placementIds(issue: SceneIssue): string[] {
   const ids = new Set<string>()
@@ -79,21 +77,33 @@ function preservesProtected(
   return true
 }
 
-/** Generate nearest anchors in stable lexicographic order without random sampling. */
+/** Nearby collision candidates: horizontal distance 1..3, then dx/dz ascending. */
 function nearbyAnchors(document: VoxelDocument, origin: VoxelCoord, limit: number): VoxelCoord[] {
-  const maxRadius = document.size.width + document.size.height + document.size.depth
   const result: VoxelCoord[] = []
-  for (let radius = 0; radius <= maxRadius && result.length < limit; radius += 1) {
-    for (let x = 0; x < document.size.width && result.length < limit; x += 1) {
-      for (let y = 0; y < document.size.height && result.length < limit; y += 1) {
-        for (let z = 0; z < document.size.depth && result.length < limit; z += 1) {
-          const candidate = { x, y, z }
-          if (distance(origin, candidate) === radius) result.push(candidate)
-        }
+  for (let radius = 1; radius <= 3 && result.length < Math.min(limit, 24); radius += 1) {
+    for (let dx = -radius; dx <= radius && result.length < Math.min(limit, 24); dx += 1) {
+      const remaining = radius - Math.abs(dx)
+      const dzs = remaining === 0 ? [0] : [-remaining, remaining]
+      for (const dz of dzs) {
+        const candidate = { x: origin.x + dx, y: origin.y, z: origin.z + dz }
+        if (inBounds(document.size, candidate)) result.push(candidate)
+        if (result.length >= Math.min(limit, 24)) break
       }
     }
   }
-  return result.sort((a, b) => distance(origin, a) - distance(origin, b) || compareCoord(a, b))
+  return result
+}
+
+function sameIssueIdentity(a: SceneIssue, b: SceneIssue): boolean {
+  return a.code === b.code && a.spaceId === b.spaceId && a.objectId === b.objectId
+    && a.placementId === b.placementId && a.reason === b.reason
+    && key(a.at ?? { x: -1, y: -1, z: -1 }) === key(b.at ?? { x: -1, y: -1, z: -1 })
+}
+
+function strictlyImproves(before: SceneValidationReport, after: SceneValidationReport): boolean {
+  return (after.status === 'invalid' || after.status === 'valid')
+    && after.issueCount < before.issueCount
+    && after.issues.every((issue) => before.issues.some((prior) => sameIssueIdentity(prior, issue)))
 }
 
 function isRepairablePlacementIssue(issue: SceneIssue): boolean {
@@ -103,6 +113,72 @@ function isRepairablePlacementIssue(issue: SceneIssue): boolean {
 function isDecorativeAsset(context: SceneValidationContext, placement: AssetPlacement): boolean {
   const category = context.assets.assets[placement.assetId]?.category
   return category === 'vegetation' || category === 'decoration'
+}
+
+function protectedClearanceCell(
+  document: VoxelDocument,
+  context: SceneValidationContext,
+  spaceId: string,
+  at: VoxelCoord,
+): boolean {
+  const target = key(at)
+  const objectCells = new Map(document.objectCells.map((entry) => [entry.objectId, entry.cells]))
+  if (document.objectCells.some((entry) => entry.cells.some((cell) => key(cell) === target))) return true
+  if ((document.assetPlacements ?? []).some((placement) => {
+    const asset = context.assets.assets[placement.assetId]
+    const [x, y, z] = placement.anchor
+    const [width, depth] = asset?.footprint ?? [1, 1]
+    const height = asset?.height ?? 1
+    return at.x >= x && at.x < x + width && at.z >= z && at.z < z + depth
+      && at.y >= y && at.y < y + height
+  })) return true
+  const protectedObjects = new Set([
+    ...protectedObjectIds(context, spaceId),
+    ...document.lockedObjectIds,
+    ...context.bindings.locationBindings.filter((entry) => entry.spaceId === spaceId).map((entry) => entry.carrierId),
+    ...context.bindings.personBindings.filter((entry) => entry.spaceId === spaceId).map((entry) => entry.objectId),
+  ])
+  const protectedPlacements = new Set([
+    ...protectedPlacementIds(context, spaceId),
+    ...context.bindings.entries.filter((entry) => entry.fromSpaceId === spaceId && entry.carrierId)
+      .map((entry) => entry.carrierId!),
+  ])
+  if (document.objects.some((object) => protectedObjects.has(object.id)
+    && (objectCells.get(object.id) ?? []).some((cell) => key(cell) === target
+      || (cell.x === at.x && cell.z === at.z && cell.y === at.y + 1)))) return true
+  if ((document.assetPlacements ?? []).some((placement) => {
+    if (!protectedPlacements.has(placement.id ?? '')) return false
+    const asset = context.assets.assets[placement.assetId]
+    const [x, y, z] = placement.anchor
+    const [width, depth] = asset?.footprint ?? [1, 1]
+    const height = asset?.height ?? 1
+    return at.x >= x && at.x < x + width && at.z >= z && at.z < z + depth
+      && (at.y >= y && at.y < y + height || at.y === y - 1)
+  })) return true
+  if (context.bindings.entries.some((entry) => entry.fromSpaceId === spaceId
+    && entry.at.x === at.x && entry.at.z === at.z
+    && (entry.at.y === at.y || entry.at.y + 1 === at.y))) return true
+  return false
+}
+
+function canClearHeadCell(
+  issue: SceneIssue,
+  space: SceneCompatibilityEnvelope['spaces'][number],
+  context: SceneValidationContext,
+): VoxelCoord | null {
+  if (issue.code !== 'walk-clearance' || !issue.at
+    || space.document.objectCells.some((entry) => entry.cells.some((cell) => key(cell) === key(issue.at!)))) return null
+  if (space.document.size.height < 1) return null
+  const head = { x: issue.at.x, y: issue.at.y + 1, z: issue.at.z }
+  if (!inBounds(space.document.size, head) || getBlock(space.document, head) === AIR
+    || protectedClearanceCell(space.document, context, space.spaceId, head)) return null
+  if (space.document.objects.some((object) => {
+    const cells = space.document.objectCells.find((entry) => entry.objectId === object.id)?.cells ?? []
+    const lowest = Math.min(...cells.map((cell) => cell.y), object.anchor.y)
+    return protectedObjectIds(context, space.spaceId).has(object.id)
+      && head.x === object.anchor.x && head.z === object.anchor.z && head.y === lowest - 1
+  })) return null
+  return head
 }
 
 function materializeAssetEdit(
@@ -156,24 +232,87 @@ export async function repairSceneCompatibility(
   budget: SceneWorkBudget,
   control: SceneWorkControl,
 ): Promise<SceneRepairResult> {
-  const planner = createSceneWorkCounter({ ...control, budget })
+  const repairWorkLimit = sceneBudget({ maxRepairWorkUnits: budget.maxRepairWorkUnits })
+    .maxRepairWorkUnits ?? DEFAULT_SCENE_BUDGET.maxRepairWorkUnits ?? 48_000_000
+  // Validation keeps its shorter maxWallMs cap for each pass. The repair planner
+  // itself owns the overall draft allowance, while the caller's abort signal still
+  // fences any enclosing deadline (for example, an API draft that has less time left).
+  const repairWallLimit = budget.maxDraftWallMs ?? budget.maxWallMs
+  const plannerStartedAt = control.nowMs()
+  const planner = createSceneWorkCounter({
+    signal: control.signal,
+    nowMs: control.nowMs,
+    yieldControl: control.yieldControl,
+    deadlineAt: plannerStartedAt + repairWallLimit,
+    budget: { ...budget, maxRepairWorkUnits: repairWorkLimit, maxWorkUnits: repairWorkLimit, maxWallMs: repairWallLimit },
+  })
   let current = clone(envelope) as SceneCompatibilityEnvelope
   const changes = clone(envelope.compatibilityChanges)
+  // Stable placement IDs normalize legacy input; they are compatibility metadata,
+  // not semantic repair operations and must not consume the repair-change quota.
+  let repairChangeCount = changes.filter((change) => change.kind !== 'assign-placement-id').length
+  const repairChangeLimit = budget.maxRepairChanges ?? Number.MAX_SAFE_INTEGER
+  let candidateCount = 0
+  let stopReason: SceneStopReason | null = null
   let report = await validateSceneEnvelope(current, context, budget, control, 'existing')
+  planner.work(report.workUnitsUsed)
 
-  if (report.status === 'incomplete') return { status: 'blocked', changes, report }
+  // One planner counter owns the entire repair. Initial inspection and every
+  // candidate revalidation are charged to it instead of resetting per candidate.
+  const reportWithAggregateWork = (value: SceneValidationReport): SceneValidationReport => ({
+    ...value,
+    workUnitsUsed: planner.workUnits,
+  })
+  const blocked = (value: SceneValidationReport): SceneRepairResult => ({
+    status: 'blocked', changes, report: reportWithAggregateWork(value),
+  })
+  const reserveCandidate = (): boolean => {
+    if (candidateCount >= budget.maxRepairCandidates) {
+      stopReason = 'attempt-limit'
+      return false
+    }
+    candidateCount += 1
+    return true
+  }
+  const validateCandidate = async (candidate: SceneCompatibilityEnvelope): Promise<SceneValidationReport | null> => {
+    if (!planner.check()) {
+      stopReason = planner.stopReason ?? 'work-limit'
+      return null
+    }
+    const remainingWork = Math.max(0, repairWorkLimit - planner.workUnits)
+    const candidateWorkLimit = Math.min(budget.maxWorkUnits, remainingWork)
+    const candidateReport = await validateSceneEnvelope(
+      candidate, context, { ...budget, maxWorkUnits: candidateWorkLimit }, control, 'repair',
+    )
+    if (!planner.work(candidateReport.workUnitsUsed)) {
+      stopReason = planner.stopReason ?? 'work-limit'
+      return incomplete(candidateReport, stopReason)
+    }
+    if (candidateReport.status === 'incomplete') {
+      stopReason = candidateReport.stopReason ?? 'work-limit'
+      return candidateReport
+    }
+    return candidateReport
+  }
+
+  if (planner.stopped) return blocked(incomplete(report, planner.stopReason ?? 'work-limit'))
+  if (report.status === 'incomplete') return blocked(report)
   if (report.status === 'valid') {
     const candidate = applyRawChanges(envelope.original, changes)
-    if ('status' in candidate) return { status: 'blocked', changes, report }
-    return { status: 'ready', candidate, changes, report }
+    if ('status' in candidate) return blocked(report)
+    if (byteCount(candidate) > budget.maxSerializedBytes) return blocked(incomplete(report, 'payload-limit'))
+    return { status: 'ready', candidate, changes, report: reportWithAggregateWork(report) }
   }
 
   for (let pass = 0; pass < budget.maxRepairPasses; pass += 1) {
-    if (!planner.check()) return { status: 'blocked', changes, report: incomplete(report, planner.stopReason ?? 'attempt-limit') }
+    if (!planner.check()) return blocked(incomplete(report, planner.stopReason ?? 'attempt-limit'))
     let accepted = false
+    let halted = false
 
     for (const issue of report.issues) {
+      if (halted) break
       if (!isRepairablePlacementIssue(issue) || !issue.spaceId) continue
+      let acceptedIssue = false
       const space = current.spaces.find((entry) => entry.spaceId === issue.spaceId)
       if (!space || !space.document.assetPlacements) continue
       const protectedIds = protectedPlacementIds(context, issue.spaceId)
@@ -183,17 +322,23 @@ export async function repairSceneCompatibility(
         .filter((placement) => !protectedIds.has(placement.id ?? '') && isDecorativeAsset(context, placement))
 
       for (const placement of targets) {
+        if (halted || acceptedIssue) break
         const origin = placementAnchor(placement)
         for (const anchor of nearbyAnchors(space.document, origin, Math.max(1, budget.maxRepairCandidates))) {
-          if (!planner.check() || changes.length >= (budget.maxRepairChanges ?? Number.MAX_SAFE_INTEGER)) break
+          if (repairChangeCount >= repairChangeLimit) break
+          if (!reserveCandidate()) { halted = true; break }
           if (anchor.x === origin.x && anchor.y === origin.y && anchor.z === origin.z) continue
           const candidate = materializeAssetEdit(current, issue.spaceId, {
             kind: 'move-asset', placementId: placement.id!, anchor,
           })
           if (!candidate || !preservesProtected(current, candidate, context)) continue
-          const candidateReport = await validateSceneEnvelope(candidate, context, budget, control, 'repair')
-          if ((candidateReport.status !== 'invalid' && candidateReport.status !== 'valid')
-            || candidateReport.issueCount >= report.issueCount) continue
+          const candidateReport = await validateCandidate(candidate)
+          if (!candidateReport || candidateReport.status === 'incomplete') {
+            report = candidateReport ?? incomplete(report, stopReason ?? 'work-limit')
+            halted = true
+            break
+          }
+          if (!strictlyImproves(report, candidateReport)) continue
           changes.push({
             id: `repair-move-asset:${issue.spaceId}:${placement.id}:${key(anchor)}`,
             spaceId: issue.spaceId,
@@ -204,19 +349,28 @@ export async function repairSceneCompatibility(
             to: anchor,
             summary: `将装饰资产 '${placement.id}' 移到最近的安全位置`,
           })
+          repairChangeCount += 1
           current = candidate
           report = candidateReport
           accepted = true
+          acceptedIssue = true
           break
         }
-        if (accepted) break
+        if (acceptedIssue) break
 
-        if (planner.check() && changes.length < (budget.maxRepairChanges ?? Number.MAX_SAFE_INTEGER)) {
+        if (halted) break
+        if (repairChangeCount < repairChangeLimit) {
+          if (!reserveCandidate()) { halted = true; break }
           const candidate = materializeAssetEdit(current, issue.spaceId, { kind: 'remove-asset', placementId: placement.id! })
           if (candidate && preservesProtected(current, candidate, context)) {
-            const candidateReport = await validateSceneEnvelope(candidate, context, budget, control, 'repair')
+            const candidateReport = await validateCandidate(candidate)
+            if (!candidateReport || candidateReport.status === 'incomplete') {
+              report = candidateReport ?? incomplete(report, stopReason ?? 'work-limit')
+              halted = true
+              break
+            }
             if ((candidateReport.status === 'invalid' || candidateReport.status === 'valid')
-              && candidateReport.issueCount < report.issueCount) {
+              && strictlyImproves(report, candidateReport)) {
               changes.push({
                 id: `repair-remove-asset:${issue.spaceId}:${placement.id}`,
                 spaceId: issue.spaceId,
@@ -226,16 +380,51 @@ export async function repairSceneCompatibility(
                 original: clone(placement),
                 summary: `移除无法安全摆放的装饰资产 '${placement.id}'`,
               })
+              repairChangeCount += 1
               current = candidate
               report = candidateReport
               accepted = true
+              acceptedIssue = true
             }
           }
         }
-        if (accepted) break
+        if (acceptedIssue) break
       }
-      if (accepted) break
+      if (halted) break
     }
+
+    if (halted) return blocked(incomplete(report, stopReason ?? report.stopReason ?? 'attempt-limit'))
+
+    if (!accepted) {
+      for (const issue of report.issues) {
+        const space = issue.spaceId ? current.spaces.find((entry) => entry.spaceId === issue.spaceId) : undefined
+        if (!space) continue
+        const head = canClearHeadCell(issue, space, context)
+        if (!head || repairChangeCount >= repairChangeLimit) continue
+        if (!reserveCandidate()) { halted = true; break }
+        const candidate = materializeAssetEdit(current, issue.spaceId!, { kind: 'set-block', at: head, block: AIR })
+        if (!candidate || !preservesProtected(current, candidate, context)) continue
+        const candidateReport = await validateCandidate(candidate)
+        if (!candidateReport || candidateReport.status === 'incomplete') {
+          report = candidateReport ?? incomplete(report, stopReason ?? 'work-limit')
+          halted = true
+          break
+        }
+        if (!strictlyImproves(report, candidateReport)) continue
+        changes.push({
+          id: `repair-clearance:${issue.spaceId}:${key(head)}`,
+          spaceId: issue.spaceId!, issueIds: [issue.id], kind: 'set-block', at: head,
+          fromBlock: getBlock(space.document, head), toBlock: AIR,
+          summary: `移除真实通道净空头顶格 ${key(head)}`,
+        })
+        repairChangeCount += 1
+        current = candidate
+        report = candidateReport
+        accepted = true
+        break
+      }
+    }
+    if (halted) return blocked(incomplete(report, stopReason ?? report.stopReason ?? 'attempt-limit'))
 
     if (!accepted) break
     if (report.status === 'valid') break
@@ -244,10 +433,11 @@ export async function repairSceneCompatibility(
 
   if (report.status === 'valid') {
     const candidate = applyRawChanges(envelope.original, changes)
-    if ('status' in candidate) return { status: 'blocked', changes, report }
-    return { status: 'ready', candidate, changes, report }
+    if ('status' in candidate) return blocked(report)
+    if (byteCount(candidate) > budget.maxSerializedBytes) return blocked(incomplete(report, 'payload-limit'))
+    return { status: 'ready', candidate, changes, report: reportWithAggregateWork(report) }
   }
-  return { status: 'blocked', changes, report }
+  return blocked(report)
 }
 
 export const planSceneRepair = repairSceneCompatibility

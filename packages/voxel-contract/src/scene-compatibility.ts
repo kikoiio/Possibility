@@ -189,6 +189,10 @@ export interface SceneValidationReport {
   checkedSpaceIds: string[]
   pendingSpaceIds: string[]
   workUnitsUsed: number
+  /** Deterministic algorithm workspace accounting; excludes JS runtime/process RSS. */
+  workspaceBytesUsed?: number
+  /** Number of cells actually visited by the walkability floods in this report. */
+  visitedCellsUsed?: number
   elapsedMs: number
   ruleNotes: { items: SceneRuleNote[]; total: number; hasMore: boolean }
 }
@@ -209,6 +213,8 @@ export interface SceneWorkBudget {
   maxSpaces: number
   /** Optional tighter repair-specific limits used by the pure repair planner. */
   maxRepairChanges?: number
+  /** Aggregate work cap across initial inspection and every repair-candidate revalidation. */
+  maxRepairWorkUnits?: number
   maxDraftWallMs?: number
 }
 

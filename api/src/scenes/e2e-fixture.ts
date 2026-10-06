@@ -76,6 +76,14 @@ export function compatibilityFixtureLegacyScene(): SerializedVoxelDocument {
   ])
 }
 
+/** 书架保存旅程基底：真实模板开放格 + 独立可修复装饰碰撞。 */
+export function compatibilityFixtureBookshelfScene(): SerializedVoxelDocument {
+  return fixtureDocument('a1-compat-bookshelf-scene', [
+    KEEPER_OP,
+    { kind: 'place-object', objectType: 'bookshelf', anchor: { x: 8, y: 1, z: 8 }, rotation: 0, objectId: 'fixture-bookshelf', label: '书架' },
+  ])
+}
+
 /** 提供者合法分支：在基底空位放置有支撑的石灯，候选完整有效且确有变化。 */
 export function compatibilityFixtureValidOps(): EditOperation[] {
   return [

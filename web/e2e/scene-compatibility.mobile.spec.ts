@@ -73,22 +73,35 @@ test('移动多空间入口：390×844 展开诊断与变化清单并完成一�
   const rowsBefore = await revisionCount(page, SPACES_WORLD)
 
   // 多空间地图头部「历史」→ v1（永远 invalid）→ 恢复到此版本 → 兼容旅程
-  await page.getByTestId('scene-history-entry').click()
-  const history = page.getByRole('dialog', { name: '场景历史' })
-  await expect(history).toBeVisible()
-  const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
-  await expect(rowV1).toBeVisible({ timeout: 30_000 })
-  await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
+  const openInvalidHistoryJourney = async () => {
+    await page.getByTestId('scene-history-entry').click()
+    const history = page.getByRole('dialog', { name: '场景历史' })
+    await expect(history).toBeVisible()
+    const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
+    await expect(rowV1).toBeVisible({ timeout: 30_000 })
+    await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
+    const dialog = page.getByRole('dialog', { name: '场景兼容检查' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('恢复历史场景')
+    await expect(dialog).toContainText('历史版本 v1')
+    await expect(dialog).toContainText('检查完成', { timeout: 30_000 })
+    await expect(dialog).toContainText('发现阻断问题')
+    await expect(dialog).toContainText('空间 hall')
+    return dialog
+  }
 
-  const dialog = page.getByRole('dialog', { name: '场景兼容检查' })
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('恢复历史场景')
-  await expect(dialog).toContainText('历史版本 v1')
-  await expect(dialog).toContainText('检查完成', { timeout: 30_000 })
-  await expect(dialog).toContainText('发现阻断问题')
-  await expect(dialog).toContainText('空间 hall')
+  // 第一次明确预览后退出：没有确认请求，current 与历史都不变。
+  let dialog = await openInvalidHistoryJourney()
+  await dialog.getByRole('button', { name: '构建修复预览' }).click()
+  await expect(dialog).toContainText('修复预览', { timeout: 30_000 })
+  await expect(dialog).toContainText(/本次修复变化（\d+ 项）/)
+  await dialog.getByRole('button', { name: '关闭兼容检查' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await sceneVersion(page, SPACES_WORLD)).toBe(before)
+  expect(await revisionCount(page, SPACES_WORLD)).toBe(rowsBefore)
 
-  // 构建修复预览：变化清单 + 空间 tab + 修复前/后 tab，同视口可切换
+  // 第二次重新打开后，展示完整变化及只读前后预览，再由用户明确确认。
+  dialog = await openInvalidHistoryJourney()
   await dialog.getByRole('button', { name: '构建修复预览' }).click()
   await expect(dialog).toContainText('修复预览', { timeout: 30_000 })
   await expect(dialog).toContainText(/本次修复变化（\d+ 项）/)

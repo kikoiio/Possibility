@@ -4,6 +4,7 @@ import {
   COMPATIBILITY_STORE_VERSION,
   createCompatibilityStore,
   emptyCompatibilityContinuation,
+  pruneCompatibilityContinuationsForAuthChange,
   type CompatibilityContinuation,
   type CompatibilityStorage,
 } from './compatibility-store'
@@ -80,6 +81,27 @@ describe('compatibility store', () => {
     expect(store.load({ actorKey: 'actor-2', worldId: scope.worldId })?.state).toBe('idle')
     expect(store.load(scope)).toBeNull()
     expect(JSON.parse(storage.values.get(COMPATIBILITY_STORE_KEY)!).records[scopeKey]).toBeUndefined()
+  })
+
+  it('clears private preview state on identity change but retains only unresolved submit identities', () => {
+    const storage = memoryStorage()
+    const store = createCompatibilityStore({ storage })
+    const preview = { ...emptyCompatibilityContinuation(scope), state: 'preview' as const, requestId: 'preview-request' }
+    const pending = { ...emptyCompatibilityContinuation({ actorKey: 'actor-2', worldId: 'world-2' }), state: 'unknown' as const, requestId: 'unknown-request' }
+    const completed = { ...emptyCompatibilityContinuation({ actorKey: 'actor-3', worldId: 'world-3' }), state: 'completed' as const, requestId: 'completed-request' }
+    expect(store.save(preview)).toBe(true)
+    expect(store.save(pending)).toBe(true)
+    expect(store.save(completed)).toBe(true)
+
+    pruneCompatibilityContinuationsForAuthChange(storage)
+
+    expect(store.load(scope)).toBeNull()
+    expect(store.load(pending.scope)?.requestId).toBe('unknown-request')
+    expect(store.load(completed.scope)).toBeNull()
+    const serialized = storage.values.get(COMPATIBILITY_STORE_KEY) ?? ''
+    expect(serialized).not.toContain('preview-request')
+    expect(serialized).not.toContain('completed-request')
+    expect(serialized).toContain('unknown-request')
   })
 
   it('isolates actor/world records and never persists forbidden payloads', () => {

@@ -5,6 +5,7 @@ import type { Db } from '../../db/client'
 import { demoBaselines, sceneValidationPolicy, worldSceneRevisions, worldScenes } from '../../db/schema'
 import { libraryManifest } from '../../voxel/library-manifest'
 import { loadWorldSceneBindings } from './context'
+import { stableJson } from './stable-json'
 
 /**
  * A1 B16–B19：场景修订写入依据（write-proof）。
@@ -60,8 +61,13 @@ export async function buildPendingSceneBindings(input: PendingSceneBindings): Pr
   return {
     personIds: [...input.personIds].sort(),
     locations: input.locations.map(location => location.name).sort(),
-    bindingHash: await hashJson(context),
+    bindingHash: await hashBindingContext(context),
   }
+}
+
+async function hashBindingContext(value: unknown): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stableJson(value)))
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
 export interface SceneWriteProofBaseline {
@@ -250,8 +256,6 @@ export async function buildCommitWriteProof(db: Db, input: BuildCommitWriteProof
  */
 export interface SceneWriteAuthority {
   sessionToken?: string
-  /** ISO timestamp the session expiry is compared against. */
-  sessionNow?: string
   ownerUserId?: string
   adminUserId?: string
 }
@@ -262,6 +266,8 @@ export interface CommitGuardInput {
   version: number
   requestId: string
   baseline: SceneWriteProofBaseline | null
+  /** Require the completion journal update to be part of this same commit batch. */
+  requestCompletion?: { requestId: string; attempt: number; resultVersion: number }
   authority?: SceneWriteAuthority
   /**
    * B30 最终断言：首版与外层世界/成员同批写入时，核对批内真实落库的
@@ -296,9 +302,13 @@ export function buildCommitGuardStatement(db: Db, input: CommitGuardInput) {
     conditions.push(sql`(SELECT COUNT(*) FROM json_each((SELECT locations_json FROM worlds WHERE id = ${input.worldId}))) = ${expected.locations.length}`)
     conditions.push(sql`NOT EXISTS (SELECT 1 FROM json_each((SELECT locations_json FROM worlds WHERE id = ${input.worldId})) AS wl WHERE NOT EXISTS (SELECT 1 FROM json_each(${JSON.stringify(expected.locations)}) AS pl WHERE pl.value = json_extract(wl.value, '$.name')))`)
   }
+  if (input.requestCompletion) {
+    const expected = input.requestCompletion
+    conditions.push(sql`EXISTS (SELECT 1 FROM scene_compatibility_requests WHERE world_id = ${input.worldId} AND request_id = ${expected.requestId} AND attempt = ${expected.attempt} AND state = 'completed' AND result_version = ${expected.resultVersion} AND lease_token IS NULL AND lease_until IS NULL)`)
+  }
   const authority = input.authority
   if (authority?.sessionToken) {
-    conditions.push(sql`EXISTS (SELECT 1 FROM sessions WHERE token = ${authority.sessionToken} AND expires_at > ${authority.sessionNow ?? new Date().toISOString()})`)
+    conditions.push(sql`EXISTS (SELECT 1 FROM sessions WHERE token = ${authority.sessionToken} AND julianday(expires_at) > julianday('now'))`)
   }
   if (authority?.ownerUserId) {
     conditions.push(sql`EXISTS (SELECT 1 FROM worlds WHERE id = ${input.worldId} AND user_id = ${authority.ownerUserId})`)
