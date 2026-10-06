@@ -89,10 +89,10 @@ export default function SplitViewStage({
     const info = sideInfo(snap)
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <p className="font-medium text-[#405447]" data-testid={`split-title-${side}`}>
+        <p className="font-medium text-sage-800" data-testid={`split-title-${side}`}>
           {side === 'left' ? '原来的发展' : '另一种发展'} · {info ? (info.parentTimelineId ? '分叉' : '主线') : '…'}
           {info?.forkScenario?.whatIf ? (
-            <span className="ml-1 font-normal text-[#687a6b]">如果{info.forkScenario.whatIf}</span>
+            <span className="ml-1 font-normal text-sage-600">如果{info.forkScenario.whatIf}</span>
           ) : null}
         </p>
         <div className="flex items-center gap-2">
@@ -104,14 +104,14 @@ export default function SplitViewStage({
               视口为当前状态
             </span>
           )}
-          <span data-testid={`split-clock-${side}`} className="text-[#849184]">
+          <span data-testid={`split-clock-${side}`} className="text-ink-faint">
             {snap ? formatWorldTime(snap.simNow, snap.world.timeZone) : '读取中…'}
           </span>
           <button
             type="button"
             data-testid={`split-close-${side}`}
             onClick={() => closeSplit(side)}
-            className="rounded-full border border-[#d7ded3] bg-white px-2 py-0.5 text-[10px] text-[#536558]"
+            className="rounded-full border border-ink-line/80 bg-sheet px-2 py-0.5 text-[10px] text-ink-soft hover:bg-paper-deep transition"
           >
             关闭分屏
           </button>
@@ -125,9 +125,9 @@ export default function SplitViewStage({
     return (
       <ul
         data-testid={`split-events-${side}`}
-        className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-white/70 px-3 py-2 text-[11px] text-[#526558]"
+        className="max-h-28 space-y-1 overflow-y-auto rounded-xl bg-sheet/70 px-3 py-2 text-[11px] text-ink-soft border border-ink-line/50"
       >
-        {items.length === 0 && <li className="text-[#849184]">这段时间没有已记录的事件。</li>}
+        {items.length === 0 && <li className="text-ink-faint">这段时间没有已记录的事件。</li>}
         {items.map(event => {
           const key = `${side}:${event.id}`
           return (
@@ -142,7 +142,7 @@ export default function SplitViewStage({
               className={`rounded px-1 py-0.5 ${selectedSplitEvent === key ? 'bg-amber-100' : ''}`}
             >
               <span className="font-medium">{event.title}</span>
-              <span className="ml-1 text-[#849184]">
+              <span className="ml-1 text-ink-faint">
                 {formatWorldTime(event.simTime, side === 'left' ? snapshot.world.timeZone : otherSnapshot?.world.timeZone)}
               </span>
             </li>
@@ -158,9 +158,9 @@ export default function SplitViewStage({
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2" data-testid="split-small">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <p className="font-medium text-[#405447]" data-testid="split-small-title">
+          <p className="font-medium text-sage-800" data-testid="split-small-title">
             {smallSide === 'left' ? '原来的发展' : '另一种发展'} · {info ? (info.parentTimelineId ? '分叉' : '主线') : '…'}
-            <span className="ml-1 font-normal text-[#849184]">
+            <span className="ml-1 font-normal text-ink-faint">
               {snap ? formatWorldTime(snap.simNow, snap.world.timeZone) : '读取中…'}
             </span>
           </p>
@@ -169,7 +169,7 @@ export default function SplitViewStage({
               type="button"
               data-testid="split-small-toggle"
               onClick={() => setSmallSide(s => (s === 'left' ? 'right' : 'left'))}
-              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558]"
+              className="rounded-full border border-ink-line/80 bg-sheet px-3 py-1.5 text-[10px] text-ink-soft hover:bg-paper-deep transition"
             >
               看{smallSide === 'left' ? '另一种' : '原来的'}发展
             </button>
@@ -177,7 +177,7 @@ export default function SplitViewStage({
               type="button"
               data-testid="split-close-small"
               onClick={() => closeSplit(smallSide)}
-              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558]"
+              className="rounded-full border border-ink-line/80 bg-sheet px-3 py-1.5 text-[10px] text-ink-soft hover:bg-paper-deep transition"
             >
               关闭分屏
             </button>
@@ -197,14 +197,14 @@ export default function SplitViewStage({
           <div
             role="alert"
             data-testid="split-right-error"
-            className="grid min-h-[430px] place-content-center gap-3 rounded-2xl bg-white/60 p-4 text-center text-sm text-[#718075]"
+            className="grid min-h-[430px] place-content-center gap-3 rounded-2xl bg-sheet/60 p-4 text-center text-sm text-ink-faint border border-ink-line/50"
           >
             <p>{rightSceneRead.message}</p>
             <button
               type="button"
               data-testid="split-right-retry"
               onClick={retryRightScene}
-              className="mx-auto rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-xs text-[#536558]"
+              className="mx-auto rounded-full border border-ink-line/80 bg-sheet px-4 py-2 text-xs text-ink-soft hover:bg-paper-deep transition"
             >
               重试读取右侧
             </button>
@@ -213,13 +213,13 @@ export default function SplitViewStage({
           <div
             role="status"
             data-testid="split-right-loading"
-            className="grid min-h-[430px] place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]"
+            className="grid min-h-[430px] place-items-center rounded-2xl bg-sheet/60 text-sm text-ink-faint border border-ink-line/50"
           >
             正在读取另一种发展…
           </div>
         )}
         {comparisonRead.status === 'loading' && (
-          <p role="status" data-testid="split-compare-loading" className="text-xs text-[#718075]">
+          <p role="status" data-testid="split-compare-loading" className="text-xs text-ink-faint">
             正在读取时间线对照…
           </p>
         )}
@@ -227,20 +227,20 @@ export default function SplitViewStage({
           <div
             role="alert"
             data-testid="split-compare-error"
-            className="flex flex-wrap items-center gap-3 rounded-xl bg-white/80 px-3 py-2 text-xs text-[#718075]"
+            className="flex flex-wrap items-center gap-3 rounded-xl bg-sheet/80 px-3 py-2 text-xs text-ink-faint border border-ink-line/50"
           >
             <span>{comparisonRead.message}</span>
             <button
               type="button"
               data-testid="split-compare-retry"
               onClick={retryComparison}
-              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[#536558]"
+              className="rounded-full border border-ink-line/80 bg-sheet px-3 py-1.5 text-ink-soft hover:bg-paper-deep transition"
             >
               重试对照
             </button>
           </div>
         )}
-        <p className="text-[10px] text-[#849184]">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
+        <p className="text-[10px] text-ink-faint">窄屏仅显示单视口；大屏可同时分屏查看两条时间线。</p>
       </div>
     )
   }
@@ -278,7 +278,7 @@ export default function SplitViewStage({
               data-testid="split-right-selector"
               value={otherSnapshot?.currentTimelineId ?? rightTimelineId ?? ''}
               onChange={e => setRightTimelineId(e.target.value)}
-              className="max-w-64 rounded-full border border-[#d7ded3] bg-white/90 px-3 py-1.5 text-xs text-[#536558]"
+              className="max-w-64 rounded-full border border-ink-line/80 bg-sheet/90 px-3 py-1.5 text-xs text-ink-soft backdrop-blur-sm"
             >
               {rightChoices.map(t => (
                 <option key={t.id} value={t.id}>
@@ -292,7 +292,7 @@ export default function SplitViewStage({
               data-testid="split-swap"
               onClick={swapSplit}
               disabled={!otherSnapshot}
-              className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[10px] text-[#536558] disabled:opacity-50"
+              className="rounded-full border border-ink-line/80 bg-sheet px-3 py-1.5 text-[10px] text-ink-soft hover:bg-paper-deep transition disabled:opacity-50"
             >
               ⇄ 互换左右
             </button>
@@ -315,14 +315,14 @@ export default function SplitViewStage({
               <div
                 role="alert"
                 data-testid="split-right-error"
-                className="grid h-full min-h-0 place-content-center gap-3 rounded-2xl bg-white/60 p-4 text-center text-sm text-[#718075]"
+                className="grid h-full min-h-0 place-content-center gap-3 rounded-2xl bg-sheet/60 p-4 text-center text-sm text-ink-faint border border-ink-line/50"
               >
                 <p>{rightSceneRead.message}</p>
                 <button
                   type="button"
                   data-testid="split-right-retry"
                   onClick={retryRightScene}
-                  className="mx-auto rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-xs text-[#536558]"
+                  className="mx-auto rounded-full border border-ink-line/80 bg-sheet px-4 py-2 text-xs text-ink-soft hover:bg-paper-deep transition"
                 >
                   重试读取右侧
                 </button>
@@ -331,7 +331,7 @@ export default function SplitViewStage({
               <div
                 role="status"
                 data-testid="split-right-loading"
-                className="grid h-full min-h-0 place-items-center rounded-2xl bg-white/60 text-sm text-[#718075]"
+                className="grid h-full min-h-0 place-items-center rounded-2xl bg-sheet/60 text-sm text-ink-faint border border-ink-line/50"
               >
                 正在读取另一种发展…
               </div>
@@ -362,13 +362,13 @@ export default function SplitViewStage({
       )}
 
       {compareSummary && (
-        <p className="text-xs text-[#687a6b]" data-testid="split-compare-summary">
+        <p className="text-xs text-sage-600" data-testid="split-compare-summary">
           已有记录：{compareSummary.facts} 项事实差异、{compareSummary.states} 组人物状态差异、{compareSummary.events} 条分支独有事件。场景布局相同；画面只显示各自时间线已记录的生活状态。
         </p>
       )}
 
       {comparisonRead.status === 'loading' && (
-        <p role="status" data-testid="split-compare-loading" className="text-xs text-[#718075]">
+        <p role="status" data-testid="split-compare-loading" className="text-xs text-ink-faint">
           正在读取时间线对照…
         </p>
       )}
@@ -377,21 +377,21 @@ export default function SplitViewStage({
         <div
           role="alert"
           data-testid="split-compare-error"
-          className="flex flex-wrap items-center gap-3 rounded-xl bg-white/80 px-3 py-2 text-xs text-[#718075]"
+          className="flex flex-wrap items-center gap-3 rounded-xl bg-sheet/80 px-3 py-2 text-xs text-ink-faint border border-ink-line/50"
         >
           <span>{comparisonRead.message}</span>
           <button
             type="button"
             data-testid="split-compare-retry"
             onClick={retryComparison}
-            className="rounded-full border border-[#d7ded3] bg-white px-3 py-1.5 text-[#536558]"
+            className="rounded-full border border-ink-line/80 bg-sheet px-3 py-1.5 text-ink-soft hover:bg-paper-deep transition"
           >
             重试对照
           </button>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 px-3 py-2 text-xs text-[#526558]">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-sheet/70 px-3 py-2 text-xs text-ink-soft border border-ink-line/50">
         <label className="flex items-center gap-1.5">
           <input
             type="checkbox"
@@ -406,11 +406,11 @@ export default function SplitViewStage({
             第一视角下相机联动已暂停（两线的「我」不在同一位置）
           </span>
         )}
-        <span className="text-[#849184]">联动开启时，一侧的旋转/缩放/平移同步到另一侧</span>
+        <span className="text-ink-faint">联动开启时，一侧的旋转/缩放/平移同步到另一侧</span>
       </div>
 
       {(alignedComparison ?? comparison) && (alignedComparison ?? comparison)!.limitations.length > 0 && (
-        <ul data-testid="split-limitations" className="space-y-0.5 text-[10px] text-[#849184]">
+        <ul data-testid="split-limitations" className="space-y-0.5 text-[10px] text-ink-faint">
           {(alignedComparison ?? comparison)!.limitations.map((x, i) => (
             <li key={i}>· {x}</li>
           ))}

@@ -649,14 +649,14 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     }), [worldId])
 
   if (error && !snapshot) return (
-    <div className="flex min-h-full items-center bg-[#eef0e7] p-4">
-      <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-white p-6 text-center shadow-sm" data-testid="world-canvas-error">
+    <div className="flex min-h-full items-center bg-sage-50 p-4">
+      <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-sheet p-6 text-center shadow-sm" data-testid="world-canvas-error">
         <p className="text-sm text-red-700">{error}</p>
-        <button onClick={() => void read()} className="mt-4 rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-sm text-[#536558]">重试</button>
+        <button onClick={() => void read()} className="mt-4 rounded-full border border-ink-line/80 bg-sheet px-4 py-2 text-sm text-ink-soft hover:bg-paper-deep transition">重试</button>
       </div>
     </div>
   )
-  if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-[#718075]">正在准备这方天地…</div>
+  if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-ink-faint">正在准备这方天地…</div>
 
   // A1 兼容面板:单空间/多空间(GuestWorldMap)共用同一会话与同一面板,只读预览按草稿惰性加载。
   const currentCompatContinuation = compatReadyScope?.worldId === worldId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
@@ -780,14 +780,14 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       ? `/worlds/${encodeURIComponent(worldId)}/scene/repair`
       : null
     return (
-      <div className="grid min-h-[calc(100vh-7rem)] bg-[#eef0e7] p-4">
-        <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-white p-6 text-center shadow-sm" data-testid="world-canvas-missing">
-          <p className="text-sm text-[#526558]">{sceneMissing ? '场景暂时不可用，请重试。' : '待创建场景'}</p>
-          {!sceneMissing && <p className="mt-2 text-sm text-[#718075]">为这个世界创建场景后，即可继续进入。</p>}
+      <div className="grid min-h-[calc(100vh-7rem)] bg-sage-50 p-4">
+        <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-sheet p-6 text-center shadow-sm" data-testid="world-canvas-missing">
+          <p className="text-sm text-ink-soft">{sceneMissing ? '场景暂时不可用，请重试。' : '待创建场景'}</p>
+          {!sceneMissing && <p className="mt-2 text-sm text-ink-faint">为这个世界创建场景后，即可继续进入。</p>}
           {rebuildHref && !sceneMissing && !readonly && !guest
-            ? <Link to={rebuildHref} className="mt-4 inline-flex rounded-lg bg-[#315641] px-4 py-2 text-sm text-white">补建场景</Link>
-            : !sceneMissing && <p className="mt-3 text-xs text-[#718075]">当前没有可用于补建场景的居民，或此世界为只读。</p>}
-          <button onClick={() => void read()} className="mt-4 rounded-full border border-[#d7ded3] bg-white px-4 py-2 text-sm text-[#536558]">重试</button>
+            ? <Link to={rebuildHref} className="mt-4 inline-flex rounded-lg bg-sage-700 hover:bg-sage-800 px-4 py-2 text-sm text-white transition">补建场景</Link>
+            : !sceneMissing && <p className="mt-3 text-xs text-ink-faint">当前没有可用于补建场景的居民，或此世界为只读。</p>}
+          <button onClick={() => void read()} className="mt-4 rounded-full border border-ink-line/80 bg-sheet px-4 py-2 text-sm text-ink-soft hover:bg-paper-deep transition">重试</button>
         </div>
       </div>
     )
@@ -804,19 +804,19 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     finally { setRegeneratingDemo(false) }
   }
 
-  if (readonly) return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="world-canvas-page">
+  if (readonly) return <main className="relative h-screen overflow-hidden bg-sage-100" data-testid="world-canvas-page">
     <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} />
-    <div className="pointer-events-none absolute inset-0 z-10">
-      <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-[#23382f]/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
+    <div className="pointer-events-none absolute inset-0 z-stage">
+      <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-sage-900/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
-        <a href="/login" className="rounded-full border border-white/35 bg-[#263a31]/45 px-4 py-2 text-xs backdrop-blur-md transition hover:bg-[#263a31]/70 sm:text-sm">登录，创建你的世界</a>
+        <a href="/login" className="rounded-full border border-white/35 bg-sheet-dark px-4 py-2 text-xs backdrop-blur-md transition hover:bg-sage-900/70 sm:text-sm">登录，创建你的世界</a>
       </header>
-      <div className="absolute bottom-4 left-3 rounded-full border border-white bg-[#f8faf6] px-3 py-2 text-[10px] text-[#4f6457] shadow-sm sm:left-5">拖动浏览 · 滚轮缩放 · 点击建筑或人物</div>
-      <div className="absolute bottom-4 right-3 rounded-full border border-white bg-[#f8faf6] px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:right-5">{guest ? '访客副本 · 可安全体验' : '只读世界'} · {snapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
+      <div className="absolute bottom-4 left-3 rounded-full border border-white bg-sheet px-3 py-2 text-[10px] text-sage-800 shadow-sm sm:left-5">拖动浏览 · 滚轮缩放 · 点击建筑或人物</div>
+      <div className="absolute bottom-4 right-3 rounded-full border border-white bg-sheet px-3 py-2 text-[10px] text-sage-600 shadow-sm sm:right-5">{guest ? '访客副本 · 可安全体验' : '只读世界'} · {snapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
   </main>
 
-  return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-[#eef0e7] p-3 sm:p-5" data-testid="world-canvas-page">
+  return <main className="flex h-screen min-h-0 flex-col gap-3 overflow-hidden bg-sage-50 p-3 sm:p-5" data-testid="world-canvas-page">
     {modals}
     <WorldHeader
       worldId={worldId}
@@ -861,14 +861,14 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
         {running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停'}
       </span>
-      <span className="text-[#849184]">世界时间 {formatWorldTime(snapshot.simNow, snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
+      <span className="text-ink-faint">世界时间 {formatWorldTime(snapshot.simNow, snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
     </div>
     {capped && snapshot.world.pauseReason === 'global_daily_cap' && <GlobalCapBanner />}
     {capped && snapshot.world.pauseReason !== 'global_daily_cap' && (
       <p className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">今日调用已达上限，世界已自动暂停，次日自动恢复运行。</p>
     )}
     <EvidenceNotice evidence={snapshot.evidence} />
-    {error && <p role="status" className="rounded-xl bg-white px-4 py-2 text-sm text-red-700">{error}</p>}
+    {error && <p role="status" className="rounded-xl bg-sheet px-4 py-2 text-sm text-red-700 border border-red-200">{error}</p>}
     {actionError && <p role="status" className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{actionError}</p>}
     {regenerateError && <p role="status" className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{regenerateError}</p>}
     <div className="flex min-h-0 flex-1 gap-3"><div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="owner-map-stage">
@@ -921,7 +921,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         onClose={() => { setMapSelected(null); setMapPersonId(null) }}
         onEnter={(name) => { setPresenceLocation(name); setPresenceOpen(true) }}
       />}
-      {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/85 px-4 py-3 text-sm text-[#526558]"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-[#849184]">{formatWorldTime(snapshot.simNow, snapshot.world.timeZone)}</span></div>}
+      {mode === 'life' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-sheet/85 px-4 py-3 text-sm text-ink-soft border border-ink-line/50"><span>{overlay?.timeOfDay === 'night' ? '夜色渐深，街灯亮起。' : overlay?.weather ? `此刻天气：${overlay.weather}` : '居民正按照自己的处境继续生活。'}</span><span className="text-xs text-ink-faint">{formatWorldTime(snapshot.simNow, snapshot.world.timeZone)}</span></div>}
     </div></div>
   </main>
 }
