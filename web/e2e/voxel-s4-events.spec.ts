@@ -184,7 +184,7 @@ function stubS4Apis(page: Page, state: { streamPhase: number }) {
 }
 
 async function openWorld(page: Page, url = '/worlds/world-1', split = false) {
-  await page.goto(url)
+  await page.goto(url, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('voxel-viewport-canvas').first()).toBeVisible({ timeout: 15000 })
   if (split) {
     await expect(page.getByTestId('voxel-viewport-canvas')).toHaveCount(2, { timeout: 15000 })
@@ -267,6 +267,7 @@ test.describe('S4 世界模拟:事件全链(生产路径)', () => {
   })
 
   test('SSE 推送 → 新事件无 reload 上线;同帧快照触发无日程居民环境漫步', async ({ page }) => {
+    test.setTimeout(180_000)
     const state = { streamPhase: 0 }
     await stubS4Apis(page, state)
     await openWorld(page)

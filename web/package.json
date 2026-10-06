@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:compat": "playwright test --config playwright.compatibility.config.ts",
     "assets:thumbnails": "node scripts/run-scene-thumbnails.mjs"
   },
   "dependencies": {

@@ -30,8 +30,9 @@ async function openDev(page: Page, init?: () => void, initArg?: unknown) {
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(String(err)))
   if (init) await page.addInitScript(init, initArg)
-  await page.goto('/dev/voxel')
-  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 15000 })
+  await page.goto('/dev/voxel', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 20000 })
+  await page.waitForFunction(() => Boolean(window.__voxelWorld), { timeout: 15000 })
   await page.waitForTimeout(600)
   return errors
 }

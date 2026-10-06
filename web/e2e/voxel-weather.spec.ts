@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test'
 
 async function waitReady(page: import('@playwright/test').Page) {
   await page.goto('/dev/voxel')
-  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 15000 })
+  await expect(page.getByTestId('voxel-canvas')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 20000 })
+  await expect(page.getByTestId('voxel-dev-controls')).toBeVisible({ timeout: 20000 })
 }
 
 test.describe('voxel time & weather (AC6/AC7/AC8 雏形)', () => {

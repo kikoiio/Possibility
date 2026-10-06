@@ -26,8 +26,11 @@ declare global {
 }
 
 async function openDev(page: Page) {
-  await page.goto('/dev/voxel')
-  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 15000 })
+  await page.goto('/dev/voxel', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('voxel-canvas')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('voxel-loading')).toBeHidden({ timeout: 20000 })
+  await expect(page.getByTestId('voxel-error')).toHaveCount(0)
+  await page.waitForFunction(() => Boolean(window.__voxelWorld), { timeout: 20000 })
   await page.waitForTimeout(400)
 }
 

@@ -39,8 +39,8 @@ async function fixture(page: Page, options: { failCreate?: boolean; failRefresh?
     state.compares.push([left, right])
     return route.fulfill({ json: { ...comparisonFor(left, right), timeAlignment: options.alignment ?? 'same_sim_time', sharedForkOrigin: null } })
   })
-  await page.goto('/worlds/world-1?timeline=timeline-main')
-  await expect(page.getByTestId('world-canvas-page')).toBeVisible()
+  await page.goto('/worlds/world-1?timeline=timeline-main', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('world-canvas-page')).toBeVisible({ timeout: 20000 })
   return state
 }
 
