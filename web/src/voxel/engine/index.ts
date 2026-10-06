@@ -323,6 +323,12 @@ export class VoxelEngine {
     return this.interiorReport
   }
 
+  get isPlayerUnderRoof(): boolean {
+    if (this.spaceContext.kind === 'interior') return true
+    const probe = this.probeScene()
+    return probe.skyExposedAtPlayer === false
+  }
+
   probeScene(): VoxelSceneProbe {
     const walkPosition = this.cameraRig.mode === 'walk' ? this.cameraRig.state.target : null
     const visibleObjectIds = this.world?.doc.objects.filter((object) => {

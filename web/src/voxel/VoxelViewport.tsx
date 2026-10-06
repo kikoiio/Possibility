@@ -312,7 +312,12 @@ export default function VoxelViewport({
         </div>
       )}
       {ready && gate.showFirstPerson && (
-        <WalkHud mode={cameraMode} onToggle={toggleCameraMode} notice={modeNotice} />
+        <WalkHud
+          mode={cameraMode}
+          onToggle={toggleCameraMode}
+          notice={modeNotice}
+          isIndoor={spaceId?.includes('interior') || doc.id.includes('interior') || engineRef.current?.getSpaceContext().kind === 'interior' || Boolean(engineRef.current?.isPlayerUnderRoof)}
+        />
       )}
       {ready && <EventOverlay engine={engineRef.current} onSelect={eventRouting.routeById} />}
       {ready && (

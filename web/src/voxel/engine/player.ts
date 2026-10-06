@@ -37,12 +37,14 @@ const IDLE: MoveInput = { moveX: 0, moveZ: 0, jump: false, ascend: false, descen
 
 export class PlayerBody {
   readonly state: PlayerState
+  readonly spawnPoint: VoxelCoord
 
   constructor(
     private world: WorldModel,
     private registry: BlockRegistry,
     spawn: VoxelCoord,
   ) {
+    this.spawnPoint = { ...spawn }
     // spawn 为可站立整数格;脚底 = 格中心
     this.state = {
       position: { x: spawn.x + 0.5, y: spawn.y, z: spawn.z + 0.5 },
@@ -50,6 +52,13 @@ export class PlayerBody {
       onGround: false,
       flying: false,
     }
+  }
+
+  /** 安全复位：跌落虚空时安全返回出生点 */
+  respawnToSafe(): void {
+    this.state.position = { x: this.spawnPoint.x + 0.5, y: this.spawnPoint.y, z: this.spawnPoint.z + 0.5 }
+    this.state.velocity = { x: 0, y: 0, z: 0 }
+    this.state.onGround = true
   }
 
   setFlying(flying: boolean): void {
@@ -148,7 +157,7 @@ export class PlayerBody {
     }
   }
 
-  /** 世界包围盒钳制:不出界、不穿基岩层 */
+  /** 世界包围盒钳制:不出界、不穿基岩层;跌落无底虚空时安全复位 */
   private clampToWorld(): void {
     const { width, depth } = this.world.doc.size
     const p = this.state.position
@@ -156,9 +165,18 @@ export class PlayerBody {
     p.x = Math.min(Math.max(p.x, half), width - half)
     p.z = Math.min(Math.max(p.z, half), depth - half)
     if (p.y < 0) {
-      p.y = 0
-      this.state.velocity.y = Math.max(0, this.state.velocity.y)
-      this.state.onGround = true
+      const bx = Math.floor(p.x)
+      const bz = Math.floor(p.z)
+      const floorBlock = this.world.getBlock({ x: bx, y: 0, z: bz })
+      const isSolidFloor = this.registry.get(floorBlock)?.solid
+      if (isSolidFloor) {
+        p.y = 0
+        this.state.velocity.y = Math.max(0, this.state.velocity.y)
+        this.state.onGround = true
+      } else {
+        // 跌落无方块支撑的虚空：安全复位到出生点
+        this.respawnToSafe()
+      }
     }
   }
 }

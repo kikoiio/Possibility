@@ -42,6 +42,18 @@ describe('findSpawnNear 落点搜索(T10)', () => {
     for (let y = 0; y < 8; y++) for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) setBlockMut(doc, at(x, y, z), 'stone')
     expect(findSpawnNear(new WorldModel(doc), registry, at(8, 4, 8))).toBeNull()
   })
+
+  it('Safe Spawn: 避开屋顶瓦片,优先螺旋外扩寻找地面', () => {
+    const world = flatWorld()
+    // (10, 10) 处有小屋与屋顶瓦片(plaster-wall 为实心墙)
+    for (let y = 1; y <= 3; y++) setBlockMut(world.doc, at(10, y, 10), 'plaster-wall')
+    setBlockMut(world.doc, at(10, 4, 10), 'roof-tile')
+    const spawn = findSpawnNear(world, registry, at(10, 6, 10))
+    expect(spawn).not.toBeNull()
+    // 落点不得在屋顶 y=5 上，必须外扩落在地面 y=1
+    expect(spawn!.y).toBe(1)
+    expect(spawn!.x !== 10 || spawn!.z !== 10).toBe(true)
+  })
 })
 
 describe('WalkCameraStrategy(T10)', () => {

@@ -119,4 +119,16 @@ describe('PlayerBody 台阶/飞行/边界(T9)', () => {
     runSteps(body, 600, { ...idle, moveZ: 1 })
     expect(body.state.position.z).toBeCloseTo(32 - PLAYER.width / 2, 3)
   })
+
+  it('跌落虚空保护:无底深渊触发安全复位回到出生点', () => {
+    const emptyDoc = createEmptyWorld({ width: 16, height: 16, depth: 16 }, 'mist-manor', 'test')
+    const world = new WorldModel(emptyDoc)
+    const body = new PlayerBody(world, registry, at(5, 5, 5))
+    // 人为下落至穿过 y=0 虚空
+    body.state.position.y = -0.5
+    body.step(DT, idle)
+    expect(body.state.position.x).toBeCloseTo(5.5, 2)
+    expect(body.state.position.y).toBeCloseTo(5, 2)
+    expect(body.state.position.z).toBeCloseTo(5.5, 2)
+  })
 })

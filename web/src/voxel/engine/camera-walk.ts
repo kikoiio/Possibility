@@ -11,38 +11,85 @@ import type { WorldModel } from './world-model'
 // pointer lock 不可用(SwiftShader e2e / 非安全上下文)时退化:
 // 免锁定 mousemove 直接转视角(N5,保证 e2e 可操作)。
 
-/** orbit 注视点 → 第一视角落点:垂直找可站立格,失败则螺旋外扩搜索(F1) */
+/** 判定是否为屋顶/瓦片方块（避免出生在主楼屋顶） */
+export function isRoofBlock(blockId: string, registry: BlockRegistry): boolean {
+  if (!blockId || blockId === 'air') return false
+  const lower = blockId.toLowerCase()
+  if (lower.includes('roof') || lower.includes('tile')) return true
+  const b = registry.get(blockId)
+  if (b?.name && (b.name.includes('瓦') || b.name.includes('屋顶'))) return true
+  return false
+}
+
+/** 安全落点判定：基础可站立 + 避开家具 + 杜绝屋顶瓦片 */
+export function isSafeSpawn(
+  world: WorldModel,
+  registry: BlockRegistry,
+  at: VoxelCoord,
+): boolean {
+  if (!isStandable(world, registry, at)) return false
+  if (!isSpawnClearOfObjects(world.doc, at)) return false
+  const belowId = world.getBlock({ x: at.x, y: at.y - 1, z: at.z })
+  if (isRoofBlock(belowId, registry)) return false
+  return true
+}
+
+/** orbit 注视点 → 第一视角落点: 垂直找地面安全可站立格,失败则螺旋外扩搜索(F1/Safe Spawn) */
 export function findSpawnNear(
   world: WorldModel,
   registry: BlockRegistry,
   target: VoxelCoord,
-  radius = 6,
+  radius = 16,
 ): VoxelCoord | null {
   const { width, height, depth } = world.doc.size
   const clampX = Math.min(Math.max(Math.floor(target.x), 0), width - 1)
   const clampZ = Math.min(Math.max(Math.floor(target.z), 0), depth - 1)
-  // 一柱内自底向上找最低可站立格(「向地面投影」:落在地面层而非屋顶)
-  const columnSpawn = (x: number, z: number): VoxelCoord | null => {
+  // 一柱内自底向上找最低可站立格(「向地面投影」:优先落在地面层而非屋顶)
+  const columnSpawn = (x: number, z: number, strictSafe = true): VoxelCoord | null => {
     for (let y = 1; y <= height - 2; y++) {
       const at = { x, y, z }
-      if (isStandable(world, registry, at) && isSpawnClearOfObjects(world.doc, at)) return at
+      if (strictSafe) {
+        if (isSafeSpawn(world, registry, at)) return at
+      } else {
+        if (isStandable(world, registry, at) && isSpawnClearOfObjects(world.doc, at)) return at
+      }
     }
     return null
   }
-  const direct = columnSpawn(clampX, clampZ)
+
+  // 1. 优先严格地面安全落点（排除屋顶瓦片）
+  const direct = columnSpawn(clampX, clampZ, true)
   if (direct) return direct
-  // 螺旋外扩
+
+  // 螺旋外扩寻找最近的庭院/地面落点
   for (let r = 1; r <= radius; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dz = -r; dz <= r; dz++) {
         if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue // 只扫当前环
         const x = clampX + dx, z = clampZ + dz
         if (x < 0 || x >= width || z < 0 || z >= depth) continue
-        const found = columnSpawn(x, z)
+        const found = columnSpawn(x, z, true)
         if (found) return found
       }
     }
   }
+
+  // 2. 兜底策略：若整张地图均为屋顶构造且无地面，降级允许站立以防无法切换
+  const fallbackDirect = columnSpawn(clampX, clampZ, false)
+  if (fallbackDirect) return fallbackDirect
+
+  for (let r = 1; r <= radius; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue
+        const x = clampX + dx, z = clampZ + dz
+        if (x < 0 || x >= width || z < 0 || z >= depth) continue
+        const found = columnSpawn(x, z, false)
+        if (found) return found
+      }
+    }
+  }
+
   return null
 }
 

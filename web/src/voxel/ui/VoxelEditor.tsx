@@ -334,6 +334,8 @@ export default function VoxelEditor({ engine, controller, planEdits, interact, e
     const issues = validateEdit(doc, ops, undefined, engine.assetsManifest ?? undefined)
     if (issues.length > 0) {
       setAiError(`AI 方案未通过校验：${issues[0].message}`)
+      dismissAiGhost()
+      aiGhost.current = engine.feedback?.showValidationFailure(ops) ?? null
       return
     }
     dismissAiGhost()

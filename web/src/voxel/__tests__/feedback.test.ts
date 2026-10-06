@@ -67,4 +67,15 @@ describe('BuildFeedback 资产 ghost 与选中 (S2b)', () => {
     expect(feedback.assetSelectionActive).toBe(false)
     feedback.dispose()
   })
+
+  it('showValidationFailure 展示红色 ghost (Phase 3)', () => {
+    const scene = new THREE.Scene()
+    const feedback = new BuildFeedback(scene)
+    const handle = feedback.showValidationFailure([{ kind: 'set-block', at: { x: 3, y: 1, z: 3 }, block: 'stone' }])
+    expect(feedback.ghostActive).toBe(true)
+    expect(feedback.ghostColor).toBe(0xef4444)
+    handle.dismiss()
+    expect(feedback.ghostActive).toBe(false)
+    feedback.dispose()
+  })
 })

@@ -99,13 +99,15 @@ export class BuildFeedback {
     this.hoverMesh.position.set(at.x + 0.5, at.y + 0.5, at.z + 0.5)
   }
 
-  /** AI 编辑预览：半透明幽灵体覆盖将变更的格子 */
-  showGhost(ops: EditOperation[]): GhostHandle {
+  /** AI 编辑预览 / 校验失败高亮：半透明幽灵体覆盖将变更的格子 */
+  showGhost(ops: EditOperation[], options?: { color?: number; opacity?: number } | number): GhostHandle {
     this.dismissGhost()
+    const color = typeof options === 'number' ? options : (options?.color ?? 0x6ee7a0)
+    const opacity = typeof options === 'object' && options?.opacity !== undefined ? options.opacity : 0.4
     const cells = ghostCells(ops)
     if (cells.length === 0) return { dismiss: () => {} }
     const group = new THREE.Group()
-    const material = new THREE.MeshBasicMaterial({ color: 0x6ee7a0, transparent: true, opacity: 0.4, depthWrite: false })
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
     for (const at of cells) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.02, 1.02), material)
       mesh.position.set(at.x + 0.5, at.y + 0.5, at.z + 0.5)
@@ -114,6 +116,11 @@ export class BuildFeedback {
     this.ghostGroup = group
     this.scene.add(group)
     return { dismiss: () => this.dismissGhost() }
+  }
+
+  /** 场景编辑校验失败：3D 红色高亮 (Phase 3) */
+  showValidationFailure(ops: EditOperation[]): GhostHandle {
+    return this.showGhost(ops, { color: 0xef4444, opacity: 0.55 })
   }
 
   private dismissGhost(): void {
@@ -130,6 +137,14 @@ export class BuildFeedback {
   /** 幽灵预览是否展示中（e2e 探针） */
   get ghostActive(): boolean {
     return this.ghostGroup !== null
+  }
+
+  /** 幽灵预览颜色（探针/单测验证） */
+  get ghostColor(): number | null {
+    if (!this.ghostGroup || this.ghostGroup.children.length === 0) return null
+    const mesh = this.ghostGroup.children[0] as THREE.Mesh
+    const mat = mesh.material as THREE.MeshBasicMaterial
+    return mat.color.getHex()
   }
 
   /**
@@ -259,7 +274,10 @@ export function ghostCells(ops: EditOperation[]): VoxelCoord[] {
         break
       case 'move-object':
       case 'remove-object':
-        break // 由 UI 层高亮物体本身，此处不展开
+      case 'place-asset':
+      case 'move-asset':
+      case 'remove-asset':
+        break // 由 UI 层高亮物体/资产本身，此处不展开
     }
   }
   return cells
