@@ -6,6 +6,7 @@ import type { WorldAction } from './types'
 import { WorldStateError } from './types'
 import { readWorldState } from './query'
 import { readPinnedWorldModel } from './model'
+import { accessBlocked, normalizeEnvironmentCondition, normalizeEnvironmentValue, projectEnvironment } from './environment'
 
 export interface ActionPlan {
   factType: 'location' | 'environment' | 'knowledge' | 'commitment' | 'conversation' | 'resident_state' | 'intervention' | 'clock' | 'memory_summary' | 'memory_maintenance' | 'schedule'
@@ -78,6 +79,13 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
   let locations: { name: string }[] = pinned?.locations ?? []
   if (!pinned) try { locations = JSON.parse(world.locationsJson || '[]') as { name: string }[] } catch { /* invalid legacy world */ }
   const hasLocation = (name: string) => locations.some(l => l.name === name)
+  /** Read only the latest committed environment facts for this timeline. */
+  const currentEnvironmentProjection = async () => {
+    const structured = await readWorldState(db, worldId, timelineId)
+    return projectEnvironment(structured.current
+      .filter(fact => fact.factType === 'environment')
+      .map(fact => ({ subjectId: fact.subjectId, valueJson: JSON.stringify(fact.value) ?? '' })))
+  }
   const assertUniqueLocationAtTime = async (personId: string, location: string, simTime: string) => {
     const priorFacts = await db.select().from(worldFacts).where(and(
       eq(worldFacts.timelineId, timelineId), eq(worldFacts.subjectId, personId), eq(worldFacts.simTime, simTime),
@@ -106,6 +114,11 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     if (action.type === 'enter' && state) throw new WorldStateError('已在世界中，请使用移动', 409)
     if (action.type === 'move' && !state) throw new WorldStateError('尚未进入这个宇宙', 409)
     if (state?.location === action.to) throw new WorldStateError('人物已在该地点', 409)
+    // access=closed blocks entering a location.  A resident already inside may
+    // still leave, so a temporary closure can never trap people in place.
+    if (accessBlocked(await currentEnvironmentProjection(), action.to)) {
+      throw new WorldStateError(`${action.to}当前封闭，不能${action.type === 'enter' ? '进入' : '移动'}`, 409, 'environment_access_blocked')
+    }
     if (action.type === 'move') await assertUniqueLocationAtTime(action.personId, action.to, timeline.simNow)
     return {
       factType: 'location', subjectId: action.personId,
@@ -123,9 +136,15 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
     if (action.location != null && typeof action.location !== 'string') throw new WorldStateError('地点无效', 400)
     const location = action.location?.trim() || null
     if (location && !hasLocation(location)) throw new WorldStateError('地点不属于这个世界', 400)
-    const condition = typeof action.condition === 'string' ? action.condition.trim() : ''
+    const conditionText = typeof action.condition === 'string' ? action.condition.trim() : ''
     const value = typeof action.value === 'string' ? action.value.trim() : ''
-    if (!condition || !value || condition.length > 40 || value.length > 200) throw new WorldStateError('环境条件无效', 400)
+    const condition = normalizeEnvironmentCondition(conditionText)
+    if (!condition) {
+      throw new WorldStateError(`不支持的环境类别：${conditionText || '(空)'}`, 400, 'invalid_condition')
+    }
+    if (!value || value.length > 200 || !normalizeEnvironmentValue(condition, value)) {
+      throw new WorldStateError(`不支持的${condition === 'lighting' ? '光照' : condition === 'access' ? '通行状态' : '天气'}取值：${value || '(空)'}`, 400, 'unsupported')
+    }
     return environmentActionPlan({ type: 'environment', location, condition, value })
   }
 
@@ -577,6 +596,10 @@ export async function validateWorldAction(db: Db, worldId: string, timelineId: s
       throw new WorldStateError('居民状态变更字段无效', 400)
     }
     if (action.patch.location != null && !hasLocation(action.patch.location)) throw new WorldStateError('目的地不属于这个世界', 400)
+    if (action.patch.location && action.patch.location !== state.location
+      && accessBlocked(await currentEnvironmentProjection(), action.patch.location)) {
+      throw new WorldStateError(`${action.patch.location}当前封闭，不能进入`, 409, 'environment_access_blocked')
+    }
     for (const [label, value] of Object.entries(action.patch)) {
       if (label === 'lastBeatSimTime') {
         if (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) || value > (action.advanceTo ?? timeline.simNow)) throw new WorldStateError('节拍时间无效', 400)

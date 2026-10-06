@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { lifeApi } from '../../api/client'
 import type { EventEvidenceDetail as EvidenceDetailType } from '../../api/types'
 import { formatWorldTime } from '../../lib/world-time'
@@ -34,18 +34,30 @@ export default function EventEvidenceDetail({ worldId, timelineId, eventId, time
   const [detail, setDetail] = useState<EvidenceDetailType | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const load = async () => {
+  const requestGeneration = useRef(0)
+  const load = async (generation = requestGeneration.current) => {
+    if (generation !== requestGeneration.current) return
     setLoading(true)
     setError('')
     try {
-      setDetail(await lifeApi.eventEvidence(worldId, timelineId, eventId))
+      const result = await lifeApi.eventEvidence(worldId, timelineId, eventId)
+      if (generation !== requestGeneration.current) return
+      setDetail(result)
     } catch (cause) {
+      if (generation !== requestGeneration.current) return
       setError(cause instanceof Error ? cause.message : '证据读取失败')
     } finally {
-      setLoading(false)
+      if (generation === requestGeneration.current) setLoading(false)
     }
   }
-  useEffect(() => { void load() }, [worldId, timelineId, eventId])
+  useEffect(() => {
+    const generation = ++requestGeneration.current
+    setDetail(null)
+    void load(generation)
+    return () => {
+      if (requestGeneration.current === generation) requestGeneration.current++
+    }
+  }, [worldId, timelineId, eventId])
 
   if (loading) return <p className="px-3 py-4 text-xs text-ink-faint" role="status">正在核对来源与当时状态…</p>
   if (error || !detail) return <div className="rounded-xl bg-red-50 px-3 py-3 text-xs text-red-700">

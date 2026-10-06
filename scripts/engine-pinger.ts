@@ -37,6 +37,9 @@ interface TickSummary {
     id: string
     capped: boolean
     tickCalls: number
+    status?: string
+    pauseReason?: string | null
+    stopReason?: string
     timelines: { id: string; simNow: string; steps: { kind: string; personId: string | null; ok: boolean; note?: string }[] }[]
   }[]
 }
@@ -65,7 +68,8 @@ async function tick(): Promise<void> {
       const okCount = steps.filter((s) => s.ok).length
       const simNow = w.timelines[0]?.simNow?.slice(11, 19) ?? '--:--:--'
       parts.push(
-        `世界 ${w.id.slice(0, 8)} simNow=${simNow} 调用=${w.tickCalls}${w.capped ? ' [已触顶]' : ''} 步骤=${okCount}/${steps.length}` +
+        `世界 ${w.id.slice(0, 8)} simNow=${simNow} 调用=${w.tickCalls}${w.capped ? ' [已触顶]' : ''}` +
+          `${w.stopReason ? ` 停止原因=${w.stopReason}` : ''} 状态=${w.status ?? 'unknown'} 步骤=${okCount}/${steps.length}` +
           (steps.length
             ? `\n  ${steps
                 .map((s) => `${s.ok ? '✓' : '✗'} ${s.kind}${s.note ? ` (${s.note})` : ''}`)

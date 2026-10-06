@@ -149,6 +149,7 @@ function parseRecordShape(
  * 供调用方/测试注入确定时钟；不改变 LayoutRepository 既有签名兼容性。
  */
 export interface ClockedLayoutRepository extends LayoutRepository {
+  load(scope: SampleScope): RestoreResult
   save(layout: LayoutState, savedAt?: string): SaveResult
 }
 

@@ -284,7 +284,14 @@ export class VoxelEngine {
   /** 世界坐标 → 屏幕坐标（e2e 点击定位探针） */
   worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null {
     if (!this.canvas) return null
-    const v = new THREE.Vector3(at.x + 0.5, at.y + 0.5, at.z + 0.5).project(this.cameraRig.camera)
+    const camera = this.cameraRig.camera
+    // Projection can be queried between render frames (e.g. touch/click
+    // routing), so do not rely on WebGLRenderer to have refreshed matrices.
+    camera.updateMatrixWorld(true)
+    camera.updateProjectionMatrix()
+    const v = new THREE.Vector3(at.x + 0.5, at.y + 0.5, at.z + 0.5).project(camera)
+    if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)
+      || v.z < -1 || v.z > 1 || v.x < -1 || v.x > 1 || v.y < -1 || v.y > 1) return null
     const rect = this.canvas.getBoundingClientRect()
     return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height }
   }
@@ -325,6 +332,7 @@ export class VoxelEngine {
 
   probeScene(): VoxelSceneProbe {
     const walkPosition = this.cameraRig.mode === 'walk' ? this.cameraRig.state.target : null
+    this.cameraRig.camera.updateMatrixWorld(true)
     const visibleObjectIds = this.world?.doc.objects.filter((object) => {
       const projected = new THREE.Vector3(
         object.anchor.x + 0.5,

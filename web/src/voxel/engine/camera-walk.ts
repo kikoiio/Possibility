@@ -61,6 +61,10 @@ export class WalkCameraStrategy implements CameraStrategy {
   private lastSpaceAt = -Infinity
   /** pointer lock 不可用/被拒时置 true:鼠标在画布上移动即转视角(N5 降级) */
   private fallbackLook = false
+  private pointerLockActive = false
+  private touchPointerId: number | null = null
+  private touchLastX = 0
+  private touchLastY = 0
   private disposers: Array<() => void> = []
   /** 测试/调试读数 */
   get lookState() { return { yaw: this.yaw, pitch: this.pitch } }
@@ -104,24 +108,69 @@ export class WalkCameraStrategy implements CameraStrategy {
       this.yaw -= e.movementX * LOOK_SPEED
       this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * LOOK_SPEED, -MAX_PITCH, MAX_PITCH)
     }
+    // Touch devices do not expose pointer lock. A single-finger drag keeps the
+    // camera usable when the walk strategy is enabled from an embedded view.
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      this.fallbackLook = true
+      this.touchPointerId = e.pointerId
+      this.touchLastX = e.clientX
+      this.touchLastY = e.clientY
+      canvas.setPointerCapture(e.pointerId)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || this.touchPointerId !== e.pointerId) return
+      const dx = e.clientX - this.touchLastX
+      const dy = e.clientY - this.touchLastY
+      this.touchLastX = e.clientX
+      this.touchLastY = e.clientY
+      this.yaw -= dx * LOOK_SPEED
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * LOOK_SPEED, -MAX_PITCH, MAX_PITCH)
+    }
+    const onPointerEnd = (e: PointerEvent) => {
+      if (this.touchPointerId !== e.pointerId) return
+      this.touchPointerId = null
+      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+    }
     const onClick = () => {
       if (document.pointerLockElement === canvas || this.fallbackLook) return
       if (typeof canvas.requestPointerLock !== 'function') { this.fallbackLook = true; return }
       try { canvas.requestPointerLock() } catch { this.fallbackLook = true }
     }
     const onLockError = () => { this.fallbackLook = true }
+    const onLockChange = () => {
+      if (document.pointerLockElement === canvas) {
+        this.pointerLockActive = true
+        return
+      }
+      // Escape or browser UI can release the lock without an error event.
+      // Keep looking usable through the no-lock fallback after that release.
+      if (this.pointerLockActive) this.fallbackLook = true
+      this.pointerLockActive = false
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     canvas.addEventListener('mousemove', onMouseMove)
+    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('pointermove', onPointerMove)
+    canvas.addEventListener('pointerup', onPointerEnd)
+    canvas.addEventListener('pointercancel', onPointerEnd)
     canvas.addEventListener('click', onClick)
     document.addEventListener('pointerlockerror', onLockError)
+    document.addEventListener('pointerlockchange', onLockChange)
+    this.pointerLockActive = document.pointerLockElement === canvas
     if (typeof canvas.requestPointerLock !== 'function') this.fallbackLook = true
     this.disposers = [
       () => window.removeEventListener('keydown', onKeyDown),
       () => window.removeEventListener('keyup', onKeyUp),
       () => canvas.removeEventListener('mousemove', onMouseMove),
+      () => canvas.removeEventListener('pointerdown', onPointerDown),
+      () => canvas.removeEventListener('pointermove', onPointerMove),
+      () => canvas.removeEventListener('pointerup', onPointerEnd),
+      () => canvas.removeEventListener('pointercancel', onPointerEnd),
       () => canvas.removeEventListener('click', onClick),
       () => document.removeEventListener('pointerlockerror', onLockError),
+      () => document.removeEventListener('pointerlockchange', onLockChange),
     ]
   }
 
@@ -129,6 +178,8 @@ export class WalkCameraStrategy implements CameraStrategy {
     for (const dispose of this.disposers) dispose()
     this.disposers = []
     this.keys.clear()
+    this.touchPointerId = null
+    this.pointerLockActive = false
     if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock()
   }
 

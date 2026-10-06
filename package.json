@@ -17,7 +17,8 @@
     "seed:demo": "tsx scripts/seed-demo.ts",
     "verify:s02": "npm --workspace @possibility/scene-contract test && npm --workspace @possibility/scene-contract run build && npm --workspace api test && npm --workspace api run build && npm --workspace web test && npm --workspace web run build && npm --workspace web run test:e2e",
     "asset:import": "tsx scripts/asset-import.ts",
-    "asset:thumbnail": "node scripts/asset-thumbnail.mjs"
+    "asset:thumbnail": "node scripts/asset-thumbnail.mjs",
+    "verify:deployment": "tsx scripts/verify-deployment-journey.ts"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

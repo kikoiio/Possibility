@@ -4,7 +4,7 @@ import app from '../index'
 import { commitWorldCommand } from '../world-state/commit'
 import { createRootProjectionBaseline } from '../world-state/model'
 import { createWorldFixture, WORLD_TIME } from '../test/world-fixture'
-import { events, persons, sessions, timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons, worldVisits } from '../db/schema'
+import { commitments, events, persons, sessions, timelines, universeRevisions, worldCommands, worldFacts, worldModelVersions, worldPersons, worldVisits } from '../db/schema'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { fixture?.close(); fixture = null })
@@ -28,11 +28,35 @@ async function seedEvidenceWorld() {
 }
 
 describe('E1 change review evidence', () => {
+  it('deduplicates a domain event and its direct commitment fact', async () => {
+    const f = await seedEvidenceWorld()
+    await f.db.insert(commitments).values({ id: 'promise', worldId: 'home-world', timelineId: 'home-main',
+      personId: 'ada', visitorId: 'visitor', sourceDialogueId: null, title: 'Meet at Cafe', kind: 'meeting',
+      location: 'Cafe', dueSim: '2026-09-21T10:00:00.000Z', status: 'accepted', createdSim: WORLD_TIME,
+      updatedSim: WORLD_TIME, createdAt: WORLD_TIME })
+    await f.db.insert(worldCommands).values({ id: 'commitment:promise:accepted', worldId: 'home-world', timelineId: 'home-main',
+      actorKind: 'system', actorId: null, type: 'commitment',
+      payloadJson: JSON.stringify({ type: 'commitment', commitmentId: 'promise', next: 'accepted' }),
+      expectedVersion: 0, resultVersion: 1, tickLeaseToken: null, createdAt: WORLD_TIME })
+    await f.db.update(universeRevisions).set({ version: 1, simTime: WORLD_TIME }).where(eq(universeRevisions.timelineId, 'home-main'))
+    await f.db.insert(worldFacts).values({ id: 'promise-fact', timelineId: 'home-main', version: 1, simTime: WORLD_TIME,
+      factType: 'commitment', subjectId: 'promise', valueJson: JSON.stringify({ commitmentId: 'promise', from: 'proposed', to: 'accepted' }),
+      sourceCommandId: 'commitment:promise:accepted', visibility: 'private' })
+    await f.db.insert(events).values({ id: 'commitment:promise:accepted', timelineId: 'home-main', simTime: WORLD_TIME,
+      title: 'Meet at Cafe · 已经约好', description: '约定已接受。', kind: 'action', createdVersion: 1 })
+
+    const response = await app.request('/api/worlds/home-world/return?timelineId=home-main', { headers: owner }, f.env)
+    expect(response.status).toBe(200)
+    const body = await response.json() as { changes: { id: string; kind: string; eventId: string | null; sourceCommandId: string | null }[]; events: unknown[] }
+    expect(body.changes).toEqual([expect.objectContaining({ id: 'fact:promise-fact', kind: 'fact', eventId: 'commitment:promise:accepted', sourceCommandId: 'commitment:promise:accepted' })])
+    expect(body.events).toHaveLength(1)
+  })
+
   it('does not treat a same-time unrelated fact as event evidence', async () => {
     const f = await seedEvidenceWorld()
     await commitWorldCommand(f.db, { id: 'unrelated-command', worldId: 'home-world', timelineId: 'home-main',
       userId: 'owner', expectedVersion: 0,
-      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: '雾' } })
+      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'fog' } })
     await f.db.insert(events).values({ id: 'orphan-same-time', timelineId: 'home-main', simTime: WORLD_TIME,
       title: '独立记录', description: '没有直接来源', kind: 'injected' })
 
@@ -48,7 +72,7 @@ describe('E1 change review evidence', () => {
   it('returns source-backed state and private knowledge without putting message content in public event text', async () => {
     const f = await seedEvidenceWorld()
     const weather = await commitWorldCommand(f.db, { id: 'cmd-weather', worldId: 'home-world', timelineId: 'home-main',
-      userId: 'owner', expectedVersion: 0, action: { type: 'environment', location: 'Cafe', condition: 'weather', value: '雾' } })
+      userId: 'owner', expectedVersion: 0, action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'fog' } })
     const message = await commitWorldCommand(f.db, { id: 'cmd-message', worldId: 'home-world', timelineId: 'home-main',
       userId: 'owner', expectedVersion: weather.version,
       action: { type: 'inform', recipientId: 'ada', topic: '包裹', content: '包裹已经送到' } })
@@ -76,15 +100,18 @@ describe('E1 change review evidence', () => {
       { headers: owner }, f.env)
     expect(evidenceResponse.status).toBe(200)
     const detail = await evidenceResponse.json() as {
-      event: { description: string }; facts: { value: { content?: string } }[];
+      event: { description: string; location: string | null }; facts: { value: { content?: string } }[];
       visibleKnowledge: { recipientName: string | null; topic: string; content: string; certainty: string }[];
       reconstruction: { status: string }; forkAvailable: boolean
     }
     expect(detail.event.description).not.toContain('包裹已经送到')
+    expect(detail.event.location).toBeNull()
     expect(detail.facts[0]?.value.content).toBe('包裹已经送到')
     expect(detail.visibleKnowledge).toContainEqual(expect.objectContaining({ recipientName: 'Ada', topic: '包裹', content: '包裹已经送到', certainty: 'rumor' }))
     expect(detail.reconstruction.status).toBe('complete')
     expect(detail.forkAvailable).toBe(true)
+    const weatherEvidence = await app.request('/api/worlds/home-world/events/command:cmd-weather/evidence?timelineId=home-main', { headers: owner }, f.env)
+    expect((await weatherEvidence.json() as { event: { location: string | null } }).event.location).toBe('Cafe')
     expect({
       commands: await f.db.select().from(worldCommands).all(),
       facts: await f.db.select().from(worldFacts).all(),
@@ -99,6 +126,26 @@ describe('E1 change review evidence', () => {
       .toMatchObject({ eventCursor: brief.nextEventCursor, revisionVersion: brief.nextRevisionVersion })
     const second = await app.request('/api/worlds/home-world/return?timelineId=home-main', { headers: owner }, f.env)
     expect((await second.json() as { changes: unknown[] }).changes).toEqual([])
+  })
+
+  it('keeps damaged source payloads visible as gaps and closes the fork gate', async () => {
+    const f = await seedEvidenceWorld()
+    await f.db.insert(worldCommands).values({ id: 'bad-command', worldId: 'home-world', timelineId: 'home-main',
+      actorKind: 'system', actorId: null, type: 'environment', payloadJson: '{', expectedVersion: 0,
+      resultVersion: 1, tickLeaseToken: null, createdAt: WORLD_TIME })
+    await f.db.update(universeRevisions).set({ version: 1, simTime: WORLD_TIME }).where(eq(universeRevisions.timelineId, 'home-main'))
+    await f.db.insert(worldFacts).values({ id: 'bad-fact', timelineId: 'home-main', version: 1, simTime: WORLD_TIME,
+      factType: 'environment', subjectId: 'Cafe:weather', valueJson: '{', sourceCommandId: 'bad-command', visibility: 'world' })
+    await f.db.insert(events).values({ id: 'command:bad-command', timelineId: 'home-main', simTime: WORLD_TIME,
+      title: '损坏记录', description: '原始记录仍可查看', kind: 'action', createdVersion: 1 })
+
+    const response = await app.request('/api/worlds/home-world/events/command:bad-command/evidence?timelineId=home-main', { headers: owner }, f.env)
+    expect(response.status).toBe(200)
+    const detail = await response.json() as { gaps: string[]; forkAvailable: boolean; facts: unknown[] }
+    expect(detail.facts).toHaveLength(1)
+    expect(detail.gaps).toContain('来源命令载荷损坏，无法完整读取。')
+    expect(detail.gaps).toContain('关联事实载荷损坏，无法完整读取。')
+    expect(detail.forkAvailable).toBe(false)
   })
 
   it('rejects invalid or cross-timeline watermarks and hides another owner’s world', async () => {

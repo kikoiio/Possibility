@@ -2,12 +2,24 @@ import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { engineTickLeases, worldCommands } from '../db/schema'
 import { createWorldFixture } from '../test/world-fixture'
-import { acquireEngineTickLease, ENGINE_TICK_LEASE_ID, ENGINE_TICK_LEASE_MS, renewEngineTickLease, releaseEngineTickLease } from './tick-lease'
+import { acquireEngineTickLease, ENGINE_TICK_LEASE_ID, ENGINE_TICK_LEASE_MS, readEngineTickLease, renewEngineTickLease, releaseEngineTickLease } from './tick-lease'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
 afterEach(() => { fixture?.close(); fixture = null })
 
 describe('cross-Worker engine tick lease', () => {
+  it('reports active and expired leases without exposing the owner token', async () => {
+    fixture = await createWorldFixture()
+    const f = fixture
+    expect(await readEngineTickLease(f.db, 10_000)).toBeNull()
+    expect(await acquireEngineTickLease(f.db, 'private-owner', 10_000)).toBe(true)
+    expect(await readEngineTickLease(f.db, 10_001)).toMatchObject({ id: ENGINE_TICK_LEASE_ID,
+      state: 'active', leaseUntil: 10_000 + ENGINE_TICK_LEASE_MS, remainingMs: ENGINE_TICK_LEASE_MS - 1 })
+    const expired = await readEngineTickLease(f.db, 10_000 + ENGINE_TICK_LEASE_MS)
+    expect(expired).toMatchObject({ state: 'expired', remainingMs: 0 })
+    expect(expired).not.toHaveProperty('ownerToken')
+  })
+
   it('allows one atomic owner, expires safely, and fences the previous owner', async () => {
     fixture = await createWorldFixture()
     const f = fixture

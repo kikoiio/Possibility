@@ -3,6 +3,7 @@ import type { Db } from '../db/client'
 import {
   events, forkSnapshots, personStates, timelines, universeEvidence, voxelEventProjections,
   worldCommands, worldFacts, worldPersons, worlds, worldSceneRevisions, worldScenes,
+  timelineSceneHeads, timelineSceneRevisions,
 } from '../db/schema'
 
 /** S2/F4：克隆完整性核验——克隆批提交后、会话状态变更前执行；全部批量查询,无逐行往返(N3) */
@@ -38,7 +39,9 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
   const [clonedWorld, sourceTimelines, clonedTimelines, sourceLinks, clonedLinks,
     sourceStateCount, clonedStateCount, sourceEventCount, clonedEventCount,
     sourceProjectionCount, clonedProjectionCount, sourceSnapshotCount, clonedSnapshotCount,
-    scene, latestSceneRevision, clonedStateRows, clonedFactRows, clonedEventRows, evidenceRows, clonedCommandRows] = await Promise.all([
+    scene, latestSceneRevision, sourceTimelineSceneRevisionRows, clonedTimelineSceneRevisionRows,
+    sourceTimelineSceneHeadRows, clonedTimelineSceneHeadRows,
+    clonedStateRows, clonedFactRows, clonedEventRows, evidenceRows, clonedCommandRows] = await Promise.all([
     db.select().from(worlds).where(eq(worlds.id, input.worldId)).get(),
     db.select({ id: timelines.id }).from(timelines).where(eq(timelines.worldId, input.sourceWorldId)).all(),
     db.select().from(timelines).where(eq(timelines.worldId, input.worldId)).all(),
@@ -55,6 +58,18 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
     db.select().from(worldScenes).where(eq(worldScenes.worldId, input.worldId)).get(),
     db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, input.worldId))
       .orderBy(desc(worldSceneRevisions.version)).limit(1).get(),
+    sourceTimelineIdList.length
+      ? db.select().from(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, sourceTimelineIdList)).all()
+      : [],
+    clonedTimelineIdList.length
+      ? db.select().from(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, clonedTimelineIdList)).all()
+      : [],
+    sourceTimelineIdList.length
+      ? db.select().from(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, sourceTimelineIdList)).all()
+      : [],
+    clonedTimelineIdList.length
+      ? db.select().from(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, clonedTimelineIdList)).all()
+      : [],
     clonedTimelineIdList.length ? db.select({ personId: personStates.personId }).from(personStates).where(inArray(personStates.timelineId, clonedTimelineIdList)).all() : [],
     clonedTimelineIdList.length ? db.select({ sourceCommandId: worldFacts.sourceCommandId }).from(worldFacts).where(inArray(worldFacts.timelineId, clonedTimelineIdList)).all() : [],
     clonedTimelineIdList.length ? db.select({ actorPersonId: events.actorPersonId }).from(events).where(inArray(events.timelineId, clonedTimelineIdList)).all() : [],
@@ -76,9 +91,50 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
   expectCount('events_count_mismatch', 'events', sourceEventCount, clonedEventCount)
   expectCount('projection_count_mismatch', 'voxel event projections', sourceProjectionCount, clonedProjectionCount)
   expectCount('fork_snapshot_missing', 'fork snapshots', sourceSnapshotCount, clonedSnapshotCount)
+  expectCount('timeline_scene_revision_count_mismatch', 'timeline scene revisions', sourceTimelineSceneRevisionRows.length, clonedTimelineSceneRevisionRows.length)
+  expectCount('timeline_scene_head_count_mismatch', 'timeline scene heads', sourceTimelineSceneHeadRows.length, clonedTimelineSceneHeadRows.length)
 
   if (!scene) push('scene_revision_missing', `world scene missing for ${input.worldId}`)
   if (!latestSceneRevision) push('scene_revision_missing', `no scene revision for ${input.worldId}`)
+
+  // X1 scene history must be wholly remapped into the cloned world. In
+  // particular, a copied parent or head revision must never point to a source
+  // revision, even when the source history itself contains a broken link.
+  const sourceTimelineSet = new Set(sourceTimelineIdList)
+  const clonedTimelineSet = new Set(clonedTimelineIdList)
+  const sourceSceneRevisionIdSet = new Set(sourceTimelineSceneRevisionRows.map(row => row.id))
+  const clonedSceneRevisionIdSet = new Set(clonedTimelineSceneRevisionRows.map(row => row.id))
+  for (const row of clonedTimelineSceneRevisionRows) {
+    if (row.worldId !== input.worldId || !clonedTimelineSet.has(row.timelineId)) {
+      push('timeline_scene_revision_scope_mismatch', `revision ${row.id} is outside cloned world/timeline scope`)
+    }
+    if (sourceSceneRevisionIdSet.has(row.id)) {
+      push('timeline_scene_revision_source_leak', `cloned revision ${row.id} reuses a source revision id`)
+    }
+    if (row.historyParentRevisionId && !clonedSceneRevisionIdSet.has(row.historyParentRevisionId)) {
+      push('timeline_scene_revision_dangling_parent', `revision ${row.id} references unknown cloned parent ${row.historyParentRevisionId}`)
+    }
+  }
+  for (const row of clonedTimelineSceneHeadRows) {
+    if (row.worldId !== input.worldId || !clonedTimelineSet.has(row.timelineId)) {
+      push('timeline_scene_head_scope_mismatch', `head for ${row.timelineId} is outside cloned world/timeline scope`)
+    }
+    if (!clonedSceneRevisionIdSet.has(row.currentRevisionId)) {
+      push('timeline_scene_head_dangling_revision', `head for ${row.timelineId} references unknown revision ${row.currentRevisionId}`)
+    }
+    if (sourceSceneRevisionIdSet.has(row.currentRevisionId)) {
+      push('timeline_scene_head_source_leak', `head for ${row.timelineId} references source revision ${row.currentRevisionId}`)
+    }
+    const revision = clonedTimelineSceneRevisionRows.find(candidate => candidate.id === row.currentRevisionId)
+    if (revision && (revision.timelineId !== row.timelineId || revision.version !== row.currentVersion)) {
+      push('timeline_scene_head_version_mismatch', `head for ${row.timelineId} does not match its current revision`)
+    }
+  }
+  // Keep this explicit so a malformed map cannot silently make source rows
+  // appear to be part of the clone while still passing count checks.
+  if (sourceTimelineSet.size !== sourceTimelineIdList.length || clonedTimelineSet.size !== clonedTimelineIdList.length) {
+    push('timeline_scope_mapping_invalid', 'timeline scope contains duplicate ids')
+  }
 
   const evidenceByTimeline = new Map(evidenceRows.map(row => [row.timelineId, row]))
   for (const timeline of clonedTimelines) {

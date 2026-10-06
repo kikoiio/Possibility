@@ -324,11 +324,11 @@ describe('A1 legacy migration', () => {
 })
 
 describe('A1 schema', () => {
-  it('0037 为最大迁移编号，DDL 与 schema 一致，唯一约束生效', async () => {
-    expect(migrationFiles().at(-1)).toBe('0037_scene_compatibility.sql')
+  it('0038 为最大迁移编号，DDL 与 schema 一致，唯一约束生效', async () => {
+    expect(migrationFiles().at(-1)).toBe('0038_timeline_scene_versions.sql')
     const journal = JSON.parse(readFileSync(join(drizzleDir, 'meta/_journal.json'), 'utf8')) as { entries: Array<{ tag: string }> }
-    expect(journal.entries.at(-1)?.tag).toBe('0037_scene_compatibility')
-    expect(existsSync(join(drizzleDir, 'meta/0037_snapshot.json'))).toBe(true)
+    expect(journal.entries.at(-1)?.tag).toBe('0038_timeline_scene_versions')
+    expect(existsSync(join(drizzleDir, 'meta/0038_snapshot.json'))).toBe(true)
 
     const { db, sqlite, close } = createTestDb()
     try {

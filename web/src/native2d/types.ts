@@ -46,6 +46,26 @@ export interface WorldResident {
   readonly activity: string | null
 }
 
+/** Environment facts are copied from the account snapshot without interpretation. */
+export interface WorldEnvironmentFact {
+  readonly id: string
+  readonly locationName: string | null
+  readonly condition: string
+  readonly value: string
+  readonly simTime: string
+  readonly version: number
+}
+
+export type WorldRuntimeStatus = 'running' | 'paused' | 'capped' | 'archived'
+
+export interface WorldRuntimeState {
+  readonly status: WorldRuntimeStatus
+  readonly pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
+  readonly callsToday: number
+  readonly worldModelVersion: number | null
+  readonly evidenceStatus: 'structured' | 'legacy'
+}
+
 export interface WorldReadModel {
   readonly scope: SampleScope
   readonly worldName: string
@@ -54,6 +74,9 @@ export interface WorldReadModel {
   readonly stateVersion: number | null
   readonly locations: readonly WorldLocation[]
   readonly residents: readonly WorldResident[]
+  /** Account backed snapshots include these fields; fixtures may omit them. */
+  readonly environment?: readonly WorldEnvironmentFact[]
+  readonly runtime?: WorldRuntimeState
 }
 
 export type ReadState =
@@ -278,6 +301,8 @@ export interface ScenePresentation {
   readonly residents: readonly WorldResident[]
   readonly residentPlacements: readonly ResidentPlacement[]
   readonly locations: readonly PresentedLocation[]
+  /** Optional D3 environment projection consumed by 2D visuals. */
+  readonly environment?: import('./projection').Native2dEnvironmentPresentation
 }
 
 export type ViewportEvent =
@@ -318,9 +343,9 @@ export interface LayoutEditor {
 }
 
 export interface LayoutRepository {
-  load(scope: SampleScope): RestoreResult
-  save(layout: LayoutState): SaveResult
-  reset(scope: SampleScope): SaveResult
+  load(scope: SampleScope): RestoreResult | Promise<RestoreResult>
+  save(layout: LayoutState): SaveResult | Promise<SaveResult>
+  reset(scope: SampleScope): SaveResult | Promise<SaveResult>
 }
 
 export interface Native2dViewport {

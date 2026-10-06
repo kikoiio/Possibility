@@ -5,6 +5,8 @@
  */
 export interface SceneLifeOverlay {
   timelineId: string; simNow: string; weather: string | null; timeOfDay: 'day' | 'dusk' | 'night' | 'dawn'
+  /** D3 finite lighting value; omitted by legacy snapshots. */
+  lighting?: 'day' | 'dusk' | 'night' | null
   persons: { personId: string; locationName: string; activity: string; mood: string }[]
   locationStates: { locationName: string; visualState: string }[]
 }

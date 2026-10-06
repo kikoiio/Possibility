@@ -11,14 +11,14 @@ interface ForkEvidence {
   provenance: 'snapshot' | 'legacy'; sourceStateVersion: number | null; worldModelVersion: number | null
   scenario: { name?: string; whatIf: string | null; startTime: string | null; changedVariable: string | null; participants: string[]; invariants: string[] } | null
 }
-interface StateEvidence { timelineId: string; simTime: string; updatedRealAt: string }
+interface StateEvidence { timelineId: string; simTime: string; updatedRealAt: string; observation?: 'current' }
 interface CompareEvent { id: string; simTime: string; title: string; description: string; timelineId?: string }
 interface Comparison {
   left: { id: string; simNow: string }; right: { id: string; simNow: string }
   timeAlignment: 'same_sim_time' | 'different_sim_times'
   sharedForkOrigin: { timelineId: string; leftFork: ForkEvidence | null; rightFork: ForkEvidence | null } | null
   differences: {
-    states: { personId: string; changes: {field:string;left:string|null;right:string|null;leftEvidence:StateEvidence|null;rightEvidence:StateEvidence|null}[]}[]
+    states: { personId: string; personName?: string | null; changes: {field:string;left:string|null;right:string|null;leftEvidence:StateEvidence|null;rightEvidence:StateEvidence|null}[]}[]
     facts: { key: string; left: { value: unknown; factId: string; version: number; simTime: string } | null; right: { value: unknown; factId: string; version: number; simTime: string } | null }[]
     worldModelVersions: { left: number | null; right: number | null }
     events: {shared: CompareEvent[]; leftOnly: CompareEvent[]; rightOnly: CompareEvent[]}
@@ -35,8 +35,22 @@ export default function ComparePanel({ worldId, currentTimelineId, timelines, on
     : timelines.find(t => t.id !== currentTimelineId)?.id) ?? currentTimelineId
   const [right, setRight] = useState(initialRightTimelineId ?? comparisonTarget)
   const [data, setData] = useState<Comparison | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { setData(null); setError(''); if (left === right) { setData(null); return } let live = true; (loadComparison ? loadComparison(left, right) : lifeApi.compare(worldId, left, right)).then(v => { if (live) setData(v as Comparison) }).catch(e => { if (live) setError(e instanceof Error ? e.message : '对照失败') }); return () => { live = false } }, [worldId, left, right, loadComparison])
+  const [retryToken, setRetryToken] = useState(0)
+  useEffect(() => {
+    setData(null)
+    setError('')
+    setLoading(false)
+    if (left === right) return
+    let live = true
+    setLoading(true)
+    Promise.resolve().then(() => loadComparison ? loadComparison(left, right) : lifeApi.compare(worldId, left, right))
+      .then(value => { if (live) setData(value as Comparison) })
+      .catch(cause => { if (live) setError(cause instanceof Error ? cause.message : '对照失败') })
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [worldId, left, right, loadComparison, retryToken])
   const label = (id: string) => { const timeline = timelines.find(t => t.id === id); return timeline ? timelineOptionLabel(timeline) : '未知时间线' }
   const zoneForTimeline = (id: string | null | undefined) => timelines.find(t => t.id === id)?.timeZone ?? timelines[0]?.timeZone
   const fmt = (value: string | null | undefined, timelineId?: string | null) => value ? formatWorldTime(value, zoneForTimeline(timelineId)) : '未知时间'
@@ -44,7 +58,8 @@ export default function ComparePanel({ worldId, currentTimelineId, timelines, on
     <div className="flex items-center justify-between"><div><h2 className="font-story text-lg text-ink">两种人生</h2><p className="mt-1 text-xs text-ink-faint">这里展示记录差异，不把差异冒充成因果证明。</p></div><div className="flex items-center gap-2"><button data-testid="compare-split-entry" disabled={left === right} onClick={() => navigate(`/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`)} className="rounded-full border border-ink-line px-3 py-1 text-xs text-ink-soft hover:bg-paper-deep disabled:text-ink-faint">分屏查看</button><button onClick={onClose} className="text-xs text-ink-faint">关闭</button></div></div>
     <div className="mt-4 grid grid-cols-2 gap-2"><label className="text-xs text-ink-faint">左侧<select value={left} onChange={e => setLeft(e.target.value)} className="mt-1 block w-full rounded-lg border border-ink-line bg-sheet px-2 py-1.5 text-xs text-ink">{timelines.map(t => <option key={t.id} value={t.id}>{label(t.id)} · {formatWorldTime(t.simNow, t.timeZone)}</option>)}</select></label><label className="text-xs text-ink-faint">右侧<select value={right} onChange={e => setRight(e.target.value)} className="mt-1 block w-full rounded-lg border border-ink-line bg-sheet px-2 py-1.5 text-xs text-ink">{timelines.map(t => <option key={t.id} value={t.id}>{label(t.id)} · {formatWorldTime(t.simNow, t.timeZone)}</option>)}</select></label></div>
     {left === right && <p className="py-12 text-center text-sm text-ink-faint">请选择两条不同的时间线。</p>}
-    {error && <p className="mt-3 rounded bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+    {loading && <p className="py-12 text-center text-sm text-ink-faint" role="status">正在读取两条时间线的记录…</p>}
+    {error && <div className="mt-3 rounded bg-red-50 px-3 py-2 text-xs text-red-600"><p>{error}</p><button type="button" onClick={() => setRetryToken(token => token + 1)} className="mt-2 rounded border border-red-200 px-2 py-1">重试读取</button></div>}
     {data && <div className="mt-5 space-y-4">
       <p className={`rounded-lg px-3 py-2 text-xs ${data.timeAlignment === 'same_sim_time' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
         {data.timeAlignment === 'same_sim_time' ? '两线已对齐到相同世界时间。' : '两线世界时间尚未对齐；以下只是各自当前状态，不能直接解释为同一时刻的结果。'}

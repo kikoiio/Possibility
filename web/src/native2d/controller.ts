@@ -56,6 +56,7 @@ import type {
   Native2dViewport,
   ReadState,
   RestoreResult,
+  SaveResult,
   SampleScope,
   SceneDefinition,
   ScenePresentation,
@@ -183,6 +184,8 @@ export function createSampleController(options: SampleControllerOptions): Sample
   let editor: LayoutEditor | null = null
   let undoDepth = 0
   let hasStoredRecord = false
+  let layoutRequestSeq = 0
+  let saveRequestSeq = 0
 
   let state: SampleControllerState = {
     readState: { status: 'loading', lastGood: null, errorMessage: null, receivedAt: null },
@@ -308,9 +311,12 @@ export function createSampleController(options: SampleControllerOptions): Sample
       save: { status: 'clean' },
       notice: null,
     })
-    loadLayoutForScope(model.scope)
-    const presentation = rebuildPresentation()
-    update({ presentation, canUndo: undoDepth > 0 })
+    const layoutSeq = ++layoutRequestSeq
+    void loadLayoutForScope(model.scope, layoutSeq).then(() => {
+      if (disposed || layoutSeq !== layoutRequestSeq) return
+      const presentation = rebuildPresentation()
+      update({ presentation, canUndo: undoDepth > 0 })
+    })
   }
 
   function applyReadFailure(message: string): void {
@@ -340,8 +346,14 @@ export function createSampleController(options: SampleControllerOptions): Sample
   /* T38 布局恢复与保存                                                          */
   /* ------------------------------------------------------------------------ */
 
-  function loadLayoutForScope(scope: SampleScope): void {
-    const result: RestoreResult = repository.load(scope)
+  async function loadLayoutForScope(scope: SampleScope, seq = ++layoutRequestSeq): Promise<void> {
+    let result: RestoreResult
+    try {
+      result = await repository.load(scope)
+    } catch (error) {
+      result = { status: 'error', reason: 'storage_error', message: describeError(error) }
+    }
+    if (disposed || seq !== layoutRequestSeq) return
     let layout: LayoutState
     let restore: RestoreState
     switch (result.status) {
@@ -377,15 +389,26 @@ export function createSampleController(options: SampleControllerOptions): Sample
   function saveLayout(): void {
     const layout = state.layout
     if (!layout) return
-    const result = repository.save(layout)
-    if (result.ok) {
-      hasStoredRecord = true
-      update({ save: { status: 'clean' } })
-    } else {
-      update({
-        save: { status: 'unsaved', message: `布局尚未保存：${result.message}` },
-        notice: `保存失败：${result.message}（内存布局与撤销记录保留，可重试保存）`,
-      })
+    const seq = ++saveRequestSeq
+    const complete = (result: SaveResult): void => {
+      if (disposed || seq !== saveRequestSeq || state.layout !== layout || !state.readState.lastGood
+        || !sameScope(state.readState.lastGood.scope, layout.scope)) return
+      if (result.ok) {
+        hasStoredRecord = true
+        update({ save: { status: 'clean' } })
+      } else {
+        update({
+          save: { status: 'unsaved', message: `布局尚未保存：${result.message}` },
+          notice: `保存失败：${result.message}（内存布局与撤销记录保留，可重试保存）`,
+        })
+      }
+    }
+    try {
+      const result = repository.save(layout)
+      if (result instanceof Promise) void result.then(complete, error => complete({ ok: false, reason: 'storage_error', message: describeError(error) }))
+      else complete(result)
+    } catch (error) {
+      complete({ ok: false, reason: 'storage_error', message: describeError(error) })
     }
   }
 
@@ -748,8 +771,11 @@ export function createSampleController(options: SampleControllerOptions): Sample
         return
       }
       // retry：重新读取存储（覆盖读取异常等可恢复故障）。
-      const result = repository.load(scope)
-      if (result.status === 'ready') {
+      const seq = ++layoutRequestSeq
+      void Promise.resolve().then(() => repository.load(scope)).then(result => {
+        if (disposed || seq !== layoutRequestSeq || !state.readState.lastGood
+          || !sameScope(state.readState.lastGood.scope, scope)) return
+        if (result.status === 'ready') {
         editor = createLayoutEditor(scene, result.layout)
         undoDepth = 0
         hasStoredRecord = true
@@ -761,20 +787,27 @@ export function createSampleController(options: SampleControllerOptions): Sample
         })
         const presentation = rebuildPresentation()
         update({ presentation })
-      } else if (result.status === 'none') {
+        } else if (result.status === 'none') {
         const layout = createInitialLayout(scene, scope)
         editor = createLayoutEditor(scene, layout)
         undoDepth = 0
-        hasStoredRecord = false
+        // Server reset is a versioned baseline revision, so a head still exists.
+        hasStoredRecord = true
         update({ layout, restore: { status: 'ok' }, canUndo: false, notice: null })
         const presentation = rebuildPresentation()
         update({ presentation })
-      } else {
+        } else {
         update({
           restore: { status: 'pending', kind: result.status, message: result.message },
-          notice: `重新读取本地布局仍失败：${result.message}`,
+          notice: `重新读取布局仍失败：${result.message}`,
         })
-      }
+        }
+      }, error => {
+        if (!disposed && seq === layoutRequestSeq) update({
+          restore: { status: 'pending', kind: 'error', message: describeError(error) },
+          notice: `重新读取布局失败：${describeError(error)}`,
+        })
+      })
     },
 
     requestReset(): void {
@@ -797,34 +830,43 @@ export function createSampleController(options: SampleControllerOptions): Sample
       if (disposed) return
       const pending = state.pendingReset
       if (!pending) return
-      const result = repository.reset(pending.scope)
-      if (!result.ok) {
-        // 清除失败：保留当前布局与记录。
+      const scope = pending.scope
+      const seq = ++layoutRequestSeq
+      const complete = (result: SaveResult): void => {
+        if (disposed || seq !== layoutRequestSeq || !state.readState.lastGood
+          || !sameScope(state.readState.lastGood.scope, scope)) return
+        if (!result.ok) {
+          // 清除失败：保留当前布局与记录。
+          update({ pendingReset: null, notice: `重置失败：${result.message}（当前布局与服务端记录保持不变）` })
+          return
+        }
+        // 成功后才恢复基线布局并清空撤销栈。
+        const layout = createInitialLayout(scene, scope)
+        editor = createLayoutEditor(scene, layout)
+        undoDepth = 0
+        hasStoredRecord = false
+        viewport?.setMovePreview(null)
+        viewport?.setMoveMode?.(null)
         update({
+          layout,
+          restore: { status: 'ok' },
+          save: { status: 'clean' },
+          moveMode: null,
+          movePreview: null,
+          canUndo: false,
           pendingReset: null,
-          notice: `重置失败：${result.message}（当前布局与本地记录保持不变）`,
+          notice: '已恢复初始布局',
         })
-        return
+        const presentation = rebuildPresentation()
+        update({ presentation })
       }
-      // 成功后才恢复基线布局并清空撤销栈。
-      const layout = createInitialLayout(scene, pending.scope)
-      editor = createLayoutEditor(scene, layout)
-      undoDepth = 0
-      hasStoredRecord = false
-      viewport?.setMovePreview(null)
-      viewport?.setMoveMode?.(null)
-      update({
-        layout,
-        restore: { status: 'ok' },
-        save: { status: 'clean' },
-        moveMode: null,
-        movePreview: null,
-        canUndo: false,
-        pendingReset: null,
-        notice: '已恢复初始布局',
-      })
-      const presentation = rebuildPresentation()
-      update({ presentation })
+      try {
+        const result = repository.reset(scope)
+        if (result instanceof Promise) void result.then(complete, error => complete({ ok: false, reason: 'storage_error', message: describeError(error) }))
+        else complete(result)
+      } catch (error) {
+        complete({ ok: false, reason: 'storage_error', message: describeError(error) })
+      }
     },
 
     cancelReset(): void {
@@ -840,6 +882,9 @@ export function createSampleController(options: SampleControllerOptions): Sample
     dispose(): void {
       if (disposed) return
       disposed = true
+      // 使读取与持久化操作中的晚到响应失效。
+      layoutRequestSeq += 1
+      saveRequestSeq += 1
       // 取消进行中读取；序号失效使晚到结果被过滤，卸载后不再更新状态。
       requestSeq += 1
       inFlight?.abort()

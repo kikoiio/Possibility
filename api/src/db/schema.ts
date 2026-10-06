@@ -177,6 +177,40 @@ export const timelines = sqliteTable('timelines', {
   forkSnapshotJson: text('fork_snapshot_json'),
 })
 
+/** Scene geometry has its own immutable revision chain per timeline and representation. */
+export const timelineSceneRevisions = sqliteTable('timeline_scene_revisions', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  representation: text('representation').notNull(),
+  version: integer('version').notNull(),
+  historyParentRevisionId: text('history_parent_revision_id'),
+  requestId: text('request_id').notNull(),
+  contentHash: text('content_hash').notNull(),
+  snapshotJson: text('snapshot_json').notNull(),
+  summary: text('summary').notNull(),
+  kind: text('kind').notNull(),
+  validationJson: text('validation_json'),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('timeline_scene_revision_version').on(t.worldId, t.timelineId, t.representation, t.version),
+  uniqueIndex('timeline_scene_revision_request').on(t.worldId, t.timelineId, t.representation, t.requestId),
+  index('timeline_scene_revision_history').on(t.worldId, t.timelineId, t.representation, t.version),
+  index('timeline_scene_revision_parent').on(t.historyParentRevisionId),
+])
+
+export const timelineSceneHeads = sqliteTable('timeline_scene_heads', {
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  representation: text('representation').notNull(),
+  currentRevisionId: text('current_revision_id').notNull().references(() => timelineSceneRevisions.id),
+  currentVersion: integer('current_version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  primaryKey({ columns: [t.worldId, t.timelineId, t.representation] }),
+  uniqueIndex('timeline_scene_head_revision').on(t.currentRevisionId),
+])
+
 /** Child-timeline memories written before the resident-safe prompt cutover require review. */
 export const residentMemorySafety = sqliteTable('resident_memory_safety', {
   timelineId: text('timeline_id').primaryKey().references(() => timelines.id),

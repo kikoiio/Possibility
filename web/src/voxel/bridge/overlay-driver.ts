@@ -1,6 +1,7 @@
 import type { SceneLifeOverlay } from '@possibility/scene-contract'
 import type { VoxelCoord } from '@possibility/voxel-contract'
 import type { ResidentRenderState } from '../engine'
+import type { TimelineEnvironmentProjection, EnvironmentValue } from '../../scene/life/environment'
 import { wanderDestination, wanderSlot, wanderWorldDay } from './wander'
 
 /** 引擎侧最小接口（便于单测替身） */
@@ -33,13 +34,43 @@ export function mapSimTime(timeOfDay: SceneLifeOverlay['timeOfDay'], simNow: str
   return { dawn: 0.23, day: 0.5, dusk: 0.74, night: 0 }[timeOfDay]
 }
 
-/** overlay 天气字符串 → 引擎天气状态 */
+/** Finite weather value → engine weather state. */
+export function mapEnvironmentWeather(weather: EnvironmentValue | null): { rain?: number; fog?: number } {
+  if (weather === 'rain') return { rain: 1 }
+  if (weather === 'fog') return { fog: 1 }
+  return {}
+}
+
+/** Finite lighting value → engine clock phase. */
+export function mapEnvironmentLighting(lighting: EnvironmentValue | null): number | null {
+  if (lighting === 'day') return 0.5
+  if (lighting === 'dusk') return 0.74
+  if (lighting === 'night') return 0
+  return null
+}
+
+/**
+ * Shared projection → 3D visual inputs. No scene or simulation state is
+ * changed here; callers only pass the returned values to the render engine.
+ */
+export function projectEnvironmentFor3d(projection: TimelineEnvironmentProjection): {
+  weather: { rain?: number; fog?: number }
+  lighting: EnvironmentValue | null
+} {
+  const weather = projection.world.weather?.value ?? null
+  const lighting = projection.world.lighting?.value ?? null
+  return { weather: mapEnvironmentWeather(weather), lighting }
+}
+
+/** Legacy overlay weather bridge. Scene overlays now carry finite labels. */
 export function mapWeather(weather: string | null): { rain?: number; snow?: number; fog?: number } {
   if (!weather) return {}
   const w = weather.toLowerCase()
   if (/雨|rain/.test(w)) return { rain: 1 }
   if (/雪|snow/.test(w)) return { snow: 1 }
   if (/雾|fog|mist/.test(w)) return { fog: 1 }
+  // Kept for old scene-contract snapshots; finite D3 projections never emit
+  // snow and therefore never reach this compatibility branch.
   return {}
 }
 
@@ -50,7 +81,8 @@ export class OverlayDriver {
   constructor(private opts: OverlayDriverOptions) {}
 
   apply(overlay: SceneLifeOverlay): void {
-    this.opts.engine.setTimeOfDay(mapSimTime(overlay.timeOfDay, overlay.simNow))
+    const lighting = mapEnvironmentLighting(overlay.lighting ?? null)
+    this.opts.engine.setTimeOfDay(lighting ?? mapSimTime(overlay.timeOfDay, overlay.simNow))
     this.opts.engine.setWeather(mapWeather(overlay.weather))
     this.opts.engine.setSimNow(overlay.simNow)
     const worldDay = wanderWorldDay(overlay.simNow)

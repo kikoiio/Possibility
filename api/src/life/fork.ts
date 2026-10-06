@@ -4,6 +4,7 @@ import type { Db } from '../db/client'
 import { commitments, dialogueTurns, dialogues, events, memories, personaMessages, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMemories, type ForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines, SNAPSHOT_REF_JSON, writeForkSnapshot } from './snapshot-store'
+import { timelineSceneForkStatements } from '../scenes/repository'
 import type { ForkScenario } from '../agent/types'
 import { ensureUniverseRevision, PROJECTION_DOMAINS, type ProjectionDomain } from '../world-state/model'
 import { reconstructAt, type Reconstruction } from '../world-state/reconstruct'
@@ -278,9 +279,19 @@ export async function forkTimeline(
   const restorePause = pausedInitialization
     ? db.update(worlds).set({ status: 'paused' }).where(and(eq(worlds.id, worldId), eq(worlds.status, 'running')))
     : null
+  // Scene geometry is independent of life state, but a fork must retain the
+  // complete source snapshot at this boundary. Keep the scene writes in the
+  // same batch as the child timeline so a partial fork cannot expose it.
+  const sceneForkWrites = await timelineSceneForkStatements(db, {
+    source: { worldId, timelineId: source.id, representation: 'voxel' },
+    target: { worldId, timelineId: forkId, representation: 'voxel' },
+    requestId: requestId ?? forkId,
+    createdAt: now,
+  })
   const forkWrites: BatchItem<'sqlite'>[] = [
     ...(pauseForInitialization ? [pauseForInitialization] : []),
     insertTimeline,
+    ...sceneForkWrites,
     writeForkSnapshot(db, forkId, snapshot, now),
     childRevision,
     db.insert(universeEvidence).values({ timelineId: forkId, level: 'complete', assessedVersion: 0,

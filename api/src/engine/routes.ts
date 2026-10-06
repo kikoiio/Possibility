@@ -3,7 +3,7 @@ import { or, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { timelines, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
-import { runTick, TickLeaseLostError } from './tick'
+import { readEngineRuntimeStatus, runTick, TickLeaseLostError } from './tick'
 import type { Env } from '../index'
 
 export const engineRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
@@ -55,5 +55,7 @@ engineRoutes.get('/status', authMiddleware, async (c) => {
       })),
     })
   }
-  return c.json({ worlds: out })
+  // Keep scheduler health alongside world state so a deployment can distinguish
+  // an intentionally paused world from a stopped/expired engine worker.
+  return c.json({ engine: await readEngineRuntimeStatus(db), worlds: out })
 })

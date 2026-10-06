@@ -5,6 +5,7 @@ import {
   chapters, commitments, conversations, dialogueTurns, dialogues, events, forkSnapshots, memories, messages, personaMessages,
   persons, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts,
   worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits,
+  timelineSceneHeads, timelineSceneRevisions,
 } from '../db/schema'
 import { cloneSceneStatements } from '../scenes/repository'
 
@@ -82,7 +83,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   const sourceTimelineIds = sourceTimelines.map(row => row.id)
   const [dialogueRows, stateRows, scheduleRows, evidenceRows, revisionRows, commandRows, factRows, eventRows,
     memoryRows, conversationRows, chapterRows, personaMessageRows, commitmentRows, visitRows, modelRows, universeRows, sceneRows, sceneRevisionRows,
-    projectionRows, forkSnapshotRows] = await Promise.all([
+    projectionRows, forkSnapshotRows, timelineSceneRevisionRows, timelineSceneHeadRows] = await Promise.all([
     sourceTimelineIds.length ? db.select().from(dialogues).where(inArray(dialogues.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(personStates).where(inArray(personStates.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(schedules).where(inArray(schedules.timelineId, sourceTimelineIds)).all() : [],
@@ -104,6 +105,8 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     // S2/F5：体素事件投影与分叉快照随克隆复制;日界锚点不复制(可全量回放兜住,日界翻转时再捕获)
     sourceTimelineIds.length ? db.select().from(voxelEventProjections).where(inArray(voxelEventProjections.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(forkSnapshots).where(inArray(forkSnapshots.timelineId, sourceTimelineIds)).all() : [],
+    sourceTimelineIds.length ? db.select().from(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, sourceTimelineIds)).all() : [],
+    sourceTimelineIds.length ? db.select().from(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, sourceTimelineIds)).all() : [],
   ])
 
   const dialogueIds = new Map<string, string>()
@@ -111,11 +114,13 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   const factIds = new Map<string, string>()
   const conversationIds = new Map<string, string>()
   const eventIds = new Map<string, string>()
+  const timelineSceneRevisionIds = new Map<string, string>()
   for (const row of dialogueRows) dialogueIds.set(row.id, await stableId(input.requestId, 'dialogue', row.id))
   for (const row of commandRows) commandIds.set(row.id, await stableId(input.requestId, 'command', row.id))
   for (const row of factRows) factIds.set(row.id, await stableId(input.requestId, 'fact', row.id))
   for (const row of conversationRows) conversationIds.set(row.id, await stableId(input.requestId, 'conversation', row.id))
   for (const row of eventRows) eventIds.set(row.id, await stableId(input.requestId, 'event', row.id))
+  for (const row of timelineSceneRevisionRows) timelineSceneRevisionIds.set(row.id, await stableId(input.requestId, 'timeline-scene-revision', row.id))
 
   // 世界已克隆过(同 requestId 重放):直接返回全量映射,调用方据此做幂等/核验
   if (existing) return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds, eventIds, commandIds }
@@ -196,6 +201,22 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     sourceDialogueId: row.sourceDialogueId ? dialogueIds.get(row.sourceDialogueId) ?? null : null,
   }))), chunk => db.insert(commitments).values(chunk))
   pushInChunks(statements, visitRows.map(row => ({ ...row, userId: input.targetOwnerId, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(worldVisits).values(chunk))
+  // X1: clone timeline-scoped scene history and remap parent revision IDs so
+  // the clone never points back into the source world.
+  pushInChunks(statements, await Promise.all(timelineSceneRevisionRows.map(async row => ({
+    ...row,
+    id: timelineSceneRevisionIds.get(row.id)!,
+    worldId,
+    timelineId: timelineIds.get(row.timelineId)!,
+    historyParentRevisionId: row.historyParentRevisionId ? timelineSceneRevisionIds.get(row.historyParentRevisionId) ?? null : null,
+    requestId: await stableId(input.requestId, 'timeline-scene-request', row.requestId),
+  }))), chunk => db.insert(timelineSceneRevisions).values(chunk))
+  pushInChunks(statements, timelineSceneHeadRows.map(row => ({
+    ...row,
+    worldId,
+    timelineId: timelineIds.get(row.timelineId)!,
+    currentRevisionId: timelineSceneRevisionIds.get(row.currentRevisionId)!,
+  })), chunk => db.insert(timelineSceneHeads).values(chunk))
   // A1 B32：场景修订/指针经批内工厂接入——新 clone-copy 依据（来源指向源世界）、
   // 按重映射文档重算哈希、批内后置断言；不再裸 insert 携带源行旧证明与旧哈希。
   const sourceLocations = (() => {
@@ -269,6 +290,8 @@ export async function deleteClonedWorldGraph(db: Db, cloned: CloneWorldGraphResu
   del(timelineIdList.length > 0, db.delete(universeRevisions).where(inArray(universeRevisions.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(forkSnapshots).where(inArray(forkSnapshots.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(voxelEventProjections).where(inArray(voxelEventProjections.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, timelineIdList)))
+  del(timelineIdList.length > 0, db.delete(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, timelineIdList)))
   del(true, db.delete(worldCommands).where(eq(worldCommands.worldId, worldId)))
   del(true, db.delete(chapters).where(eq(chapters.worldId, worldId)))
   del(true, db.delete(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)))

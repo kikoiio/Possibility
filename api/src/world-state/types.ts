@@ -1,3 +1,5 @@
+import type { EnvironmentCondition, EnvironmentValueKind } from './environment'
+
 export type WorldAction =
   | { type: 'enter'; personId: string; to: string }
   | { type: 'move'; personId: string; to: string }
@@ -50,6 +52,17 @@ export type WorldAction =
       communicationRequestId?: string
     }
 
+/** Structured D3 environment action vocabulary (runtime validation remains in rules.ts). */
+export type EnvironmentAction = {
+  type: 'environment'
+  location: string | null
+  condition: EnvironmentCondition
+  value: EnvironmentValueKind
+}
+
+/** Legacy input shape retained for command parsing before runtime validation. */
+export type UnvalidatedEnvironmentAction = Extract<WorldAction, { type: 'environment' }>
+
 export interface WorldCommandInput {
   id: string
   worldId: string
@@ -63,7 +76,7 @@ export interface WorldCommandInput {
 }
 
 export class WorldStateError extends Error {
-  constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
+  constructor(message: string, readonly status: 400 | 403 | 404 | 409, readonly reasonCode?: string) {
     super(message)
   }
 }

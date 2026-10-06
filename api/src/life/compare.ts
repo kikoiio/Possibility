@@ -8,6 +8,10 @@ import { events, personStates, timelines, universeEvidence, universeRevisions, w
 import type { Env } from '../index'
 import { publicUniverseEvidence } from '../world-state/evidence-status'
 
+/** Keep compare responses bounded while allowing callers to request a smaller view. */
+export const DEFAULT_COMPARE_LIMIT = 100
+export const MAX_COMPARE_LIMIT = 100
+
 function forkEvidence(child: Timeline | undefined) {
   if (!child) return null
   const snapshot = readForkSnapshot(child)
@@ -59,7 +63,16 @@ export function sharedForkOrigin(left: Timeline, right: Timeline, worldTimelines
   }
 }
 
-export async function compareTimelines(db: Db, worldId: string, leftId: string, rightId: string, at?: string) {
+export async function compareTimelines(
+  db: Db,
+  worldId: string,
+  leftId: string,
+  rightId: string,
+  at?: string,
+  requestedLimit = DEFAULT_COMPARE_LIMIT,
+) {
+  const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(MAX_COMPARE_LIMIT, requestedLimit) : DEFAULT_COMPARE_LIMIT
   // One read transaction keeps state, clocks, and event evidence on the same database snapshot.
   const [worldTimelinesRaw, states, eventRows, revisions, factRows, evidenceRows] = await db.batch([
     db.select().from(timelines).where(eq(timelines.worldId, worldId)),
@@ -83,16 +96,17 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
     const inherited = readForkSnapshot(timeline)?.worldFacts ?? []
     const local = factRows.filter(fact => fact.timelineId === timeline.id)
     const current = new Map<string, (typeof local)[number] | (typeof inherited)[number]>()
-    if (at) {
+    // A timeline's own clock is always an upper bound. An explicit alignment
+    // time can only move that bound earlier, never expose future records.
+    const cutoff = at && at < timeline.simNow ? at : timeline.simNow
+    if (cutoff) {
       // S1 对齐截断:每 key 取 simTime ≤ T 的最大 version(继承在先,本地同版优先)
       for (const fact of [...inherited, ...local]) {
-        if (fact.simTime > at) continue
+        if (fact.simTime > cutoff) continue
         const key = `${fact.factType}:${fact.subjectId}`
         const prev = current.get(key)
         if (!prev || fact.version >= prev.version) current.set(key, fact)
       }
-    } else {
-      for (const fact of [...inherited, ...local]) current.set(`${fact.factType}:${fact.subjectId}`, fact)
     }
     return {
       worldModelVersion: revision?.worldModelVersion ?? null,
@@ -109,7 +123,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
   const factsByKey = (state: typeof leftWorldState) => new Map(state.current.map(f => [`${f.factType}:${f.subjectId}`, f]))
   const leftFacts = factsByKey(leftWorldState)
   const rightFacts = factsByKey(rightWorldState)
-  const factDifferences = [...new Set([...leftFacts.keys(), ...rightFacts.keys()])].sort().flatMap(key => {
+  const allFactDifferences = [...new Set([...leftFacts.keys(), ...rightFacts.keys()])].sort().flatMap(key => {
     const l = leftFacts.get(key)
     const r = rightFacts.get(key)
     if (JSON.stringify(l?.value ?? null) === JSON.stringify(r?.value ?? null)) return []
@@ -120,13 +134,37 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
   const leftEvents = selectVisibleEvents(eventRows, left, worldTimelines)
   const rightEvents = selectVisibleEvents(eventRows, right, worldTimelines)
   // S1 对齐截断:simTime 模式下三组事件均截到 ≤ T(visibility 水位不动)
-  const leftVisible = at ? leftEvents.events.filter((e) => e.simTime <= at) : leftEvents.events
-  const rightVisible = at ? rightEvents.events.filter((e) => e.simTime <= at) : rightEvents.events
+  const visibleEvents = (selection: ReturnType<typeof selectVisibleEvents>, timeline: Timeline) => {
+    const cutoff = at && at < timeline.simNow ? at : timeline.simNow
+    const seen = new Set<string>()
+    return selection.events.filter((event) => {
+      if (event.simTime > cutoff || seen.has(event.id)) return false
+      seen.add(event.id)
+      return true
+    })
+  }
+  const leftVisible = visibleEvents(leftEvents, left)
+  const rightVisible = visibleEvents(rightEvents, right)
   const leftEventIds = new Set(leftVisible.map((e) => e.id))
   const rightEventIds = new Set(rightVisible.map((e) => e.id))
   const sharedEvents = leftVisible.filter((e) => rightEventIds.has(e.id))
   const leftOnlyEvents = leftVisible.filter((e) => !rightEventIds.has(e.id))
   const rightOnlyEvents = rightVisible.filter((e) => !leftEventIds.has(e.id))
+  const eventGroups = {
+    shared: sharedEvents.slice(0, limit),
+    leftOnly: leftOnlyEvents.slice(0, limit),
+    rightOnly: rightOnlyEvents.slice(0, limit),
+  }
+  const factDifferences = allFactDifferences.slice(0, limit)
+  const capacity = {
+    limit,
+    events: {
+      shared: { returned: eventGroups.shared.length, available: sharedEvents.length, truncated: sharedEvents.length > limit },
+      leftOnly: { returned: eventGroups.leftOnly.length, available: leftOnlyEvents.length, truncated: leftOnlyEvents.length > limit },
+      rightOnly: { returned: eventGroups.rightOnly.length, available: rightOnlyEvents.length, truncated: rightOnlyEvents.length > limit },
+    },
+    facts: { returned: factDifferences.length, available: allFactDifferences.length, truncated: allFactDifferences.length > limit },
+  }
   // 首个分歧:两组独有事件中 simTime 最早者;同时刻取左线(确定性)
   const firstDivergence = [
     ...leftOnlyEvents.map((e) => ({ simTime: e.simTime, eventId: e.id, side: 'left' as const })),
@@ -135,7 +173,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
   const fields = ['location', 'activity', 'mood', 'goal'] as const
   const evidence = (state: typeof personStates.$inferSelect | undefined) => state ? {
     table: 'person_states', personId: state.personId, timelineId: state.timelineId,
-    simTime: state.simTime, updatedRealAt: state.updatedRealAt,
+    simTime: state.simTime, updatedRealAt: state.updatedRealAt, observation: 'current' as const,
   } : null
   const stateDifferences = [...new Set(states.map((s) => s.personId))].sort().flatMap((personId) => {
     const l = states.find((s) => s.personId === personId && s.timelineId === leftId)
@@ -148,6 +186,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
   })
   const timelineEvidence = (t: Timeline, historyComplete: boolean) => ({
     id: t.id, simNow: t.simNow, status: t.status, parentTimelineId: t.parentTimelineId, historyComplete,
+    observation: 'current' as const,
     evidence: t.id === left.id ? leftWorldState.evidence : rightWorldState.evidence,
   })
   return {
@@ -157,6 +196,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
     // S1:对齐时刻回显(null = 未传 simTime)与首个分歧事件
     alignedAt: at ?? null,
     firstDivergence,
+    capacity,
     left: timelineEvidence(left, leftEvents.historyComplete),
     right: timelineEvidence(right, rightEvents.historyComplete),
     sharedForkOrigin: sharedForkOrigin(left, right, worldTimelines),
@@ -165,9 +205,7 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
       facts: factDifferences,
       worldModelVersions: { left: leftWorldState.worldModelVersion, right: rightWorldState.worldModelVersion },
       events: {
-        shared: sharedEvents,
-        leftOnly: leftOnlyEvents,
-        rightOnly: rightOnlyEvents,
+        ...eventGroups,
       },
     },
     limitations: [
@@ -178,6 +216,8 @@ export async function compareTimelines(db: Db, worldId: string, leftId: string, 
         ? ['Legacy fork history lacks an immutable event snapshot; unavailable ancestor events are omitted.'] : []),
       ...(leftWorldState.evidence.level !== 'complete' || rightWorldState.evidence.level !== 'complete'
         ? ['At least one timeline predates structured facts; missing facts mean unknown, not unchanged.'] : []),
+      ...(capacity.facts.truncated || Object.values(capacity.events).some(item => item.truncated)
+        ? [`Comparison output is capped at ${limit} records per event group and fact differences; omitted records remain available through a narrower simTime window.`] : []),
       ...([left, right].some((t) => readForkSnapshot(t)?.reconstruction)
         ? ['One timeline originates from a reconstructed historical checkpoint; the reconstruction is evidence-complete but establishes a starting state, not a cause.'] : []),
     ],
@@ -197,12 +237,21 @@ comparisonRoutes.get('/worlds/:id/compare', async (c) => {
   if (!left || !right) return c.json({ error: 'left 与 right 时间线必填' }, 400)
   // S1:可选对齐时刻(ISO),归一化后按 simTime ≤ T 截断事件与事实
   const simTimeRaw = c.req.query('simTime')?.trim()
+  const limitRaw = c.req.query('limit')?.trim()
   let at: string | undefined
   if (simTimeRaw) {
     if (!Number.isFinite(Date.parse(simTimeRaw))) return c.json({ error: 'simTime 须为合法 ISO 时间' }, 400)
     at = new Date(simTimeRaw).toISOString()
   }
-  const comparison = await compareTimelines(db, world.id, left, right, at)
+  let limit = DEFAULT_COMPARE_LIMIT
+  if (limitRaw) {
+    const parsed = Number(limitRaw)
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_COMPARE_LIMIT) {
+      return c.json({ error: `limit 必须是 1–${MAX_COMPARE_LIMIT} 的整数` }, 400)
+    }
+    limit = parsed
+  }
+  const comparison = await compareTimelines(db, world.id, left, right, at, limit)
   if (!comparison) return c.json({ error: '时间线不存在' }, 404)
   return c.json(comparison)
 })

@@ -27,7 +27,7 @@ import { projectVoxelEvents } from '../voxel/projection'
 import type { AgentStep, StepExecutor } from './steps/types'
 import { advanceWorldClock, recoverDialogueLock, recordResidentState, recordSimulationCheckpoint } from '../world-state/system'
 import { WorldStateError } from '../world-state/types'
-import { acquireEngineTickLease, ENGINE_TICK_HEARTBEAT_MS, renewEngineTickLease, releaseEngineTickLease } from './tick-lease'
+import { acquireEngineTickLease, ENGINE_TICK_HEARTBEAT_MS, readEngineTickLease, renewEngineTickLease, releaseEngineTickLease } from './tick-lease'
 
 type World = typeof worlds.$inferSelect
 
@@ -55,6 +55,10 @@ export interface TickSummary {
     id: string
     capped: boolean
     tickCalls: number
+    /** Last persisted world state; useful when a pause/cap happens during a tick. */
+    status?: string
+    pauseReason?: string | null
+    stopReason?: string
     /** S2/F2：本世界本拍中止原因（截断）；正常推进时缺省 */
     error?: string
     timelines: { id: string; simNow: string; error?: string; steps: StepReport[] }[]
@@ -86,6 +90,25 @@ function tickErrorNote(error: unknown): string {
  * 单飞：上一拍未结束时直接返回（pinger 串行之外的并发调用防护）。
  */
 let tickInFlight = false
+
+export interface EngineRuntimeStatus {
+  /** running = a live lease, stopped = an expired lease, idle = no lease row */
+  state: 'running' | 'stopped' | 'idle'
+  tickInFlight: boolean
+  observedAt: string
+  lease: Awaited<ReturnType<typeof readEngineTickLease>>
+}
+
+/** Read-only scheduler health for deployment evidence and operator diagnostics. */
+export async function readEngineRuntimeStatus(db: Db, now = Date.now()): Promise<EngineRuntimeStatus> {
+  const lease = await readEngineTickLease(db, now)
+  return {
+    state: lease?.state === 'active' ? 'running' : lease ? 'stopped' : 'idle',
+    tickInFlight,
+    observedAt: new Date(now).toISOString(),
+    lease,
+  }
+}
 
 export async function runTick(env: Env, db: Db): Promise<TickSummary | null> {
   if (tickInFlight) return null
@@ -145,7 +168,8 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
       // S2/F2：单世界失败隔离——记录诊断并继续其余世界；租约失效不可隔离,必须停拍
       if (error instanceof TickLeaseLostError) throw error
       console.warn(`[tick] 世界 ${world.id} 本拍中止:`, error instanceof Error ? error.message : error)
-      summary.worlds.push({ id: world.id, capped: false, tickCalls: 0, timelines: [], error: tickErrorNote(error) })
+      summary.worlds.push({ id: world.id, capped: false, tickCalls: 0, status: world.status,
+        pauseReason: world.pauseReason, timelines: [], error: tickErrorNote(error) })
     }
   }
 
@@ -157,7 +181,8 @@ async function runWorldTick(env: Env, db: Db, assertLease: () => Promise<void>, 
   let currentWorld: World = world
   let tickCalls = 0
   const tickBudget: TickBudget = { used: 0, limit: cfg.tickCallCap }
-  const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0, timelines: [] }
+  const worldReport: TickSummary['worlds'][number] = { id: world.id, capped: false, tickCalls: 0,
+    status: world.status, pauseReason: world.pauseReason, timelines: [] }
 
   const activeTimelines = (await db
     .select({ timeline: timelines })
@@ -412,6 +437,17 @@ async function runWorldTick(env: Env, db: Db, assertLease: () => Promise<void>, 
 
     worldReport.timelines.push(tlReport)
     worldReport.tickCalls = tickCalls
+  }
+
+  // Refresh state after all reservations. A budget cap or manual pause may be
+  // committed by another request while this world is being processed.
+  const persisted = await db.select({ status: worlds.status, pauseReason: worlds.pauseReason })
+    .from(worlds).where(eq(worlds.id, world.id)).get()
+  if (persisted) {
+    worldReport.status = persisted.status
+    worldReport.pauseReason = persisted.pauseReason
+    worldReport.capped = persisted.status === 'capped'
+    if (persisted.status !== 'running') worldReport.stopReason = persisted.pauseReason ?? persisted.status
   }
 
   return worldReport

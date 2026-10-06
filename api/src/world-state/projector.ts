@@ -2,6 +2,7 @@ import type { worldCommands, worldFacts } from '../db/schema'
 import { validateKnowledgeChain } from '../agent/knowledge'
 import { summaryLevel } from '../agent/memory'
 import { PROJECTION_DOMAINS, type ProjectionBaseline, type ProjectionDomain, type ProjectionRows } from './model'
+import { normalizeEnvironmentCondition, normalizeEnvironmentValue } from './environment'
 
 export interface ReplayInput {
   worldId: string
@@ -672,8 +673,19 @@ export function reduceProjection(input: ReplayInput): ReplayResult {
     }
     if (action.type === 'environment') {
       const location = typeof action.location === 'string' ? action.location.trim() || null : null
-      const condition = typeof action.condition === 'string' ? action.condition.trim() : ''
+      const conditionText = typeof action.condition === 'string' ? action.condition.trim() : ''
       const valueText = typeof action.value === 'string' ? action.value.trim() : ''
+      const condition = normalizeEnvironmentCondition(conditionText)
+      if (!condition) {
+        report({ kind: 'unsupported', domain: 'history', commandId: command.id,
+          version: command.resultVersion, reasonCode: 'invalid_condition' })
+        continue
+      }
+      if (!valueText || !normalizeEnvironmentValue(condition, valueText)) {
+        report({ kind: 'unsupported', domain: 'history', commandId: command.id,
+          version: command.resultVersion, reasonCode: 'unsupported' })
+        continue
+      }
       let value: Record<string, unknown> | null = null
       try { value = fact ? JSON.parse(fact.valueJson) as Record<string, unknown> : null } catch { /* diagnosed below */ }
       if (!fact || fact.factType !== 'environment' || fact.subjectId !== `${location ?? 'world'}:${condition}`

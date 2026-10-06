@@ -31,11 +31,48 @@ export interface ReturnPage {
   revisionVersion: number
 }
 
+type ReviewEvent = typeof events.$inferSelect & { cursor: number }
+type ReviewFact = typeof worldFacts.$inferSelect
+
+interface ReviewCandidate {
+  stream: 'event' | 'fact'
+  change: ReturnChange
+  event?: ReviewEvent
+  fact?: ReviewFact
+  /** The event represented by a fact is consumed with the fact, when safe. */
+  sourceEvent?: ReviewEvent
+}
+
 const safeJson = (value: string): Record<string, unknown> => {
+  const parsed = parseJsonObject(value)
+  return parsed.value
+}
+
+function parseJsonObject(value: string): { value: Record<string, unknown>; valid: boolean } {
   try {
     const parsed: unknown = JSON.parse(value)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
-  } catch { return {} }
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? { value: parsed as Record<string, unknown>, valid: true }
+      : { value: {}, valid: false }
+  } catch { return { value: {}, valid: false } }
+}
+
+/**
+ * Most commands use `command:${id}` as their event id, but a few stable
+ * actions choose a domain id (commitments and builder interventions). Keeping
+ * this mapping here lets the read path preserve their direct source relation
+ * without relying on a same-time heuristic.
+ */
+function eventIdForCommand(command: typeof worldCommands.$inferSelect): string {
+  const action = safeJson(command.payloadJson)
+  if (action.type === 'commitment'
+    && typeof action.commitmentId === 'string' && typeof action.next === 'string') {
+    return `commitment:${action.commitmentId}:${action.next}`
+  }
+  if (action.type === 'intervention' && typeof action.requestId === 'string') {
+    return `intervention:${action.requestId}`
+  }
+  return `command:${command.id}`
 }
 
 function displayFact(fact: typeof worldFacts.$inferSelect, actorName: string | null, commitmentTitle?: string) {
@@ -75,66 +112,188 @@ export async function getReturnPage(
   requestedLimit = 30,
 ): Promise<ReturnPage> {
   const limit = Math.min(50, Math.max(1, Math.trunc(requestedLimit) || 30))
-  const [eventRows, factRows, revisionRows, nameRows, commitmentRows] = await db.batch([
+  // Fetch a small look-ahead for each ordered stream. The final row is a
+  // sentinel when the stream is longer; it is never used to advance a
+  // watermark, which keeps a page boundary stable when the other stream is
+  // deduplicated against it.
+  const fetchLimit = Math.min(250, Math.max(limit + 2, limit * 3 + 5))
+  const [eventRowsRaw, factRowsRaw, revisionRows, nameRows, commitmentRows] = await db.batch([
     db.select({ event: events, cursor: sql<number>`rowid` }).from(events)
       .where(and(eq(events.timelineId, timelineId), sql`rowid > ${eventCursor}`, lte(events.simTime, simNow)))
-      .orderBy(asc(sql`rowid`)).limit(limit + 1),
+      .orderBy(asc(sql`rowid`)).limit(fetchLimit),
     db.select().from(worldFacts).where(and(eq(worldFacts.timelineId, timelineId), sql`${worldFacts.version} > ${revisionCursor}`, lte(worldFacts.simTime, simNow)))
-      .orderBy(asc(worldFacts.version)).limit(limit + 1),
+      .orderBy(asc(worldFacts.version)).limit(fetchLimit),
     db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, timelineId)),
     db.select({ id: persons.id, name: persons.name }).from(worldPersons).innerJoin(persons, eq(worldPersons.personId, persons.id)).where(eq(worldPersons.worldId, worldId)),
     db.select({ id: commitments.id, title: commitments.title }).from(commitments).where(and(eq(commitments.worldId, worldId), eq(commitments.timelineId, timelineId))),
   ])
-  const hasMoreEvents = eventRows.length > limit
-  const hasMoreFacts = factRows.length > limit
-  const pageEvents = eventRows.slice(0, limit).map(row => ({ ...row.event, cursor: row.cursor }))
-  const pageFacts = factRows.slice(0, limit)
+  const eventRowsHaveMore = eventRowsRaw.length === fetchLimit
+  const factRowsHaveMore = factRowsRaw.length === fetchLimit
+  const eventRows = eventRowsRaw.slice(0, eventRowsHaveMore ? -1 : undefined)
+  const factRows = factRowsRaw.slice(0, factRowsHaveMore ? -1 : undefined)
+  const pageFacts = factRows
   const names = new Map(nameRows.map(row => [row.id, row.name]))
   const titles = new Map(commitmentRows.map(row => [row.id, row.title]))
   const commands = pageFacts.length
     ? await db.select().from(worldCommands).where(and(eq(worldCommands.timelineId, timelineId), inArray(worldCommands.id, pageFacts.map(fact => fact.sourceCommandId))))
     : []
   const commandIds = new Set(commands.map(command => command.id))
-  const matchingEvents = pageFacts.length
+  const commandById = new Map(commands.map(command => [command.id, command]))
+
+  // Resolve all events for the fetched facts in one read. The event id is a
+  // deterministic projection of the command id (with the two domain-specific
+  // ids handled above), so this never turns a same-time row into a false
+  // source relation.
+  const preferredEventIds = commands.map(eventIdForCommand)
+  const matchingEvents = preferredEventIds.length
     ? await db.select({ event: events, cursor: sql<number>`rowid` }).from(events).where(and(
       eq(events.timelineId, timelineId),
-      inArray(events.id, pageFacts.flatMap(fact => [`command:${fact.sourceCommandId}`])),
+      inArray(events.id, preferredEventIds),
+    )).orderBy(asc(sql`rowid`))
+    : []
+  const eventsById = new Map(matchingEvents.map(row => [row.event.id, { ...row.event, cursor: row.cursor } satisfies ReviewEvent]))
+  const eventForFact = (fact: ReviewFact): ReviewEvent | undefined => {
+    const command = commandById.get(fact.sourceCommandId)
+    if (!command) return undefined
+    return eventsById.get(eventIdForCommand(command))
+  }
+
+  const sourceEventByFact = new Map(pageFacts.map(fact => [fact.id, eventForFact(fact)]))
+  const matchedEventIds = new Set([...sourceEventByFact.values()].flatMap(event => event ? [event.id] : []))
+
+  // Facts at or below the supplied revision watermark have already been
+  // acknowledged. If an older client left the event cursor behind, suppress
+  // their corresponding events here so a fact/event pair cannot reappear.
+  const eventVersions = [...new Set(eventRows.map(row => row.event.createdVersion).filter((version): version is number => version !== null))]
+  const acknowledgedFactVersions = revisionCursor > 0 && eventVersions.length
+    ? await db.select({ version: worldFacts.version }).from(worldFacts).where(and(
+      eq(worldFacts.timelineId, timelineId), lte(worldFacts.version, revisionCursor), inArray(worldFacts.version, eventVersions),
     ))
     : []
-  const eventByCommand = new Map(matchingEvents.map(row => [row.event.id.slice('command:'.length), { event: row.event, cursor: row.cursor }]))
-  const changes: ReturnChange[] = []
+  const acknowledgedVersions = new Set(acknowledgedFactVersions.map(row => row.version))
+  const eventCommandIds = [...new Set(eventRows.flatMap(row => {
+    const id = row.event.id
+    if (id.startsWith('command:')) return [id.slice('command:'.length)]
+    // Commitment transition commands intentionally use the same domain id as
+    // their event; retain that exact relation for legacy rows without a
+    // created_version value.
+    if (id.startsWith('commitment:')) return [id]
+    return []
+  }))]
+  const acknowledgedSourceCommands = revisionCursor > 0 && eventCommandIds.length
+    ? await db.select({ sourceCommandId: worldFacts.sourceCommandId }).from(worldFacts).where(and(
+      eq(worldFacts.timelineId, timelineId), lte(worldFacts.version, revisionCursor), inArray(worldFacts.sourceCommandId, eventCommandIds),
+    ))
+    : []
+  const acknowledgedCommandIds = new Set(acknowledgedSourceCommands.map(row => row.sourceCommandId))
 
+  const factCandidates: ReviewCandidate[] = []
   for (const fact of pageFacts) {
-    const command = commands.find(row => row.id === fact.sourceCommandId)
+    const command = commandById.get(fact.sourceCommandId)
     const action = command ? safeJson(command.payloadJson) : {}
     const actorId = typeof action.actorPersonId === 'string' ? action.actorPersonId : null
     const actorName = actorId ? names.get(actorId) ?? null : null
     const display = displayFact(fact, actorName, titles.get(fact.subjectId))
-    const match = eventByCommand.get(fact.sourceCommandId)
+    const match = sourceEventByFact.get(fact.id)
     const directlySourced = commandIds.has(fact.sourceCommandId)
-    changes.push({ id: `fact:${fact.id}`, kind: 'fact', simTime: fact.simTime, title: display.title, description: display.description,
-      eventId: match?.event.id ?? null, eventCursor: match?.cursor ?? null, factId: fact.id,
-      revisionVersion: fact.version, sourceCommandId: directlySourced ? fact.sourceCommandId : null,
-      actorPersonId: actorId, actorName, highlight: directlySourced ? display.highlight : null })
+    factCandidates.push({ stream: 'fact', fact, sourceEvent: match,
+      change: { id: `fact:${fact.id}`, kind: 'fact', simTime: fact.simTime, title: display.title, description: display.description,
+        eventId: match?.id ?? null, eventCursor: match?.cursor ?? null, factId: fact.id,
+        revisionVersion: fact.version, sourceCommandId: directlySourced ? fact.sourceCommandId : null,
+        actorPersonId: actorId, actorName, highlight: directlySourced ? display.highlight : null } })
   }
 
-  const matchedEventIds = new Set(matchingEvents.map(row => row.event.id))
-  for (const row of pageEvents) {
-    if (matchedEventIds.has(row.id)) continue
-    const event = row as typeof events.$inferSelect & { cursor: number }
-    changes.push({ id: `event:${event.id}`, kind: 'event', simTime: event.simTime, title: event.title, description: event.description,
-      eventId: event.id, eventCursor: event.cursor, factId: null, revisionVersion: null, sourceCommandId: null,
-      actorPersonId: event.actorPersonId, actorName: event.actorPersonId ? names.get(event.actorPersonId) ?? null : null, highlight: null })
+  const eventCandidates: ReviewCandidate[] = []
+  for (const row of eventRows) {
+    const event = { ...row.event, cursor: row.cursor } satisfies ReviewEvent
+    const commandId = event.id.startsWith('command:') ? event.id.slice('command:'.length)
+      : event.id.startsWith('commitment:') ? event.id : null
+    if (matchedEventIds.has(event.id)
+      || (event.createdVersion !== null && acknowledgedVersions.has(event.createdVersion))
+      || (commandId !== null && acknowledgedCommandIds.has(commandId))) continue
+    eventCandidates.push({ stream: 'event', event,
+      change: { id: `event:${event.id}`, kind: 'event', simTime: event.simTime, title: event.title, description: event.description,
+        eventId: event.id, eventCursor: event.cursor, factId: null, revisionVersion: null, sourceCommandId: null,
+        actorPersonId: event.actorPersonId, actorName: event.actorPersonId ? names.get(event.actorPersonId) ?? null : null, highlight: null } })
   }
-  changes.sort((a, b) => a.simTime.localeCompare(b.simTime) || a.id.localeCompare(b.id))
 
-  const latestFact = pageFacts.at(-1)
-  const latestEvent = pageEvents.at(-1)
+  // Each source stream remains ordered by its own watermark. Merging stream
+  // heads rather than sorting one combined page prevents a later fact/event
+  // from advancing past an earlier row that was left for the next page.
+  const byChangeOrder = (a: ReviewCandidate, b: ReviewCandidate) =>
+    a.change.simTime.localeCompare(b.change.simTime) || a.change.id.localeCompare(b.change.id)
+  const orderedFacts = factCandidates.sort((a, b) => a.fact!.version - b.fact!.version)
+  const orderedEvents = eventCandidates.sort((a, b) => a.event!.cursor - b.event!.cursor)
+  const selected: ReviewCandidate[] = []
+  let factIndex = 0
+  let eventIndex = 0
+  while (selected.length < limit && (factIndex < orderedFacts.length || eventIndex < orderedEvents.length)) {
+    const fact = orderedFacts[factIndex]
+    const event = orderedEvents[eventIndex]
+    // A source event omitted because its fact is still waiting at the fact
+    // stream head blocks every later event cursor. Resolve that fact first;
+    // otherwise the later event would be returned again on the next page.
+    const selectedFactIdSet = new Set(selected.flatMap(candidate => candidate.fact ? [candidate.fact.id] : []))
+    const blockedSourceCursor = orderedFacts
+      .filter(candidate => candidate.sourceEvent && !selectedFactIdSet.has(candidate.fact!.id))
+      .map(candidate => candidate.sourceEvent!.cursor)
+      .sort((a, b) => a - b)[0]
+    const eventBlocked = event && blockedSourceCursor !== undefined && event.event!.cursor > blockedSourceCursor
+    if (!event || (fact && (eventBlocked || byChangeOrder(fact, event) <= 0))) {
+      selected.push(fact)
+      factIndex++
+    } else {
+      selected.push(event)
+      eventIndex++
+    }
+  }
+  const changes = selected.map(candidate => candidate.change)
+
+  // Advance only through a contiguous prefix of each stream. A matched event
+  // is consumed with its selected fact; unmatched rows remain for the next
+  // page. This keeps both watermarks monotonic without skipping an orphan row.
+  const selectedFactIds = new Set(selected.flatMap(candidate => candidate.fact ? [candidate.fact.id] : []))
+  const consumedEventIds = new Set(selected.flatMap(candidate => {
+    if (candidate.event) return [candidate.event.id]
+    if (candidate.fact) {
+      const sourceEvent = sourceEventByFact.get(candidate.fact.id)
+      return sourceEvent ? [sourceEvent.id] : []
+    }
+    return []
+  }))
+  let nextEventCursor = eventCursor
+  for (const row of eventRows) {
+    if (row.cursor <= nextEventCursor) continue
+    const commandId = row.event.id.startsWith('command:') ? row.event.id.slice('command:'.length)
+      : row.event.id.startsWith('commitment:') ? row.event.id : null
+    if (consumedEventIds.has(row.event.id)
+      || (row.event.createdVersion !== null && acknowledgedVersions.has(row.event.createdVersion))
+      || (commandId !== null && acknowledgedCommandIds.has(commandId))) {
+      nextEventCursor = row.cursor
+      continue
+    }
+    break
+  }
+  let nextRevisionVersion = revisionCursor
+  for (const candidate of orderedFacts) {
+    if (candidate.fact!.version <= nextRevisionVersion) continue
+    if (!selectedFactIds.has(candidate.fact!.id)) break
+    nextRevisionVersion = candidate.fact!.version
+  }
+
+  const responseEvents = [...new Map(selected.flatMap(candidate => {
+    const rows: ReviewEvent[] = []
+    if (candidate.event) rows.push(candidate.event)
+    if (candidate.sourceEvent) rows.push(candidate.sourceEvent)
+    return rows
+  }).map(event => [event.id, event])).values()].sort((a, b) => a.cursor - b.cursor)
+  const hasMoreEvents = eventRowsHaveMore || eventCandidates.length > eventIndex
+  const hasMoreFacts = factRowsHaveMore || orderedFacts.length > factIndex
   return {
-    events: pageEvents.map(({ cursor, ...event }) => ({ ...event, cursor, actorName: event.actorPersonId ? names.get(event.actorPersonId) ?? null : null })),
+    events: responseEvents.map(event => ({ ...event, actorName: event.actorPersonId ? names.get(event.actorPersonId) ?? null : null })),
     changes,
-    nextEventCursor: latestEvent?.cursor ?? eventCursor,
-    nextRevisionVersion: latestFact?.version ?? revisionCursor,
+    nextEventCursor,
+    nextRevisionVersion,
     hasMoreEvents,
     hasMoreFacts,
     revisionVersion: revisionRows[0]?.version ?? 0,
@@ -163,40 +322,68 @@ export async function getEventEvidenceDetail(db: Db, worldId: string, timelineId
     ? await db.select().from((await import('../db/schema')).dialogues).where(eq((await import('../db/schema')).dialogues.id, event.dialogueId)).get()
     : null
   const explicitCommandId = event.id.startsWith('command:') ? event.id.slice('command:'.length) : null
-  const command = explicitCommandId
+  let command = explicitCommandId
     ? await db.select().from(worldCommands).where(and(eq(worldCommands.id, explicitCommandId), eq(worldCommands.worldId, worldId), eq(worldCommands.timelineId, timelineId))).get()
     : event.createdVersion !== null
       ? await db.select().from(worldCommands).where(and(eq(worldCommands.worldId, worldId), eq(worldCommands.timelineId, timelineId), eq(worldCommands.resultVersion, event.createdVersion))).get()
       : null
+  // Commitment transitions use the domain event id as their command id.
+  // Resolve that exact relation for legacy rows whose created_version is null.
+  if (!command && event.id.startsWith('commitment:')) {
+    command = await db.select().from(worldCommands).where(and(
+      eq(worldCommands.id, event.id), eq(worldCommands.worldId, worldId), eq(worldCommands.timelineId, timelineId),
+    )).get()
+  }
   const facts = command
     ? await db.select().from(worldFacts).where(and(eq(worldFacts.timelineId, timelineId), eq(worldFacts.sourceCommandId, command.id))).orderBy(asc(worldFacts.version))
     : event.createdVersion !== null
       ? await db.select().from(worldFacts).where(and(eq(worldFacts.timelineId, timelineId), eq(worldFacts.version, event.createdVersion), lte(worldFacts.simTime, currentSimNow)))
       : []
-  const version = await versionAtTime(db, timelineId, event.simTime)
-  const moment = await checkMoment(db, worldId, timelineId, event.simTime)
-  const reconstructed = moment.ok ? await reconstructAt(db, worldId, timelineId, event.simTime) : moment
   const gaps: string[] = []
   if (!command) gaps.push('没有可核实的来源命令。')
   if (!facts.length) gaps.push('没有与事件直接关联的版本化事实。')
-  const reconstructionReason = !moment.ok ? moment.message : !reconstructed.ok ? reconstructed.message : null
+  const commandPayload = command ? parseJsonObject(command.payloadJson) : { value: {}, valid: true }
+  if (command && !commandPayload.valid) gaps.push('来源命令载荷损坏，无法完整读取。')
+  const factPayloads = facts.map(fact => ({ fact, parsed: parseJsonObject(fact.valueJson) }))
+  if (factPayloads.some(item => !item.parsed.valid)) gaps.push('关联事实载荷损坏，无法完整读取。')
+
+  let version: Awaited<ReturnType<typeof versionAtTime>> = null
+  let reconstructed: Awaited<ReturnType<typeof reconstructAt>>
+  try {
+    version = await versionAtTime(db, timelineId, event.simTime)
+    const moment = await checkMoment(db, worldId, timelineId, event.simTime)
+    reconstructed = moment.ok ? await reconstructAt(db, worldId, timelineId, event.simTime) : moment
+  } catch {
+    // Preserve the original event when a snapshot or replay payload is
+    // damaged; a failed read must close dependent operations instead of 500.
+    reconstructed = { ok: false, reasonCode: 'integrity_mismatch', message: '该时点的历史快照损坏，无法完整重建。' }
+  }
+  const reconstructionReason = !reconstructed.ok ? reconstructed.message : null
   if (reconstructionReason) gaps.push(`该时点无法完整重建：${reconstructionReason}`)
   const projection = reconstructed.ok ? reconstructed.rows : null
   const visibleKnowledge = (projection?.worldFacts ?? []).filter(fact => fact.factType === 'knowledge').map(fact => {
-    const value = safeJson(fact.valueJson)
+    const value = parseJsonObject(fact.valueJson).value
     return { factId: fact.id, recipientName: typeof value.recipientId === 'string' ? names.get(value.recipientId) ?? null : null,
       topic: typeof value.topic === 'string' ? value.topic : '未标注主题', content: typeof value.content === 'string' ? value.content : '',
       certainty: value.certainty === 'fact' ? 'fact' as const : 'rumor' as const, simTime: fact.simTime }
   })
+  const firstFactValue = factPayloads.find(item => item.parsed.valid)?.parsed.value ?? {}
+  const location = dialogue?.location
+    ?? (typeof commandPayload.value.location === 'string' ? commandPayload.value.location : null)
+    ?? (typeof firstFactValue.location === 'string' ? firstFactValue.location : null)
+  const actorId = event.actorPersonId
+    ?? command?.actorId
+    ?? (typeof commandPayload.value.actorPersonId === 'string' ? commandPayload.value.actorPersonId : null)
+  const actorName = actorId ? names.get(actorId) ?? null : null
+  const sourceComplete = Boolean(command && facts.length && commandPayload.valid && factPayloads.every(item => item.parsed.valid))
   return {
     timelineId,
     event: { id: event.id, simTime: event.simTime, title: event.title, description: event.description, kind: event.kind,
-      actorPersonId: event.actorPersonId, actorName: event.actorPersonId ? names.get(event.actorPersonId) ?? null : null,
-      location: dialogue?.location ?? null },
+      actorPersonId: actorId, actorName, location },
     command: command ? { id: command.id, type: command.type, version: command.resultVersion,
-      actorName: command.actorId ? names.get(command.actorId) ?? null : null } : null,
-    facts: facts.map(fact => ({ id: fact.id, factType: fact.factType, simTime: fact.simTime, version: fact.version,
-      visibility: fact.visibility, subjectId: fact.subjectId, value: safeJson(fact.valueJson), sourceCommandId: fact.sourceCommandId })),
+      actorName: command.actorId ? names.get(command.actorId) ?? null : actorName } : null,
+    facts: factPayloads.map(({ fact, parsed }) => ({ id: fact.id, factType: fact.factType, simTime: fact.simTime, version: fact.version,
+      visibility: fact.visibility, subjectId: fact.subjectId, value: parsed.value, sourceCommandId: fact.sourceCommandId })),
     visibleKnowledge,
     stateSnapshot: (projection?.states ?? []).map(state => ({ personName: names.get(state.personId) ?? null, location: state.location, activity: state.activity, mood: state.mood })),
     reconstruction: reconstructed.ok
@@ -204,6 +391,6 @@ export async function getEventEvidenceDetail(db: Db, worldId: string, timelineId
           completeDomains: reconstructed.evidence.completeDomains, reason: null }
       : { status: 'unsupported', simTime: null, version: null, completeDomains: [], reason: reconstructed.message },
     gaps,
-    forkAvailable: Boolean(reconstructed.ok && version && Date.parse(event.simTime) <= Date.parse(currentSimNow)),
+    forkAvailable: Boolean(sourceComplete && reconstructed.ok && version && Date.parse(event.simTime) <= Date.parse(currentSimNow)),
   }
 }

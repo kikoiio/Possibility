@@ -16,6 +16,12 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
     throw new WorldStateError('命令 ID 或状态版本无效', 400)
   }
   const payloadJson = JSON.stringify(input.action)
+  // Environment changes are constructor actions. Keep the authorization at
+  // the commit boundary so engine and direct callers cannot bypass the owner
+  // route's narrower action surface.
+  if (input.action.type === 'environment' && (input.actorKind ?? 'owner') !== 'owner') {
+    throw new WorldStateError('只有世界所有者才能改变环境条件', 403)
+  }
   const existing = await db.select().from(worldCommands).where(eq(worldCommands.id, input.id)).get()
   if (existing) return replay(db, existing, input, payloadJson)
 

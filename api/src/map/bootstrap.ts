@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
-import { readCurrentScene } from '../scenes/repository'
+import { readCurrentScene, readCurrentTimelineScene } from '../scenes/repository'
 import { worldSnapshot } from '../worlds/queries'
 import type { Db } from '../db/client'
 import { worlds } from '../db/schema'
@@ -54,7 +54,15 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
   if (!snapshot) return null
   let scene: MapBootstrap['scene']
   try {
-    const stored = await readCurrentScene(db, worldId)
+    // X1 scene geometry is scoped to the selected timeline. Keep the legacy
+    // world pointer only as a compatibility fallback for worlds not migrated
+    // to timeline scene heads yet.
+    const timelineStored = await readCurrentTimelineScene(db, {
+      worldId,
+      timelineId: snapshot.currentTimelineId,
+      representation: 'voxel',
+    })
+    const stored = timelineStored ?? await readCurrentScene(db, worldId)
     // S2 起存储层只剩体素系负载,格式由客户端按信封识别
     scene = !stored ? { status: 'missing' } : { status: 'ready', document: stored.document }
   } catch {

@@ -37,6 +37,8 @@ const IDLE: MoveInput = { moveX: 0, moveZ: 0, jump: false, ascend: false, descen
 
 export class PlayerBody {
   readonly state: PlayerState
+  /** 最近一次确认有实体支撑的脚底位置，跌出悬空区域时回到这里。 */
+  private recoveryPosition: { x: number; y: number; z: number }
 
   constructor(
     private world: WorldModel,
@@ -50,6 +52,7 @@ export class PlayerBody {
       onGround: false,
       flying: false,
     }
+    this.recoveryPosition = { ...this.state.position }
   }
 
   setFlying(flying: boolean): void {
@@ -80,12 +83,34 @@ export class PlayerBody {
     this.moveAxis('x', s.velocity.x * dt)
     this.moveAxis('z', s.velocity.z * dt)
     this.clampToWorld()
+    if (s.onGround && s.position.y >= 1 && this.hasSupport(s.position.x, s.position.y, s.position.z)) {
+      this.recoveryPosition = { ...s.position }
+    }
   }
 
   /** 该格是否阻挡玩家(实心且非流体) */
   private isBlocking(at: VoxelCoord): boolean {
     const b = this.registry.get(this.world.getBlock(at))
     return !!b?.solid && b.category !== 'fluid'
+  }
+
+  /** 脚底下存在可碰撞方块；世界底边以下视为虚空而不是地面。 */
+  private hasSupport(px: number, py: number, pz: number): boolean {
+    const y = Math.floor(py) - 1
+    if (y < 0) return false
+    return this.isBlocking({ x: Math.floor(px), y, z: Math.floor(pz) })
+  }
+
+  /** 将玩家恢复到最近合法落脚点，避免在无地面世界永久停在 y=0。 */
+  private recoverFromFall(): void {
+    const p = this.state.position
+    p.x = this.recoveryPosition.x
+    p.y = this.recoveryPosition.y
+    p.z = this.recoveryPosition.z
+    this.state.velocity.x = 0
+    this.state.velocity.y = 0
+    this.state.velocity.z = 0
+    this.state.onGround = true
   }
 
   /** 碰撞箱当前覆盖的整数格是否与实心方块相交 */
@@ -155,6 +180,12 @@ export class PlayerBody {
     const half = PLAYER.width / 2
     p.x = Math.min(Math.max(p.x, half), width - half)
     p.z = Math.min(Math.max(p.z, half), depth - half)
+    // A fall through a hole must recover to a known grounded location. Merely
+    // clamping to y=0 leaves the player permanently suspended in void cells.
+    if (p.y < 1 && !this.hasSupport(p.x, p.y, p.z)) {
+      this.recoverFromFall()
+      return
+    }
     if (p.y < 0) {
       p.y = 0
       this.state.velocity.y = Math.max(0, this.state.velocity.y)

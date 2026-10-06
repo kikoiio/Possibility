@@ -267,6 +267,13 @@
       "when": 1791142844483,
       "tag": "0037_scene_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791256392777,
+      "tag": "0038_timeline_scene_versions",
+      "breakpoints": true
     }
   ]
 }

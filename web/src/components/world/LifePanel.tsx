@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { lifeApi } from '../../api/client'
 import type { CommitmentView, ReturnBrief, ReturnChange } from '../../api/types'
 import { formatWorldTime } from '../../lib/world-time'
@@ -18,30 +18,54 @@ export default function LifePanel({ worldId, timelineId, timeZone, onClose, onFo
   const [changes, setChanges] = useState<ReturnChange[]>([])
   const [watermark, setWatermark] = useState({ eventCursor: 0, revisionVersion: 0 })
   const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null)
-  const loadInitial = async () => {
+  const requestGeneration = useRef(0)
+  const loadInitial = async (generation = requestGeneration.current) => {
+    if (generation !== requestGeneration.current) return
+    setLoading(true)
     setError('')
     try {
       const result = await lifeApi.returnBrief(worldId, timelineId)
+      if (generation !== requestGeneration.current) return
       setBrief(result)
       setChanges(result.changes)
       setWatermark({ eventCursor: result.nextEventCursor, revisionVersion: result.nextRevisionVersion })
       setHasMore(result.hasMore)
     } catch (cause) {
+      if (generation !== requestGeneration.current) return
       setError(cause instanceof Error ? cause.message : '归来回顾加载失败')
+    } finally {
+      if (generation === requestGeneration.current) setLoading(false)
     }
   }
-  useEffect(() => { void loadInitial() }, [worldId, timelineId])
+  useEffect(() => {
+    const generation = ++requestGeneration.current
+    setBrief(null)
+    setChanges([])
+    setWatermark({ eventCursor: 0, revisionVersion: 0 })
+    setHasMore(false)
+    setLoadingMore(false)
+    setBusy(null)
+    setSelectedEvent(null)
+    void loadInitial(generation)
+    return () => {
+      if (requestGeneration.current === generation) requestGeneration.current++
+    }
+  }, [worldId, timelineId])
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return
+    const generation = requestGeneration.current
+    const pageWatermark = watermark
     setLoadingMore(true)
     setError('')
     try {
-      const result = await lifeApi.returnBrief(worldId, timelineId, watermark)
+      const result = await lifeApi.returnBrief(worldId, timelineId, pageWatermark)
+      if (generation !== requestGeneration.current) return
       setBrief(result)
       setChanges(current => {
         const all = new Map(current.map(change => [change.id, change]))
@@ -51,31 +75,37 @@ export default function LifePanel({ worldId, timelineId, timeZone, onClose, onFo
       setWatermark({ eventCursor: result.nextEventCursor, revisionVersion: result.nextRevisionVersion })
       setHasMore(result.hasMore)
     } catch (cause) {
+      if (generation !== requestGeneration.current) return
       setError(cause instanceof Error ? cause.message : '更多记录加载失败')
     } finally {
-      setLoadingMore(false)
+      if (generation === requestGeneration.current) setLoadingMore(false)
     }
   }
 
   const act = async (commitment: CommitmentView, action: string) => {
+    const generation = requestGeneration.current
     setBusy(commitment.id)
     setError('')
     try {
       await lifeApi.act(worldId, commitment.id, action)
-      await loadInitial()
+      await loadInitial(generation)
     } catch (cause) {
+      if (generation !== requestGeneration.current) return
       setError(cause instanceof Error ? cause.message : '操作失败')
     } finally {
-      setBusy(null)
+      if (generation === requestGeneration.current) setBusy(null)
     }
   }
 
   const markSeen = async () => {
+    const generation = requestGeneration.current
     setError('')
     try {
       await lifeApi.markSeen(worldId, timelineId, watermark.eventCursor, watermark.revisionVersion)
+      if (generation !== requestGeneration.current) return
       onClose()
     } catch (cause) {
+      if (generation !== requestGeneration.current) return
       setError(cause instanceof Error ? cause.message : '已读水位保存失败，请重试')
     }
   }
@@ -94,7 +124,7 @@ export default function LifePanel({ worldId, timelineId, timeZone, onClose, onFo
         <span>{error}</span>
         {!brief && <button type="button" onClick={() => void loadInitial()} className="rounded border border-red-200 px-2 py-1">重试</button>}
       </div>}
-      {!brief && !error && <p className="py-12 text-center text-sm text-ink-faint" role="status">回到世界的门正在打开…</p>}
+      {!brief && loading && <p className="py-12 text-center text-sm text-ink-faint" role="status">回到世界的门正在打开…</p>}
       {brief && <>
         <div className="mb-4 rounded-xl bg-[#edf0e7] px-4 py-3">
           <p className="font-story text-sm text-ink">{brief.summary}</p>

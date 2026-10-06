@@ -10,6 +10,10 @@
  */
 
 import type { GridPoint, PixelPoint } from './types'
+import type {
+  EnvironmentValue,
+  TimelineEnvironmentProjection,
+} from '../scene/life/environment'
 
 /** 单格 2:1 投影的逻辑像素尺寸。 */
 export const TILE_WIDTH = 64
@@ -95,4 +99,31 @@ export function snapToGrid(point: GridPoint): GridPoint | null {
 /** 屏幕像素坐标直接吸附为整数编辑目标；非有限时返回 null。 */
 export function snapScreenToGrid(point: PixelPoint, camera: Camera): GridPoint | null {
   return snapToGrid(screenToGrid(point, camera))
+}
+
+/**
+ * 2D visual adapter for the shared finite environment projection. Rendering
+ * receives canonical values and labels only; this function has no world-state
+ * or persistence side effects.
+ */
+export interface Native2dEnvironmentPresentation {
+  readonly weather: EnvironmentValue | null
+  readonly lighting: Extract<EnvironmentValue, 'day' | 'dusk' | 'night'> | null
+  readonly access: Readonly<Record<string, 'open' | 'closed'>>
+}
+
+export function projectEnvironmentFor2d(
+  projection: TimelineEnvironmentProjection,
+): Native2dEnvironmentPresentation {
+  const access: Record<string, 'open' | 'closed'> = {}
+  for (const [location, bucket] of Object.entries(projection.locations)) {
+    const value = bucket.access?.value
+    if (value === 'open' || value === 'closed') access[location] = value
+  }
+  return {
+    weather: projection.world.weather?.value ?? null,
+    lighting: projection.world.lighting?.value === 'day' || projection.world.lighting?.value === 'dusk' || projection.world.lighting?.value === 'night'
+      ? projection.world.lighting.value : null,
+    access,
+  }
 }

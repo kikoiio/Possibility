@@ -205,18 +205,18 @@ describe('simTime 对齐截断(S1)', () => {
   it('事实按 key 取 ≤ T 的最大 version;状态不截断且 limitations 明示', async () => {
     await commitWorldCommand(fixture.db, { id: 'weather-v1', worldId: 'world', timelineId: 'main',
       userId: 'owner', expectedVersion: 0,
-      action: { type: 'environment', location: null, condition: 'weather', value: 'sun' } })
+      action: { type: 'environment', location: null, condition: 'weather', value: 'clear' } })
     const fork = await forkTimeline(fixture.db, 'world', 'main')
     // 事实行不可变(触发器),v2 的更晚 simTime 通过推进主线时钟获得
     await fixture.db.update(timelines).set({ simNow: '2026-09-20T00:00:00.000Z' }).where(eq(timelines.id, 'main'))
     await commitWorldCommand(fixture.db, { id: 'weather-v2', worldId: 'world', timelineId: 'main',
       userId: 'owner', expectedVersion: 1,
-      action: { type: 'environment', location: null, condition: 'weather', value: 'storm' } })
+      action: { type: 'environment', location: null, condition: 'weather', value: 'rain' } })
     await fixture.db.update(personStates).set({ mood: 'Excited' })
       .where(and(eq(personStates.timelineId, fork.id), eq(personStates.personId, 'npc')))
 
     const aligned = await compareTimelines(fixture.db, 'world', 'main', fork.id, '2026-09-19T12:00:00.000Z')
-    // v2(2026-09-20)超出对齐时刻:左右都只见 v1 的 sun,无事实差异
+    // v2(2026-09-20)超出对齐时刻:左右都只见 v1 的 clear,无事实差异
     expect(aligned?.differences.facts).toEqual([])
     // 状态无历史表:不截断,仍是当前值,limitations 必须明示
     expect(aligned?.differences.states).toHaveLength(1)
@@ -229,10 +229,38 @@ describe('simTime 对齐截断(S1)', () => {
   it('路由:非法 simTime 400,合法值归一化回显', async () => {
     const fork = await forkTimeline(fixture.db, 'world', 'main')
     expect((await request(`/worlds/world/compare?left=main&right=${fork.id}&simTime=not-a-date`)).status).toBe(400)
+    expect((await request(`/worlds/world/compare?left=main&right=${fork.id}&limit=0`)).status).toBe(400)
     const response = await request(`/worlds/world/compare?left=main&right=${fork.id}&simTime=2026-09-19`)
     expect(response.status).toBe(200)
     const body = await response.json() as { alignedAt: string | null }
     expect(body.alignedAt).toBe('2026-09-19T00:00:00.000Z')
+  })
+
+  it('bounds comparison output, keeps stable ordering, and marks current observations', async () => {
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    await fixture.db.insert(events).values([
+      { id: 'main-z', timelineId: 'main', simTime: SIM, title: 'Z', description: '' },
+      { id: 'main-a', timelineId: 'main', simTime: SIM, title: 'A', description: '' },
+      { id: 'fork-z', timelineId: fork.id, simTime: SIM, title: 'Z', description: '' },
+      { id: 'fork-a', timelineId: fork.id, simTime: SIM, title: 'A', description: '' },
+    ])
+    const result = await compareTimelines(fixture.db, 'world', 'main', fork.id, undefined, 1)
+    expect(result?.capacity.limit).toBe(1)
+    expect(result?.capacity.events.leftOnly.truncated).toBe(true)
+    expect(result?.differences.events.leftOnly).toHaveLength(1)
+    expect(result?.differences.events.leftOnly[0].id).toBe('main-a')
+    expect(result?.left.observation).toBe('current')
+    expect(result?.right.observation).toBe('current')
+    expect(result?.limitations.some((line) => line.includes('capped at 1'))).toBe(true)
+  })
+
+  it('does not expose inherited events beyond a timeline current simNow', async () => {
+    await fixture.db.update(timelines).set({ simNow: '2026-09-20T00:00:00.000Z' }).where(eq(timelines.id, 'main'))
+    await fixture.db.insert(events).values({ id: 'future-inherited', timelineId: 'main', simTime: '2026-09-19T12:00:00.000Z', title: 'Future', description: '' })
+    const fork = await forkTimeline(fixture.db, 'world', 'main')
+    await fixture.db.update(timelines).set({ simNow: SIM }).where(eq(timelines.id, fork.id))
+    const result = await compareTimelines(fixture.db, 'world', 'main', fork.id)
+    expect(result?.differences.events.rightOnly.map((event) => event.id)).not.toContain('future-inherited')
   })
 })
 
@@ -459,7 +487,7 @@ describe('fork snapshots', () => {
 
     await commitWorldCommand(fixture.db, {
       id: 'child-weather', worldId: 'world', timelineId: first.id, userId: 'owner', expectedVersion: 0,
-      action: { type: 'environment', location: null, condition: 'weather', value: 'storm' },
+      action: { type: 'environment', location: null, condition: 'weather', value: 'rain' },
     })
     expect((await readWorldState(fixture.db, 'world', 'main')).current.map(f => f.factType)).not.toContain('environment')
     const nested = await forkTimeline(fixture.db, 'world', first.id)
