@@ -15,6 +15,7 @@ import type { VoxelEngine } from '../../voxel/engine'
 import type { EditPlan } from '../../voxel/plan-edits'
 import type { PreflightBlocked } from '../../voxel/bridge/edit-controller'
 import MapSelectionCard from './MapSelectionCard'
+import Drawer from '../ui/Drawer'
 import { formatWorldTime } from '../../lib/world-time'
 import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../../lib/world-disambiguation'
 import { applyTourMilestone, loadTourProgress, tourOrder, tourSteps, tourStorageKey, type TourStep } from './tour'
@@ -48,6 +49,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     voxelSpaces.spaces.some(space => space.id === initialSpaceId) ? initialSpaceId! : voxelSpaces.defaultSpaceId)
   const [selected, setSelected] = useState<string | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [tourDone, setTourDone] = useState<TourStep[]>(() => loadTourProgress(snapshot.world.id))
   const [tourOpen, setTourOpen] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -268,7 +270,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
-        {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg"><button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">{nextTourStep ? '继续导览' : '重新开启导览'}</button></div></details></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}{onOpenHistory && <button data-testid="scene-history-entry" onClick={onOpenHistory} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">历史</button>}{onOpenCompatibility && <button data-testid="scene-check-entry" onClick={onOpenCompatibility} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">场景检查</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
+        {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button></div> : <div className="flex items-center gap-2">{editable && liveSnapshot.world.isDemo && <button data-testid="demo-regenerate" onClick={() => void regenerateDemo()} disabled={regenerating} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">{regenerating ? '重新生成中…' : '重新生成'}</button>}{onOpenHistory && <button data-testid="scene-history-entry" onClick={onOpenHistory} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">历史</button>}{onOpenCompatibility && <button data-testid="scene-check-entry" onClick={onOpenCompatibility} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">场景检查</button>}<select aria-label="切换世界" value={liveSnapshot.world.id} onChange={event => {
           const selectedWorld = worldChoices.find(world => world.id === event.target.value)
           if (event.target.value === '__new__') navigate('/worlds/new')
           else if (selectedWorld?.hasScene) navigate(`/worlds/${encodeURIComponent(event.target.value)}`)
@@ -276,7 +278,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
           <option value={liveSnapshot.world.id}>{liveSnapshot.world.name} · 当前 · {worldStatusLabel({ ...liveSnapshot.world, hasScene: true })}</option>
           {worldChoices.filter(world => world.id !== liveSnapshot.world.id).map(world => <option key={world.id} value={world.id} disabled={!world.hasScene} title={!world.hasScene ? '该世界待创建场景，当前无法进入。' : undefined} className="text-[#263a31]">{world.name} · {worldPersonLabel(world.personNames)} · {worldStatusLabel(world)}</option>)}
           <option value="__new__" className="text-[#263a31]">创建世界</option>
-        </select><details className="group relative"><summary aria-label="设置" title="设置" className="cursor-pointer list-none rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</summary><div className="absolute right-0 top-full mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-white/60 bg-[#f8faf6] p-1.5 text-xs text-[#405246] shadow-lg">{!liveSnapshot.world.isDemo && <div className="p-2"><WorldTimeZoneSetting worldId={liveSnapshot.world.id} timeZone={liveSnapshot.world.timeZone} onSaved={timeZone => setLiveSnapshot(current => ({ ...current, world: { ...current.world, timeZone }, timelines: current.timelines.map(t => ({ ...t, timeZone })) }))} /></div>}<button onClick={() => navigate('/settings')} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">LLM 设置</button><button onClick={() => { clearToken(); navigate('/login', { replace: true }) }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[#e7eee7]">退出登录</button></div></details></div>}
+        </select><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-[#263a31]/55 px-3 py-2 text-xs backdrop-blur-md">设置</button></div>}
       </header>
       <div className="pointer-events-auto absolute left-3 top-32 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5 sm:top-24">
         {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (
@@ -296,7 +298,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
         locationDescription={location?.description ?? null}
         peopleHere={people}
         fallbackLabel={voxelObject?.label ?? null}
-        onClose={() => setSelected(null)}
+        onClose={() => { setSelected(null); setSelectedPersonId(null) }}
         onEnter={name => setSceneLocation(name)}
       />}
       {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md sm:right-5">
@@ -311,7 +313,7 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
         <div className="flex items-center gap-3"><span className="font-medium">{nextTourStep ? `体验指引 ${tourIndex + 1}/8` : '导览已完成'}</span><span className="text-[#708177]">{nextTourStep ? tourSteps[tourIndex]?.[1] : '已完成全部步骤。'}</span><button aria-label="关闭导览" title="关闭导览" onClick={() => setTourOpen(false)} className="ml-auto rounded px-2 py-1 text-base">×</button><button onClick={() => { setTourDone(tourOrder); try { localStorage.setItem(tourStorageKey(liveSnapshot.world.id), JSON.stringify(tourOrder)) } catch { /* Tour progress is optional. */ }; setTourOpen(false) }} className="whitespace-nowrap rounded border border-[#d4ded7] px-3 py-1.5">跳过</button></div>
         {tourNotice && <p role="status" className="mt-1.5 text-[11px] text-[#7a897d]">{tourNotice}</p>}
       </aside> : <button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="pointer-events-auto absolute bottom-4 left-3 rounded border border-white/80 bg-[#f8faf6]/95 px-3 py-2 text-xs text-[#50665a] shadow-lg sm:left-5">{nextTourStep ? '继续导览' : '重新开启导览'}</button>}
-      <div className="absolute bottom-4 right-3 hidden rounded-full border border-white/80 bg-[#f8faf6]/90 px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
+      <div className="absolute bottom-14 right-3 hidden rounded-full border border-white/80 bg-[#f8faf6]/90 px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
     {saveError && <p role="status" className="pointer-events-auto absolute bottom-16 left-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 shadow sm:left-5">{saveError}</p>}
     {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
@@ -319,5 +321,44 @@ export function GuestWorldMap({ voxelSpaces, snapshot, overlay, initialSpaceId, 
       setSceneLocation(null)
       void (guest ? guestMapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId) : mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)).then(data => setLiveSnapshot(data.world)).catch(() => {})
     }} />}
+    <Drawer open={settingsOpen} onClose={() => setSettingsOpen(false)} title="设置与世界管理" description={`${liveSnapshot.world.name} · ${guest ? '访客视图' : '所有者管理'}`}>
+      <div className="space-y-4 text-xs text-ink-soft">
+        {!liveSnapshot.world.isDemo && (
+          <div className="rounded-xl border border-ink-line bg-sheet p-3">
+            <h3 className="mb-2 font-medium text-ink">世界时区</h3>
+            <WorldTimeZoneSetting
+              worldId={liveSnapshot.world.id}
+              timeZone={liveSnapshot.world.timeZone}
+              onSaved={timeZone => setLiveSnapshot(current => ({ ...current, world: { ...current.world, timeZone }, timelines: current.timelines.map(t => ({ ...t, timeZone })) }))}
+            />
+          </div>
+        )}
+        <div className="rounded-xl border border-ink-line bg-sheet p-2 space-y-1">
+          <button
+            type="button"
+            onClick={() => { setSettingsOpen(false); nextTourStep ? setTourOpen(true) : restartTour() }}
+            className="block w-full rounded-lg px-3 py-2.5 text-left text-xs font-medium text-ink hover:bg-paper-deep"
+          >
+            {nextTourStep ? '🧭 继续导览' : '🧭 重新开启导览'}
+          </button>
+          {!guest && (
+            <button
+              type="button"
+              onClick={() => { setSettingsOpen(false); navigate('/settings') }}
+              className="block w-full rounded-lg px-3 py-2.5 text-left text-xs font-medium text-ink hover:bg-paper-deep"
+            >
+              ⚙️ LLM 设置与日预算
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setSettingsOpen(false); clearToken(); navigate('/login', { replace: true }) }}
+            className="block w-full rounded-lg px-3 py-2.5 text-left text-xs font-medium text-cinnabar hover:bg-cinnabar-soft"
+          >
+            🚪 退出登录
+          </button>
+        </div>
+      </div>
+    </Drawer>
   </main>
 }
