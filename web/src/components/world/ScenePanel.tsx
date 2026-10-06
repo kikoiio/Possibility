@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, personaApi, sceneApi, worldsApi } from '../../api/client'
 import type { Persona, PersonaMention, PersonaMessage, SceneEvent, WorldSummary } from '../../api/types'
-import { formatWorldTime } from '../../lib/world-time'
 import { resolveSceneEntryLocation } from '../../scene/entry-location'
 import { actionAvailability, actionExample, refreshedActionLocation } from '../../scene/action-guidance'
+import SceneChatList from './scene/SceneChatList'
+import SceneActionSection from './scene/SceneActionSection'
 
 interface Props {
   worldId: string
@@ -497,6 +498,22 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
     } finally { intentInFlight.current = false; setIntentBusy(false) }
   }
 
+  const handleCancelIntent = () => {
+    if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
+    if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+    setIntentProposal(null)
+    setIntentNotice('已取消提议。')
+  }
+
+  const handleIntentTextChange = (text: string) => {
+    if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
+    setIntentText(text)
+    setIntentProposal(null)
+    setIntentNeedsRetry(false)
+    setIntentNotice('')
+    if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
+  }
+
   const handleSend = useCallback(async () => {
     const content = input.trim()
     if (!content || busy || historyLoading || !persona || !persona.location || persona.location !== location) return
@@ -703,95 +720,45 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
               </span>
             </div>
 
-            <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-              {notes && (notes.messages.length > 0 || notes.mentions.length > 0) && (
-                <section className="rounded-xl border border-ink-line/70 bg-sheet px-4 py-3">
-                  <h3 className="mb-2 text-xs font-medium text-ink-soft">自你上次离开后，世界没有忘记你</h3>
-                  {notes.messages.map((m) => (
-                    <div key={m.id} className="mb-2 last:mb-0">
-                      <p className="text-[11px] text-ink-faint">
-                        {m.fromName} 在{m.location ? ` ${m.location} ` : ''}给你留了话 · {formatWorldTime(m.simTime, timeZone)}
-                      </p>
-                      <p className="font-story mt-0.5 text-sm leading-relaxed text-ink">{m.content}</p>
-                    </div>
-                  ))}
-                  {notes.mentions.slice(0, 6).map((e) => (
-                    <p key={e.id} className="mt-1.5 text-xs leading-relaxed text-ink-faint">
-                      <span className="text-ink-soft">
-                        {e.actorName && !e.title.startsWith(e.actorName) ? `${e.actorName}：` : ''}
-                        {e.title}
-                      </span>
-                      {e.description ? `——${e.description.slice(0, 40)}` : ''}
-                    </p>
-                  ))}
-                </section>
-              )}
-              {messages.length === 0 && (
-                <p className="pt-16 text-center text-sm leading-relaxed text-ink-faint">
-                  以 {persona.name} 的身份说点什么。
-                  <br />
-                  在场的人会听见，并记住这场相遇。
-                </p>
-              )}
-              {messages.map((m, i) =>
-                m.role === 'system' ? (
-                  <p key={i} className="text-center text-[11px] tracking-wide text-ink-faint">
-                    {m.text}
-                  </p>
-                ) : (
-                  <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                    <div className={`max-w-[80%] ${m.role === 'user' ? 'text-right' : ''}`}>
-                      {m.role === 'person' && <p className="mb-0.5 text-[11px] text-ink-faint">{m.name}</p>}
-                      <p
-                        className={`font-story inline-block whitespace-pre-wrap rounded-xl px-3.5 py-2 text-left text-[15px] leading-relaxed ${
-                          m.role === 'user' ? 'bg-ink text-paper' : 'bg-paper-deep text-ink'
-                        }`}
-                      >
-                        {m.text}
-                      </p>
-                    </div>
-                  </div>
-                ),
-              )}
-              {busy && <p className="text-xs text-ink-faint">在场的人转过头来…</p>}
-            </div>
+            <SceneChatList
+              listRef={listRef}
+              notes={notes}
+              timeZone={timeZone}
+              personaName={persona.name}
+              messages={messages}
+              busy={busy}
+            />
 
-            <details className="border-t border-ink-line/60 px-4 py-2"><summary className="cursor-pointer text-xs text-ink-soft">明确告诉现场某人一条消息</summary><p className="mt-1 text-[11px] text-ink-faint">这是可追踪的当面传话；对方会记为传闻。普通聊天不会自动变成已证实事实。</p><div className="mt-2 flex flex-wrap gap-2"><select aria-label="消息接收者" value={infoRecipient} onChange={e => setInfoRecipient(e.target.value)} className="rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs"><option value="">选择现场的人</option>{(peopleByLocation[location] ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="消息主题" value={infoTopic} onChange={e => setInfoTopic(e.target.value)} placeholder="消息主题" maxLength={80} className="min-w-0 flex-1 rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><input aria-label="消息内容" value={infoContent} onChange={e => setInfoContent(e.target.value)} placeholder="你要告诉 TA 什么" maxLength={500} className="min-w-0 flex-[2] rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" /><button onClick={() => void handleInform()} disabled={infoBusy || !persona.location || persona.location !== location || !infoRecipient || !infoTopic.trim() || !infoContent.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">告诉 TA</button></div>{infoNotice && <p className="mt-2 text-xs text-ink-soft">{infoNotice}</p>}</details>
-            <details className="max-h-[45vh] shrink-0 overflow-y-auto border-t border-ink-line/60 px-4 py-2">
-              <summary className="cursor-pointer text-xs text-ink-soft">尝试一个行动</summary>
-              <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">可以前往当前有效地点，或告诉现场居民一条消息。系统会先生成提议，只有你确认后才会执行。普通聊天不会自动改变世界。</p>
-              <p className="mt-1 text-[11px] text-ink-faint">当前有效地点：{actionLocations.length ? actionLocations.map(item => item.name).join('、') : '暂无'}</p>
-              {example ? <p className="mt-1 text-[11px] text-ink-faint">示例：{example}</p> : <p className="mt-1 text-[11px] text-ink-faint">暂时没有可用的行动示例。请进入其他有效地点，或等待现场出现可交谈的居民后刷新。</p>}
-              {actionBlocked && <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">{actionBlocked}</p>}
-              <div className="mt-2 flex flex-wrap gap-2">
-                <input aria-label="行动描述" value={intentText} disabled={intentBusy} onChange={e => {
-                  if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
-                  setIntentText(e.target.value); setIntentProposal(null); setIntentNeedsRetry(false); setIntentNotice('')
-                  if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
-                }} maxLength={1000} placeholder={example ?? '描述你想去的地点或要告诉现场居民的消息'} className="min-w-0 flex-[1_1_12rem] rounded-lg border border-ink-line bg-sheet px-2 py-1 text-xs" />
-                <button onClick={() => void handleResolveIntent()} disabled={intentBusy || busy || !!actionBlocked || !!intentRetryError || !intentText.trim()} className="rounded-lg bg-ink px-3 py-1 text-xs text-white disabled:opacity-50">{intentBusy && !intentProposal ? '整理中…' : intentNeedsRetry ? '重新生成提议' : '生成提议'}</button>
-                {(intentNeedsRetry || actionBlocked || intentRetryError) && <button onClick={() => void handleRefreshIntent()} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-xs text-ink-soft disabled:opacity-50">刷新行动状态</button>}
-              </div>
-              {intentRetryError && <p role="alert" className="mt-2 text-xs text-red-600">{intentRetryError}</p>}
-              {intentProposal?.status === 'proposal' && intentProposal.proposal && <div className="mt-2 rounded-lg border border-ink-line bg-sheet p-3 text-xs">
-                <p className="text-ink-soft">提议（世界状态 v{intentProposal.expectedVersion}）</p>
-                <p className="mt-1 text-ink">{intentProposal.proposal.type === 'move' ? `前往${intentProposal.proposal.to}` : `告诉${intentProposal.proposal.recipientName}：「${intentProposal.proposal.content}」`}</p>
-                <div className="mt-2 flex gap-2">
-                  <button onClick={() => void handleConfirmIntent()} disabled={intentBusy || !!actionBlocked} className="rounded-lg bg-ink px-3 py-1 text-white disabled:opacity-50">{intentBusy ? '提交中…' : '确认执行'}</button>
-                  <button onClick={() => {
-                    if (intentProposal?.status === 'proposal') void sceneApi.cancelIntent(worldId, intentProposal.requestId).catch(() => {})
-                    if (persona) clearPendingIntentProposal(pendingIntentStorageKey(worldId, timelineId, persona.id))
-                    setIntentProposal(null); setIntentNotice('已取消提议。')
-                  }} disabled={intentBusy} className="rounded-lg border border-ink-line px-3 py-1 text-ink-soft">取消</button>
-                </div>
-              </div>}
-              {intentNotice && <p role="status" className="mt-2 text-xs leading-relaxed text-ink-soft">{intentNotice}</p>}
-              {intentLoginRequired && <a href="/login" target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-ink underline">在新标签页重新登录</a>}
-              {intentProposal?.alternatives && <p className="mt-1 text-xs leading-relaxed text-ink-faint">
-                {intentProposal.alternatives.locations.length > 0 && <>当前可前往：{intentProposal.alternatives.locations.join('、')}。 </>}
-                {intentProposal.alternatives.residents.length > 0 && <>当前可传话给：{intentProposal.alternatives.residents.map(person => person.name).join('、')}。</>}
-              </p>}
-            </details>
+            <SceneActionSection
+              persona={persona}
+              location={location}
+              actionLocations={actionLocations}
+              peopleByLocation={peopleByLocation}
+              example={example}
+              actionBlocked={actionBlocked}
+              infoRecipient={infoRecipient}
+              setInfoRecipient={setInfoRecipient}
+              infoTopic={infoTopic}
+              setInfoTopic={setInfoTopic}
+              infoContent={infoContent}
+              setInfoContent={setInfoContent}
+              infoBusy={infoBusy}
+              infoNotice={infoNotice}
+              handleInform={handleInform}
+              intentText={intentText}
+              onIntentTextChange={handleIntentTextChange}
+              intentBusy={intentBusy}
+              busy={busy}
+              intentNeedsRetry={intentNeedsRetry}
+              intentRetryError={intentRetryError}
+              intentProposal={intentProposal}
+              intentNotice={intentNotice}
+              intentLoginRequired={intentLoginRequired}
+              handleResolveIntent={handleResolveIntent}
+              handleRefreshIntent={handleRefreshIntent}
+              handleConfirmIntent={handleConfirmIntent}
+              handleCancelIntent={handleCancelIntent}
+            />
             <div className="flex items-end gap-2 border-t border-ink-line/60 px-4 py-3">
               <textarea
                 value={input}

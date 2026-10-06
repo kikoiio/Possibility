@@ -280,6 +280,11 @@ export function GuestWorldMap({
   }, [onCompatibilityRequired])
   const existingFork = liveSnapshot.timelines.find(t => t.id === forkId)
   const compareSourceId = forkResult?.sourceTimelineId ?? existingFork?.parentTimelineId
+  const guestPersonNames = useMemo(
+    () => Object.fromEntries(liveSnapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name]))),
+    [liveSnapshot.locationBoard]
+  )
+
   return <main className="relative h-screen overflow-hidden bg-[#dfe8df]" data-testid="guest-world-map">
     {guest && claimPending && <div role="status" className="absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-full border border-white/70 bg-[#f8faf6]/95 px-4 py-2 text-xs text-[#405246] shadow-md">访客副本待保存 · <a href="/login?claimDemo=1" className="underline">继续认领</a></div>}
     {voxelDoc
@@ -294,7 +299,7 @@ export function GuestWorldMap({
           timeZone={liveSnapshot.world.timeZone}
           onSave={saveSpace}
           events={liveSnapshot.voxelEvents ?? null}
-          personNames={Object.fromEntries(liveSnapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name])))}
+          personNames={guestPersonNames}
           onEnterSpace={(next) => { if (voxelSpaces.spaces.some(space => space.id === next)) { setSpaceId(next); setSelected(null); setSelectedPersonId(null) } }}
           onSelectLocation={(_name, objectId) => selectObject(objectId)}
           onSelectPerson={selectResident}
@@ -362,7 +367,7 @@ export function GuestWorldMap({
       <div className="absolute bottom-14 right-3 hidden rounded-full border border-white/80 bg-[#f8faf6]/90 px-3 py-2 text-[10px] text-[#66776b] shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
     {saveError && <p role="status" className="pointer-events-auto absolute bottom-16 left-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 shadow sm:left-5">{saveError}</p>}
-    {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
+    {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} personNames={guestPersonNames} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
     {sceneLocation && <ScenePanel timeZone={liveSnapshot.world.timeZone} worldStatus={liveSnapshot.world.status} readOnly={liveSnapshot.evidence?.level !== 'complete'} worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
       setSceneLocation(null)
       void (guest ? guestMapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId) : mapApi.bootstrap(liveSnapshot.world.id, liveSnapshot.currentTimelineId)).then(data => setLiveSnapshot(data.world)).catch(() => {})
