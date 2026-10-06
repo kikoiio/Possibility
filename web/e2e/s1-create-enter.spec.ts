@@ -167,7 +167,7 @@ test('saved voxel draft restores after refresh and creates a world without regen
   await stubPersons(page, [person])
   const routes = await stubSuccessfulWorldCreate(page)
 
-  await page.goto('/worlds/new?person=person-1&fromWorld=old-world')
+  await page.goto('/worlds/new?person=person-1')
   await page.getByTestId('scene-prompt').fill(prompt)
   await expect(page.getByRole('button', { name: person.name })).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('generate-scene').click()
@@ -188,7 +188,7 @@ test('saved voxel draft restores after refresh and creates a world without regen
   expect(routes.getGenerationCalls()).toBe(1)
   expect(routes.getCreatePayload()).toMatchObject({ personIds: ['person-1'], name: world.name })
   expect((routes.getCreatePayload()?.scene as { format?: string } | undefined)?.format).toBe('voxel-document')
-  expect(routes.getArchivePayload()).toEqual({ pauseReason: '已在新世界中安家' })
+  expect(routes.getArchivePayload()).toBeNull()
   expect(await page.evaluate(() => localStorage.getItem('possibility:world-create:v1'))).toBeNull()
 })
 

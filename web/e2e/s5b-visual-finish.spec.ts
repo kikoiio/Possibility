@@ -235,6 +235,13 @@ test.describe('S5B 保存前后地图回归 owner', () => {
     await page.route('**/api/worlds/world-1/timelines/*/history', (route) => route.fulfill({ json: { earliest: null, simNow: snapshot.simNow } }))
     await page.route('**/api/worlds/world-1/return**', (route) => route.fulfill({ json: { timelineId: 'main', simNow: snapshot.simNow, firstVisit: false, cursor: 0, events: [], commitments: [], unread: 0 } }))
     await page.route('**/api/worlds/world-1/scene', (route) => route.fulfill({ json: { status: 'ready', document: savedBundle, version: savedVersion, contentHash: 's5b-e2e', createdAt: snapshot.simNow } }))
+    await page.route('**/api/worlds/world-1/scene/compatibility/preflight', (route) =>
+      route.fulfill({ json: {
+        status: 'valid',
+        basis: { version: savedVersion, contentHash: 's5b-e2e', policyVersion: 'test' },
+        report: { status: 'diagnosed', issues: [] },
+      } })
+    )
     await page.route('**/api/worlds/world-1/scene/voxel-revision', (route) => {
       const body = route.request().postDataJSON() as { document: typeof voxelSpaces; spaceId: string }
       committedSpaceId = body.spaceId

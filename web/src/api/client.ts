@@ -432,6 +432,7 @@ export const sceneCompatibilityApi = {
     apiFetch<SceneEditPreflightResult>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/preflight`,
       { method: 'POST', body: JSON.stringify({ candidate }), signal },
+      { redirectOnUnauthorized: false },
     ),
   createDraft: (worldId: string, params: CreateSceneCompatibilityDraftParams, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityDraftView>(

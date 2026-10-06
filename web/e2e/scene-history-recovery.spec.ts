@@ -56,6 +56,8 @@ const inspectionInvalid = {
 
 async function openWorld(page: Page) {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'user-1', username: 'tester', role: 'user' } } }))
+  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
     world: snapshot, scene: { status: 'ready', document: voxelDoc },

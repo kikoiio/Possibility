@@ -16,6 +16,10 @@ const SCENARIO = {
   changedVariable: '信件是否送达',
   participants: ['小夜'],
   invariants: ['分叉前的共同历史不变'],
+  sourceVersion: 1,
+  actionProposal: { type: 'environment', location: '主楼', condition: 'weather', value: '晴朗' },
+  sourceCandidates: [],
+  actionTargets: { residents: [{ id: 'person-1', name: '小夜' }], locations: ['主楼'] },
 }
 
 interface Stubs {

@@ -283,7 +283,7 @@ export default function ComparePanel({
               </span>
               <span>
                 {data.timeAlignment === 'same_sim_time'
-                  ? '两线已对齐到相同世界时间，可直接观察同期走向。'
+                  ? '两线已对齐到相同世界时间。可直接观察同期走向。'
                   : '两线世界时间尚未对齐；以下只是各自当前状态，不能直接解释为同一时刻的结果。'}
               </span>
             </div>
