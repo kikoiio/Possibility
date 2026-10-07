@@ -12,15 +12,15 @@
 
 | 任务 | 结果 | 证据 |
 |---|---|---|
-| G0 | 通过；阶段一/二门槛已解除 | [baseline.md](evidence/baseline.md)；真实 provider 结果按 run 和 artifact 分批记录。 |
+| G0 | 未通过；阶段一真实生成/保存/repair 仍失败 | [baseline.md](evidence/baseline.md)；阶段二 current main 定向验收通过，但不能解除 G0。追加授权 100 次中已对账 99 次/$1.315873，余 1 次。 |
 | T17 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：单 pane 2D/3D 往返、query 保留、timeline/identity/simNow 不变、偏好/URL 优先和 3D 相机刷新恢复。 |
 | T20 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：左右 pane 503、左右 403 和左右超时隔离/重试；URL 指向无权 world 仍返回 403。 |
-| T22 | 当前提交验证通过 | [run 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850)：build/types、7 个文件 150 个定向 Vitest 和 2 个 fixture tests 通过。 |
-| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845)：桌面 Chromium 13/13、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
-| T24 | 测量完成，部分指标未验证 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845) 覆盖单/双及双向混合冷启动、单 pane 热切换、关闭 pane 和离场 renderer 清理；峰值资源和有效 JS heap 差值不可测，详见 [qa-matrix.md](evidence/qa-matrix.md)。 |
+| T22 | 当前 main 定向验证通过 | [run 37626431725](https://github.com/kikoiio/Possibility/actions/runs/37626431725)：production build/types、7 个文件 150 个定向 Vitest 和 2 个 fixture tests 通过。 |
+| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37627964474](https://github.com/kikoiio/Possibility/actions/runs/37627964474)：桌面 Chromium 15/15、Pixel 7 设备仿真触控 1/1；加入固定慢响应和断网恢复用例。真实网络、账号权限、实体设备和完整生命周期矩阵未完成。 |
+| T24 | 测量完成，部分指标未验证 | [run 37627964474](https://github.com/kikoiio/Possibility/actions/runs/37627964474) 覆盖单/双及双向混合冷启动、单 pane 热切换、关闭 pane 和离场 renderer 清理；峰值资源和有效 JS heap 差值不可测，详见 [qa-matrix.md](evidence/qa-matrix.md)。 |
 | T25 | 通过（用户确认） | 用户于 2026-10-07 明确要求将该项按通过处理；项目文档未附测试者身份、成绩或回访明细。 |
 | T26 | 完成 | AC1–AC8 结果和验证限制已记录并推送到 `main`。 |
-| T27 | 收尾受限 | `phase3` 已快进合入并推送到 `main`；远端 `phase3` 已删除，8 个干净的阶段三子 worktree/本地分支通过 Orca 移除。当前 phase3 根 worktree 保留用户未提交的 `baseline.md` 改动及本地分支。Orca worker-list 仍有 8 个 retained resource：7 个标记 `user_owned/user_takeover`（含 1 个 readiness-failed）、1 个为 `external`；另有 1 个已 released。尝试 release 一个已完成 terminal 时 Orca 返回 `retained/user_takeover` 且没有执行进程操作。 |
+| T27 | 阻塞（Orca 所有权） | Run 有 35 个 Task：34 completed、T27 ready；9 个 Dispatch 中 8 个成功、1 个 readiness-failed。8 个 retained terminal 的 exact worker 均报告 exited，但 7 个资源仍标记 user-owned、1 个 external，Orca 不提供 release action。干净子 worktree/本地分支已清理；根 phase3 worktree 用户未提交改动保留。详见 [evidence/README.md](evidence/README.md)。 |
 
 测试身份和两个 world/timeline 来自隔离 Playwright fixture；这不证明真实账号身份组合或部署环境。剩余范围见 `evidence/README.md` 的限制表。
 
@@ -29,7 +29,7 @@
 - [x] 阶段一完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和其引用的 checklist/运行证据，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
 - [x] 阶段二完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和实际结果，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
 - [x] 只有阶段一、二出口全部有正面证据时，Orca 才派发依赖性集成任务（验证：核对 G0 结论、Task/Dispatch 时间和证据；2026-10-07 用户授权的 T05/T06/T07/T10 独立实现可提前，G0 未通过时确认 renderer、会话和页面集成任务未派发，且 blocker 已记录）。
-- [ ] 每个并行开发任务有独立的 `phase3` 子 worktree、负责人、依赖、文件边界和验证结果（验证：核对 Orca Run/Task/Dispatch 与 worktree 分支基线；确认已完成改动汇入 `phase3`，且 `main` 的未提交改动未被复制或覆盖）。
+- [x] 每个并行开发任务有独立的 `phase3` 子 worktree、负责人、依赖、文件边界和验证结果（验证：核对 Orca Run/Task/Dispatch；改动已集成，干净子 worktree 已清理；保留用户修改的根 worktree）。
 
 ## 实现行为
 
@@ -57,19 +57,19 @@
 
 - [x] 2D/3D 对照使用相同主题、人物、检查点、模型条件和核心任务（验收状态：用户于 2026-10-07 明确确认 T25 按通过处理；详细配对记录未附于仓库）。
 - [x] 内部 QA 记录任务完成、错误、性能与回访结果，且不含 API 密钥或原始私人对话（验收状态：用户于 2026-10-07 明确确认 T25 按通过处理；详细记录未附于仓库）。
-- [ ] 阶段三没有开展公开用户投票或公开评估（验证：检查 QA 记录和交付报告；公开评估与投票标记为延期）。
-- [ ] 如需真实模型调用，执行前已有明确预算上限和模型配置确认；未确认的项目保持未验证（验证：检查调用记录与预算确认；无确认时不得出现真实模型请求）。
+- [x] 阶段三没有开展公开用户投票或公开评估（验证：检查 QA 记录和交付报告；公开评估与投票标记为延期）。
+- [x] 如需真实模型调用，执行前已有明确预算上限和模型配置确认；未确认的项目保持未验证（验证：用户明确授权最多 100 次；6 个真实 provider runs 对账 99 次/$1.315873；没有超预算调用）。
 
 ## 编译、测试与资源
 
-- [ ] Web 工作区构建通过（验证：运行 `npm --workspace web run build`，记录 commit 和退出结果）。
-- [ ] 新增状态、路由、adapter、相机、pane 和工作区定向单测通过（验证：逐项运行 task.md 中指定的 Vitest 命令，使用 `--maxWorkers=1` 并记录结果）。
-- [ ] Playwright 场景文件可发现，且实际浏览器矩阵通过或明确记录失败/限制（验证：先运行各文件的 `--list`，再由协调者按矩阵执行浏览器场景并保存 trace、截图或日志；`--list` 只验证发现性）。
-- [ ] 每次构建、浏览器或其他重型操作前都有资源评估（验证：记录 MemAvailable、`vmstat 1 5` 后续 si/so、memory PSI 和任务 cgroup 限额；按压力调整并发，未以 swap 使用率单项决策）。
-- [ ] 重型验证没有未经协调地并行启动；任务结束后，本任务启动且已不再需要的临时进程已退出（验证：检查验证排期、进程/服务记录和结果证据；保留用户仍需使用的服务）。
+- [x] Web 工作区构建通过（验证：[run 37626431725](https://github.com/kikoiio/Possibility/actions/runs/37626431725)，提交 `c975c9a`，production build/types 成功）。
+- [x] 新增状态、路由、adapter、相机、pane 和工作区定向单测通过（验证：run 37626431725，7 个 Vitest 文件 150 tests、2 个 fixture tests 通过；独立模块验证另见历史 run）。
+- [x] Playwright 场景文件可发现，且实际浏览器矩阵通过或明确记录失败/限制（验证：run 37627964474 实际执行桌面 15/15、Pixel 7 仿真 1/1；trace 与限制已记录）。
+- [x] 每次构建、浏览器或其他重型操作前都有资源评估（验证：GitHub Actions run 37627964474 记录 MemAvailable、vmstat 后续 si/so、memory PSI 和可见的 cgroup 限额结果；重型操作云端顺序执行）。
+- [x] 重型验证没有未经协调地并行启动；任务结束后，本任务启动且已不再需要的临时进程已退出（验证：本轮重型任务在已授权 Actions 上逐批运行；无本机临时服务启动）。
 
 ## 最终报告
 
-- [ ] AC1–AC8 每项均有通过、未通过、未验证或阻塞结论及证据链接（验证：逐条对照 `spec.md` 与 `evidence/README.md`、`evidence/qa-matrix.md`；空白或缺失记录不得标通过）。
-- [ ] 最终报告明确列出未解决限制、尚未验证项目，并注明公开评估和投票延期（验证：审阅阶段报告与 checklist 状态一致性）。
+- [x] AC1–AC8 每项均有通过、未通过、未验证或阻塞结论及证据链接（验证：逐条对照 `spec.md` 与 `evidence/README.md`、`evidence/qa-matrix.md`；G0 未通过、AC1/2/4/6/7 部分通过已明确记录）。
+- [x] 最终报告明确列出未解决限制、尚未验证项目，并注明公开评估和投票延期（验证：审阅阶段报告与 checklist 状态一致性）。
 - [ ] Orca 当前 Run 中的 worker/Task 均有 settled 结果或明确 blocker，且没有被误清理的未完成工作（验证：检查 Run 状态和 worktree 列表；仅对已 settled worker 执行约定的保留、复用或释放）。
