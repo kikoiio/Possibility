@@ -18,10 +18,11 @@ Branch at checkpoint: `main` (the current acceptance branch). This record covers
 ## G0: production build + real API check
 
 - **Build mode:** `cd web && npm run build` runs `tsc --noEmit && vite build`; this generated Vite's production bundle in `web/dist` (including the production chunk-size warning noted above).
-- **Preview mode:** `cd web && npm run preview -- --host 127.0.0.1 --port 15175` served that production output. The 35/35 desktop suite above used Vite's development server; it is recorded separately.
-- **API route:** the built app uses same-origin `/api` paths. For this local preview check, Playwright forwarded those browser requests to an isolated local Cloudflare Worker/D1 on port 18891. API responses were real Worker responses, not fixtures. The Worker log showed successful auth/world list and snapshot reads, native2d layout GET/PUT, intervention, fork, and compare calls. The test account/database were disposable and have been removed.
-- **Mock boundary:** only the account chat `/scene` SSE stream was intercepted with a deterministic response. No model provider was called. All other observed account API operations used the local Worker.
-- **Outcome/limit:** production preview rendered the account world from the Worker; layout GET and PUT returned HTTP 200, and a later layout GET also returned 200. Compare was confirmed by the UI message `比较结果已读取；结果描述观察到的差异，不代表因果结论。` An early harness assertion expected different wording and timed out; this was an assertion mismatch. The later production-preview drag attempt did not reach a valid-move state, so equality of the saved placement after refresh/reselection was **not verified in production preview**. The separate development-server owner journey did verify save and refresh restoration. No additional browser/build verification was started after the coordinator reported rising resource pressure.
+- **Cloud production-preview run:** because the coordinator reported rising local memory pressure, the release build/browser pass was moved to GitHub Actions (public repository, `ubuntu-24.04` hosted runner). The run [37560275395](https://github.com/kikoiio/Possibility/actions/runs/37560275395) passed on code commit `b68e79b9762a0e071515e5549305ee64480bcae9`. It built the production bundle and served it with `vite preview`; the browser was Chromium desktop 1280×720.
+- **API route:** the built app used same-origin `/api`; Playwright forwarded browser API requests to the actual local Cloudflare Worker runtime with a fresh, isolated local D1 database on the Actions runner. This was real application Worker/D1 behavior and real API responses, but **not a remote deployed Cloudflare API or production database**. The run recorded 19 Worker requests and zero HTTP failures across login, world/timeline read, intervention, fork, compare, layout save, and layout restoration.
+- **Mock boundary:** only the account chat `/scene` SSE response was mocked with deterministic text; no model provider was called. Every other browser `/api` request was forwarded to the Worker.
+- **Outcome:** the production preview owner journey passed. It saved the moved gatehouse placement to the fork timeline, reloaded the browser page, reselected the same world/timeline, and verified the D1 placement was unchanged (`layoutRestoredAfterReload: true`, layout version 1). This covers browser reload/return and persisted layout, but does not cover a deployed world advancing while the user is away.
+- **Harness corrections:** the first cloud attempt exposed route teardown masking the page failure; the second showed that the test read the timeline selector before React finished selecting the fork. Both harness issues were fixed and committed before the passing third run. These were not recorded as product failures.
 
 The owner browser journey exercised a real local owner account and local D1 persistence. Chat used an SSE mock to avoid depending on an external model provider. The test account was disposable and has been removed; no reusable password or token is stored in this repository.
 
@@ -33,15 +34,14 @@ The owner browser journey exercised a real local owner account and local D1 pers
 
 ## Failed or unverified
 
-- **Remote deployment progression/pause/resume (T15/T22): unverified.** `scripts/verify-deployment-journey.ts` now checks that a dedicated running world advances while away, freezes while paused, then resumes. It was not run against a deployed world because this session had no deployment URL or credentials. No remote world was mutated.
+- **Remote deployment progression/pause/resume (T15/T22): unverified.** `scripts/verify-deployment-journey.ts` now checks that a dedicated running world advances while away, freezes while paused, then resumes. Neither the local development run nor the GitHub-hosted local Worker/D1 acceptance contacted a deployed environment. No remote world was mutated.
 - **Public demo live-read browser case: unverified.** The earlier live case could not complete against an available public demo and timed out; the local acceptance above does not substitute for that live environment check.
 - **Touch-device interaction, cross-device layout restoration, and archive behavior: unverified.** Desktop browser refresh/reselection restoration passed, but these separate environments/flows were not exercised.
 - **SSE/model generation: not verified against a model provider.** The owner journey mocked the chat stream; API interaction and other account operations used the local service.
-- **Production-preview layout round-trip: partially verified.** The release bundle loaded and the real local API returned 200 for layout GET/PUT, but the preview browser drag did not produce an applicable move and saved-placement equality after refresh was not checked. Do not substitute the 35/35 development-server run for this missing check.
 
 ## Resource checkpoint
 
-Before preview work, this session observed about 7.3 GiB MemAvailable, negligible later `vmstat` swap-in/out, and memory PSI avg10/full avg10 at 0. After the preview run began, the coordinator reported the newer system state as about 5.3 GiB MemAvailable, rising swap use, and memory PSI avg10 about 0.33. Per that coordination, the active preview/API services were stopped, their local database and credentials were removed, and no further build/browser tests were started.
+Before preview work, this session observed about 7.3 GiB MemAvailable, negligible later `vmstat` swap-in/out, and memory PSI avg10/full avg10 at 0. After the local preview run began, the coordinator reported the newer system state as about 5.3 GiB MemAvailable, rising swap use, and memory PSI avg10 about 0.33. Per that coordination, the local preview/API services were stopped and their local database/credentials removed. After explicit user authorization, production-build/browser work resumed only on the GitHub-hosted runner; no additional local build/browser test was started.
 
 ## Durable implementation evidence
 
@@ -52,4 +52,4 @@ Before preview work, this session observed about 7.3 GiB MemAvailable, negligibl
 - Deployment journey checks: `scripts/verify-deployment-journey.ts` (implementation updated; deployed run remains unverified).
 - Itemized Phase 2 checklist: `docs/spec_docs/phase2-world-loop/checklist.md`.
 
-The exact final code and this checkpoint are reviewable in the commit that adds this file on the current branch.
+The passing production-preview evidence is reproducible from workflow `.github/workflows/phase2-production-acceptance.yml` and script `web/scripts/phase2-release-preview.acceptance.ts`. The run tested code commit `b68e79b`; this checkpoint additionally records the run results. The evidence commit is listed in the final acceptance handoff.

@@ -26,10 +26,10 @@
 | T15 | 部署旅程脚本补强，未实跑 | 脚本现在会先观察运行中的世界是否自然推进，再暂停并核对冻结状态，最后恢复；需要专用运行世界和至少 30 秒等待。 |
 | T19 | owner 浏览器旅程通过（本地隔离环境） | 账户 2D 页面用本地 owner 登录，真实调用列表、timeline、干预、fork、compare API；对话 SSE 使用 mock。完整 journey 包含在 `native2d-desktop` 35/35 中。 |
 | T20 | 实现并通过定向验证 | 新增 D1 native2d head/revision 表与 `0039` 迁移、owner API、布局元数据校验、CAS 和 requestId 重放；路由/仓库/迁移 22/22 通过。 |
-| T21 | 本地 owner 浏览器保存/刷新恢复通过；release preview 部分验证 | 开发服务器 owner 旅程移动布局并保存到 D1，刷新、重选后布局一致。production preview 加载 production bundle 并连真实本地 Worker：layout GET/PUT 返回 200；preview 拖拽未达到有效移动，刷新后布局相等尚未核实。账户 API、CAS、迁移定向测试 22/22；跨设备和归档行为仍未验证。 |
-| T22 | 主要本地旅程通过，阶段出口未满足 | API 全量 876 passed/1 skipped；Web 单元 536/536；开发服务器 `native2d-desktop` 35/35；Vite production build + preview 连本地真实 Worker 的读/写/账户动作部分通过。preview 布局刷新相等、离页真实推进/暂停/恢复和公开 demo live 未验收，不能将 35/35 视作完整出口。逐项证据见 `artifacts/phase2-acceptance-2026-10-07.md`。 |
+| T21 | owner 浏览器生产预览布局保存/刷新恢复通过 | GitHub Actions production preview 使用 Vite production bundle、Chromium 和隔离真实本地 Worker/D1：移动 gatehouse、保存至 fork timeline、整页 reload、重选 world/timeline 后确认 D1 placements 相等。仅聊天 SSE mock。跨设备和归档行为仍未验证。 |
+| T22 | G0 release build + real API 通过；整体出口仍受远端旅程约束 | API 全量 876 passed/1 skipped；Web 单元 536/536；开发服务器 `native2d-desktop` 35/35；GitHub Actions production preview owner journey passed（run `37560275395`，code `b68e79b`）。该次真实 Worker/D1 为 runner 上本地隔离环境，非远程部署；离页推进/暂停/恢复及公开 demo live 仍未验收，故不可据此宣称全部阶段出口完成。逐项证据见 `artifacts/phase2-acceptance-2026-10-07.md`。 |
 
-N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`，不会拦截访客 API。owner 账户旅程已在本地隔离环境完成；对话 SSE 使用 mock。远端部署凭据/URL 未配置，因此没有运行会自然推进、暂停并恢复专用测试世界的部署旅程；T15 及部署出口仍未验收。
+N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`，不会拦截访客 API。owner 账户旅程在开发服务和 production preview 均完成；production preview 的 19 个 Worker 请求无 HTTP 失败，对话 SSE 使用 mock。没有对远程部署/世界发请求，因此自然推进、暂停并恢复专用测试世界的旅程仍未验收；T15 及该项部署出口受限。
 
 ## 实现完整性
 
@@ -49,7 +49,7 @@ N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`
 - [ ] V1 居民动作只绑定真实活动点和证据（验证：有/无对象场景对照）。
 - [ ] N1 2D 使用正确真实账户 world/timeline 和公共投影（验证：owner 账户旅程）。
 - [ ] N1 2D 选择、跟随、室内、对话、干预、分叉/比较复用公共 API（验证：网络记录和行为结果）。
-- [ ] N2 服务端保存 native2d 布局、校验、撤销和跨设备恢复（API/CAS、迁移及页面接线已实现；仍缺真实 owner 浏览器刷新/换设备旅程）。
+- [ ] N2 服务端保存 native2d 布局、校验、撤销和跨设备恢复（API/CAS、迁移及 owner 页面保存/reload/重选恢复已验证；撤销和跨设备旅程仍需补验）。
 
 ## 集成与隔离
 
@@ -68,7 +68,9 @@ N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`
 - [x] 受影响 Web 单元测试通过。
 - [x] migration/schema 定向测试通过。
 - [x] 构建通过；已有大 chunk 警告如实记录。
-- [ ] 全量测试和浏览器验证按内存规则错峰；API 全量修正后尚未重跑，生产部署旅程未执行。
+- [x] API 全量 876 passed/1 skipped；Web 单元 536/536；`native2d-desktop` 35/35。
+- [x] Vite production build + preview 上的 owner 浏览器旅程通过；实际 API 为 runner 上的 Cloudflare Worker/local D1，未连远端部署。完整记录见 `artifacts/phase2-acceptance-2026-10-07.md`。
+- [ ] 远端部署推进/暂停/恢复及公开 demo live 验收未执行。
 
 ## 端到端场景
 
