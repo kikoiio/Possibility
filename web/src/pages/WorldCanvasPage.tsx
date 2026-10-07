@@ -812,10 +812,10 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       />
     : null
   const worldStatus = snapshot.world.status
-  const running = worldStatus === 'running'
-  const capped = worldStatus === 'capped'
+  const running = !archived && worldStatus === 'running'
+  const capped = !archived && worldStatus === 'capped'
   const evidenceReadonly = snapshot.evidence.level !== 'complete'
-  const canInteract = !readonly && !guest && !evidenceReadonly
+  const canInteract = !readonly && !guest && !evidenceReadonly && !archived
 
   const modals = (
     <WorldModalsContainer

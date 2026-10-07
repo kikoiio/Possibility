@@ -120,6 +120,8 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   expect(removable.length, 'claimed world should contain a removable unbound decorative asset').toBeGreaterThan(0)
   await page.getByTestId('voxel-tool-asset').click()
   await expect(page.getByTestId('voxel-asset-panel')).toBeVisible()
+  const removableIds = new Set(removable.map(candidate => candidate.id))
+  const assetActions = page.getByTestId('voxel-asset-actions')
   let selectedAssetId: string | null = null
   for (const candidate of removable) {
     const point = await page.evaluate(at => (window.__voxelEngine as never as {
@@ -127,16 +129,27 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
     } | undefined)?.worldToScreen(at), candidate)
     if (!point) continue
     await page.mouse.click(point.x, point.y)
-    if (await page.getByTestId('voxel-asset-actions').isVisible().catch(() => false)) {
-      selectedAssetId = candidate.id
-      break
+    if (await assetActions.isVisible().catch(() => false)) {
+      // 射线可能先命中遮挡物，保存实际选中身份，而非投影候选的身份。
+      const pickedId = await assetActions.getAttribute('data-placement-id')
+      if (pickedId && removableIds.has(pickedId)) {
+        selectedAssetId = pickedId
+        break
+      }
+      await page.getByTestId('voxel-asset-deselect').click()
+      await expect(assetActions).toHaveCount(0)
     }
   }
   expect(selectedAssetId, 'an unbound decorative asset should be selectable in the owner editor').not.toBeNull()
   const revisionResponse = page.waitForResponse(response => response.request().method() === 'POST'
     && response.url().includes('/scene/voxel-revision') && response.status() === 200)
   await page.getByTestId('voxel-asset-remove').click()
-  await revisionResponse
+  const saved = await (await revisionResponse).json() as {
+    document: { spaces: { document: { assetPlacements?: { id?: string }[] } }[] }
+  }
+  expect(saved.document.spaces.length).toBeGreaterThan(0)
+  const savedPlacements = saved.document.spaces.flatMap(space => space.document.assetPlacements?.map(item => item.id) ?? [])
+  expect(savedPlacements).not.toContain(selectedAssetId)
   await expect(page.getByTestId('voxel-asset-actions')).toHaveCount(0)
 
   // 9. 从多空间 owner renderer 发起真实分屏；记录当前 renderer 是否支持并继续验证刷新

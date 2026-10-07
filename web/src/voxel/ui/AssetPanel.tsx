@@ -58,7 +58,7 @@ export default function AssetPanel({ manifest, onPick, armedAssetId, selectedPla
         ))}
       </div>
       {selectedPlacement && (
-        <div className="mt-1 flex flex-col gap-1 rounded border border-amber-500/50 p-2" data-testid="voxel-asset-actions">
+        <div className="mt-1 flex flex-col gap-1 rounded border border-amber-500/50 p-2" data-testid="voxel-asset-actions" data-placement-id={selectedPlacement.id}>
           <div className="text-amber-200">已选中：{selectedPlacement.label}</div>
           <div className="text-zinc-400">拖动移到新位置；R 旋转 90°；Esc 取消</div>
           <div className="flex gap-1">
