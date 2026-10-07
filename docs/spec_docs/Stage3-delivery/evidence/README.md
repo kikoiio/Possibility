@@ -27,11 +27,11 @@
 | [phase2-acceptance-2026-10-07.md](phase2-acceptance-2026-10-07.md) | 阶段二连续旅程与远端部署证据边界。 |
 | [GitHub Actions 37614066902](https://github.com/kikoiio/Possibility/actions/runs/37614066902) | 较早集成提交的 Web build/types、119 个定向 Vitest、2 个 fixture tests。 |
 | [GitHub Actions 37614807432](https://github.com/kikoiio/Possibility/actions/runs/37614807432) | 当前实现提交的浏览器验收 6/6 与性能/renderer registry 观测；artifact `phase3-presentation-37614807432` 保留 14 天。 |
-| [GitHub Actions 37615432126](https://github.com/kikoiio/Possibility/actions/runs/37615432126) | 当前 HEAD `ea6eeb0` 的 build/types、5 个 Vitest 文件 119 tests、2 个 fixture tests 均通过。 |
+| [GitHub Actions 37615859235](https://github.com/kikoiio/Possibility/actions/runs/37615859235) | 当前集成提交 `19a953b` 的 build/types、7 个 Vitest 文件 150 tests、2 个 fixture tests 均通过。 |
 
 ## 仍需完成
 
-- 新增 ComparisonHost 与原生 2D 测试后的扩展 build/types + Vitest 云端验证结果；新 run 失败时需修复后重跑。
+- 无待补的 T22 build/types 或定向 Vitest 结果；run 37615859235 已验证本次扩展集。
 - 完整 AC4 矩阵：左右权限身份镜像、左右侧独立失败、刷新/相机恢复、慢网/离线、真实触屏、完整生命周期循环和混合表现性能。
 - AC5 内部测试者配对 QA 与回访记录。
 - T27 Orca Run/worker settled 状态核实。保留的 worker/worktree 未被本次清理。
