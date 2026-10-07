@@ -191,6 +191,9 @@ describe('PresentationLifecycle', () => {
     let nestedTransition: Promise<unknown> | undefined
     let reenter = false
     const nestedHandle = mounted('native2d')
+    const nativeMount = vi.fn<PresentationAdapter<'native2d'>['mount']>()
+      .mockResolvedValueOnce(oldHandle)
+      .mockResolvedValueOnce(nestedHandle)
     const oldHandle = mounted('native2d', {
       captureCamera: () => {
         if (reenter) {
@@ -203,7 +206,7 @@ describe('PresentationLifecycle', () => {
     lifecycle = createPresentationLifecycle({
       store: store(),
       adapters: {
-        native2d: adapter('native2d', async () => oldHandle),
+        native2d: adapter('native2d', nativeMount),
         voxel3d: adapter('voxel3d', async () => mounted('voxel3d')),
       },
     })
