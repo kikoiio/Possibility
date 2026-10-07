@@ -48,7 +48,7 @@ jobs:
         run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
 
   guest-claim:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance)
     name: Isolated real API + browser guest claim slice
     runs-on: ubuntu-latest
     timeout-minutes: 30
