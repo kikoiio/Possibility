@@ -120,3 +120,7 @@
 - 37590413308 零模型诊断已读取：custom2后续几轮缺稳定placementId，repair末两轮walk-gap坐标位于y5。报告不算新模型证据。旧真实调用保持88/200；回归失败的37589439714/37589737496/37590245031/37590243427/37590413382均跳过真实provider。
 - 307c7fd修正咖啡館真实建筑fixture世界边界为32，保留missing-binding有限重试的原断言，不放宽validator。新真实复测[37591036270](https://github.com/kikoiio/Possibility/actions/runs/37591036270)至多25请求、全五场景、回归成功才调用provider；运行中尚不记实际调用。
 - 两已有agent分别在phase1-claim-fix与phase2-clock-fix处理准确生成几何约束与repair通行根因；所有命令显式绝对workdir，禁止修改协调者分支。P13纯生命周期模块另开隔离worktree，重型验证继续使用已授权GitHubActions。
+
+- 阶段一提示复核提交 `fa43f0f` / `83de0c6` 已精准移植：增加区域地点独立 carrier、道路连续路面和按用户数量建楼层约束；两层住宅改用专用 `manor-two-story-house` 体素模板。补建 walk-gap 提示提交 `629462c`，说明 `issue.at` 是严格可达的缺口前格，并检查同高度四邻、中间缺格及两格外落脚格；湖岸按实际高差接路，不盲目填当前位置。
+- 新两层模板首次云端检查 [37592030411](https://github.com/kikoiio/Possibility/actions/runs/37592030411) 证明楼梯旁存在真实 walk-clearance 问题，0 provider 请求。补齐第二踏步下方支撑后，[37592376850](https://github.com/kikoiio/Possibility/actions/runs/37592376850) 的 API build、phase1 voxel 回归（含四种旋转的住宅净空/通行路径）通过；该 run 正在执行真实 provider 全套验收，调用及费用待归档报告确认。
+- T13 纯生命周期模块已合入 `8a3d2fa`，用转换 generation 防止同步重入复写；延迟 mount、取消、相机恢复/保存、旧视口释放和幂等 destroy 均有测试。[Phase3 independent validation 37592945905](https://github.com/kikoiio/Possibility/actions/runs/37592945905) 成功：production Web build/types、独立模块 **118 tests**、fixture **2 tests**。应用页面及真实 renderer/双 pane 集成仍未验收，G0继续阻塞该集成波次。
