@@ -137,8 +137,8 @@ test('rapid replacement cancels a stale side load and closing it leaves the sibl
 
   await page.getByTestId('comparison-pane-right').getByRole('button', { name: '关闭右侧' }).click()
   await expect(page.getByTestId('comparison-pane-right')).toHaveCount(0)
-  await expect(page.getByTestId('pane-facts-left')).toContainText('presentation-world-a-main')
-  await expect(page.locator('[data-testid="comparison-pane-left"] [data-presentation="native2d"] canvas')).toBeVisible()
+  await expect(page.getByTestId('pane-facts-single')).toContainText('presentation-world-a-main')
+  await expect(page.locator('[data-testid="comparison-pane-single"] [data-presentation="native2d"] canvas')).toBeVisible()
 
   await page.getByRole('button', { name: '添加比较视口' }).click()
   await expect(page.getByTestId('comparison-pane-right')).toBeVisible()

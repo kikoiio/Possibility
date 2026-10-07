@@ -77,7 +77,7 @@ test('3D camera restores from its world, timeline and presentation scope after r
 test('2D camera restores after refresh and stays scoped to each timeline and presentation', async ({ page }) => {
   await stubSplitApis(page)
   const mainCamera = { pan: { x: 71, y: -33 }, zoom: 1.4 }
-  const forkCamera = { pan: { x: -24, y: 56 }, zoom: 0.8 }
+  const forkCamera = { pan: { x: -24, y: 56 }, zoom: 1.4 }
   await page.addInitScript(({ main, fork }) => {
     const key = (timeline: string, presentation: string) =>
       `possibility:presentation:camera:${JSON.stringify(['world-1', timeline, presentation])}`

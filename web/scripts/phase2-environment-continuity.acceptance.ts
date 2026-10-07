@@ -145,6 +145,12 @@ async function routeBrowserApiToWorker(context: BrowserContext): Promise<void> {
   await context.route('**/api/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
+    // SSE never finishes its response body. Let Chromium consume the real
+    // Worker stream directly instead of buffering it through route.fetch.
+    if (url.pathname.endsWith('/stream')) {
+      await route.continue({ url: `${apiTarget}${url.pathname}${url.search}` })
+      return
+    }
     const response = await route.fetch({ url: `${apiTarget}${url.pathname}${url.search}` })
     requests.push({ method: request.method(), path: url.pathname, status: response.status() })
     await route.fulfill({ response })
