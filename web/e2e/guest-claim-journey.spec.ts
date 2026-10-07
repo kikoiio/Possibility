@@ -124,7 +124,7 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   for (const candidate of removable) {
     const point = await page.evaluate(at => (window.__voxelEngine as never as {
       worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
-    } | undefined)?.worldToScreen(candidate), candidate)
+    } | undefined)?.worldToScreen(at), candidate)
     if (!point) continue
     await page.mouse.click(point.x, point.y)
     if (await page.getByTestId('voxel-asset-actions').isVisible().catch(() => false)) {
