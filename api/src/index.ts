@@ -7,6 +7,7 @@ import { chatRoutes } from './chat/routes'
 import { timelineRoutes } from './timelines/routes'
 import { homeRoutes } from './home/routes'
 import { engineRoutes } from './engine/routes'
+import { runTick } from './engine/tick'
 import { worldsRoutes } from './worlds/routes'
 import { chapterRoutes } from './chapters/routes'
 import { memoryRoutes } from './memories/routes'
@@ -37,6 +38,8 @@ export interface Env {
   /** Optional Cloudflare service binding for controlled provider routing. */
   LLM_PROVIDER?: Fetcher
   ENGINE_TICK_SECRET?: string
+  /** Opt in to Cloudflare scheduled ticks; leave unset when the external pinger owns scheduling. */
+  ENGINE_CRON_TICK?: string
   WORLD_SPEED?: string
   TICK_CALL_CAP?: string
   DAILY_CALL_CAP?: string
@@ -68,6 +71,7 @@ export interface Env {
 }
 
 const app = new Hono<{ Bindings: Env }>()
+const GUEST_CLEANUP_CRON = '17 3 * * *'
 
 app.use('/api/*', cors())
 
@@ -102,7 +106,23 @@ app.route('/api', timelineRoutes) // /persons/:id/fork*、/timelines/:id
 app.route('/api/home', homeRoutes)
 
 export default Object.assign(app, {
-  scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext) {
-    context.waitUntil(cleanupExpiredGuestData(createDb(env.DB)))
+  scheduled(controller: ScheduledController, env: Env, context: ExecutionContext) {
+    const engineCronEnabled = env.ENGINE_CRON_TICK === '1'
+    const isGuestCleanupCron = controller.cron === GUEST_CLEANUP_CRON
+    context.waitUntil((async () => {
+      const db = createDb(env.DB)
+      // Default deployments keep the daily cleanup trigger and leave engine
+      // cadence to the external pinger. In opt-in mode, that trigger also
+      // ticks the engine while additional cron expressions drive cadence.
+      if (isGuestCleanupCron) {
+        try { await cleanupExpiredGuestData(db) }
+        catch (error) { console.error('[scheduled] guest cleanup failed:', error) }
+      }
+      // Continue after a cleanup failure; runTick owns the cross-Worker lease.
+      if (engineCronEnabled) {
+        try { await runTick(env, db) }
+        catch (error) { console.error('[scheduled] engine tick failed:', error) }
+      }
+    })())
   },
 })

@@ -495,7 +495,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       finalLedgerSummary = ledger.map(row => ({ purpose: row.purpose, status: row.status, errorCode: row.errorCode }))
       const requestsByScenario = Object.fromEntries([...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
         .map(id => [id, providerCalls.filter(call => call.scenario === id).length]))
-      reconciled = ledger.length === providerCalls.length && providerCalls.length <= rawRequestCap
+      reconciled = ledger.length === providerCalls.length && providerCalls.length <= effectiveRequestCap
         && Object.values(requestsByScenario).every(count => count <= PER_SCENARIO_CAP)
         && scenarios.every(result => result.providerRequests + result.replayedRequests === result.llmCallLogRows)
         && (!requiresRepair || repairProviderRequests + repairReplayedRequests === repairLedgerRowCount)

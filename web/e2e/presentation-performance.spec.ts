@@ -9,7 +9,16 @@ interface PerformanceWindow {
 }
 
 async function heapBytes(page: import('@playwright/test').Page): Promise<number | null> {
-  return page.evaluate(() => (window as unknown as PerformanceWindow).performance.memory?.usedJSHeapSize ?? null)
+  // Chromium's window.performance.memory can be rounded to a constant across
+  // frames. Read the renderer's V8 heap metric without forcing garbage collection.
+  const session = await page.context().newCDPSession(page)
+  try {
+    await session.send('Performance.enable')
+    const result = await session.send('Performance.getMetrics')
+    return result.metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? null
+  } finally {
+    await session.detach()
+  }
 }
 
 test('records viewport readiness and renderer release observations', async ({ page }) => {
@@ -86,11 +95,13 @@ test('records viewport readiness and renderer release observations', async ({ pa
   await expect.poll(() => page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)).toBe(0)
   observations.leaveWorldReadyMs = Date.now() - started
   observations.afterLeaveRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
+  observations.afterLeaveHeapBytes = await heapBytes(page)
 
   console.info(`PHASE3_PERF_OBSERVATIONS ${JSON.stringify({
     commit: process.env.GITHUB_SHA ?? 'workflow checkout commit',
     browser: 'GitHub Actions desktop Chromium',
     viewport: page.viewportSize(),
+    heapMeasurement: 'CDP Performance.JSHeapUsedSize; readiness snapshots, not physical/GPU peaks',
     observations,
   })}`)
   expect(observations.double3dRendererCount).toBe(2)

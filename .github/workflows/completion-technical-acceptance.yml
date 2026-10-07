@@ -1,0 +1,39 @@
+name: Phase completion technical regression
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: completion-technical-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  technical-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Record runner memory and pressure
+        run: |
+          free -h
+          vmstat 1 5
+          cat /proc/pressure/memory
+          cat /sys/fs/cgroup/memory.max 2>/dev/null || true
+      - run: npm ci
+      - name: Check API types
+        run: npm --workspace api run build
+      - name: Build Web production bundle and check types
+        run: npm --workspace web run build
+      - name: Run complete API regression without live-provider harness
+        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism --exclude src/test/phase1-g0-provider.acceptance.test.ts
+      - name: Run complete Web unit regression
+        run: npm --workspace web test -- --maxWorkers=1 --no-file-parallelism
+      - name: Run voxel contract regression
+        run: npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 --no-file-parallelism

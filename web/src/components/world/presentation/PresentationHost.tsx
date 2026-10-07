@@ -36,9 +36,20 @@ export default function PresentationHost({
     let active = true
     const lifecycle = createPresentationLifecycle({ adapters, store })
     setFailure(null)
+    const cameraHost = host.parentElement ?? host
+    cameraHost.removeAttribute('data-camera-state')
     void lifecycle.transition(context, host, {
-      onCameraChange: camera => callbacksRef.current.onCameraChange?.(camera),
-      onMounted: entry => callbacksRef.current.onMounted?.(entry),
+      onCameraChange: camera => {
+        cameraHost.dataset.cameraState = JSON.stringify(camera)
+        callbacksRef.current.onCameraChange?.(camera)
+      },
+      onMounted: entry => {
+        try {
+          const camera = entry.mounted.captureCamera()
+          if (camera) cameraHost.dataset.cameraState = JSON.stringify(camera)
+        } catch { /* Camera diagnostics cannot break an otherwise mounted pane. */ }
+        callbacksRef.current.onMounted?.(entry)
+      },
     }).then(result => {
       if (!active) return
       if (result.kind === 'error') setFailure(result.error)

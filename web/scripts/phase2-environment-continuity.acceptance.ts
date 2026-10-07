@@ -20,6 +20,7 @@ type Diagnostic = {
   environment?: { weather?: string | null; lighting?: string | null; access?: Record<string, string> }
   environmentVisuals?: Array<{ kind: string; value: string; locationName?: string }>
 }
+type VoxelEnvironmentDiagnostic = { weatherFog: number; renderedFogDensity: number }
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -58,7 +59,8 @@ async function state(world: string, timeline: string, token: string): Promise<Js
 
 async function environmentAction(
   world: string, timeline: string, token: string,
-  actionId: string, location: string | null, condition: 'weather' | 'access', value: 'fog' | 'open' | 'closed',
+  actionId: string, location: string | null,
+  condition: 'weather' | 'lighting' | 'access', value: 'fog' | 'night' | 'open' | 'closed',
 ): Promise<JsonObject> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = await state(world, timeline, token)
@@ -90,11 +92,39 @@ async function verifyRenderer(page: Page, locationState: 'closed' | 'open', prev
     const visuals = diagnostics?.environmentVisuals ?? []
     return Boolean(diagnostics && diagnostics.drawCount > minDrawCount
       && visuals.some(item => item.kind === 'weather' && item.value === 'fog')
+      && visuals.some(item => item.kind === 'lighting' && item.value === 'night')
       && visuals.some(item => item.kind === 'access' && item.value === expectedAccess && item.locationName === '后山散步道'))
   }, { minDrawCount: previousDrawCount, expectedAccess: locationState }, { timeout: 20_000 })
   const diagnostics = await page.evaluate(() => (window as any).__native2dDiagnostics?.() as Diagnostic | undefined)
   assert(diagnostics, 'native2d Pixi renderer diagnostics are unavailable')
+  assert(diagnostics.environment?.weather === 'fog' && diagnostics.environment?.lighting === 'night'
+    && diagnostics.environment?.access?.['后山散步道'] === locationState,
+  'native2d environment diagnostics do not match the committed child timeline')
   return diagnostics
+}
+
+async function verifyVoxelRenderer(page: Page, world: string, timeline: string): Promise<VoxelEnvironmentDiagnostic> {
+  await page.getByTestId('pane-facts-single').waitFor({ timeout: 30_000 })
+  await page.waitForFunction(({ expectedWorld, expectedTimeline }) => {
+    const pane = document.querySelector('[data-testid="comparison-pane-single"]')
+    const engine = (window as any).__voxelEngines?.single
+    return pane?.getAttribute('data-world-id') === expectedWorld
+      && pane?.getAttribute('data-timeline-id') === expectedTimeline
+      && Boolean(engine?.world && engine.weather?.state?.fog >= 0.95
+        && engine.renderer?.scene?.fog?.density > 0)
+  }, { expectedWorld: world, expectedTimeline: timeline }, { timeout: 30_000 })
+  assert(await page.getByTestId('pane-facts-single').textContent().then(text => text?.includes(timeline)),
+    '3D pane facts do not show the selected child timeline')
+  const diagnostic = await page.evaluate(() => {
+    const engine = (window as any).__voxelEngines?.single
+    return {
+      weatherFog: engine?.weather?.state?.fog ?? 0,
+      renderedFogDensity: engine?.renderer?.scene?.fog?.density ?? 0,
+    } as VoxelEnvironmentDiagnostic
+  })
+  assert(diagnostic.weatherFog >= 0.95 && diagnostic.renderedFogDensity > 0,
+    '3D renderer did not receive the committed fog projection')
+  return diagnostic
 }
 
 async function selectAccountTimeline(page: Page, world: string, timeline: string): Promise<void> {
@@ -145,6 +175,7 @@ async function main(): Promise<void> {
     method: 'POST', body: JSON.stringify({ name: '验收访客', description: '用于验证封闭地点规则的临时访客。' }),
   })
   assert(persona.status === 200, `owner persona registration failed (${persona.status})`)
+  const parentStateBefore = await state(worldId, parentTimelineId, token)
 
   const forkRequestId = crypto.randomUUID()
   const fork = await authorized(`/api/worlds/${encodeURIComponent(worldId)}/timelines/${encodeURIComponent(parentTimelineId)}/fork`, token, {
@@ -156,6 +187,7 @@ async function main(): Promise<void> {
   const childTimelineId = fork.body.id as string
 
   const fog = await environmentAction(worldId, childTimelineId, token, `phase2-fog-${forkRequestId}`, null, 'weather', 'fog')
+  const lighting = await environmentAction(worldId, childTimelineId, token, `phase2-lighting-${forkRequestId}`, null, 'lighting', 'night')
   const closed = await environmentAction(worldId, childTimelineId, token, `phase2-close-${forkRequestId}`, '后山散步道', 'access', 'closed')
   const blockedEntry = await enterWithCurrentVersion(worldId, childTimelineId, '后山散步道', `phase2-enter-blocked-${forkRequestId}`, token)
   record('closedLocationBlocksVisitorEntry', blockedEntry.status === 409 && String(blockedEntry.body.error ?? '').includes('后山散步道当前封闭'))
@@ -165,9 +197,12 @@ async function main(): Promise<void> {
   const page = await context.newPage()
   let closedDiagnostics: Diagnostic | undefined
   let reopenedDiagnostics: Diagnostic | undefined
+  let returnedDiagnostics: Diagnostic | undefined
+  let voxelDiagnostics: VoxelEnvironmentDiagnostic | undefined
   let reopen: JsonObject | undefined
   let retryEntry: ApiResult | undefined
   let fogEvidence: JsonObject | undefined
+  let lightingEvidence: JsonObject | undefined
   let closeEvidence: JsonObject | undefined
   let reopenEvidence: JsonObject | undefined
   try {
@@ -183,6 +218,11 @@ async function main(): Promise<void> {
     closedDiagnostics = await verifyRenderer(page, 'closed')
     await page.locator('.native2d-scene-frame').screenshot({ path: closedScreenshotPath })
     record('closedChildTimelineRendersFogAndClosedPath', true)
+    const initial2dSource = await page.getByTestId('native2d-source-label').textContent()
+    record('native2dAccountScopeUsesTheOwnerWorldAndChildTimeline',
+      initial2dSource?.includes('账户世界') && initial2dSource.includes(worldId) && initial2dSource.includes(childTimelineId)
+      && await page.getByTestId('native2d-account-world-select').inputValue() === worldId
+      && await page.getByTestId('native2d-account-timeline-select').inputValue() === childTimelineId)
 
     reopen = await environmentAction(worldId, childTimelineId, token, `phase2-open-${forkRequestId}`, '后山散步道', 'access', 'open')
     retryEntry = await enterWithCurrentVersion(worldId, childTimelineId, '后山散步道', `phase2-enter-retry-${forkRequestId}`, token)
@@ -193,6 +233,47 @@ async function main(): Promise<void> {
     reopenedDiagnostics = await verifyRenderer(page, 'open')
     await page.locator('.native2d-scene-frame').screenshot({ path: reopenedScreenshotPath })
     record('reopenedChildTimelineRendersFogAndOpenPath', true)
+
+    const committedChildState = await state(worldId, childTimelineId, token)
+    const worldPage = await page.goto(`${previewUrl}/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(childTimelineId)}&presentation=voxel3d`)
+    assert(worldPage?.status() === 200, 'production preview world page did not load')
+    await page.locator('[data-testid="comparison-pane-single"] [data-presentation="voxel3d"] canvas').waitFor({ timeout: 30_000 })
+    voxelDiagnostics = await verifyVoxelRenderer(page, worldId, childTimelineId)
+    record('voxelPaneUsesTheSameOwnerWorldAndChildTimeline',
+      await page.getByTestId('pane-facts-single').textContent().then(text => text?.includes('owner') && text.includes(childTimelineId)))
+    record('voxelRendererReceivesWorldFogProjection', voxelDiagnostics.weatherFog >= 0.95 && voxelDiagnostics.renderedFogDensity > 0)
+    await page.getByTestId('voxel-mode-toggle').click()
+    await page.waitForFunction(() => (window as any).__voxelEngines?.single?.probeScene?.().cameraMode === 'walk', null, { timeout: 15_000 })
+    const walkEntry = await page.evaluate(() => ({
+      probe: (window as any).__voxelEngines?.single?.probeScene?.(),
+      pointerLocked: document.pointerLockElement !== null,
+    }))
+    const spawned = walkEntry.probe?.walkPosition
+    const worldSize = walkEntry.probe?.worldSize
+    assert(spawned && worldSize && spawned.x >= 0 && spawned.x < worldSize.width
+      && spawned.z >= 0 && spawned.z < worldSize.depth && walkEntry.pointerLocked === false,
+    'production 3D first-person entry did not spawn in bounds without pointer lock')
+    await page.getByTestId('voxel-mode-toggle').click()
+    await page.waitForFunction(() => (window as any).__voxelEngines?.single?.probeScene?.().cameraMode === 'orbit', null, { timeout: 15_000 })
+    assert(await page.evaluate(() => document.pointerLockElement === null), 'production 3D exit left pointer lock active')
+    record('production3dWalkSpawnExitAndNoPointerLock', true)
+
+    await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '2D' }).click()
+    await page.locator('[data-testid="comparison-pane-single"] [data-presentation="native2d"] canvas').waitFor({ timeout: 30_000 })
+    const pageScope = await page.locator('[data-testid="comparison-pane-single"]').evaluate(element => ({
+      world: element.getAttribute('data-world-id'), timeline: element.getAttribute('data-timeline-id'),
+    }))
+    record('integrated2dSwitchKeepsTheSameWorldAndChildTimeline', pageScope.world === worldId && pageScope.timeline === childTimelineId)
+    await page.goto(`${previewUrl}/`)
+    await page.goto(`${previewUrl}/dev/native-2d`)
+    await selectAccountTimeline(page, worldId, childTimelineId)
+    returnedDiagnostics = await verifyRenderer(page, 'open')
+    const returnedChildState = await state(worldId, childTimelineId, token)
+    record('leavingAndReturningKeepsCommittedChildStateUnchanged',
+      JSON.stringify(returnedChildState) === JSON.stringify(committedChildState))
+    record('returned2dAccountScopeMatchesTheWorldAndTimeline',
+      await page.getByTestId('native2d-account-world-select').inputValue() === worldId
+      && await page.getByTestId('native2d-account-timeline-select').inputValue() === childTimelineId)
 
     const commandEvidence = async (commandId: string, resultVersion: number, factId: string): Promise<JsonObject> => {
       const command = await authorized(`/api/worlds/${encodeURIComponent(worldId)}/actions/${encodeURIComponent(commandId)}`, token)
@@ -208,20 +289,30 @@ async function main(): Promise<void> {
       return { event: detail.body.event, command: detail.body.command, fact }
     }
     fogEvidence = await commandEvidence(String(fog.commandId), Number(fog.version), String(fog.factId))
+    lightingEvidence = await commandEvidence(String(lighting.commandId), Number(lighting.version), String(lighting.factId))
     closeEvidence = await commandEvidence(String(closed.commandId), Number(closed.version), String(closed.factId))
     reopenEvidence = await commandEvidence(String(reopen.commandId), Number(reopen.version), String(reopen.factId))
     record('versionedFactEventAndSourceCommandEvidenceVerified', true)
 
     const childState = await state(worldId, childTimelineId, token)
     const parentState = await state(worldId, parentTimelineId, token)
-    const childCommands = new Set([String(fog.commandId), String(closed.commandId), String(reopen.commandId), String(retryEntry?.body.commandId ?? '')])
+    const childCommands = new Set([String(fog.commandId), String(lighting.commandId), String(closed.commandId), String(reopen.commandId), String(retryEntry?.body.commandId ?? '')])
     const childFacts = Array.isArray(childState.facts) ? childState.facts : []
     const parentFacts = Array.isArray(parentState.facts) ? parentState.facts : []
     record('parentTimelineHasNoChildCommandsOrFacts', !parentFacts.some((fact: JsonObject) => childCommands.has(fact.sourceCommandId)))
     record('childTimelineContainsExpectedEnvironmentFacts', childFacts.some((fact: JsonObject) =>
       fact.sourceCommandId === fog.commandId && fact.value?.condition === 'weather' && fact.value?.value === 'fog')
+      && childFacts.some((fact: JsonObject) => fact.sourceCommandId === lighting.commandId
+        && fact.value?.condition === 'lighting' && fact.value?.value === 'night')
       && childFacts.some((fact: JsonObject) => fact.sourceCommandId === closed.commandId && fact.value?.value === 'closed')
       && childFacts.some((fact: JsonObject) => fact.sourceCommandId === reopen.commandId && fact.value?.value === 'open'))
+    record('parentAndChildStateReadsRemainIsolated',
+      parentState.version === parentStateBefore.version
+      && JSON.stringify(parentState.facts) === JSON.stringify(parentStateBefore.facts)
+      && childState.version > parentState.version)
+    record('browserViewsUsedWorkerBackedApiReads', requests.some(request => request.path.endsWith('/map/bootstrap') && request.status === 200)
+      && requests.some(request => request.path === `/api/worlds/${worldId}` && request.status === 200)
+      && requests.some(request => request.path.endsWith('/state') && request.status === 200))
     record('noUnexpectedWorkerFailures', requests.filter(request => request.status >= 400
       && !(request.path.endsWith('/scene/position') && request.status === blockedEntry.status)).length === 0)
   } finally {
@@ -233,7 +324,7 @@ async function main(): Promise<void> {
   const report = {
     result: 'PASS',
     api: 'GitHub-hosted runner; isolated local Worker and D1; browser API calls use that local Worker; no remote deployment',
-    browser: 'production preview account 2D page; Pixi environment visuals checked after render',
+    browser: 'production preview account 2D/3D routes; Pixi environment visuals, Voxel weather/fog projection, and desktop first-person mode checked after render; touch first-person remains disabled by the platform gate',
     providerCalls: 0,
     seed: { residentCount, locationCount: locations.length },
     timeline: { branched: true, parentIdSha256: hash(parentTimelineId), childIdSha256: hash(childTimelineId) },
@@ -241,9 +332,15 @@ async function main(): Promise<void> {
     renderer: {
       closed: { environment: closedDiagnostics?.environment, visuals: closedDiagnostics?.environmentVisuals },
       reopened: { environment: reopenedDiagnostics?.environment, visuals: reopenedDiagnostics?.environmentVisuals },
+      returned: { environment: returnedDiagnostics?.environment, visuals: returnedDiagnostics?.environmentVisuals },
+      voxel: voxelDiagnostics,
       screenshots: [closedScreenshotPath, reopenedScreenshotPath],
     },
-    evidence: { fog: fogEvidence, closed: closeEvidence, reopened: reopenEvidence },
+    evidence: { fog: fogEvidence, lighting: lightingEvidence, closed: closeEvidence, reopened: reopenEvidence },
+    limitations: [
+      'Touch first-person entry is disabled by the existing platform gate, so the real-account browser walk check is desktop-only.',
+      'Fall recovery is not forced through the user-facing browser path; this run does not claim browser coverage for that edge case.',
+    ],
     blockedEntry: { status: blockedEntry.status },
     retryEntry: { status: retryEntry?.status },
     workerRequests: requests.length,
