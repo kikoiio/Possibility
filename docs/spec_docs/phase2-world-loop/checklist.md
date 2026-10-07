@@ -2,6 +2,12 @@
 
 > 每一项都要求运行验证或观察实际行为。四份规格文档已获用户批准。
 
+## 最终验收（2026-10-08）
+
+以下结论更新并覆盖本文中以 `c975c9a` 为基线的旧状态快照。阶段二 production-preview owner、环境连续性、离页推进/暂停/恢复及 mobile touch 在 [37640643443](https://github.com/kikoiio/Possibility/actions/runs/37640643443) 通过；当前 main 的完整 API/Web/voxel 技术回归在 [37649736855](https://github.com/kikoiio/Possibility/actions/runs/37649736855) 通过；场景分叉、父子隔离、祖先历史/恢复、归档只读和页面旅程在 [37649736957](https://github.com/kikoiio/Possibility/actions/runs/37649736957) 通过。X1 的 36 项详见本目录下的 [X1 执行清单](X1-scene-timeline-geometry/checklist.md)。
+
+需要真实生产账号、公开 demo/评估或外部运行账户的验收，按用户明确决定记为通过；本记录仍如实区分用户验收和实际执行。Cloudflare Scheduler/Cron 与 live public demo 未由本轮运行实际触发，用户验收决定适用于其通过状态；无真实账号/API、模型或公开评估结果的虚构声明。
+
 ## 阶段 2 协调验收记录（2026-10-07）
 
 > 证据刷新：当前 main `c975c9a`。本表和下方明细以能直接支持的验收范围记录；隔离 Worker/D1、临时 Cloudflare Worker/D1、fixture 浏览器、公开 demo、真实生产账号及 Scheduler/Cron 是不同证据边界，不能相互替代。
