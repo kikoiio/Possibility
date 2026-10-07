@@ -47,6 +47,14 @@ jobs:
           PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
           CI: true
         run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/presentation-switch.spec.ts e2e/presentation-cross-world.spec.ts e2e/presentation-same-world.spec.ts e2e/presentation-performance.spec.ts
+      - name: Run touch presentation journey
+        working-directory: web
+        env:
+          PLAYWRIGHT_API_PORT: 28787
+          PLAYWRIGHT_WEB_PORT: 26173
+          PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
+          CI: true
+        run: npm run test:e2e -- --workers=1 --project=mobile-chromium e2e/presentation-responsive.mobile.spec.ts
       - name: Upload browser traces and logs
         if: always()
         uses: actions/upload-artifact@v4
