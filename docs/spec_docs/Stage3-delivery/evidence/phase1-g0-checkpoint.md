@@ -46,3 +46,11 @@
 - 结果：`guest-claim-journey.spec.ts` **1 passed**；总 Playwright 用时 52.8 秒，测试主体 35.5 秒。使用 GitHub 托管 Ubuntu、隔离 Wrangler/D1、单 worker Chromium；未调用 provider 或读取 secrets。
 - 此 run 仅重验访客进入/移动、分叉、注册认领和认领后状态可见；不覆盖交谈、所有者管理、编辑保存、真实分屏、刷新继续、真实生成、自建单空间保存或原世界补建保存。因此它加强的是同一子路径的复查证据，**不改变阶段一 G0 未通过结论**。
 - 临时 runner/job 已随 Actions 完成并释放；专用 workflow 保留在 `phase3` 供复跑，触发器限定为 `phase3` 上该 workflow 文件自身的变更，证据文档提交不会再次触发。
+
+## G0 补充复核：Actions 扩展旅程诊断
+
+- Actions run [37564443630](https://github.com/kikoiio/Possibility/actions/runs/37564443630)，测试/工作流提交 `71976b8429addcd27e6e6cf136062c6dfb5263be`，旅程修订 4。新增 `/demo` 加载时仅针对明确 404 错误重载一次；这次 run 越过了先前 demo world/timeline 404，继续到注册认领步骤。
+- 逐项结果及限制见 [`phase1-g0-cloud-expanded-journey.md`](phase1-g0-cloud-expanded-journey.md)；Actions 原始日志、Playwright trace 和截图在 artifact `phase1-g0-guest-claim-37564443630`（ID `11458467505`，12,268,835 bytes，保留 14 天）。
+- 同一隔离旅程已断言访客进入、温室移动、固定 fixture 交谈、创建真实分叉并打开来源/新分支比较面板；注册成功后真实 claim 在克隆保存时失败，服务端日志为 `world_state_version_conflict`，页面停留于 `login?claimDemo=1`。因未进入已认领世界，所有者管理、编辑保存、真实分屏、刷新继续均未执行。
+- provider 调用数为 0；对话来自仅在 `s02-e2e` 隔离环境启用的确定性 fixture，不等于真实模型生成验收。run 失败，不能以此证明 claim 或 G0 通过。
+- runner/job 已完成并释放；保留的专用 workflow 仍只响应 `phase3` 上 workflow 文件自身的变更。失败 trace/log artifact 可复查；当前工作流未配置自动上传应用源码或 secrets。

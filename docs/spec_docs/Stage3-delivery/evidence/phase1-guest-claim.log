@@ -16,3 +16,10 @@ Result: 1 passed (52.8s total Playwright time; test body 35.5s), 1 worker, deskt
 Observed scope is the same partial slice: guest enters demo, moves to greenhouse, forks, registers/claims, and sees the claimed world with two timelines and preserved presence.
 Cloud limitations are unchanged: no dialogue, owner management, edit/save, real split comparison, or reload continuation. This reruns the guest-interaction/fork/claim slice only and does not change the G0-not-passed decision.
 Run log artifact: phase1-g0-guest-claim-37561465283 (Actions artifact ID 11456638070, retained 14 days). The ephemeral GitHub runner/job has completed and been released; the repository workflow remains on phase3 and only triggers when its own workflow file changes on phase3.
+
+Cloud extended journey recheck (2026-10-07): GitHub Actions run https://github.com/kikoiio/Possibility/actions/runs/37564443630
+Test/workflow commit: 71976b8429addcd27e6e6cf136062c6dfb5263be (journey revision 4)
+Result: failed during real guest claim after the test passed demo load (with one explicit-error retry), greenhouse visit/movement, deterministic fixture dialogue, real fork/compare modal, and account registration.
+Failure: API log reports `D1_ERROR: world_state_version_conflict: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)`; browser remained at `/login?claimDemo=1` and timed out waiting for `/worlds/` at spec line 91. Owner management, edit/save, actual split, reload continuation did not run.
+Scope: no external provider calls; fixture dialogue only. Real generation and single-space/repair comparison excluded. This run does not pass claim or G0.
+Failure artifact: phase1-g0-guest-claim-37564443630 (Actions artifact ID 11458467505, 12,268,835 bytes, retained 14 days), containing run log, screenshot, and Playwright trace. Runner/job was released after completion; workflow remains path-filtered to changes of its own file on phase3.
