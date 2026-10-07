@@ -1,0 +1,473 @@
+{
+  "schema": "phase1-g0-provider-acceptance-v1",
+  "workflowRunId": "37581260623",
+  "commit": "068e93daa9b1b9f50bd8f24da9209b8eb0b6c83e",
+  "provider": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "keyConfigured": true
+  },
+  "limits": {
+    "rawProviderRequests": 25,
+    "perScenario": 5,
+    "apiMaxTokens": 16000,
+    "thinking": "disabled",
+    "costCapUsd": 10
+  },
+  "pricing": {
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "peakUsdPerMillion": {
+      "cacheHitInput": 0.006,
+      "cacheMissInput": 0.3,
+      "output": 1.2
+    },
+    "oneMillionContextWorstCaseFor25RequestsUsd": 7.86
+  },
+  "scenarios": [
+    {
+      "id": "custom-1",
+      "apiStatus": 502,
+      "valid": false,
+      "worldReady": false,
+      "validDocument": false,
+      "forbiddenAbsent": true,
+      "errorKind": "content",
+      "issueCodes": [
+        "walk-clearance",
+        "walk-clearance",
+        "walk-clearance",
+        "walk-clearance"
+      ],
+      "semanticGroups": {
+        "cobblestonePath": false,
+        "northSouth": false,
+        "cafe": false,
+        "twoStoryHome": false,
+        "northPlaza": false,
+        "stoneLantern": false
+      },
+      "locationCount": 0,
+      "objectCount": 0,
+      "carrierCount": 0,
+      "carriersUnique": false,
+      "carriersResolved": true,
+      "carriersMatchWorld": false,
+      "providerRequests": 5,
+      "llmCallLogRows": 5
+    },
+    {
+      "id": "custom-2",
+      "apiStatus": 200,
+      "valid": true,
+      "worldReady": true,
+      "validDocument": true,
+      "forbiddenAbsent": true,
+      "issueCodes": [],
+      "semanticGroups": {
+        "plaza": true,
+        "street": true,
+        "cafe": true
+      },
+      "locationCount": 8,
+      "objectCount": 10,
+      "carrierCount": 8,
+      "carriersUnique": true,
+      "carriersResolved": true,
+      "carriersMatchWorld": true,
+      "providerRequests": 2,
+      "llmCallLogRows": 2
+    },
+    {
+      "id": "custom-3",
+      "apiStatus": 502,
+      "valid": false,
+      "worldReady": false,
+      "validDocument": false,
+      "forbiddenAbsent": true,
+      "errorKind": "content",
+      "issueCodes": [
+        "walk-connectivity",
+        "walk-connectivity",
+        "walk-connectivity"
+      ],
+      "semanticGroups": {
+        "openGrass": false,
+        "straightPath": false,
+        "cafe": false,
+        "courtyard": false
+      },
+      "locationCount": 0,
+      "objectCount": 0,
+      "carrierCount": 0,
+      "carriersUnique": false,
+      "carriersResolved": true,
+      "carriersMatchWorld": false,
+      "providerRequests": 5,
+      "llmCallLogRows": 5
+    },
+    {
+      "id": "official-example",
+      "apiStatus": 502,
+      "valid": false,
+      "worldReady": false,
+      "validDocument": false,
+      "forbiddenAbsent": true,
+      "errorKind": "content",
+      "issueCodes": [],
+      "semanticGroups": {
+        "coast": false,
+        "oldStation": false,
+        "street": false,
+        "cafe": false,
+        "garden": false,
+        "residence": false
+      },
+      "locationCount": 0,
+      "objectCount": 0,
+      "carrierCount": 0,
+      "carriersUnique": false,
+      "carriersResolved": true,
+      "carriersMatchWorld": false,
+      "providerRequests": 2,
+      "llmCallLogRows": 2
+    }
+  ],
+  "singleSpace": {
+    "saved": false,
+    "worldIdHash": null,
+    "timelineIdHash": null,
+    "source": "official-example"
+  },
+  "repair": {
+    "saved": true,
+    "draftStatus": 200,
+    "draftKind": null,
+    "draftIssueCodes": [],
+    "providerRequests": 2,
+    "llmCallLogRows": 2,
+    "originalWorldIdHash": "737537f1c61d66dc34d65f404ee948ce0f62562dccd25fc8a0380af63a48c41d",
+    "originalWorldName": "phase1-g0-37581260623-repair"
+  },
+  "requests": {
+    "totalRawProviderRequests": 16,
+    "blockedAttempts": 0,
+    "byScenario": {
+      "custom-1": 5,
+      "custom-2": 2,
+      "custom-3": 5,
+      "official-example": 2,
+      "original-world-repair": 2
+    },
+    "llmCallLogRows": 16,
+    "llmCallLogSummary": [
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      }
+    ],
+    "reconciled": true,
+    "calls": [
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 229,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 229,
+          "completionTokens": 456,
+          "costUsd": 0.0006159
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1768,
+          "cacheHitTokens": 256,
+          "cacheMissTokens": 1512,
+          "completionTokens": 1903,
+          "costUsd": 0.002738736
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 3708,
+          "cacheHitTokens": 3456,
+          "cacheMissTokens": 252,
+          "completionTokens": 1914,
+          "costUsd": 0.0023931359999999997
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 5721,
+          "cacheHitTokens": 5504,
+          "cacheMissTokens": 217,
+          "completionTokens": 1914,
+          "costUsd": 0.0023949239999999997
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 7848,
+          "cacheHitTokens": 7552,
+          "cacheMissTokens": 296,
+          "completionTokens": 2032,
+          "costUsd": 0.0025725120000000003
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-2",
+        "status": 200,
+        "usage": {
+          "promptTokens": 202,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 202,
+          "completionTokens": 349,
+          "costUsd": 0.0004794
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-2",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1674,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 522,
+          "completionTokens": 2351,
+          "costUsd": 0.002984712
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 214,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 214,
+          "completionTokens": 452,
+          "costUsd": 0.0006066
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1761,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 609,
+          "completionTokens": 3936,
+          "costUsd": 0.004912812
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 5759,
+          "cacheHitTokens": 5504,
+          "cacheMissTokens": 255,
+          "completionTokens": 3752,
+          "costUsd": 0.004611924
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 9667,
+          "cacheHitTokens": 9472,
+          "cacheMissTokens": 195,
+          "completionTokens": 4353,
+          "costUsd": 0.005338931999999999
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 14177,
+          "cacheHitTokens": 13952,
+          "cacheMissTokens": 225,
+          "completionTokens": 3810,
+          "costUsd": 0.004723211999999999
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "official-example",
+        "status": 200,
+        "usage": {
+          "promptTokens": 207,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 207,
+          "completionTokens": 354,
+          "costUsd": 0.00048689999999999996
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "official-example",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1691,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 539,
+          "completionTokens": 1471,
+          "costUsd": 0.001933812
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "original-world-repair",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1485,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 333,
+          "completionTokens": 1453,
+          "costUsd": 0.0018504119999999998
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "original-world-repair",
+        "status": 200,
+        "usage": {
+          "promptTokens": 2975,
+          "cacheHitTokens": 2816,
+          "cacheMissTokens": 159,
+          "completionTokens": 1390,
+          "costUsd": 0.001732596
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      }
+    ]
+  },
+  "usage": {
+    "actualCostUsd": 0.040377,
+    "usageUnavailableRequests": 0,
+    "reservedWorstCaseUsd": 5.0304
+  },
+  "cleanup": {
+    "exactNameCounts": {
+      "phase1-g0-37581260623-single": 0,
+      "phase1-g0-37581260623-repair": 0
+    },
+    "remainingTableRows": 0,
+    "d1Deleted": true
+  },
+  "failures": [
+    "one_or_more_prompt_scenarios_invalid"
+  ],
+  "passed": false
+}

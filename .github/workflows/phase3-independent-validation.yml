@@ -42,10 +42,14 @@ jobs:
           if (( ${#tests[@]} > 0 )); then
             npm --workspace web test -- --maxWorkers=1 "${tests[@]}"
           fi
-      - name: Discover isolated comparison fixtures
+      - name: Discover and verify fixture data without browsers
         shell: bash
         working-directory: web
         run: |
           if [[ -f e2e/presentation-fixtures.spec.ts ]]; then
             npx playwright test --list e2e/presentation-fixtures.spec.ts
+            cat > playwright.presentation-fixtures.config.mjs <<'CONFIG'
+          export default { testDir: './e2e', testMatch: 'presentation-fixtures.spec.ts', workers: 1, reporter: 'list' }
+          CONFIG
+            npx playwright test --config playwright.presentation-fixtures.config.mjs
           fi

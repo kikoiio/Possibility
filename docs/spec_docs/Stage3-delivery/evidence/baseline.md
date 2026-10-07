@@ -55,3 +55,14 @@
 - 阶段二新证据：main commit `19089f6d75ad9b74262034b4eca5fc8ec32e8700` 更新了 [`phase2-acceptance-2026-10-07.md`](phase2-acceptance-2026-10-07.md) 和阶段二 checklist；该报告已作为独立证据文件加入 phase3，不包含阶段二应用代码。GitHub Actions run `37560275395` 在 production bundle + preview 下连接隔离 Cloudflare Worker/local D1，19 个真实 Worker 请求、HTTP 失败 0；owner 完成登录、读取、干预、分叉、比较、布局保存、整页 reload、重选和布局回读。聊天 SSE 是唯一 mock。API 全量 876 passed/1 skipped、Web 单测 536/536、开发服务器 native2d-desktop 35/35 也有记录。
 - 阶段二判定：**未通过**。production preview 的布局保存与 reload/回读现已通过，但 T15 的部署世界离页推进、暂停、恢复没有运行；公开 demo live 检查、触屏、跨设备布局恢复和归档行为仍未验证。阶段二实现代码 commit `b68e79b9762a0e071515e5549305ee64480bcae9` 在 `main`，尚未并入本 `phase3` 分支。
 - 最新 G0 判定：**未通过，T05 及后续集成开发保持锁定**。阶段一有明确失败和未覆盖项，阶段二也有正式的出口未验证项；两个阶段均未达到批准的通过门槛。不得以部分旅程或单项回归替代出口。
+
+## G0 与提前独立开发复核（2026-10-07 14:41）
+
+- 用户本轮授权：尽可能并行推进前两阶段门槛，同时可提前开发不依赖门槛的 phase3 部分。四份规格已记录调度更新；提前实现范围为 T05/T06/T07/T10 独立模块，不接入真实世界会话、renderer 或页面。G0 仍约束依赖集成。
+- phase3 已从 `18dedf1` 快进到远端已提交 `e33809c`；随后新增公共契约与云端独立验证 `2ba51ee`、比较 fixture `17053cf`。没有从其他 worktree 复制未提交改动。
+- 阶段一 UI/API 旅程：[Actions run 37581579770](https://github.com/kikoiio/Possibility/actions/runs/37581579770)，commit `8305393`，6 个 API 文件 33 tests passed、浏览器 10 tests passed。范围包含多空间访客交谈/分叉/认领、owner 暂停/恢复、编辑持久化、真实分屏、reload 继续及固定草稿的 create/repair UI。对话和生成草稿的确定性 fixture 不作为真实生成证据。
+- 阶段一真实生成：[Actions run 37581260623](https://github.com/kikoiio/Possibility/actions/runs/37581260623)，commit `068e93d`。16 次 provider 请求，实际费用 `$0.040377`、账本对账通过、清理通过。custom-2 通过；custom-1 净空、custom-3 连通性、official-example 内容失败。原世界补建保存通过，官方示例单空间保存未完成。脱敏原始证据见 [phase1-provider-37581260623.json](phase1-provider-37581260623.json)。这批 25 次授权剩余最多 9 次，由协调者集中调度，不另启 25 次完整批次。
+- 阶段二部署诊断：[run 37581995275](https://github.com/kikoiio/Possibility/actions/runs/37581995275)，commit `c520548`，tick summary 明确为缺失 LLM_BASE_URL 导致 `undefined.replace`，未进入时钟推进；归档和严格零残留清理通过。fixture 配置修复 `252f1a3` 正在 [run 37582832140](https://github.com/kikoiio/Possibility/actions/runs/37582832140) 复验。公共 demo live-read 仍需独立证据。
+- 提前实现 P05：公共契约 commit `2ba51ee` 在 [run 37582294420](https://github.com/kikoiio/Possibility/actions/runs/37582294420) Web production build/类型检查通过。P06/P07 在 `p3-independent-state-route` 子 worktree 开发；P10 fixture 的发现/数据烟测由独立云端 CI 验证，尚不构成浏览器集成通过。
+- 当前判定：**G0 未通过**。阶段一真实生成仍失败，阶段二部署旅程复验与公共 demo 验收待完成。提前独立模块已正式开始；renderer、会话与页面集成继续等待正面证据。
+- worktree 所有权：`phase3` 为协调者集成分支；`phase1-claim-fix`/`phase1-g0-timeout-fix` 为阶段一生成修复；`phase2-clock-fix` 为阶段二临时验收修复；`p3-independent-state-route` 为纯存储/路由实现。主 worktree `/home/neo/Projects/Possibility` 已恢复 `main` 且干净。T01–T04 的旧审计 worktree 和 user-owned 终端保留为可复查记录，未擅自删除或终止。
