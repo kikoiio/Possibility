@@ -415,6 +415,8 @@ describe('generateWorld semantic building carriers', () => {
     expect(defaultExample).not.toContain('"terrain"')
     expect(WORLD_GEN_SPEC).toContain('"placementId":"building-1"')
     expect(WORLD_GEN_SPEC).toContain('locations.objectId 中逐字使用同一个值')
+    expect(WORLD_GEN_SPEC).toContain('从本次 JSON 里某一条 place-object 的 objectId 或 assetPlacements 的 placementId 原样复制')
+    expect(WORLD_GEN_SPEC).toContain('道路、广场和庭院的开放通路上方全程保持至少 2 格空气')
   })
 
   it('normalizes the model object alias and rejects furniture as a required cafe carrier', async () => {
