@@ -430,5 +430,5 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     expect(repairSaved).toBe(true)
     expect(reconciled).toBe(true)
     expect(cleanup.d1Deleted).toBe(true)
-  })
+  }, 40 * 60 * 1000)
 })
