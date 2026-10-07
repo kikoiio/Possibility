@@ -77,3 +77,46 @@
 - 阶段一完整确定性 UI/API 旅程在 [run 37583487064](https://github.com/kikoiio/Possibility/actions/runs/37583487064) 的 browser job 仍为 success；该 run 整体因 API typed fixture/harness 编译问题失败，已另行修复且在 `37584142096` API build 通过。不得把整个失败 run 标为成功。
 - 当前 **G0 仍未通过**：等待真实生成复验结果，并继续核对两阶段完整出口的证据范围。原集成 DAG 未解锁；P05/P06/P07/P10 的成功只记录提前独立实施，不能冒充完整 phase3 交付。
 - Orca 独立 worker 的完成消息已处理，release 返回 `retained/user_takeover`，未终止用户接管的终端；当前 Run 的 reclaimable worker 列表为空。所有新重型检查运行于已授权 GitHub Actions，未在本机启动新 build/browser/provider 服务。
+
+
+## 2026-10-07 15:24 CST：追加授权与并行补验
+
+- 用户明确回复“允许200次”，按累计 provider 调用 200 次、$10 上限执行，不再逐批请求授权。旧26次费用尚未完整对账；后续三批16/9/17次合计42次，已对账费用 $0.108998。当前累计68次，剩132次；成本未知部分保留，不将已知费用误称全量费用。
+- run 37584984785 at 0fe8c7c：17次/$0.048484，日志17行对账一致；custom-1通过，官方示例结构及真实保存通过但coast文本判据失败（生成描述含“沿海小镇”，待核对误判），custom-3越界、custom-2独立carrier失败。原世界repair生成及保存通过。cleanup报告remainingTableRows=-1/d1Deleted=false，尚待定位，整体失败。完整脱敏报告保存为phase1-provider-37584984785.json。
+- 阶段二实际2D环境渲染接线 b137d9d 与连续旅程脚本 1bb542d 已集成；生成文档独立生产预览脚本 d756a44/227b15b 支持失败artifact的合法草稿，每例独立BrowserContext，无provider调用。
+- 已在 phase3 227b15b 云端并行启动阶段二 production验收 37585977801 与阶段一真实生成稿预览 37585985131。两项均待结果，不能视为通过。
+- 两个已有子agent分别负责阶段一失败精准定位和阶段二连续性修复；根负责统一CI/预算/集成；未启动本机重型任务。G0仍blocked，独立T05/T06/T07/T10通过记录保持，集成DAG待正面证据解锁。
+
+
+## 2026-10-07：阶段二门槛补验完成与阶段一画面失败
+
+- [phase2 production run37586411002](https://github.com/kikoiio/Possibility/actions/runs/37586411002) at5e99f23整体success。新增连续旅程6居民7地点，10/10断言通过，32真实Worker请求、0意外失败、0provider：child雾效/关闭地点真实绘制，关闭进入409，重开进入200；命令/事实/事件/版本直接evidence关联通过，parent没有child条件污染。发布构建、定向投影/规则回归、原owner旅程、离页暂停恢复和mobile均在同run通过。截图已人工查看，封闭红色marker切换为开放绿色marker，雾效存在。报告及两张PNG见同目录phase2-37586411002-*。
+- 该run在GitHub-hosted runner上的localWorker/D1，不是远端部署；报告api旧字符串temporaryWorker不精确，脚本已修正a5e027e但原证据不篡改。真实远端部署离页证据仍为37582832140。聊天SSE、public demo live-read范围限制保持：本次未验证真实模型聊天，公共demo URL未配置，后者不属于原文G0的独立门槛。
+- [生成画面run37586257398](https://github.com/kikoiio/Possibility/actions/runs/37586257398) success，仅说明37584984785的三个真实生成document在production预览可渲染，0provider、API draft回放；不能当实际保存或语义通过。主协调者已查看三个overview：多余起伏地形掩埋部分建筑，道路不连贯，custom2载体复用。阶段一生成质量仍未通过，已转交精准修复。
+- 访客/自建/repair确定性完整UI回归37585946929整体success at227b15b；真实生成语义单独补验，G0仍blocked。
+- 根据用户允许提前无门槛依赖开发，P11纯相机联动逻辑已派发：task95279ad1366b/dispatchctx17704fff00c5，worktreep3-independent-camera-link，禁止页面/API/renderer接入；真实adapter联动边界仍在G0后验证。
+
+
+## 2026-10-07：第二批追加预算结果与精准回放
+
+- run37587238422 at705e5e6：20次provider/$0.060572；官方示例真实生成及保存通过；custom3返回200但重复carrier且出现禁止对象，custom1重复carrier，custom2组装失败，repair4次后walk-gap失败未保存；日志对账一致，清理所有表0行并删除D1文件通过。未用满25请求，不算通过。完整报告phase1-provider-37587238422.json。
+- 累计 provider 88/200，剩112（未包括正在运行的零模型回放）；后续四批62次已对账费用$0.169570，旧26次费用未完整对账，仍保留总$10预算约束。
+- 接管429退出agent已保存改动，提交02be2cd/d849496，集成81fa1f6/abee391：重复地点carrier进入有限重试、草地非随机起伏、5–8地点可为活动区且不增添未要求建筑、terrain边缘footprint回归；G0_PROVIDER_REPLAY_FILE按场景响应顺序仅回放已有模型内容，严格报告sourceRun/replayedRequests/actualProviderRequests=0，不冒充新provider验收。
+- 已启动零模型回放37588240392：只选37584984785已有官方示例与成功repair，验证当前cleanup/生成链回归，不新增真实模型调用。新增真实生成画面37588154107已success，人工视觉复核待下载。
+- P11纯协调器初提交f6eb290已集成04deafe；独立实现有界回声修复追加task2719c014be2e/dispatchctxc3ee3252726e，复用同终端。实际adapter与页面不接入，G0仍blocked。
+
+
+## 2026-10-07：P11独立模块通过与零模型重放结果
+
+- [P11独立验证37588754469](https://github.com/kikoiio/Possibility/actions/runs/37588754469) atf620085 success：productionWeb build/types、存储/URL/纯相机109tests、fixture2tests通过。有界回声记录64个不同姿态，关闭清空；真实adapter联动仍未挂载，本次不代表phase3页面完成。Orca两次P11Dispatch均settled，release返回retained/external_terminal，无进程操作；reclaimable列表为空。
+- [零模型回放37588240392](https://github.com/kikoiio/Possibility/actions/runs/37588240392) at04deafe success：来源37584984785，只选official-example与original-world-repair，5个归档响应、0真实provider、$0新增费用，真实API创建/保存链及cleanup0行/D1deleted通过。fullSuite=false，原响应历史费用单列，不重复计预算。证据phase1-replay-37588240392.json。
+- 实际生成20次的画面回放37588154107已查看：official平地消除前批掩埋，建筑轮廓和道路可见；仍存在额外商店被bench承载，custom1重复carrier且主路/两层形态质量不足，custom3新增多栋建筑违反只一栋。不能仅因official文本与保存通过解除整个G0。
+- 阶段一gate子agent因429停止，root已接管其完整未提交改动并分提交；阶段二agent转为生成根因修复，只有自己隔离分支可编辑。新根因：assetPlacements默认范例缺placementId，locations引用不存在；正在补准确声明、解析及零调用逐响应诊断，不盲目消耗剩112次。
+
+
+## 2026-10-07：诊断复核与新并行波次
+
+- P14 独立控件 d80c8ac 在 [37590355872](https://github.com/kikoiio/Possibility/actions/runs/37590355872) production build/types 与独立模块验证通过；Orca task03496913824a已结算，真实切换旅程尚待G0后。
+- 37590413308 零模型诊断已读取：custom2后续几轮缺稳定placementId，repair末两轮walk-gap坐标位于y5。报告不算新模型证据。旧真实调用保持88/200；回归失败的37589439714/37589737496/37590245031/37590243427/37590413382均跳过真实provider。
+- 307c7fd修正咖啡館真实建筑fixture世界边界为32，保留missing-binding有限重试的原断言，不放宽validator。新真实复测[37591036270](https://github.com/kikoiio/Possibility/actions/runs/37591036270)至多25请求、全五场景、回归成功才调用provider；运行中尚不记实际调用。
+- 两已有agent分别在phase1-claim-fix与phase2-clock-fix处理准确生成几何约束与repair通行根因；所有命令显式绝对workdir，禁止修改协调者分支。P13纯生命周期模块另开隔离worktree，重型验证继续使用已授权GitHubActions。

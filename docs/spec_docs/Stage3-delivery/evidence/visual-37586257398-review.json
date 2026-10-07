@@ -1,0 +1,15 @@
+{
+  "sourceProviderRunId": "37584984785",
+  "visualRunId": "37586257398",
+  "sourceCommit": "0fe8c7c",
+  "renderCommit": "9dc404c",
+  "reviewer": "coordinator",
+  "providerCalls": 0,
+  "result": "FAIL",
+  "observations": {
+    "official-example": "Only small roof-like structures are visible; extra uneven grass terrain covers building bodies, and street segments are discontinuous. Coast word exists but visual sea/station semantics not established.",
+    "custom-1": "Straight main route visible, but key building bodies are partly buried. Two-storey residential shape not confidently established from overview; text validity is insufficient.",
+    "custom-2": "Roads and tower visible; huts are buried or too small to distinguish; apartment and noticeboard share the same carrier ID."
+  },
+  "limitation": "Read-only exact document preview with stubbed draft API; not real API save validation. Rendering success is not semantic acceptance."
+}

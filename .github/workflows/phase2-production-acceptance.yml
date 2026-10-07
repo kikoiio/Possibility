@@ -34,6 +34,11 @@ jobs:
       - name: Build the Vite production bundle
         run: npm --workspace web run build
 
+      - name: Verify finite environment projection and controller refresh
+        run: |
+          npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/world-state/environment.test.ts src/world-state/environment-rules.test.ts src/life/evidence.test.ts src/life/compare.test.ts
+          npm --workspace web test -- --maxWorkers=1 src/native2d/__tests__/projection.test.ts src/native2d/__tests__/controller.test.ts src/scene/life/overlay.test.ts src/voxel/__tests__/overlay-driver.test.ts
+
       - name: Start isolated local Worker and D1
         shell: bash
         run: |
@@ -64,6 +69,21 @@ jobs:
       - name: Verify owner journey against the production preview
         working-directory: web
         run: npx tsx scripts/phase2-release-preview.acceptance.ts
+
+      - name: Verify environment facts, rules, rendering, and evidence in one owner journey
+        working-directory: web
+        run: npx tsx scripts/phase2-environment-continuity.acceptance.ts
+
+      - name: Upload environment continuity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-environment-continuity-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/phase2-environment-continuity.json
+            ${{ runner.temp }}/phase2-environment-*.png
 
       - name: Verify leave, pause, and resume against the isolated Worker
         shell: bash

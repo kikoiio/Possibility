@@ -232,7 +232,7 @@ async function main(): Promise<void> {
 
   const report = {
     result: 'PASS',
-    api: 'phase2 temporary Worker and D1; browser API calls use the real Worker',
+    api: 'GitHub-hosted runner; isolated local Worker and D1; browser API calls use that local Worker; no remote deployment',
     browser: 'production preview account 2D page; Pixi environment visuals checked after render',
     providerCalls: 0,
     seed: { residentCount, locationCount: locations.length },

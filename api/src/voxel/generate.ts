@@ -58,6 +58,11 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
     const bad = (why: string): never => { throw new WorldGeneratorError(`assetPlacements[${index}] 不合法：${why}`) }
     if (typeof p?.assetId !== 'string' || !p.assetId) return bad('需要 assetId')
     if (!isCoord(p.anchor)) return bad('anchor 需要 {x,y,z} 整数坐标')
+    if (p.placementId !== undefined && (typeof p.placementId !== 'string' || !p.placementId)) return bad('placementId 需要非空字符串')
+    if (p.id !== undefined && (typeof p.id !== 'string' || !p.id)) return bad('id 需要非空字符串')
+    if (typeof p.placementId === 'string' && typeof p.id === 'string' && p.placementId !== p.id) {
+      return bad('id 与 placementId 不一致')
+    }
     if (p.rotation !== undefined && p.rotation !== 0 && p.rotation !== 1 && p.rotation !== 2 && p.rotation !== 3) {
       return bad('rotation 需要 0..3(四分之一圈)')
     }
@@ -65,11 +70,14 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
     return {
       kind: 'place-asset', assetId: p.assetId, anchor: p.anchor,
       rotation: (p.rotation ?? 0) as 0 | 1 | 2 | 3,
-      ...(typeof p.placementId === 'string' && p.placementId ? { placementId: p.placementId } : {}),
+      ...((p.placementId ?? p.id) ? { placementId: (p.placementId ?? p.id) as string } : {}),
       ...(typeof p.seed === 'number' ? { seed: p.seed } : {}),
     }
   })
 }
+
+const BUILDING_LOCATION = /咖啡馆|咖啡屋|咖啡店|住宅|民居|公寓|居民楼|住宅楼|店铺|商店|商铺|杂货铺|杂货店|邮局|图书馆|车站|学校|医院|诊所|旅馆|客栈|酒店|餐馆|饭店|餐厅|酒馆|酒吧|教堂|办公楼|厂房|工坊|工作室|\bcafe\b|\bcoffee ?shop\b|\bhouse\b|\bhome\b|\bresidence\b|\bapartment\b|\bshop\b|\bstore\b|\bpost ?office\b|\blibrary\b|\bstation\b|\bschool\b|\bhospital\b|\bclinic\b|\bhotel\b|\binn\b|\brestaurant\b|\boffice\b|\bfactory\b|\bworkshop\b/iu
+const BUILDING_OBJECT_TYPES = new Set(['manor-main-house', 'manor-greenhouse'])
 
 function extractPayload(content: string): GeneratedWorldPayload {
   const cleaned = content.replace(/```(?:json)?/gi, '').trim()
@@ -376,6 +384,18 @@ export async function generateWorld(
       if (previousName) {
         issues.push({ code: 'location-unbound', message: `地点「${previousName}」与「${location.name}」共用承载物「${location.objectId}」；每个地点必须绑定不同承载物` })
       } else carrierNames.set(location.objectId, location.name)
+    }
+    const requiredNames = new Set(deps.requiredLocationNames ?? [])
+    const buildingCarrierIds = new Set([
+      ...doc.objects.filter(object => BUILDING_OBJECT_TYPES.has(object.objectType)).map(object => object.id),
+      ...(doc.assetPlacements ?? []).filter(placement => deps.assets?.assets[placement.assetId]?.category === 'building')
+        .map(placement => placement.id).filter((id): id is string => Boolean(id)),
+    ])
+    for (const location of doc.locations) {
+      if (requiredNames.has(location.name) && BUILDING_LOCATION.test(location.name)
+        && !buildingCarrierIds.has(location.objectId)) {
+        issues.push({ code: 'location-unbound', message: `建筑地点「${location.name}」必须绑定建筑物体或 building 类资产，不能绑定家具、装饰或植被` })
+      }
     }
     if (issues.length === 0) {
       // 序列化 round-trip 自检（契约闭环：AI 输出即权威格式）

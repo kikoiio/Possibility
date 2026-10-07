@@ -147,7 +147,10 @@ describe('T37 读取协调', () => {
       scene,
       repository: repository.repository,
       viewport: fakeViewport(log),
-      createSource: () => sourceFor(model),
+      createSource: () => ({ load: async (signal) => {
+        if (signal.aborted) throw abortError()
+        return model
+      } }),
     })
     controller.selectSource(DAY_CONFIG)
     await flush()

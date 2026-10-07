@@ -1,0 +1,389 @@
+{
+  "schema": "phase1-generated-preview-acceptance-v1",
+  "source": {
+    "schema": "phase1-g0-provider-acceptance-v1",
+    "workflowRunId": "37584984785",
+    "commit": "0fe8c7c2eff66c88249c5fecbee3cc3d3b7cae8e",
+    "providerAcceptancePassed": false,
+    "artifactSha256": "6a8ca319e3f690b2f73bd6c0f62a797e54707f6ebb02a81704705bbf80b1b84a"
+  },
+  "previewUrl": "http://127.0.0.1:15176",
+  "semanticVerdict": "manual-review-required",
+  "previews": [
+    {
+      "scenarioId": "custom-1",
+      "worldName": "石灯镇",
+      "worldDescription": "石灯镇是一座被一条笔直鹅卵石路贯穿南北的宁静小镇，路的两旁是低矮的老屋与零星店铺。小镇气候温和，四季分明，居民们彼此熟识，生活节奏缓慢而踏实。这里的人们习惯在傍晚聚集到北端的小广场，有人在咖啡馆里消磨午后，有人守着住宅二楼的窗台看街景。镇上流传着关于广场中央那盏石灯来历的模糊传说，至今无人能说清它的真正年代。",
+      "locations": [
+        {
+          "name": "鹅卵石路",
+          "description": "一条笔直的鹅卵石路从南到北穿过小镇，是居民往来的主要通道。"
+        },
+        {
+          "name": "旧时光咖啡馆",
+          "description": "位于鹅卵石路旁的小咖啡馆，几张木桌、一墙旧书，是闲聊和独处的好去处。"
+        },
+        {
+          "name": "两层住宅",
+          "description": "紧邻咖啡馆的一栋两层老住宅，一楼是客厅与厨房，二楼住着房东或租客。"
+        },
+        {
+          "name": "石灯广场",
+          "description": "鹅卵石路北端的小广场，铺着同样的石块，白天有人摆摊，夜晚常有居民散步。"
+        },
+        {
+          "name": "中央石灯",
+          "description": "广场正中央立着一盏古老石灯，灯身刻有模糊纹路，入夜后仍有人为它点灯。"
+        },
+        {
+          "name": "南口杂货铺",
+          "description": "鹅卵石路南端的小铺子，卖日用杂货和当地特产，也是消息集散地。"
+        },
+        {
+          "name": "镇西小教堂",
+          "description": "一座简朴的老教堂，周末有礼拜，平时安静，偶尔举办社区活动。"
+        },
+        {
+          "name": "东侧河岸步道",
+          "description": "沿镇东小河铺设的步道，可以钓鱼、慢跑或坐在长椅上发呆。"
+        }
+      ],
+      "documentSha256": "4b41384800a9afaa25c31eafc4ba54ac84545a07276350cd2c15cb558ca4c569",
+      "locationBindings": [
+        {
+          "name": "鹅卵石路",
+          "objectId": "obj-road-marker",
+          "carrier": "object",
+          "objectType": "stone-lantern",
+          "anchor": {
+            "x": 22,
+            "y": 3,
+            "z": 30
+          }
+        },
+        {
+          "name": "旧时光咖啡馆",
+          "objectId": "obj-cafe",
+          "carrier": "object",
+          "objectType": "manor-greenhouse",
+          "anchor": {
+            "x": 18,
+            "y": 3,
+            "z": 20
+          }
+        },
+        {
+          "name": "两层住宅",
+          "objectId": "obj-house2",
+          "carrier": "object",
+          "objectType": "manor-main-house",
+          "anchor": {
+            "x": 26,
+            "y": 3,
+            "z": 20
+          }
+        },
+        {
+          "name": "石灯广场",
+          "objectId": "obj-plaza-stall",
+          "carrier": "object",
+          "objectType": "bookshelf",
+          "anchor": {
+            "x": 21,
+            "y": 3,
+            "z": 6
+          }
+        },
+        {
+          "name": "中央石灯",
+          "objectId": "obj-central-lantern",
+          "carrier": "object",
+          "objectType": "stone-lantern",
+          "anchor": {
+            "x": 23,
+            "y": 3,
+            "z": 10
+          }
+        },
+        {
+          "name": "南口杂货铺",
+          "objectId": "obj-store",
+          "carrier": "object",
+          "objectType": "bookshelf",
+          "anchor": {
+            "x": 24,
+            "y": 3,
+            "z": 39
+          }
+        },
+        {
+          "name": "镇西小教堂",
+          "objectId": "obj-church",
+          "carrier": "object",
+          "objectType": "well",
+          "anchor": {
+            "x": 10,
+            "y": 3,
+            "z": 20
+          }
+        },
+        {
+          "name": "东侧河岸步道",
+          "objectId": "obj-river-well",
+          "carrier": "object",
+          "objectType": "well",
+          "anchor": {
+            "x": 39,
+            "y": 3,
+            "z": 28
+          }
+        }
+      ],
+      "screenshots": {
+        "overview": "/home/runner/work/_temp/phase1-generated-custom-1-overview.png",
+        "alternate": "/home/runner/work/_temp/phase1-generated-custom-1-alternate.png"
+      },
+      "render": "ready"
+    },
+    {
+      "scenarioId": "custom-2",
+      "worldName": "广场街",
+      "worldDescription": "广场街紧邻小镇中央的钟楼广场，是镇上最热闹又最安静的一条街。石板路两侧排着老梧桐，风一吹就有叶子落在咖啡馆门前。街上住着几户老邻居，也租给过路的年轻人，谁家的灯亮着，谁家今天没拉开窗帘，街坊心里都有数。咖啡馆是这条街的心脏，人们在这里交换消息、消磨下午，有时也把心事说给不该听的人。",
+      "locations": [
+        {
+          "name": "广场街",
+          "description": "一条挨着广场的石板小街，两边是店铺和住家，街口正对钟楼。"
+        },
+        {
+          "name": "钟楼广场",
+          "description": "小镇中心的卵石广场，钟楼每小时敲一次，人们在这里等车、闲聊、喂鸽子。"
+        },
+        {
+          "name": "梧桐咖啡馆",
+          "description": "广场街上唯一的咖啡馆，木门铜铃，靠窗的位置能看到整条街和广场一角。"
+        },
+        {
+          "name": "街角杂货铺",
+          "description": "街尾的小铺子，卖日用杂货和当天面包，老板认识街上的每一个人。"
+        },
+        {
+          "name": "沿河小径",
+          "description": "广场街尽头拐向河边的小路，晨跑和晚饭后散步的人都走这里。"
+        },
+        {
+          "name": "旧公寓楼",
+          "description": "街中段一栋四层砖楼，住着几户长租客，楼道里贴着褪色的水电通知。"
+        },
+        {
+          "name": "社区公告栏",
+          "description": "咖啡馆对面墙上的木框布告板，贴着集市、招租和寻物启事。"
+        }
+      ],
+      "documentSha256": "3684d04654cf4b311f94af40336c8fb0359114e9f36ffb9b1d33a20554e72943",
+      "locationBindings": [
+        {
+          "name": "广场街",
+          "objectId": "cafe-sign",
+          "carrier": "object",
+          "objectType": "stone-lantern",
+          "anchor": {
+            "x": 6,
+            "y": 3,
+            "z": 12
+          }
+        },
+        {
+          "name": "钟楼广场",
+          "objectId": "bell-tower",
+          "carrier": "asset-placement",
+          "assetId": "bld-tower-a",
+          "anchor": {
+            "x": 28,
+            "y": 3,
+            "z": 40
+          }
+        },
+        {
+          "name": "梧桐咖啡馆",
+          "objectId": "cafe",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 8,
+            "y": 3,
+            "z": 14
+          }
+        },
+        {
+          "name": "街角杂货铺",
+          "objectId": "shop",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 8,
+            "y": 3,
+            "z": 30
+          }
+        },
+        {
+          "name": "沿河小径",
+          "objectId": "bench-river",
+          "carrier": "object",
+          "objectType": "bench",
+          "anchor": {
+            "x": 18,
+            "y": 3,
+            "z": 40
+          }
+        },
+        {
+          "name": "旧公寓楼",
+          "objectId": "notice-board",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 13,
+            "y": 3,
+            "z": 20
+          }
+        },
+        {
+          "name": "社区公告栏",
+          "objectId": "notice-board",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 13,
+            "y": 3,
+            "z": 20
+          }
+        }
+      ],
+      "screenshots": {
+        "overview": "/home/runner/work/_temp/phase1-generated-custom-2-overview.png",
+        "alternate": "/home/runner/work/_temp/phase1-generated-custom-2-alternate.png"
+      },
+      "render": "ready"
+    },
+    {
+      "scenarioId": "official-example",
+      "worldName": "汐见町",
+      "worldDescription": "汐见町是一座沿海小镇，旧车站早已停运，锈蚀的铁轨旁长满野草。车站前的小街铺着石板，两旁是安静的住宅、一家老咖啡馆和一座公共花园。海风常年吹拂，午后能听见远处潮声，住在这里的人们彼此熟识，日子缓慢而安稳。",
+      "locations": [
+        {
+          "name": "旧车站月台",
+          "description": "废弃的站台，铁轨被野草淹没，候车长椅上总有人看海。"
+        },
+        {
+          "name": "车站前小街",
+          "description": "石板铺就的短街，连接车站、咖啡馆和住宅区，是小镇日常动线。"
+        },
+        {
+          "name": "潮汐咖啡馆",
+          "description": "小街中段的老咖啡馆，木质吧台，老板熟悉每位熟客的口味。"
+        },
+        {
+          "name": "汐见花园",
+          "description": "街尾的公共花园，种满耐盐的月季与薰衣草，设有长椅和喷泉。"
+        },
+        {
+          "name": "临海住宅区",
+          "description": "小街旁安静的住宅小巷，矮墙小院，住着几户长住人家。"
+        },
+        {
+          "name": "海堤步道",
+          "description": "沿防波堤延伸的步道，清晨有人慢跑，傍晚有人散步看落日。"
+        },
+        {
+          "name": "小镇杂货铺",
+          "description": "街角的小铺子，卖日用品和本地海产干货，也是街坊交换消息的地方。"
+        }
+      ],
+      "documentSha256": "88dfc6d366f82e09ea8444a8e8669e87dfcce58d32ddadf837be776a08585473",
+      "locationBindings": [
+        {
+          "name": "旧车站月台",
+          "objectId": "old-station-platform",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 9,
+            "y": 4,
+            "z": 15
+          }
+        },
+        {
+          "name": "车站前小街",
+          "objectId": "station-front-street",
+          "carrier": "object",
+          "objectType": "bench",
+          "anchor": {
+            "x": 22,
+            "y": 4,
+            "z": 19
+          }
+        },
+        {
+          "name": "潮汐咖啡馆",
+          "objectId": "tide-cafe",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 19,
+            "y": 4,
+            "z": 26
+          }
+        },
+        {
+          "name": "汐见花园",
+          "objectId": "shiomi-garden",
+          "carrier": "object",
+          "objectType": "well",
+          "anchor": {
+            "x": 19,
+            "y": 4,
+            "z": 18
+          }
+        },
+        {
+          "name": "临海住宅区",
+          "objectId": "seaside-residential",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 37,
+            "y": 4,
+            "z": 26
+          }
+        },
+        {
+          "name": "海堤步道",
+          "objectId": "seawall-walk",
+          "carrier": "object",
+          "objectType": "bench",
+          "anchor": {
+            "x": 12,
+            "y": 4,
+            "z": 34
+          }
+        },
+        {
+          "name": "小镇杂货铺",
+          "objectId": "town-general-store",
+          "carrier": "asset-placement",
+          "assetId": "bld-hut-a",
+          "anchor": {
+            "x": 24,
+            "y": 4,
+            "z": 39
+          }
+        }
+      ],
+      "screenshots": {
+        "overview": "/home/runner/work/_temp/phase1-generated-official-example-overview.png",
+        "alternate": "/home/runner/work/_temp/phase1-generated-official-example-alternate.png"
+      },
+      "render": "ready"
+    }
+  ]
+}
