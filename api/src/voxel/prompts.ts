@@ -50,7 +50,10 @@ export function blockCatalogSummary(theme: string): string {
 
 /** 物体仓库摘要 */
 export function objectCatalogSummary(): string {
-  return listObjectTemplates().map((t) => `${t.objectType}（${t.name}，占 ${t.cells.length} 格）`).join('、')
+  return listObjectTemplates().map((t) => {
+    const bounds = (axis: 'x' | 'y' | 'z') => `${Math.min(...t.cells.map(c => c.offset[axis]))}..${Math.max(...t.cells.map(c => c.offset[axis]))}`
+    return `${t.objectType}（${t.name}，占 ${t.cells.length} 格，未旋转时相对anchor的完整范围x=${bounds('x')},y=${bounds('y')},z=${bounds('z')}）`
+  }).join('、')
 }
 
 /** S2b 资产库摘要(GLB 摆放可用资产);无清单时返回 null 由调用方省略该行 */

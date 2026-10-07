@@ -27,7 +27,7 @@ const WALK_HINTS: Record<string, string> = {
   'location-unbound': '为列出的每个世界地点增加独立的 place-object 或 assetPlacements 承载物，并在 locations 中逐字绑定地点名',
   'walk-connectivity': '检查被水/墙/围栏围死的区域,铺路或开门让室外能走到每个地点',
   'walk-stairs': '超过 1 格的高差处放台阶/楼梯,不要让人跳坎',
-  'walk-gap': '把地面的坑洞/缺口填平或绕开,通行路径不能断',
+  'walk-gap': 'issue 的 at=(x,y,z) 是跳隙前严格可达的站位,不是待填方块;沿四个水平邻向检查一格 via=(x±1,y,z)/(x,y,z±1) 与同高两格外 across=(x±2,y,z)/(x,y,z±2)。湖岸或坡地应按地面高程接路、做缓坡/台阶或搭桥,确保有不依赖跳跃的步行绕路,不要只在 at 填方块',
   'walk-lighting': '室内/洞穴等封闭通行区域放发光方块(灯笼等)照明',
   'out-of-bounds': '所有 block、物体和资产的完整占地必须位于世界范围内',
 }
@@ -77,7 +77,7 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
 }
 
 const BUILDING_LOCATION = /咖啡馆|咖啡屋|咖啡店|住宅|民居|公寓|居民楼|住宅楼|店铺|商店|商铺|杂货铺|杂货店|邮局|图书馆|车站|学校|医院|诊所|旅馆|客栈|酒店|餐馆|饭店|餐厅|酒馆|酒吧|教堂|办公楼|厂房|工坊|工作室|\bcafe\b|\bcoffee ?shop\b|\bhouse\b|\bhome\b|\bresidence\b|\bapartment\b|\bshop\b|\bstore\b|\bpost ?office\b|\blibrary\b|\bstation\b|\bschool\b|\bhospital\b|\bclinic\b|\bhotel\b|\binn\b|\brestaurant\b|\boffice\b|\bfactory\b|\bworkshop\b/iu
-const BUILDING_OBJECT_TYPES = new Set(['manor-main-house', 'manor-greenhouse'])
+const BUILDING_OBJECT_TYPES = new Set(['manor-main-house', 'manor-two-story-house', 'manor-greenhouse'])
 
 function extractPayload(content: string): GeneratedWorldPayload {
   const cleaned = content.replace(/```(?:json)?/gi, '').trim()

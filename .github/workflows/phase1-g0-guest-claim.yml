@@ -54,7 +54,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Verify terrain footprint boundaries
-        run: npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 tests/terrain.test.ts tests/assets.test.ts
+        run: npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 tests/terrain.test.ts tests/assets.test.ts tests/two-story-house.test.ts
       - name: Check API types including acceptance harness
         run: npm --workspace api run build
       - name: Verify generation and draft contracts without provider calls

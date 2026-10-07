@@ -14,8 +14,10 @@ const PER_SCENARIO_CAP = 5
 const MAX_TOKENS = 16_000
 const COST_CAP_USD = 10
 const MILLION = 1_000_000
-const PEAK_PRICE = { cacheHitInput: 0.006, cacheMissInput: 0.30, output: 1.20 }
-const MAX_REQUEST_COST_USD = ((MILLION - MAX_TOKENS) * PEAK_PRICE.cacheMissInput + MAX_TOKENS * PEAK_PRICE.output) / MILLION
+const MODEL_PEAK_PRICES: Record<string, { cacheHitInput: number; cacheMissInput: number; output: number }> = {
+  'deepseek-flash': { cacheHitInput: 0.006, cacheMissInput: 0.30, output: 1.20 },
+  'deepseek-v4-pro': { cacheHitInput: 0.044, cacheMissInput: 1.32, output: 3.96 },
+}
 
 type Usage = { promptTokens: number; cacheHitTokens: number; cacheMissTokens: number; completionTokens: number; costUsd: number }
 type ReplayCall = { scenario: string; status: number | null; usage: Usage | null; generatedContent: string }
@@ -112,6 +114,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const replayFile = process.env.G0_PROVIDER_REPLAY_FILE
     const replayMode = Boolean(replayFile)
     let replaySourceRun: string | null = null
+    let replaySourceModel = 'deepseek-flash'
     let replayCalls: ReplayCall[] = []
     const replayQueues = new Map<string, ReplayCall[]>()
     const runId = (process.env.GITHUB_RUN_ID || `local-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -138,6 +141,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       try {
         const archived = JSON.parse(readFileSync(replayFile, 'utf8')) as {
           workflowRunId?: unknown
+          provider?: { model?: unknown }
           requests?: { calls?: unknown }
         }
         const calls = archived.requests?.calls
@@ -150,6 +154,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           throw new Error('archive_schema_invalid')
         }
         replaySourceRun = archived.workflowRunId
+        if (typeof archived.provider?.model === 'string') replaySourceModel = archived.provider.model
         replayCalls = calls
         for (const call of replayCalls) {
           const queue = replayQueues.get(call.scenario) ?? []
@@ -162,7 +167,10 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     }
     const providerBaseUrl = replayMode ? 'https://api.deepseek.com' : baseUrl
     const providerApiKey = replayMode ? 'zero-provider-replay' : apiKey
-    const providerModel = replayMode ? 'deepseek-flash' : model
+    const providerModel = replayMode ? replaySourceModel : model
+    const peakPrice = MODEL_PEAK_PRICES[providerModel ?? ''] ?? MODEL_PEAK_PRICES['deepseek-v4-pro']
+    const maxRequestCostUsd = ((MILLION - MAX_TOKENS) * peakPrice.cacheMissInput + MAX_TOKENS * peakPrice.output) / MILLION
+    let reservedWorstCaseUsd = 0
     if (!Number.isInteger(rawRequestCap) || rawRequestCap < 1 || rawRequestCap > MAX_AUTHORIZED_REQUEST_CAP) {
       failures.push('invalid_provider_request_cap')
     }
@@ -202,13 +210,12 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     if (!reportPath) failures.push('missing_G0_EVIDENCE_FILE')
     if (!replayMode && !apiKey) failures.push('missing_LLM_API_KEY')
     if (providerBaseUrl !== 'https://api.deepseek.com') failures.push('unexpected_LLM_BASE_URL')
-    if (providerModel !== 'deepseek-flash') failures.push('unexpected_LLM_MODEL')
+    if (!providerModel || !Object.hasOwn(MODEL_PEAK_PRICES, providerModel)) failures.push('unexpected_LLM_MODEL')
 
     const fetcher = {
       async fetch(request: Request): Promise<Response> {
         const perScenario = providerCalls.filter(call => call.scenario === activeScenario).length
-        if (providerCalls.length >= rawRequestCap || perScenario >= PER_SCENARIO_CAP
-          || (providerCalls.length + 1) * MAX_REQUEST_COST_USD > COST_CAP_USD) {
+        if (providerCalls.length >= rawRequestCap || perScenario >= PER_SCENARIO_CAP) {
           blockedAttempts.push(activeScenario)
           throw new Error('g0_provider_request_budget_exhausted')
         }
@@ -217,6 +224,15 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         const requestMaxTokens = numeric(requestBody?.max_tokens) ?? 0
         if (requestBody?.model !== providerModel || requestMaxTokens < 1 || requestMaxTokens > MAX_TOKENS) {
           throw new Error('g0_provider_request_contract_violation')
+        }
+        // UTF-8 bytes conservatively bound input tokens; include framing overhead.
+        // Reserve uncached input plus the full output cap, even if usage is unavailable.
+        const inputTokenUpperBound = new TextEncoder().encode(JSON.stringify(requestBody)).length + 4096
+        const requestReservationUsd = (inputTokenUpperBound * peakPrice.cacheMissInput + requestMaxTokens * peakPrice.output) / MILLION
+        if (inputTokenUpperBound + requestMaxTokens > MILLION
+          || reservedWorstCaseUsd + requestReservationUsd > COST_CAP_USD) {
+          blockedAttempts.push(activeScenario)
+          throw new Error('g0_provider_cost_budget_exhausted')
         }
         // Acceptance-only provider contract; product generation defaults are unchanged.
         const outboundHeaders = new Headers(request.headers)
@@ -242,6 +258,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           thinkingDisabled, generatedContent: null,
         }
         providerCalls.push(call)
+        reservedWorstCaseUsd += requestReservationUsd
         try {
           const response = replayCall
             ? new Response(JSON.stringify({
@@ -270,9 +287,9 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           if (promptTokens !== null && completionTokens !== null) {
             const cacheHitTokens = numeric(rawUsage?.prompt_cache_hit_tokens) ?? 0
             const cacheMissTokens = numeric(rawUsage?.prompt_cache_miss_tokens) ?? Math.max(0, promptTokens - cacheHitTokens)
-            const costUsd = (cacheHitTokens * PEAK_PRICE.cacheHitInput
-              + cacheMissTokens * PEAK_PRICE.cacheMissInput
-              + completionTokens * PEAK_PRICE.output) / MILLION
+            const costUsd = replayCall?.usage?.costUsd ?? (cacheHitTokens * peakPrice.cacheHitInput
+              + cacheMissTokens * peakPrice.cacheMissInput
+              + completionTokens * peakPrice.output) / MILLION
             usage = { promptTokens, cacheHitTokens, cacheMissTokens, completionTokens, costUsd }
             call.usage = usage
             if (replayMode) replayedHistoricalCostUsd += costUsd
@@ -538,8 +555,10 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           selectedScenarioIds: requestedScenarioIds, fullSuite: selectedScenarioIds.size === knownScenarioIds.length,
         },
         limits: { rawProviderRequests: rawRequestCap, perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
-        pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', peakUsdPerMillion: PEAK_PRICE,
-          oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
+        pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', checkedAt: '2026-10-07', peakUsdPerMillion: peakPrice,
+          costValuation: 'conservative peak rate; actual billing may use off-peak rates',
+          reservationBasis: 'UTF-8 request bytes plus 4096 input framing tokens and full output cap, uncached peak rates',
+          oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * maxRequestCostUsd).toFixed(6)) },
         scenarios: scenarios.map(result => ({ ...result, ...(result.id === 'official-example' && singleWorldId ? { savedWorldIdHash: sha(singleWorldId) } : {}) })),
         generatedDrafts,
         singleSpace: { selected: requiresSingleSave, saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
@@ -568,8 +587,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           actualCostUsd: Number(actualCostUsd.toFixed(6)),
           replayedHistoricalCostUsd: Number(replayedHistoricalCostUsd.toFixed(6)),
           usageUnavailableRequests: usageUnavailable,
-          reservedWorstCaseUsd: Number(((replayMode ? 0 : providerCalls.length) * MAX_REQUEST_COST_USD).toFixed(6)),
-          replayedHistoricalReservedWorstCaseUsd: Number(((replayMode ? providerCalls.length : 0) * MAX_REQUEST_COST_USD).toFixed(6)),
+          reservedWorstCaseUsd: Number((replayMode ? 0 : reservedWorstCaseUsd).toFixed(6)),
+          replayedHistoricalReservedWorstCaseUsd: Number((replayMode ? reservedWorstCaseUsd : 0).toFixed(6)),
         },
         cleanup,
         failures,
