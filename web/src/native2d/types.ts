@@ -7,6 +7,8 @@
  * 对应已批准 plan.md「核心数据结构」与「契约约束」。
  */
 
+import type { Camera } from './projection'
+
 export type SourceKind = 'account' | 'public' | 'fixture'
 
 export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night' | 'unknown'

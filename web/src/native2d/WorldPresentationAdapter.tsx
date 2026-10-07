@@ -4,7 +4,6 @@ import type { SceneDefinition, ScenePresentation } from './types'
 import type { PresentationAdapter, WorldPresentationContext } from '../components/world/presentation/presentation-types'
 
 type Native2dContext = WorldPresentationContext & { presentation: 'native2d' }
-type CameraSnapshot = { kind: 'native2d'; version: 1; camera: Camera }
 
 export type Native2dPresentationSource = (
   context: Native2dContext,

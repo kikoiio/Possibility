@@ -5,7 +5,6 @@ import type { OrbitPose } from '../../../voxel/engine'
 import type { PresentationAdapter, WorldPresentationContext } from './presentation-types'
 
 type VoxelContext = WorldPresentationContext & { presentation: 'voxel3d' }
-type CameraSnapshot = { kind: 'voxel3d'; version: 1; pose: OrbitPose }
 
 export type VoxelViewportPropsResolver = (
   context: VoxelContext,

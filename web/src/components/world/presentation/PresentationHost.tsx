@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPresentationLifecycle, type PresentationLifecycleAdapters } from './PresentationLifecycle'
-import type { CameraSnapshot, PresentationContext, PresentationStateStore, PresentationTransitionResult } from './PresentationLifecycle'
+import type { CameraSnapshot, PresentationStateStore } from './presentation-types'
+import type { PresentationContext, PresentationTransitionResult } from './PresentationLifecycle'
 
 export interface PresentationHostProps {
   context: PresentationContext

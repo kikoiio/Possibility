@@ -10,6 +10,7 @@ import { createAccountSessionAdapter, type AccountSessionAdapter } from './sessi
 import { worldsApi } from '../api/client'
 import type { TimelineInfo, WorldSummary } from '../api/types'
 import type { Native2dViewport as Native2dViewportApi, Selection, SourceConfig } from './types'
+import { IDENTITY_CAMERA } from './projection'
 import { environmentValueLabel } from '../scene/life/environment'
 import './sample.css'
 
@@ -44,6 +45,8 @@ export default function Native2dSamplePage() {
   const viewportRef = useRef<Native2dViewportApi | null>(null)
   const accountSessionRef = useRef<AccountSessionAdapter | null>(null)
   const viewportBridge = useMemo<Native2dViewportApi>(() => ({
+    getCamera: () => viewportRef.current?.getCamera() ?? IDENTITY_CAMERA,
+    setCamera: (value) => viewportRef.current?.setCamera(value),
     setPresentation: (value) => viewportRef.current?.setPresentation(value),
     setSelection: (value) => viewportRef.current?.setSelection(value),
     setFollow: (value) => viewportRef.current?.setFollow(value),

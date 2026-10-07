@@ -10,6 +10,7 @@ import type {
   WorldReadModel,
   WorldSource,
 } from '../types'
+import { IDENTITY_CAMERA } from '../projection'
 import {
   FIXTURE_PERSON_IDS,
   FIXTURE_SCOPE,
@@ -51,6 +52,8 @@ interface ViewportLog {
 
 function fakeViewport(log: ViewportLog): Native2dViewport {
   return {
+    getCamera: () => IDENTITY_CAMERA,
+    setCamera: () => undefined,
     setPresentation: (value) => log.presentations.push(value),
     setSelection: (value) => log.selections.push(value),
     setFollow: (value) => log.follows.push(value),
