@@ -61,3 +61,4 @@
 - 已将回归夹具改为 `move -> clock_advance(+60s) -> move`，并强化 source->clone 的逐字段断言以及迁移触发器证明；修正版本为后续独立提交，待 Actions 复跑。
 - 此次失败不改变 G0 未通过结论；完整旅程和真实生成、自建单空间/原世界补建仍待验收。
 - 后续 run [37567910009](https://github.com/kikoiio/Possibility/actions/runs/37567910009) 中，合法 `move -> clock_advance(+60s) -> move` 已通过，访客 subject remap 前置断言也通过；测试因产品当前没有通过 command 生成 `supersedes_id` 的路径，在覆盖前置断言处失败，尚未进入 claim。检索确认 world facts 有不可变 UPDATE trigger；下个回归将在隔离测试库中创建代表历史更正的 source command+fact，通过现有普通 insert triggers 校验 command/timeline/version/time/value/subject/type/visibility/supersedes 后再执行真实 clone/claim。
+- run [37568241090](https://github.com/kikoiio/Possibility/actions/runs/37568241090) 中，普通 insert triggers 接受了 source correction command/fact，claim 和 clone 也成功到达后续断言；失败是测试把 fork snapshot format `version`（实际为 1）误当 source state version（payload 中为 3）。clone 字段逐项断言尚未执行，browser slice 被前置 API failure 跳过。修正期望后重跑。

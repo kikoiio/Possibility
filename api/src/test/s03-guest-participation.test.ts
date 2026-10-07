@@ -183,7 +183,9 @@ describe('S03 guest participation API', () => {
     const clonedFork = clonedTimelines.find(row => row.id !== clonedMain.id)!
     expect(clonedFork).toMatchObject({ parentTimelineId: clonedMain.id, forkScenarioJson: expect.stringContaining('访客提前到达花房') })
     expect(clonedFork.forkSnapshotJson).toContain('fork_snapshots')
-    expect(await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()).toMatchObject({ timelineId: clonedFork.id, version: 3 })
+    const clonedForkSnapshot = await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()
+    expect(clonedForkSnapshot).toMatchObject({ timelineId: clonedFork.id, version: 1 })
+    expect(JSON.parse(clonedForkSnapshot!.payloadJson)).toMatchObject({ sourceStateVersion: 3 })
 
     const clonedEvent = await fixture.db.select().from(events).where(and(
       eq(events.timelineId, clonedMain.id), eq(events.title, '访客抵达花房'),

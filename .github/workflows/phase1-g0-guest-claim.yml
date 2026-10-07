@@ -47,7 +47,7 @@ jobs:
           set -o pipefail
           {
             echo "commit=${GITHUB_SHA}"
-            echo "journey_revision=9"
+            echo "journey_revision=10"
             echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation"
             echo "excluded=real model generation, single-space creation, existing-world repair"
