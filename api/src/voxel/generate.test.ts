@@ -441,6 +441,50 @@ describe('generateWorld semantic building carriers', () => {
     }))
   })
 
+  it('normalizes bounded legacy place-object fields without trusting model-provided size', () => {
+    expect(parseEditOperations(JSON.stringify({ ops: [
+      { op: 'place-object', objectId: 'street-lantern', object: 'stone-lantern', x: 4, y: 1, z: 6, rotation: 2, size: { width: 1, height: 2, depth: 1 } },
+      { type: 'place-object', objectId: 'house', assetId: 'manor-two-story-house', anchor: { x: 8, y: 1, z: 8 }, rotation: 0, size: { width: 9, height: 8, depth: 9 } },
+    ] }))).toEqual([
+      { kind: 'place-object', objectType: 'stone-lantern', objectId: 'street-lantern', anchor: { x: 4, y: 1, z: 6 }, rotation: 180 },
+      { kind: 'place-object', objectType: 'manor-two-story-house', objectId: 'house', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+    ])
+    expect(() => parseEditOperations(JSON.stringify({ ops: [
+      { type: 'place-object', assetId: 'stone-lantern', anchor: { x: 4, y: 1, z: 6 }, size: { width: 8, height: 1, depth: 8 } },
+    ] }))).toThrow('size 与目录占地不一致')
+
+    const assets = {
+      version: 2 as const,
+      assets: {
+        'bld-hut-a': { id: 'bld-hut-a', category: 'building' as const, url: '/x.glb', footprint: [2, 3] as [number, number], height: 2, thumbnail: '/x.png', sway: 0 },
+      },
+    }
+    expect(parseEditOperations(JSON.stringify({ ops: [
+      { type: 'place-object', assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 6 }, rotation: 1, size: { width: 3, height: 2, depth: 2 } },
+    ] }), assets)).toEqual([
+      { kind: 'place-object', objectType: 'bld-hut-a', anchor: { x: 4, y: 1, z: 6 }, rotation: 90 },
+    ])
+  })
+
+  it('does not invent a road carrier when a location binds to a missing object id', async () => {
+    let error: unknown
+    try {
+      await generateWorld('一条沿海街道', 'mist-manor', {
+        id: 'missing-road-carrier',
+        requiredLocationNames: ['海边小街'],
+        maxAttempts: 1,
+        complete: async () => JSON.stringify({
+          size: { width: 16, height: 16, depth: 16 },
+          ops: [{ kind: 'fill', from: { x: 2, y: 0, z: 4 }, to: { x: 13, y: 0, z: 4 }, block: 'cobble' }],
+          locations: [{ name: '海边小街', objectId: 'road-marker' }],
+        }),
+      })
+    } catch (caught) { error = caught }
+    expect(error).toBeInstanceOf(WorldGeneratorError)
+    expect((error as Error).message).toContain('先在该地点区域内实际放置独立且语义相符')
+    expect((error as Error).message).toContain('road-marker')
+  })
+
   it('accepts a building template or building asset for a required semantic location', async () => {
     const manifest = {
       version: 2 as const,

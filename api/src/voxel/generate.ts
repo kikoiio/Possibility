@@ -225,7 +225,7 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
     ops.push({ kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: width - 1, y: 0, z: depth - 1 }, block: ground })
   }
   if (Array.isArray(payload.ops)) {
-    ops.push(...parseEditOperations(JSON.stringify({ ops: payload.ops })))
+    ops.push(...parseEditOperations(JSON.stringify({ ops: payload.ops }), assets))
   }
   // 弱模型常把库内资产(GLB)当 place-object 输出:objectType 不是物体模板但命中资产清单时,
   // 确定性改写为 place-asset(角度制 → 四分之一圈);地点绑定若指向它,后续绑定校验会带名反馈重试
@@ -311,7 +311,8 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
       if (typeof l?.name !== 'string' || !l.name || typeof l.objectId !== 'string') continue
       if (!objectIds.has(l.objectId) && !placementIds.has(l.objectId)) {
         throw new WorldGeneratorError(
-          `地点「${l.name}」绑定了不存在的物体 ${l.objectId}。locations 可绑定 place-object 的物体`
+          `地点「${l.name}」绑定了不存在的承载物 ${l.objectId}。请先在该地点区域内实际放置独立且语义相符的 place-object 或 assetPlacements，再将 locations.objectId 精确设为该物体或摆放的 ID。`
+          + `locations 可绑定 place-object 的物体`
           + `（${doc.objects.map(o => o.id).join('、') || '无'}）或 assetPlacements 的资产摆放 id`
           + `（${[...placementIds].join('、') || '无'}）`,
         )
