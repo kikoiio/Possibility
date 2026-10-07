@@ -136,7 +136,7 @@ if (typeof worldId !== 'string' || typeof timelineId !== 'string') throw new Err
 if (!/^[0-9a-f-]{36}$/i.test(worldId)) throw new Error('world ID failed the UUID check')
 
 const removeResident = spawnSync('npx', [
-  'wrangler', 'd1', 'execute', databaseName, '--remote', '--config', wranglerConfig,
+  'wrangler', 'd1', 'execute', databaseName, '--remote', '--yes', '--config', wranglerConfig,
   '--command', `DELETE FROM world_persons WHERE world_id = '${worldId}';`,
 ], { encoding: 'utf8' })
 if (removeResident.status !== 0) {
