@@ -1,0 +1,124 @@
+import { useEffect, useMemo, useState } from 'react'
+import ComparisonPane, { type PaneSessionLoader } from './ComparisonPane'
+import PresentationHost from './PresentationHost'
+import PresentationSwitcher from './PresentationSwitcher'
+import { createCameraLinkCoordinator, type CameraLinkPane } from './CameraLinkCoordinator'
+import { canLinkCameras, type PaneId, type PaneTarget, type PresentationStateStore } from './presentation-types'
+import type { PresentationContext, PresentationLifecycleAdapters, MountedPresentationForKind } from './PresentationLifecycle'
+import './comparison.css'
+
+export interface ComparisonWorldOption {
+  id: string
+  name: string
+  timelineIds?: string[]
+}
+
+export interface ComparisonHostProps {
+  left: PaneTarget
+  right: PaneTarget | null
+  loadSession: PaneSessionLoader
+  adapters: PresentationLifecycleAdapters
+  store: PresentationStateStore
+  worlds: ComparisonWorldOption[]
+  onTargetChange: (pane: 'single' | 'left' | 'right', target: PaneTarget | null) => void
+}
+
+function Pane({
+  paneId, target, loadSession, adapters, store, worlds, onTargetChange, coordinator,
+}: {
+  paneId: PaneId
+  target: PaneTarget
+  loadSession: PaneSessionLoader
+  adapters: PresentationLifecycleAdapters
+  store: PresentationStateStore
+  worlds: ComparisonWorldOption[]
+  onTargetChange: ComparisonHostProps['onTargetChange']
+  coordinator: ReturnType<typeof createCameraLinkCoordinator>
+}) {
+  const cameraLinkPane = paneId === 'right' ? 'right' : 'left'
+  return (
+    <section className="comparison-pane" data-testid={`comparison-pane-${paneId}`}>
+      <header className="comparison-pane-toolbar">
+        <label>
+          <span className="sr-only">{paneId}世界</span>
+          <select aria-label={`${paneId}世界`} value={target.worldId} onChange={event => {
+            const worldId = event.currentTarget.value
+            onTargetChange(paneId === 'single' ? 'single' : paneId, { ...target, worldId, timelineId: undefined })
+          }}>
+            {worlds.map(world => <option key={world.id} value={world.id}>{world.name}</option>)}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">{paneId}时间线</span>
+          <select aria-label={`${paneId}时间线`} value={target.timelineId ?? ''} onChange={event => {
+            const timelineId = event.currentTarget.value || undefined
+            onTargetChange(paneId === 'single' ? 'single' : paneId, { ...target, timelineId })
+          }}>
+            <option value="">当前时间线</option>
+            {(worlds.find(world => world.id === target.worldId)?.timelineIds ?? []).map(id => <option key={id} value={id}>{id}</option>)}
+          </select>
+        </label>
+        <PresentationSwitcher
+          paneId={paneId}
+          value={target.presentation}
+          onChange={presentation => onTargetChange(paneId === 'single' ? 'single' : paneId, { ...target, presentation })}
+        />
+        {paneId === 'right' && (
+          <button type="button" className="comparison-pane-close" onClick={() => onTargetChange('right', null)}>关闭右侧</button>
+        )}
+      </header>
+      <ComparisonPane paneId={paneId} target={target} loadSession={loadSession}>
+        {(state, retry) => {
+          if (state.kind === 'loading') return <div className="comparison-pane-message" role="status">正在读取 {target.worldId}…</div>
+          if (state.kind === 'unsupported') return <div className="comparison-pane-message" role="status">{state.reason}</div>
+          if (state.kind === 'error') return (
+            <div className="comparison-pane-message" role="alert">
+              <p>{state.message}</p>
+              {state.retryable && <button type="button" onClick={retry}>重试此侧</button>}
+            </div>
+          )
+          return <>
+            <div className="comparison-pane-facts" data-testid={`pane-facts-${paneId}`}>
+              <span>{state.context.identity}</span>
+              <span>{state.context.timelineId}</span>
+              <time dateTime={state.context.simNow}>{state.context.simNow}</time>
+            </div>
+            <PresentationHost
+              context={state.context as PresentationContext}
+              adapters={adapters}
+              store={store}
+              onCameraChange={camera => coordinator.notifyCameraChange(paneId, camera)}
+              onMounted={(entry: MountedPresentationForKind | null) => {
+                if (paneId === 'single') return
+                coordinator.bind(cameraLinkPane, entry as CameraLinkPane | null)
+              }}
+            />
+          </>
+        }}
+      </ComparisonPane>
+    </section>
+  )
+}
+
+export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange }: ComparisonHostProps) {
+  const coordinator = useMemo(() => createCameraLinkCoordinator(), [])
+  const [cameraLinkEnabled, setCameraLinkEnabled] = useState(false)
+  const compatible = right !== null && canLinkCameras(left, right)
+  useEffect(() => { coordinator.setEnabled(cameraLinkEnabled && compatible) }, [coordinator, cameraLinkEnabled, compatible])
+  useEffect(() => () => coordinator.dispose(), [coordinator])
+
+  return (
+    <main className={`comparison-workspace ${right ? 'comparison-workspace-split' : 'comparison-workspace-single'}`} data-testid="comparison-workspace">
+      <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} />
+      {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} /> : (
+        <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
+      )}
+      {right && (
+        <label className="comparison-camera-link">
+          <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => setCameraLinkEnabled(event.currentTarget.checked)} />
+          联动相机
+        </label>
+      )}
+    </main>
+  )
+}

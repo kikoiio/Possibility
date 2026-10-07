@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPresentationLifecycle, type PresentationLifecycleAdapters } from './PresentationLifecycle'
+import { createPresentationLifecycle, type MountedPresentationForKind, type PresentationLifecycleAdapters } from './PresentationLifecycle'
 import type { CameraSnapshot, PresentationStateStore } from './presentation-types'
 import type { PresentationContext, PresentationTransitionResult } from './PresentationLifecycle'
 
@@ -9,6 +9,7 @@ export interface PresentationHostProps {
   store: PresentationStateStore
   className?: string
   onCameraChange?: (camera: CameraSnapshot) => void
+  onMounted?: (entry: MountedPresentationForKind | null) => void
   onTransition?: (result: PresentationTransitionResult) => void
 }
 
@@ -19,13 +20,14 @@ export default function PresentationHost({
   store,
   className,
   onCameraChange,
+  onMounted,
   onTransition,
 }: PresentationHostProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<unknown>(null)
   const [attempt, setAttempt] = useState(0)
-  const callbacksRef = useRef({ onCameraChange, onTransition })
-  callbacksRef.current = { onCameraChange, onTransition }
+  const callbacksRef = useRef({ onCameraChange, onMounted, onTransition })
+  callbacksRef.current = { onCameraChange, onMounted, onTransition }
   const capabilitiesKey = JSON.stringify(context.capabilities)
 
   useEffect(() => {
@@ -36,6 +38,7 @@ export default function PresentationHost({
     setFailure(null)
     void lifecycle.transition(context, host, {
       onCameraChange: camera => callbacksRef.current.onCameraChange?.(camera),
+      onMounted: entry => callbacksRef.current.onMounted?.(entry),
     }).then(result => {
       if (!active) return
       if (result.kind === 'error') setFailure(result.error)
@@ -43,6 +46,7 @@ export default function PresentationHost({
     })
     return () => {
       active = false
+      callbacksRef.current.onMounted?.(null)
       lifecycle.destroy()
     }
   }, [context.paneId, context.worldId, context.timelineId, context.presentation, context.identity, context.stateVersion, context.simNow, capabilitiesKey, adapters, store, attempt])

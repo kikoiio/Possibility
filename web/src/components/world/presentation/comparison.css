@@ -1,0 +1,59 @@
+.comparison-workspace {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.comparison-workspace-single { grid-template-columns: minmax(0, 1fr); }
+.comparison-workspace-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.comparison-pane {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 22rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(148 163 153 / 35%);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 70%);
+}
+
+.comparison-pane-toolbar,
+.comparison-pane-facts {
+  display: flex;
+  min-height: 2.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgb(148 163 153 / 25%);
+  font-size: 0.75rem;
+}
+
+.comparison-pane-toolbar select,
+.comparison-pane-toolbar button,
+.comparison-open-split {
+  min-height: 2.5rem;
+  border: 1px solid rgb(148 163 153 / 60%);
+  border-radius: 9999px;
+  background: white;
+  padding: 0.4rem 0.75rem;
+}
+
+.comparison-pane-facts { justify-content: flex-start; border-bottom: 0; color: #475569; }
+.comparison-pane-facts > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comparison-pane > [data-testid^='presentation-host'] { flex: 1; }
+.comparison-pane-message { display: grid; min-height: 20rem; place-content: center; gap: 0.75rem; padding: 1rem; text-align: center; }
+.comparison-pane-message button { justify-self: center; min-height: 2.75rem; border-radius: 9999px; padding: 0.5rem 1rem; }
+.comparison-open-split { align-self: start; }
+.comparison-camera-link { position: absolute; z-index: 1; top: 3.5rem; left: 50%; transform: translateX(-50%); border-radius: 9999px; background: white; padding: 0.5rem 0.75rem; font-size: 0.75rem; }
+
+@media (max-width: 767px) {
+  .comparison-workspace-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(22rem, 1fr)); }
+  .comparison-camera-link { position: static; grid-row: 1; justify-self: center; transform: none; }
+}

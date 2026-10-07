@@ -13,6 +13,13 @@ export type PresentationContext = {
   [K in PresentationKind]: WorldPresentationContext & { presentation: K }
 }[PresentationKind]
 
+export type MountedPresentationForKind = {
+  [K in PresentationKind]: {
+    target: PaneTarget & { presentation: K }
+    mounted: MountedPresentation<K>
+  }
+}[PresentationKind]
+
 export interface PresentationLifecycleAdapters {
   native2d: PresentationAdapter<'native2d'>
   voxel3d: PresentationAdapter<'voxel3d'>
@@ -28,7 +35,10 @@ export interface PresentationLifecycle {
   transition(
     context: PresentationContext,
     host: HTMLElement,
-    options?: { onCameraChange?: (camera: CameraSnapshot) => void },
+    options?: {
+      onCameraChange?: (camera: CameraSnapshot) => void
+      onMounted?: (entry: MountedPresentationForKind) => void
+    },
   ): Promise<PresentationTransitionResult>
   destroy(): void
 }
@@ -110,7 +120,10 @@ export function createPresentationLifecycle(dependencies: {
     context: WorldPresentationContext & { presentation: K },
     host: HTMLElement,
     candidate: MountRequest,
-    options?: { onCameraChange?: (camera: CameraSnapshot) => void },
+    options?: {
+      onCameraChange?: (camera: CameraSnapshot) => void
+      onMounted?: (entry: MountedPresentationForKind) => void
+    },
   ): Promise<PresentationTransitionResult> {
     let camera: CameraSnapshotFor<K> | undefined
     try {
@@ -139,6 +152,7 @@ export function createPresentationLifecycle(dependencies: {
       }
 
       mounted = { context, mounted: handle }
+      options?.onMounted?.({ target: targetFor(context), mounted: handle } as MountedPresentationForKind)
       return { kind: 'mounted', presentation: context.presentation }
     } catch (error) {
       if (!isCurrent(candidate)) return { kind: 'stale' }
