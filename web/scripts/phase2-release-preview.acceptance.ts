@@ -241,6 +241,8 @@ async function main(): Promise<void> {
     await mobilePage.waitForFunction(() => document.querySelectorAll('[data-testid="native2d-account-timeline-select"] option').length > 1)
     await mobilePage.getByTestId('native2d-account-timeline-select').selectOption(forkTimelineId)
     await mobilePage.getByTestId('native2d-source-apply').click()
+    // Account actions live in the facts drawer, which is intentionally closed on mobile.
+    await mobilePage.getByTestId('native2d-panel-toggle').click()
     await mobilePage.getByTestId('native2d-account-actions').waitFor()
     await mobilePage.getByTestId('native2d-read-status').getByText('事实已更新').waitFor({ timeout: 20_000 })
     const mobileLayout = await apiWithToken(childLayoutPath, token)
