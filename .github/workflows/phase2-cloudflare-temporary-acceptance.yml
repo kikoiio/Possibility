@@ -134,6 +134,8 @@ jobs:
           PHASE2_TEMP_API_URL="$api_url" node scripts/phase2-cloudflare-readiness.mjs
 
       - name: Bootstrap one-off owner world and timeline
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/phase2-temporary-cloudflare-bootstrap.mjs
 
       - name: Verify deployed leave, pause, and resume journey
