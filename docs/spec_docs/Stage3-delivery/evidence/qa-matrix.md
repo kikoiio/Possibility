@@ -1,6 +1,6 @@
 # 阶段三交付 QA 矩阵与资源计划
 
-> 状态：T04 规划产物；本文件中的场景尚未执行，均为**未验证**。本次只整理矩阵，不启动浏览器、构建、测试、服务或模型调用。
+> 状态：T04 规划产物；下方固定覆盖和 pairwise 场景仍未完整执行。附录记录了 G0 访客旅程的有限 3D/3D smoke evidence，但不把部分覆盖折算为矩阵用例通过。
 > 基线约定：执行时记录 `phase3` commit、应用/API 版本、浏览器/OS、视口、测试账号与隔离 world/timeline 标识；不记录密钥或原始私人对话。任何结果须附路径、观察、限制及 trace/screenshot/log 证据链接。
 > 依据：已批准的 `spec.md` AC1/AC4/AC5/AC7、`plan.md` 的组合/资源决策、`task.md` T04，以及 `/home/neo/Projects/Possibility/docs/DEVELOPMENT_ARRANGEMENT.md` 的阶段门槛、隔离数据和内存调度约定。
 
@@ -118,3 +118,14 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 - 未启动浏览器、应用服务、构建、单测、E2E、性能采样或资源压力任务。
 - 未调用模型；真实模型调用预算、模型配置与请求上限仍需执行前确认。
 - 所有场景的实际通过/失败状态、性能阈值、设备覆盖和释放读数均待后续验收 wave 填写；当前统一为未验证。
+
+
+## 执行补充：Phase 1 G0 旅程中的分屏 smoke
+
+- **run/commit**：GitHub Actions [37570453870](https://github.com/kikoiio/Possibility/actions/runs/37570453870)，`phase3` commit `1b96beca8cf2a62586f09884b356debffb62ddf1`，workflow revision 14；job `112627651680`。同一已认领 world、不同时间线、桌面 Chromium 1280×720、3D/3D。API 历史 clone 回归 **4/4 passed**，浏览器同账号旅程 **1/1 passed**，provider calls 0。证据明细见 [`phase1-g0-checkpoint.md`](phase1-g0-checkpoint.md) 与 [`phase1-guest-claim.log`](phase1-guest-claim.log)。
+- **实际覆盖**：分屏入口、左右真实 timeline 标题及两个 `VoxelViewport` canvas；在分屏仍打开时刷新，断言两侧恢复；正常返回在场视图后验证多空间居民和对话记录。场景编辑修订也跨刷新保留。
+- **矩阵映射与边界**：这仅是 C2（同 world、不同 timeline、3D/3D）和 R1（单 pane→双 pane→单 pane / 回访）的旅程 smoke。未观察相机隔离或联动、单侧切换/失败重试、权限差异、renderer/context/订阅释放、资源峰值、热/冷性能；因此 C2、R1、H1/R2 状态保持**未验证**。C1、C3、C4、W1–W4、P1/P2、E1–E4、其他 PW 批次及真实触屏/慢网也仍未执行。
+
+## 后续非 provider API slice（待执行）
+
+扩展专用隔离 Actions workflow，串行增加 `api/src/map/bootstrap.test.ts`（Guest 当前 sandbox bootstrap、resume save/restore 和跨 world 拒绝）、`api/src/public/routes.test.ts`（匿名 demo 只读及禁止写入）和 `api/src/access/policy.test.ts`（owner/guest capabilities）作为 API-level smoke。其结果只证明路由/权限/数据契约，不替代 QA matrix 的浏览器双 pane identity、failure isolation 或 renderer 覆盖；账户型 readonly 未发现独立产品身份，保持未验证。

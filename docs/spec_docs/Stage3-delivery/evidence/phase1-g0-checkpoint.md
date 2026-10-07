@@ -11,11 +11,11 @@
 
 | 门槛项 | 结果 | 实测与限制 |
 |---|---|---|
-| 真实多空间访客进入与交互 | **部分通过** | Playwright `guest-claim-journey.spec.ts` 使用隔离 Wrangler D1 和真实 API；访客进入 `/demo`、进入温室并移动到场、创建真实分支。没有交谈步骤。本机与 GitHub Actions 各 1/1 通过；云端 run `37561465283` 复验的是同一片段。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log) 和 [`phase1-g0-cloud-guest-claim.md`](phase1-g0-cloud-guest-claim.md)。 |
-| 访客认领与进度保留 | **部分通过** | 同一 E2E 注册账户并执行真实 claim；新账户落在非 demo 的已认领世界，世界有 2 条时间线、7 位居民和 1 个场景修订。页面确认时间线选择器有两条线，并确认访客仍在温室。本机和云端结果均未刷新页面；云端只复验访客交互/分叉/认领片段。 |
-| 所有者管理 | **未核验** | 页面进入了已认领世界，但本次没有逐项操作/断言暂停、继续、历史或管理能力。数据库所有权与 `is_demo=0` 只能证明 claim 结果，不能替代管理 UI 验收。 |
-| 编辑与持久化 | **未核验** | 本次没有在认领后的多空间世界提交编辑并刷新验证。独立旧场景兼容测试不属于这次同一旅程，也没有运行。 |
-| 分屏比较与刷新继续 | **未核验** | 访客分叉后的“两种人生”比较是弹窗/面板，不是左右分屏。E2E 未执行 `page.reload()`。因此不满足“编辑 → 分屏 → 刷新继续”。现有 split E2E 使用 API stub，不作为本项真实 API 证据。 |
+| 真实多空间访客进入与交互 | **部分通过** | run `37570453870` 的同一 Playwright 旅程通过访客 `/demo`、温室移动、确定性 fixture 交谈、创建真实分支、认领、管理、编辑、分屏刷新后继续对话。对话不是外部模型生成；多空间访客 bootstrap 由该 UI 旅程调用，但专门接口隔离与越权断言仍需补充。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log)。 |
+| 访客认领与进度保留 | **通过（本旅程）** | run `37570453870` 注册新账户并通过真实 claim；在所有者世界确认两条时间线、访客在场、对话记录和编辑修订跨刷新保留；API clone regression 同时通过完整 source→clone 字段映射。范围限该隔离多空间 world 与桌面 Chromium。 |
+| 所有者管理 | **部分通过** | 本旅程经 UI 执行暂停与继续，并断言按钮状态返回。世界归档、时间线管理、管理设置和失败/权限边界未核验。 |
+| 编辑与持久化 | **通过（本旅程）** | 所有者通过真实多空间场景编辑移除未绑定装饰资产，等待 `POST /scene/voxel-revision` 成功；刷新后同一 placement ID 仍不存在。其他编辑类型及冲突/失败恢复未核验。 |
+| 分屏比较与刷新继续 | **通过（限 3D/3D smoke）** | 同一已认领 world 的两条时间线真实分屏分别挂载两个视口；刷新仍恢复左右标题与两个画布，切回“在场”后访客地点状态和对话仍在。未覆盖 2D/2D、混合表现、跨世界、相机/权限隔离、资源释放矩阵。 |
 | 三个自写描述与官方示例的真实生成 | **未通过** | 四条真实 API 生成共计 17 次 provider 请求。custom-1 API 返回 200，但 8 个地点仅对应 3 个场景对象，不能判为成功；custom-2、custom-3、官方示例均返回 502 内容校验错误。完整输入、返回、问题码和调用数见 [`phase1-generation-results.json`](phase1-generation-results.json)。 |
 | 自建单空间与原世界补建对照 | **未通过** | 再次用官方示例走自建生成，5 次 provider 请求后仍 502，未进入 `POST /api/worlds`，没有生成自建单空间。隔离 D1 中创建的无场景原世界保留 1 位居民、1 条时间线；`repair-context` 为 200，但真实 `repair-draft` 4 次 provider 请求后以 walk-connectivity / walk-gap 返回 502，场景修订仍为 0。原 worldId 未变化，但没有成功补建保存。 |
 
@@ -36,7 +36,7 @@
 
 ## G0 判定
 
-**阶段一 G0 未通过，集成开发仍锁定。** 本检查点只证明访客交互/分叉/认领的一部分；完整交谈、认领后所有者管理、编辑保存、真实分屏和刷新回访尚无同一旅程证据。真实生成出现三条 502 及一条地点对象不完整的 200；自建单空间和原世界补建均未成功保存。阶段二真实验收仍由另一个 session 负责，亦未纳入本提交。
+**阶段一 G0 未通过，集成开发仍锁定。** run `37570453870` 已补齐确定性对话、claim、暂停/继续、场景保存、同 world 双 3D 分屏及刷新后恢复这一旅程；这不替代真实模型生成验收。剩余阶段一硬门槛是用真实 provider 按三条自写提示和官方示例完成有效生成，并完成自建单空间保存与原 worldId 补建保存对照。此前真实生成有三条 502 和一条地点对象不完整的 200，自建单空间与原世界补建均未成功。阶段二仍由另一 session 负责且未纳入本提交。
 
 下一次完整验收需在资源允许时，用真实多空间会话完成同一账号旅程的剩余步骤；修正生成地点绑定/通行失败后，以同一四条输入复验，并完成自建世界保存和原世界原 ID 补建保存。阶段二 session 提供其通过证据后，协调者再更新 G0 判定。
 
@@ -66,8 +66,19 @@
 - run [37568473326](https://github.com/kikoiio/Possibility/actions/runs/37568473326) 的 API regression 整体通过；browser 旅程通过 guest dialogue/fork/claim 与 owner pause/resume，进入编辑步骤时测试脚本 `page.evaluate` 回调引用了浏览器作用域不存在的 `candidate`（参数名为 `at`），报 ReferenceError。编辑保存、真实 split 和 reload 尚未执行。已修正为引用回调参数，待 Actions 复跑。
 - run [37568706180](https://github.com/kikoiio/Possibility/actions/runs/37568706180) 的 API regression 再次通过；修正 `page.evaluate` 后 browser 继续到分屏入口，但连续点击 4 分钟因 GuestWorldMap 的体验位置 nav `sm:top-4` 覆盖顶栏“对照宇宙”而超时，trace/error context 与截图已复查。已把该 nav 下移到顶栏/时间线说明带下方，待云端重跑；尚未证明分屏或 reload。
 
-## G0 补充复核：多空间分屏路由修复（待云端复验）
+## G0 补充复核：多空间分屏路由修复
 
 - 最新 run [37569334903](https://github.com/kikoiio/Possibility/actions/runs/37569334903) 的 API regression 通过。浏览器通过认领、所有者暂停/继续及场景编辑保存；导航遮挡已消失，刷新后保存的移除编辑仍存在。随后重进地点时，可能性抽屉拦截“进入此地点”。轨迹显示分屏入口没有产生 `split-view`：多空间页面早退到 `GuestWorldMap`，未挂载既有双视口分屏组件。
-- 现在将既有 `SplitViewStage` 接入多空间页面，使用所选空间的场景文档、两条真实时间线快照、各自 overlay/事件及现有比较数据；比较面板分屏导航会关闭面板。分屏保留在 URL 状态，旅程会在分屏打开时刷新并断言两个画布和左右标题均恢复。
-- 刷新后测试通过“体验位置 → 在场”正常收起可能性抽屉，再验证地点居民和对话；没有 force-click。该修订待 GitHub Actions 执行。API clone regression 代码和非空 supersedes/source-command 映射断言未改动；provider 调用为 0。此项仍不改变阶段一 G0 未通过判定。
+- 已将既有 `SplitViewStage` 接入多空间页面，使用所选空间的场景文档、两条真实时间线快照、各自 overlay/事件及现有比较数据；比较面板分屏导航会关闭面板。分屏保留在 URL 状态；通过旅程在分屏打开时刷新并断言两个画布和左右标题均恢复。
+- 刷新后测试通过“体验位置 → 在场”正常收起可能性抽屉，再验证地点居民和对话；没有 force-click。具体成功 run 见下方。API clone regression 代码和非空 supersedes/source-command 映射断言未改动；provider 调用为 0。此项仍不改变阶段一 G0 未通过判定。
+
+## G0 补充复核：Actions 多空间完整访客旅程
+
+- **通过证据**：GitHub Actions [run 37570453870](https://github.com/kikoiio/Possibility/actions/runs/37570453870)，验收分支 `phase3`，commit `1b96beca8cf2a62586f09884b356debffb62ddf1`，workflow `journey_revision=14`。结果：API `src/test/s03-guest-participation.test.ts` 为 **1 file / 4 tests passed**；Playwright `guest-claim-journey.spec.ts` 为 **1 passed**。云端 job 2m43s，外部 provider 调用 0。
+- **逐步观察**：访客进入真实多空间 demo、温室移动、确定性交谈、创建分叉、注册/claim；认领后暂停/继续；编辑器经服务端 revision 保存装饰资产移除；打开来源/分支真实 3D/3D 分屏；刷新后仍有两个分屏画布和左右标题；退出分屏后温室居民/对话记录仍可见。没有 force-click。
+- **artifact/日志**：Actions job `112627651680`；artifact `phase1-g0-guest-claim-37570453870`，ID `11459909535`，1,412 bytes，未过期；完整命令与 runner 输出可从 run 页面复查。成功 run 不生成失败 trace/screenshot。
+- **限制**：此旅程中的对话使用隔离环境确定性 fixture；owner 管理只测暂停/继续；编辑只测一类删除；split 只测同 world 两 timeline、3D/3D、桌面 1280×720 和此旅程中的 refresh continuation。真实生成及自建/原 world 补建保存仍失败，故 G0 仍未通过。
+
+## 非 provider 补充 API 验收（待 Actions）
+
+为补足访问审计中 guest map bootstrap/resume 尚无 route-level 结果的缺口，下一版同一隔离 workflow 将追加 `api/src/map/bootstrap.test.ts`、`api/src/public/routes.test.ts`、`api/src/access/policy.test.ts`，与已通过的历史 claim clone regression 串行运行。新增 bootstrap route case 检查 guest 只能读取当前 sandbox、保存并恢复有效 timeline/space/mode，跨 world bootstrap/resume 被拒；public API case 覆盖匿名 demo snapshot/scene 只读；policy case覆盖 owner/guest capabilities。尚未运行，结果待 Actions。`access-audit.md` 中账户型 readonly 是当前产品未定义/未发现的角色，不会为本次验收虚构接口或功能；将保留未核验状态。
