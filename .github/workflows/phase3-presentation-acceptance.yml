@@ -33,6 +33,12 @@ jobs:
         run: npm ci
       - name: Install Chromium runtime
         run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Record runner resources before browser work
+        run: |
+          free -h
+          vmstat 1 5
+          cat /proc/pressure/memory
+          cat /sys/fs/cgroup/memory.max 2>/dev/null || true
       - name: Run isolated presentation browser journeys
         working-directory: web
         env:
@@ -40,7 +46,7 @@ jobs:
           PLAYWRIGHT_WEB_PORT: 26173
           PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
           CI: true
-        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/presentation-switch.spec.ts e2e/presentation-cross-world.spec.ts e2e/presentation-same-world.spec.ts
+        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/presentation-switch.spec.ts e2e/presentation-cross-world.spec.ts e2e/presentation-same-world.spec.ts e2e/presentation-performance.spec.ts
       - name: Upload browser traces and logs
         if: always()
         uses: actions/upload-artifact@v4
