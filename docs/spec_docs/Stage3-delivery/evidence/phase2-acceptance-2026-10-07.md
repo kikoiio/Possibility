@@ -1,5 +1,19 @@
 # Phase 2 acceptance checkpoint — 2026-10-07
 
+## 2026-10-08 closeout
+
+Phase 2 production-preview owner journey and leave/pause/resume remain passed by [37640643443](https://github.com/kikoiio/Possibility/actions/runs/37640643443). The user accepts real-account and public-evaluation requirements as passed; the live demo URL was not configured, so no live public read is claimed. The cross-phase guest, timeline geometry, and archive lifecycle regression subsequently passed 20/20 in [37649736957](https://github.com/kikoiio/Possibility/actions/runs/37649736957). Full API/Web/voxel technical regression passed in [37649736855](https://github.com/kikoiio/Possibility/actions/runs/37649736855). No provider call was made.
+
+## Latest cloud recheck
+
+[GitHub Actions 37640643443](https://github.com/kikoiio/Possibility/actions/runs/37640643443) completed successfully on `main` commit `8fa8ffcafa652b4f022871419ac452804eaa920e`. It built the production Web bundle and verified the owner persistence journey against an isolated Worker/D1, finite environment projection/controller refresh, the continuous facts/rules/rendering/evidence journey, leave/advance/pause/resume, and mobile touch **4/4**. Temporary services and isolated D1 storage were cleaned up by the workflow.
+
+The live public-demo step was skipped because no URL was configured. The user explicitly accepts checks requiring real production accounts or public evaluation; this item is recorded as **passed by user acceptance**, not as an executed live-demo check. Real account/cross-device acceptance follows the same decision. The isolated engineering checks above were actually executed.
+
+This supersedes the old missing pause/resume and mobile-touch results below. The runtime is hosted-runner local Worker/D1 with `vite preview`; it does not claim a new remote production deployment, physical touch hardware, or real-provider SSE evaluation. Latest complete technical regression [37643316225](https://github.com/kikoiio/Possibility/actions/runs/37643316225) also passed API/Web types, the production Web build, full non-live-provider API/Web tests and voxel contract tests.
+
+## Historical checkpoint
+
 Branch at checkpoint: `main` (the current acceptance branch). This record covers Phase 2 changes only; no Phase 3 files were modified or copied.
 
 ## Passed
@@ -32,12 +46,13 @@ The owner browser journey exercised a real local owner account and local D1 pers
 - Early local owner-journey attempts exposed test-fixture setup issues (a seeded demo-baseline marker, then compare selection / active-timeline limits). The isolated fixture and journey setup were corrected; the final owner journey passed as part of the 35/35 desktop run. These setup failures were not left as unresolved product failures.
 - The Web production build passed with the existing large-chunk warning (>500 kB). It did not fail the build.
 
-## Failed or unverified
+## Coverage limits and user acceptance
 
-- **Remote deployment progression/pause/resume (T15/T22): unverified.** `scripts/verify-deployment-journey.ts` now checks that a dedicated running world advances while away, freezes while paused, then resumes. Neither the local development run nor the GitHub-hosted local Worker/D1 acceptance contacted a deployed environment. No remote world was mutated.
-- **Public demo live-read browser case: unverified.** The earlier live case could not complete against an available public demo and timed out; the local acceptance above does not substitute for that live environment check.
-- **Touch-device interaction, cross-device layout restoration, and archive behavior: unverified.** Desktop browser refresh/reselection restoration passed, but these separate environments/flows were not exercised.
-- **SSE/model generation: not verified against a model provider.** The owner journey mocked the chat stream; API interaction and other account operations used the local service.
+- **Leave/advance/pause/resume:** passed against the isolated Worker in run 37640643443. An actual remote production deployment was not contacted by this recheck.
+- **Live public demo / real account / cross-device account:** passed by the user's explicit acceptance decision; the live demo step was skipped, with no configured URL.
+- **Touch interaction:** mobile browser simulation 4/4 passed in run 37640643443; physical touch hardware was not measured.
+- **SSE/model generation:** this production-preview journey uses a deterministic chat SSE response. It verifies the engineering/API path without additional provider quota.
+- **Timeline archive geometry:** passed in cross-phase browser run 37649736957 after fixing the archived-child state calculation. The regression checks the archived badge and read-only history behavior.
 
 ## Resource checkpoint
 
@@ -49,7 +64,7 @@ Before preview work, this session observed about 7.3 GiB MemAvailable, negligibl
 - Owner API and persistence/CAS: `api/src/native2d/routes.ts`, `api/src/native2d/repository.ts`, `api/src/native2d/routes.test.ts`.
 - Account layout repository and interaction wiring: `web/src/native2d/api-layout-repository.ts`, `web/src/native2d/session-adapter.ts`, `web/src/native2d/sample-page.tsx`, `web/src/native2d/world-source.ts`.
 - Timeline comparison correction and regression coverage: `api/src/life/compare.ts` and related API journey tests.
-- Deployment journey checks: `scripts/verify-deployment-journey.ts` (implementation updated; deployed run remains unverified).
+- Deployment journey checks: `scripts/verify-deployment-journey.ts` (isolated Worker leave/pause/resume passed in 37640643443; no remote production deployment is claimed).
 - Itemized Phase 2 checklist: `docs/spec_docs/phase2-world-loop/checklist.md`.
 
 The passing production-preview evidence is reproducible from workflow `.github/workflows/phase2-production-acceptance.yml` and script `web/scripts/phase2-release-preview.acceptance.ts`. The run tested code commit `b68e79b`; this checkpoint additionally records the run results. The evidence commit is listed in the final acceptance handoff.
