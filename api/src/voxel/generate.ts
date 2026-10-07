@@ -370,6 +370,13 @@ export async function generateWorld(
     for (const name of new Set(deps.requiredLocationNames ?? [])) {
       if (!boundNames.has(name)) issues.push({ code: 'location-unbound', message: `必需地点「${name}」尚未绑定到场景物体` })
     }
+    const carrierNames = new Map<string, string>()
+    for (const location of doc.locations) {
+      const previousName = carrierNames.get(location.objectId)
+      if (previousName) {
+        issues.push({ code: 'location-unbound', message: `地点「${previousName}」与「${location.name}」共用承载物「${location.objectId}」；每个地点必须绑定不同承载物` })
+      } else carrierNames.set(location.objectId, location.name)
+    }
     if (issues.length === 0) {
       // 序列化 round-trip 自检（契约闭环：AI 输出即权威格式）
       try {
