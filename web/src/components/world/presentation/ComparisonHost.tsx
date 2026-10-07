@@ -105,6 +105,7 @@ function Pane({
 export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange, onExit }: ComparisonHostProps) {
   const coordinator = useMemo(() => createCameraLinkCoordinator(), [])
   const [cameraLinkEnabled, setCameraLinkEnabled] = useState(false)
+  const [, setBindingRevision] = useState(0)
   const mountedPanes = useRef<Partial<Record<CameraLinkPaneId, CameraLinkPane>>>({})
   const cameraKeys = useRef<Partial<Record<CameraLinkPaneId, string>>>({})
   const compatible = right !== null && canLinkCameras(left, right)
@@ -115,6 +116,7 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
     else delete mountedPanes.current[paneId]
     delete cameraKeys.current[paneId]
     coordinator.bind(paneId, entry as CameraLinkPane | null)
+    setBindingRevision(value => value + 1)
   }
   const reportCamera = (paneId: PaneId, camera: CameraSnapshot) => {
     if (paneId !== 'single') cameraKeys.current[paneId] = JSON.stringify(camera)
@@ -153,7 +155,7 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
       )}
       {right && (
-        <label className="comparison-camera-link" data-testid="comparison-camera-link">
+        <label className="comparison-camera-link" data-testid="comparison-camera-link" data-camera-link-active={coordinator.isLinkActive()}>
           <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => {
             const enabled = event.currentTarget.checked
             setCameraLinkEnabled(enabled)

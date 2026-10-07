@@ -19,6 +19,7 @@ test('same-world linked cameras follow together, then disable for mixed renderer
   await expect(link).toBeEnabled()
   await link.check()
   await expect(link).toBeChecked()
+  await expect(page.getByTestId('comparison-camera-link')).toHaveAttribute('data-camera-link-active', 'true')
   await expect.poll(() => page.evaluate(() => !!(window as unknown as ProbeWindow).__voxelEngines?.left?.world && !!(window as unknown as ProbeWindow).__voxelEngines?.right?.world)).toBe(true)
 
   await page.evaluate(() => {

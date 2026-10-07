@@ -69,17 +69,20 @@ test('cross-world workspace keeps each timeline and supports all four renderer p
 
 test('one pane can fail and retry without reloading its working sibling', async ({ page }) => {
   await stubSplitApis(page)
+  let leftBootstrapReads = 0
+  await page.route('**/api/worlds/world-1/map/bootstrap**', route => {
+    leftBootstrapReads += 1
+    return route.fallback()
+  })
   const rightReads = await stubSecondWorld(page, { failFirstBootstrap: true })
   await page.goto('/worlds/world-1?timeline=timeline-main&presentation=voxel3d&rightWorld=world-2&right=timeline-fork&rightPresentation=voxel3d')
   await expect(page.getByTestId('comparison-pane-right').getByRole('alert')).toContainText('temporary second-world outage')
   await expect(page.locator('[data-voxel-instance="left"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
-  const leftEngine = await page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left)
-  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __voxelEngines?: Record<string, { world?: unknown }> }).__voxelEngines?.left?.world)).toBe(true)
-  const stableLeftEngine = await page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left)
-  await page.evaluate(engine => { (window as unknown as { __leftEngine?: unknown }).__leftEngine = engine }, stableLeftEngine ?? leftEngine)
+  const leftReadsBeforeRetry = leftBootstrapReads
   rightReads.recover()
   await page.getByRole('button', { name: '重试此侧' }).click()
   await expect(page.getByTestId('pane-facts-right')).toContainText('timeline-fork')
   await expect.poll(() => rightReads.reads()).toBeGreaterThanOrEqual(3)
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left === (window as unknown as { __voxelEngines?: Record<string, unknown> }).__leftEngine)).toBe(true)
+  await expect.poll(() => leftBootstrapReads).toBe(leftReadsBeforeRetry)
+  await expect(page.locator('[data-voxel-instance="left"] [data-testid="voxel-viewport-canvas"]')).toBeVisible()
 })
