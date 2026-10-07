@@ -106,16 +106,18 @@ function verifyLedgerPrefix(rows, expected, label) {
   assertSame(names, expected.slice(0, names.length), `${label} ordered ledger prefix`)
 }
 
-function readImportedQueryCount(payload, description) {
-  // Wrangler v4 --json wraps a successful --file import in one QueryResult-like
-  // envelope, with one summary row containing the import's query count.
-  if (!Array.isArray(payload) || payload.length !== 1 || payload[0]?.success !== true
-    || !Array.isArray(payload[0]?.results) || payload[0].results.length !== 1) {
-    throw new Error(`${description} did not return Wrangler's successful file-import envelope`)
+function readStandardImportQueryCount(output, description) {
+  // Wrangler v4's standard remote-file success line is:
+  // "Executed N queries in Xms (R rows read, W rows written)".
+  const matches = [...output.matchAll(
+    /Executed\s+(\d+)\s+queries\s+in\s+[\d.]+\s*ms\s+\(\s*\d+\s+rows read,\s*\d+\s+rows written\s*\)/g,
+  )]
+  if (matches.length !== 1) {
+    throw new Error(`${description} did not emit exactly one Wrangler file-import success line`)
   }
-  const count = payload[0].results[0]?.['Total queries executed']
+  const count = Number(matches[0][1])
   if (!Number.isInteger(count) || count < 1) {
-    throw new Error(`${description} file-import envelope has no integer Total queries executed value`)
+    throw new Error(`${description} Wrangler file-import success line has an invalid query count`)
   }
   return count
 }
@@ -186,9 +188,15 @@ async function main() {
 
     process.stdout.write(`Importing complete original migration file ${path} (SHA-256 ${sha256}).\n`)
     const imported = command([
-      'd1', 'execute', 'DB', '--remote', '--file', path, '--json', '--config', config,
-    ], { json: true })
-    const executedQueries = readImportedQueryCount(imported.payload, nextName)
+      'd1', 'execute', 'DB', '--remote', '--file', path, '--config', config,
+    ])
+    if (imported.status !== 0) {
+      throw new Error(`${nextName} Wrangler file import failed with exit ${imported.status}`)
+    }
+    const executedQueries = readStandardImportQueryCount(
+      `${imported.stdout}\n${imported.stderr}`,
+      nextName,
+    )
     if (executedQueries !== allowlisted.expectedQueries) {
       throw new Error(`${nextName} import did not report the reviewed query count ${allowlisted.expectedQueries}; received ${executedQueries}`)
     }
