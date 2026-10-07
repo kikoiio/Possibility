@@ -112,3 +112,11 @@
 - [零模型回放37588240392](https://github.com/kikoiio/Possibility/actions/runs/37588240392) at04deafe success：来源37584984785，只选official-example与original-world-repair，5个归档响应、0真实provider、$0新增费用，真实API创建/保存链及cleanup0行/D1deleted通过。fullSuite=false，原响应历史费用单列，不重复计预算。证据phase1-replay-37588240392.json。
 - 实际生成20次的画面回放37588154107已查看：official平地消除前批掩埋，建筑轮廓和道路可见；仍存在额外商店被bench承载，custom1重复carrier且主路/两层形态质量不足，custom3新增多栋建筑违反只一栋。不能仅因official文本与保存通过解除整个G0。
 - 阶段一gate子agent因429停止，root已接管其完整未提交改动并分提交；阶段二agent转为生成根因修复，只有自己隔离分支可编辑。新根因：assetPlacements默认范例缺placementId，locations引用不存在；正在补准确声明、解析及零调用逐响应诊断，不盲目消耗剩112次。
+
+
+## 2026-10-07：诊断复核与新并行波次
+
+- P14 独立控件 d80c8ac 在 [37590355872](https://github.com/kikoiio/Possibility/actions/runs/37590355872) production build/types 与独立模块验证通过；Orca task03496913824a已结算，真实切换旅程尚待G0后。
+- 37590413308 零模型诊断已读取：custom2后续几轮缺稳定placementId，repair末两轮walk-gap坐标位于y5。报告不算新模型证据。旧真实调用保持88/200；回归失败的37589439714/37589737496/37590245031/37590243427/37590413382均跳过真实provider。
+- 307c7fd修正咖啡館真实建筑fixture世界边界为32，保留missing-binding有限重试的原断言，不放宽validator。新真实复测[37591036270](https://github.com/kikoiio/Possibility/actions/runs/37591036270)至多25请求、全五场景、回归成功才调用provider；运行中尚不记实际调用。
+- 两已有agent分别在phase1-claim-fix与phase2-clock-fix处理准确生成几何约束与repair通行根因；所有命令显式绝对workdir，禁止修改协调者分支。P13纯生命周期模块另开隔离worktree，重型验证继续使用已授权GitHubActions。
