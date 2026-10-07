@@ -11,9 +11,9 @@
 | AC3 | 通过 | 上游阶段一和阶段二出口已分别有正面证据；G0 结果与 gate 放行记录见 [baseline.md](baseline.md)。 |
 | AC4 | 部分通过 | 最新桌面 Chromium 11/11、Pixel 7 mobile-chromium 设备仿真触控 1/1 通过；包括 390×844/528×720、左右 pane 503 重试、右侧 403/超时、身份/时间标签和混合 renderer。慢网/离线、真实账号的 owner/guest/readonly 镜像组合、实体设备及完整生命周期循环未验证。 |
 | AC5 | 通过（用户验收确认） | 用户于 2026-10-07 明确要求将 T25/该项按通过处理。仓库未附测试者身份、成绩和回访明细；没有开展公开投票或评估。 |
-| AC6 | 未验证 | 集成提交已在 `phase3`，但 Orca 当前 Run 仍有 pending Tasks；worker 记录存在 stale/unverifiable terminal。未能证实所有 task/worker 均 settled，故不标通过。 |
+| AC6 | 部分通过 | 集成提交已在 `phase3`，实现/验证 Tasks 均已 settled。Orca Run 的最终收尾仍 ready；8 个 retained resource 中有 7 个标记 `user_owned/user_takeover`（6 个成功完成、1 个 readiness-failed）、1 个 external，另有 1 个已 released；worker liveness 多为 stale/unverifiable。Orca 拒绝释放测试项，结果为 retained 且无进程操作。 |
 | AC7 | 部分通过 | Browser Actions 在重型操作前记录 MemAvailable 14 GiB、无 swap 使用、后续 `vmstat si/so=0` 和 memory PSI 0；每批单 worker。cgroup `memory.max` 没有有效输出，且不能由该单次快照推断其他时段。 |
-| AC8 | 部分通过 | 本索引与 [checklist.md](../checklist.md) 给出证据状态与限制；最终 Orca 任务/worktree 收尾及内部 QA 仍未完成。公开评估/投票延期。 |
+| AC8 | 部分通过 | 本索引与 [checklist.md](../checklist.md) 给出证据状态与限制；最终 Orca worktree 收尾受 ownership/liveness 元数据限制。T25 按用户确认通过。公开评估/投票延期。 |
 
 ## 运行与原始证据
 
@@ -37,5 +37,5 @@
 - 无待补的 T22 build/types 或定向 Vitest 结果；run 37615859235 已验证本次扩展集。
 - 完整 AC4 矩阵：真实账号权限镜像、刷新后的相机恢复、慢网/离线、实体硬件触控、完整生命周期循环和混合表现性能。
 - AC5 已按用户明确确认记为通过；仓库没有测试者身份、成绩或回访明细。
-- T27 Orca Run/worker settled 状态核实。保留的 worker/worktree 未被本次清理。
+- T27 Orca worker ownership/liveness 收尾：已核实各 worker 的 dispatch/task 结果；Orca 对 user_owned/external resource 保持 retained，测试 release 返回 retained 且无进程操作。相关 worktree 未被本次清理。
 - 历史真实 provider 的最早 26 次费用尚未完整对账；不能宣称累计总费用已全部核实。

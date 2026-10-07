@@ -123,7 +123,7 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 | T24 性能与资源释放观测 | 测量完成；峰值指标未验证 | run 37622734845 顺序记录 ready 时间：单 3D 冷 2539 ms、单 2D 冷 2148 ms、2D→3D 热切换 976 ms、3D→2D 热切换 1245 ms、双 2D 冷 2107 ms、双 3D 冷 3861 ms、关闭右 pane 2485 ms、混合 2D/3D 冷 3285 ms、混合 3D/2D 冷 3155 ms、离开世界页 1612 ms。双 3D renderer 从 2 关闭右侧后降至 1，离场后降至 0；两个混合方向各有 1 个 3D renderer。以上是 fixture 单次测量，不构成统计基线或性能阈值；`performance.memory.usedJSHeapSize` 全程为 64,000,000 bytes，不能反映有效堆差值；未采集峰值物理/GPU 内存及 worker/订阅清理读数。 |
 | Actions runner 资源快照 | 通过 | run 37619241531 验收前 MemAvailable 14 GiB；5 个 `vmstat` 后续样本 `si/so=0`；memory PSI `avg10/60/300=0`；swap 使用 0。runner cgroup `memory.max` 命令未产生可记录值。 |
 | T25 内部配对 QA | 通过（用户验收确认） | 用户于 2026-10-07 明确要求将该项按通过处理；仓库未附测试者身份、成绩或回访明细。没有开展公开评估或投票。 |
-| Orca T27 收尾 | 未完成 | 当前 Run 尚有 pending Tasks；`worker-list` 的 9 个记录中 8 个 retained，多个终端 liveness 为 stale/unverifiable。按“不清理未 settled worktree”的约定保留；见最终报告限制。 |
+| Orca T27 收尾 | 受限 | 所有实现/验证 Tasks 已 settled；`worker-list` 有 8 个 retained resource：7 个标记 `user_owned/user_takeover`（6 个成功完成、1 个 readiness-failed）、1 个 external；另有 1 个已 released。对一个成功且已完成的 worker 尝试 `worker-release`，Orca 返回 retained/user_takeover，未执行进程操作。worktree 未清理；最终报告保留此限制。 |
 
 run 37622734845 的浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37622734845`，保留 14 天，入口为上方 run。E2E 身份来自隔离 fixture；慢网/离线、实体设备和其他完整生命周期循环仍未验证。
 
