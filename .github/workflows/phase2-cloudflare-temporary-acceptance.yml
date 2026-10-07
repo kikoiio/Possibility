@@ -147,15 +147,49 @@ jobs:
           set -euo pipefail
           printf '%s' "$PHASE2_TEMP_ENGINE_SECRET" > "$RUNNER_TEMP/phase2-engine-secret"
           chmod 600 "$RUNNER_TEMP/phase2-engine-secret"
+          tick_response_file="$RUNNER_TEMP/phase2-cloudflare-tick-response.json"
           (
             while true; do
               curl_exit=0
-              http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              http_status="$(curl --silent --show-error --max-filesize 65536 \
+                --output "$tick_response_file" --write-out '%{http_code}' \
                 --max-time 15 --request POST \
                 --header "x-engine-secret: $(cat "$RUNNER_TEMP/phase2-engine-secret")" \
                 "$DEPLOYMENT_API_URL/api/engine/tick" 2>> "$RUNNER_TEMP/phase2-cloudflare-tick-errors.log")" || curl_exit=$?
-              printf '{"at":"%s","curlExit":%s,"httpStatus":"%s"}\n' \
-                "$(date -u +%FT%TZ)" "$curl_exit" "$http_status" \
+              body_summary="$(node - "$tick_response_file" <<'NODE'
+          const fs = require('node:fs')
+          let body = ''
+          try { body = fs.readFileSync(process.argv[2], 'utf8') } catch {}
+          const short = value => typeof value === 'string'
+            ? value.slice(0, 160)
+              .replace(/(Bearer\s+)[^\s]+/gi, '$1[redacted]')
+              .replace(/\b(password|token|secret|api[_-]?key)(\s*[:=]\s*)[^\s,;]+/gi, '$1$2[redacted]')
+            : value
+          try {
+            const response = JSON.parse(body)
+            const summary = Array.isArray(response?.worlds)
+              ? {
+                  at: response.at,
+                  worlds: response.worlds.slice(0, 8).map(world => ({
+                    id: short(world?.id), status: world?.status, pauseReason: world?.pauseReason,
+                    capped: world?.capped, tickCalls: world?.tickCalls, error: short(world?.error),
+                    timelines: (Array.isArray(world?.timelines) ? world.timelines : []).slice(0, 8).map(timeline => ({
+                      id: short(timeline?.id), simNow: timeline?.simNow, error: short(timeline?.error),
+                      steps: (Array.isArray(timeline?.steps) ? timeline.steps : []).slice(0, 16).map(step => ({
+                        kind: short(step?.kind), ok: step?.ok, note: short(step?.note),
+                      })),
+                    })),
+                  })),
+                }
+              : { error: short(response?.error), detail: short(response?.detail) }
+            process.stdout.write(JSON.stringify(summary))
+          } catch {
+            process.stdout.write(JSON.stringify({ invalidJson: true, responseBytes: Buffer.byteLength(body) }))
+          }
+          NODE
+              )"
+              printf '{"at":"%s","curlExit":%s,"httpStatus":"%s","body":%s}\n' \
+                "$(date -u +%FT%TZ)" "$curl_exit" "$http_status" "$body_summary" \
                 >> "$RUNNER_TEMP/phase2-cloudflare-ticks.jsonl"
               sleep 5
             done
