@@ -152,7 +152,7 @@ export function createPresentationLifecycle(dependencies: {
       }
 
       mounted = { context, mounted: handle }
-      options?.onMounted?.({ target: targetFor(context), mounted: handle } as MountedPresentationForKind)
+      options?.onMounted?.({ target: targetFor(context), mounted: handle } as unknown as MountedPresentationForKind)
       return { kind: 'mounted', presentation: context.presentation }
     } catch (error) {
       if (!isCurrent(candidate)) return { kind: 'stale' }

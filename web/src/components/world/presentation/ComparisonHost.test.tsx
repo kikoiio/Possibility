@@ -10,7 +10,7 @@ const adapters: PresentationLifecycleAdapters = {
   native2d: { kind: 'native2d', mount: neverMount },
   voxel3d: { kind: 'voxel3d', mount: neverMount },
 }
-const store = createPresentationStateStore({ storage: null })
+const store = createPresentationStateStore(null)
 const loadSession = async (target: { worldId: string; timelineId?: string; presentation: 'native2d' | 'voxel3d' }) => ({
   paneId: 'left' as const,
   worldId: target.worldId,
