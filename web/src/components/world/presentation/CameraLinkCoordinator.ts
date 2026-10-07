@@ -43,6 +43,10 @@ interface Binding {
   pendingEchoes: Map<string, number>
 }
 
+// Handles may never report applied poses. Keep only recent distinct poses so an
+// uninterrupted drag cannot grow the echo history for the lifetime of a viewport.
+const MAX_PENDING_ECHO_POSES = 64
+
 function isNativePane(pane: CameraLinkPane): pane is CameraLinkPaneFor<'native2d'> {
   return pane.target.presentation === 'native2d'
 }
@@ -100,7 +104,14 @@ export function createCameraLinkCoordinator(): CameraLinkCoordinator {
       }
       if (!isLinkActive()) return
       const other = bindings[paneId === 'left' ? 'right' : 'left']!
-      other.pendingEchoes.set(key, (other.pendingEchoes.get(key) ?? 0) + 1)
+      const count = (other.pendingEchoes.get(key) ?? 0) + 1
+      // Refresh insertion order for repeated poses: evict the least recently applied.
+      other.pendingEchoes.delete(key)
+      other.pendingEchoes.set(key, count)
+      if (other.pendingEchoes.size > MAX_PENDING_ECHO_POSES) {
+        const oldest = other.pendingEchoes.keys().next().value
+        if (oldest !== undefined) other.pendingEchoes.delete(oldest)
+      }
       other.applying = true
       try {
         // Adapter mutations cannot change the source snapshot or the recorded echo key.
@@ -148,7 +159,12 @@ export function createCameraLinkCoordinator(): CameraLinkCoordinator {
       } catch { /* Direct host notifications still work if subscription setup fails. */ }
     },
     setEnabled(value) {
-      if (!disposed) enabled = value
+      if (disposed) return
+      enabled = value
+      if (!value) {
+        bindings.left?.pendingEchoes.clear()
+        bindings.right?.pendingEchoes.clear()
+      }
     },
     isLinkActive,
     notifyCameraChange(paneId, camera) {

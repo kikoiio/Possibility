@@ -388,7 +388,7 @@ export async function generateWorld(
     const requiredNames = new Set(deps.requiredLocationNames ?? [])
     const buildingCarrierIds = new Set([
       ...doc.objects.filter(object => BUILDING_OBJECT_TYPES.has(object.objectType)).map(object => object.id),
-      ...(doc.assetPlacements ?? []).filter(placement => assets?.assets[placement.assetId]?.category === 'building')
+      ...(doc.assetPlacements ?? []).filter(placement => deps.assets?.assets[placement.assetId]?.category === 'building')
         .map(placement => placement.id).filter((id): id is string => Boolean(id)),
     ])
     for (const location of doc.locations) {

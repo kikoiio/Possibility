@@ -118,7 +118,7 @@ async function main() {
         issues: error instanceof WorldGeneratorError ? error.issues.map(issue => ({
           code: issue.code,
           message: issue.message,
-          ...(issue.at ? { at: issue.at } : {}),
+          ...('at' in issue && issue.at ? { at: issue.at } : {}),
         })) : [],
       })
     }
