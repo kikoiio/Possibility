@@ -103,6 +103,41 @@ async function apiWithToken(path: string, token: string, init?: RequestInit): Pr
   })
 }
 
+function native2dLayoutPayload(worldId: string, timelineId: string, placements: any[]) {
+  return {
+    metadata: {
+      schema: 'native2d-layout',
+      schemaVersion: 1,
+      layoutVersion: 1,
+      sceneVersion: MIST_MANOR_SCENE.version,
+      worldId,
+      timelineId,
+      sceneId: MIST_MANOR_SCENE.id,
+      spaces: MIST_MANOR_SCENE.spaces.map(space => ({
+        spaceId: space.id,
+        kind: space.kind,
+        width: space.bounds.width,
+        depth: space.bounds.depth,
+        walkable: space.walkableCells,
+        connectivityRoot: space.connectivityRoot,
+        blocked: space.staticObjects.filter(object => object.blocksMovement).flatMap(object => {
+          const asset = MIST_MANOR_SCENE.assetManifest[object.assetId]
+          return asset ? asset.footprint.map(cell => ({ x: object.origin.x + cell.x, z: object.origin.z + cell.z })) : []
+        }),
+      })),
+      buildings: MIST_MANOR_SCENE.buildings.map(building => ({
+        buildingId: building.id,
+        spaceId: building.spaceId,
+        footprint: MIST_MANOR_SCENE.assetManifest[building.assetId]?.footprint ?? [],
+        entry: building.entryOffset,
+        locationKey: building.locationKeys[0] ?? null,
+        interiorSpaceId: building.interiorSpaceId,
+      })),
+    },
+    placements,
+  }
+}
+
 async function dragBuildingTo(page: Page, buildingId: string, target: { x: number; z: number }): Promise<void> {
   const building = MIST_MANOR_SCENE.buildings.find(item => item.id === buildingId)
   const asset = ASSET_MANIFEST[buildingId]
@@ -254,19 +289,20 @@ async function main(): Promise<void> {
       `mobile context Worker requests failed: ${JSON.stringify(mobileRecords)}`)
 
     const initialLayoutVersion = Number(savedLayout.body.layout.version)
+    const validLayoutPayload = native2dLayoutPayload(owner.worldId, forkTimelineId, savedLayout.body.layout.placements)
     const preparedWrite = await apiWithToken(childLayoutPath, token, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: initialLayoutVersion, layout: savedLayout.body.layout }),
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: initialLayoutVersion, layout: validLayoutPayload }),
     })
     assert(preparedWrite.status === 200 && preparedWrite.body?.layout?.version === initialLayoutVersion + 1,
-      `preparing a valid revision returned HTTP ${preparedWrite.status}`)
+      `preparing a valid revision returned HTTP ${preparedWrite.status}: ${JSON.stringify(preparedWrite.body)}`)
     const currentVersion = Number(preparedWrite.body.layout.version)
     const invalidatedWrite = await apiWithToken(childLayoutPath, token, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion - 1, layout: savedLayout.body.layout }),
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion - 1, layout: validLayoutPayload }),
     })
     assert(invalidatedWrite.status === 409 && invalidatedWrite.body?.errorCode === 'version_conflict',
-      `stale layout write returned HTTP ${invalidatedWrite.status} (${invalidatedWrite.body?.errorCode})`)
+      `stale layout write returned HTTP ${invalidatedWrite.status}: ${JSON.stringify(invalidatedWrite.body)}`)
     const layoutAfterConflict = await apiWithToken(childLayoutPath, token)
     assert(layoutAfterConflict.status === 200 && layoutAfterConflict.body?.layout?.version === currentVersion
       && JSON.stringify(layoutAfterConflict.body.layout.placements) === savedPlacements,
@@ -274,20 +310,20 @@ async function main(): Promise<void> {
 
     const recoveredWrite = await apiWithToken(childLayoutPath, token, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion, layout: savedLayout.body.layout }),
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion, layout: validLayoutPayload }),
     })
     assert(recoveredWrite.status === 200 && recoveredWrite.body?.layout?.version === currentVersion + 1,
-      `layout retry after version conflict returned HTTP ${recoveredWrite.status}`)
+      `layout retry after version conflict returned HTTP ${recoveredWrite.status}: ${JSON.stringify(recoveredWrite.body)}`)
 
     const archivedTimeline = await apiWithToken(`/api/timelines/${encodeURIComponent(forkTimelineId)}/archive`, token, { method: 'POST' })
     assert(archivedTimeline.status === 200 && archivedTimeline.body?.status === 'archived',
       `timeline archive returned HTTP ${archivedTimeline.status}`)
     const archivedWrite = await apiWithToken(childLayoutPath, token, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion + 1, layout: savedLayout.body.layout }),
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion + 1, layout: validLayoutPayload }),
     })
     assert(archivedWrite.status === 409 && archivedWrite.body?.errorCode === 'archived_read_only',
-      `archived timeline write returned HTTP ${archivedWrite.status} (${archivedWrite.body?.errorCode})`)
+      `archived timeline write returned HTTP ${archivedWrite.status}: ${JSON.stringify(archivedWrite.body)}`)
     const layoutAfterArchive = await apiWithToken(childLayoutPath, token)
     assert(layoutAfterArchive.status === 200 && layoutAfterArchive.body?.layout?.version === currentVersion + 1
       && JSON.stringify(layoutAfterArchive.body.layout.placements) === savedPlacements,
