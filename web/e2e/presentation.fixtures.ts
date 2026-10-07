@@ -92,6 +92,7 @@ export async function installPresentationFixtures(
     status: route.request().method() === 'GET' ? 200 : 405,
     json: { worlds: Object.values(fixtures).map(value => value.bootstrap.world.world) },
   }))
+  await page.route('**/api/worlds/*/map/resume', route => route.fulfill({ json: { ok: true } }))
   await page.route(/\/api\/(?:public\/)?worlds\/[^/?]+(?:\/map\/bootstrap|\/scene|\/stream)?(?:\?.*)?$/, async route => {
     const url = new URL(route.request().url())
     const worldId = decodeURIComponent(url.pathname.split('/worlds/')[1].split('/')[0])
