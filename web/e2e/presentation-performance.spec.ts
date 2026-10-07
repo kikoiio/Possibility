@@ -30,7 +30,10 @@ test('records viewport readiness and renderer release observations', async ({ pa
 
   started = Date.now()
   await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '3D' }).click()
-  await page.waitForFunction(() => !!(window as unknown as PerformanceWindow).__voxelEngines?.main?.world)
+  await page.waitForFunction(() => {
+    const engines = (window as unknown as PerformanceWindow).__voxelEngines
+    return !!(engines?.single?.world ?? engines?.main?.world)
+  })
   observations.warmSwitch3dReadyMs = Date.now() - started
   started = Date.now()
   await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '2D' }).click()
