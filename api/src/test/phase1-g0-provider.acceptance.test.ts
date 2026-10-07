@@ -280,7 +280,9 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         providerRequests: providerCalls.length - providerBefore,
         llmCallLogRows: afterLedger.length - ledgerBefore,
       })
-      return { valid, ...(valid ? { draft } : {}) }
+      const persistable = response.ok && worldReady && validDocument
+        && carriersUnique && carriersResolved && carriersMatchWorld
+      return { valid, ...(persistable ? { draft } : {}) }
     }
 
     try {
@@ -313,7 +315,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
 
       for (const scenario of selectedScenarios) {
         const generated = await generateScenario(scenario)
-        if (scenario.id === 'official-example' && generated.valid) officialDraft = generated.draft
+        if (scenario.id === 'official-example') officialDraft = generated.draft
       }
 
       if (officialDraft) {
