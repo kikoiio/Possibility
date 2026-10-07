@@ -1,0 +1,72 @@
+name: Phase 2 orphan D1 audit and cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run read-only audit first; use cleanup only after reviewing the returned UUID.'
+        type: choice
+        required: true
+        default: audit
+        options:
+          - audit
+          - cleanup
+      observed_uuid:
+        description: 'Required for cleanup: exact UUID returned by the reviewed audit run.'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  orphan-d1:
+    name: Audit or remove the known orphan D1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Validate dispatch inputs
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          OBSERVED_UUID: ${{ inputs.observed_uuid }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo 'Actions variable CLOUDFLARE_ACCOUNT_ID is required.' >&2
+            exit 1
+          fi
+          if [[ "$MODE" == cleanup && ! "$OBSERVED_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo 'Cleanup requires observed_uuid copied from a reviewed audit result.' >&2
+            exit 1
+          fi
+
+      - name: Audit exact run-scoped D1 (read-only)
+        if: ${{ inputs.mode == 'audit' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/phase2-orphan-d1-audit-cleanup.mjs audit
+
+      - name: Verify run 37569677434 evidence before cleanup
+        if: ${{ inputs.mode == 'cleanup' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/phase2-orphan-d1-verify-run-evidence.mjs
+
+      - name: Delete only reviewed exact-name and UUID match, then verify absent
+        if: ${{ inputs.mode == 'cleanup' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PHASE2_ORPHAN_OBSERVED_UUID: ${{ inputs.observed_uuid }}
+        run: node scripts/phase2-orphan-d1-audit-cleanup.mjs cleanup
