@@ -58,6 +58,33 @@ function greenhouse(): Array<{ offset: VoxelCoord; block: string }> {
   return cells
 }
 
+/** 两层住宅：每层两格净空，独立楼板及窗户，北侧内楼梯连接二层。 */
+function twoStoryHouse(): Array<{ offset: VoxelCoord; block: string }> {
+  const cells: Array<{ offset: VoxelCoord; block: string }> = []
+  const W = 7, D = 7
+  for (const y of [0, 3]) {
+    for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) {
+      // 楼梯前、两级踏步上方留净空；二层北侧有完整落脚平台。
+      if (y === 3 && x === 1 && z >= 2 && z <= 4) continue
+      cells.push(cell(x, y, z, 'wood-plank'))
+    }
+  }
+  for (let y = 1; y <= 5; y++) {
+    if (y === 3) continue // 楼板边缘兼作层间横梁。
+    for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) {
+      if (x !== 0 && x !== W - 1 && z !== 0 && z !== D - 1) continue
+      if (z === D - 1 && x === 3 && y <= 2) continue
+      const window = (y === 2 || y === 5) && (x + z) % 2 === 0
+      const corner = (x === 0 || x === W - 1) && (z === 0 || z === D - 1)
+      cells.push(cell(x, y, z, corner ? 'wood-log' : window ? 'paper-window' : 'plaster-wall'))
+    }
+  }
+  cells.push(cell(1, 1, 3, 'wood-plank'), cell(1, 2, 2, 'wood-plank'))
+  for (let x = -1; x <= W; x++) for (let z = -1; z <= D; z++) cells.push(cell(x, 6, z, 'roof-tile'))
+  for (let x = 1; x < W - 1; x++) for (let z = 1; z < D - 1; z++) cells.push(cell(x, 7, z, 'roof-tile'))
+  return cells
+}
+
 /** 树：原木干 + 树叶冠 */
 function tree(): Array<{ offset: VoxelCoord; block: string }> {
   const cells: Array<{ offset: VoxelCoord; block: string }> = []
@@ -71,6 +98,7 @@ function tree(): Array<{ offset: VoxelCoord; block: string }> {
 
 export const mistManorObjectTemplates: ObjectTemplate[] = [
   { objectType: 'manor-main-house', name: '雾影庄主楼', cells: manorHouse() },
+  { objectType: 'manor-two-story-house', name: '两层住宅（楼板、双层窗和内楼梯）', cells: twoStoryHouse() },
   { objectType: 'manor-greenhouse', name: '温室', cells: greenhouse() },
   { objectType: 'stone-lantern', name: '石灯笼', cells: [cell(0, 0, 0, 'stone'), cell(0, 1, 0, 'lantern')] },
   { objectType: 'tree', name: '山樱', cells: tree() },

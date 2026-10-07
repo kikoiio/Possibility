@@ -77,7 +77,7 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
 }
 
 const BUILDING_LOCATION = /咖啡馆|咖啡屋|咖啡店|住宅|民居|公寓|居民楼|住宅楼|店铺|商店|商铺|杂货铺|杂货店|邮局|图书馆|车站|学校|医院|诊所|旅馆|客栈|酒店|餐馆|饭店|餐厅|酒馆|酒吧|教堂|办公楼|厂房|工坊|工作室|\bcafe\b|\bcoffee ?shop\b|\bhouse\b|\bhome\b|\bresidence\b|\bapartment\b|\bshop\b|\bstore\b|\bpost ?office\b|\blibrary\b|\bstation\b|\bschool\b|\bhospital\b|\bclinic\b|\bhotel\b|\binn\b|\brestaurant\b|\boffice\b|\bfactory\b|\bworkshop\b/iu
-const BUILDING_OBJECT_TYPES = new Set(['manor-main-house', 'manor-greenhouse'])
+const BUILDING_OBJECT_TYPES = new Set(['manor-main-house', 'manor-two-story-house', 'manor-greenhouse'])
 
 function extractPayload(content: string): GeneratedWorldPayload {
   const cleaned = content.replace(/```(?:json)?/gi, '').trim()

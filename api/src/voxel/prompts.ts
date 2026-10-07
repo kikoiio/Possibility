@@ -50,7 +50,10 @@ export function blockCatalogSummary(theme: string): string {
 
 /** 物体仓库摘要 */
 export function objectCatalogSummary(): string {
-  return listObjectTemplates().map((t) => `${t.objectType}（${t.name}，占 ${t.cells.length} 格）`).join('、')
+  return listObjectTemplates().map((t) => {
+    const bounds = (axis: 'x' | 'y' | 'z') => `${Math.min(...t.cells.map(c => c.offset[axis]))}..${Math.max(...t.cells.map(c => c.offset[axis]))}`
+    return `${t.objectType}（${t.name}，占 ${t.cells.length} 格，未旋转时相对anchor的完整范围x=${bounds('x')},y=${bounds('y')},z=${bounds('z')}）`
+  }).join('、')
 }
 
 /** S2b 资产库摘要(GLB 摆放可用资产);无清单时返回 null 由调用方省略该行 */
@@ -103,7 +106,7 @@ export const WORLD_GEN_SPEC = `返回 JSON 对象：
   "spaceEntries": [ {"spaceId":"空间id","label":"进入主楼 →","at":{...}} ],
   "lockedObjectIds": ["承载地点的建筑 objectId"]
 }
-可选地形仅在用户明确要求时加入，例如：{"terrain":{"seed":123,"elevation":{"amplitude":4,"scale":24},"river":{"enabled":true,"width":2},"lakes":{"enabled":true,"size":4},"vegetation":{"density":0.05,"trees":true,"flowers":true,"bushes":true}}}。省略 terrain 时用 groundBlock 在 y=0 铺平地，建筑 anchor.y=1；加入 terrain 时基准地面在 y=3、水面在 y=3。style 可选，省略时用默认氛围。世界尺寸 width/depth ≤ 64、height ≤ 32。每个坐标都必须满足 0 ≤ x < size.width、0 ≤ y < size.height、0 ≤ z < size.depth；放置物体或资产时，整个占地 footprint 和高度都必须在这些边界内，不能只检查 anchor。不要擅自增加随机高差、水体或森林；“开阔草地”表示用 grass groundBlock 做平坦草地，不表示随机坡地或森林。优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点登记进 locations，每个地点必须绑定不同且唯一的 objectId。建筑资产必须显式提供唯一 placementId，并在 locations.objectId 中逐字使用同一个值；place-object 建筑可用其 objectId 绑定。绑定对象必须符合地点语义，咖啡馆、住宅、公寓、商店等建筑地点必须绑定建筑资产或明确成型的建筑物体，不得绑定公告栏、长凳、树、路牌、栅栏等装饰/家具。主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；世界必须可行走——居民要能走到每个地点：任何供人通行的格子（门洞、走廊、桥、拱下）其上方必须留出至少 2 格空气，墙体/屋顶不要压在通道头顶，地面不要留缺口；每个地点绑定的物体旁边必须留有可站立的空地，且经平地/台阶与室外连通——不要把地点建筑孤立在水面中央、围栏闭环或高台之上；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
+可选地形仅在用户明确要求时加入，例如：{"terrain":{"seed":123,"elevation":{"amplitude":4,"scale":24},"river":{"enabled":true,"width":2},"lakes":{"enabled":true,"size":4},"vegetation":{"density":0.05,"trees":true,"flowers":true,"bushes":true}}}。省略 terrain 时用 groundBlock 在 y=0 铺平地，建筑 anchor.y=1；加入 terrain 时基准地面在 y=3、水面在 y=3。style 可选，省略时用默认氛围。世界尺寸 width/depth ≤ 64、height ≤ 32。每个坐标都必须满足 0 ≤ x < size.width、0 ≤ y < size.height、0 ≤ z < size.depth；放置物体或资产时，整个占地 footprint 和高度都必须在这些边界内，不能只检查 anchor。不要擅自增加随机高差、水体或森林；“开阔草地”表示用 grass groundBlock 做平坦草地，不表示随机坡地或森林。优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点登记进 locations，每个地点必须绑定不同且唯一的 objectId。建筑资产必须显式提供唯一 placementId，并在 locations.objectId 中逐字使用同一个值；place-object 建筑可用其 objectId 绑定。绑定对象必须符合地点语义，咖啡馆、住宅、公寓、商店等建筑地点必须绑定建筑资产或明确成型的建筑物体；若用户指定两层住宅，必须使用 manor-two-story-house；若用户指定楼层数，必须实际建出对应楼层，不能用单层建筑冒充。道路、广场、庭院、草地等区域地点要在该区域内放置各自独立且相符的地标作为 carrier，不能绑定到远处或无关的钟楼、邮箱、住宅；道路本体还必须用连续路面方块从起点铺到终点。不得把公告栏、长凳、树、路牌、栅栏等装饰/家具作为建筑 carrier。主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；世界必须可行走——居民要能走到每个地点：任何供人通行的格子（门洞、走廊、桥、拱下）其上方必须留出至少 2 格空气，墙体/屋顶不要压在通道头顶，地面不要留缺口；每个地点绑定的物体旁边必须留有可站立的空地，且经平地/台阶与室外连通——不要把地点建筑孤立在水面中央、围栏闭环或高台之上；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
 
 export function buildWorldGeneratorMessages(sceneDescription: string, theme: string, assets?: AssetManifest): ChatMessage[] {
   const catalog = assetCatalogSummary(assets)
