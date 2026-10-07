@@ -3,9 +3,14 @@ import { snapshotFor, stubSplitApis, voxelDocument } from './split-view-stubs'
 
 test.describe.configure({ mode: 'serial', timeout: 240_000 })
 
-async function stubSecondWorld(page: Page) {
+async function stubSecondWorld(page: Page, options: { failFirstBootstrap?: boolean } = {}) {
+  let bootstrapReads = 0
   await page.route('**/api/worlds/world-2/map/bootstrap**', route => {
+    bootstrapReads += 1
     const timelineId = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
+    if (options.failFirstBootstrap && bootstrapReads === 1) {
+      return route.fulfill({ status: 503, json: { error: 'temporary second-world outage' } })
+    }
     return route.fulfill({ json: secondWorldBootstrap(timelineId) })
   })
   await page.route('**/api/worlds/world-2?*', route => {
@@ -16,6 +21,7 @@ async function stubSecondWorld(page: Page) {
     return route.fulfill({ json: world })
   })
   await page.route('**/api/worlds/world-2/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDocument } }))
+  return () => bootstrapReads
 }
 
 function secondWorldBootstrap(timelineId: string) {
@@ -60,14 +66,7 @@ test('cross-world workspace keeps each timeline and supports all four renderer p
 
 test('one pane can fail and retry without reloading its working sibling', async ({ page }) => {
   await stubSplitApis(page)
-  await stubSecondWorld(page)
-  let rightReads = 0
-  await page.route('**/api/worlds/world-2/map/bootstrap**', route => {
-    rightReads += 1
-    if (rightReads === 1) return route.fulfill({ status: 503, json: { error: 'temporary second-world outage' } })
-    const timelineId = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
-    return route.fulfill({ json: secondWorldBootstrap(timelineId) })
-  })
+  const rightReads = await stubSecondWorld(page, { failFirstBootstrap: true })
   await page.goto('/worlds/world-1?timeline=timeline-main&presentation=voxel3d&rightWorld=world-2&right=timeline-fork&rightPresentation=voxel3d')
   await expect(page.getByTestId('comparison-pane-right').getByRole('alert')).toContainText('temporary second-world outage')
   await expect(page.locator('[data-voxel-instance="left"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
@@ -75,6 +74,6 @@ test('one pane can fail and retry without reloading its working sibling', async 
   await page.evaluate(engine => { (window as unknown as { __leftEngine?: unknown }).__leftEngine = engine }, leftEngine)
   await page.getByRole('button', { name: '重试此侧' }).click()
   await expect(page.getByTestId('pane-facts-right')).toContainText('timeline-fork')
-  await expect.poll(() => rightReads).toBe(3)
+  await expect.poll(() => rightReads()).toBe(3)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left === (window as unknown as { __voxelEngines?: Record<string, unknown> }).__leftEngine)).toBe(true)
 })
