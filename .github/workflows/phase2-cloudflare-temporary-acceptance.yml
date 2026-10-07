@@ -97,39 +97,11 @@ jobs:
       - name: Apply migrations to temporary D1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PHASE2_MIGRATION_EVIDENCE_PATH: ${{ runner.temp }}/phase2-cloudflare-migration-evidence.json
         shell: bash
         run: |
           set -euo pipefail
-          migration_log="$RUNNER_TEMP/phase2-migrations-apply.log"
-          if npx wrangler d1 migrations apply DB --remote --config "$PHASE2_TEMP_WRANGLER_CONFIG" > "$migration_log" 2>&1; then
-            cat "$migration_log"
-            exit 0
-          fi
-          cat "$migration_log"
-          if ! grep -Fq 'incomplete input: SQLITE_ERROR' "$migration_log"; then
-            echo 'Migration fallback refused: Wrangler failed for a reason other than the known remote SQL parser error.' >&2
-            exit 1
-          fi
-
-          # Wrangler's remote migrations endpoint can reject the trigger in 0008 as incomplete input.
-          # Recover only when the remote migration ledger confirms 0007 is the last applied migration.
-          ledger_log="$RUNNER_TEMP/phase2-migrations-ledger.log"
-          npx wrangler d1 execute DB --remote --command 'SELECT name FROM d1_migrations ORDER BY name DESC LIMIT 1' \
-            --config "$PHASE2_TEMP_WRANGLER_CONFIG" > "$ledger_log" 2>&1
-          cat "$ledger_log"
-          if ! grep -Fq '0007_secret_abomination.sql' "$ledger_log"; then
-            echo 'Migration fallback refused: remote ledger is not at the expected 0007 checkpoint.' >&2
-            exit 1
-          fi
-
-          npx wrangler d1 execute DB --remote --file api/drizzle/0008_cool_spiral.sql \
-            --config "$PHASE2_TEMP_WRANGLER_CONFIG"
-          npx wrangler d1 execute DB --remote \
-            --command "INSERT INTO d1_migrations (name) VALUES ('0008_cool_spiral.sql')" \
-            --config "$PHASE2_TEMP_WRANGLER_CONFIG"
-          npx wrangler d1 migrations apply DB --remote --config "$PHASE2_TEMP_WRANGLER_CONFIG"
-          echo 'Applied 0008 through D1 file import after verifying the 0007 ledger checkpoint.' \
-            >> "$GITHUB_STEP_SUMMARY"
+          node scripts/phase2-cloudflare-apply-migrations.mjs
 
       - name: Set temporary engine secret and deploy Worker
         shell: bash
@@ -278,5 +250,6 @@ jobs:
             ${{ runner.temp }}/phase2-cloudflare-deployment-journey.json
             ${{ runner.temp }}/phase2-cloudflare-archive-readonly.json
             ${{ runner.temp }}/phase2-cloudflare-cleanup.json
+            ${{ runner.temp }}/phase2-cloudflare-migration-evidence.json
           if-no-files-found: ignore
           retention-days: 14
