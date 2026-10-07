@@ -78,12 +78,12 @@ describe('scene HTTP routes', () => {
       { code: 'unknown-asset', message: 'raw detail unknown asset' },
       { code: 'asset-overlap', message: 'raw detail asset overlap' },
       { code: 'unrecognized-test-code', message: 'raw unknown detail' },
-    ]), { callsUsed: 7 })
+    ], [], 'validation'), { callsUsed: 7 })
     vi.spyOn(voxelDraft, 'createVoxelSceneDraft').mockRejectedValueOnce(generatorError)
     const content = await send()
     expect(content.status).toBe(502)
-    const contentBody = await content.json() as { kind: string; requestId: string; error: string; callsUsed: number; issues: Array<{ code: string; summary: string; suggestion: string }> }
-    expect(contentBody).toMatchObject({ kind: 'content', callsUsed: 7, requestId: 'draft-error-1' })
+    const contentBody = await content.json() as { kind: string; requestId: string; error: string; callsUsed: number; failureStage: string; normalizationFixes: string[]; issues: Array<{ code: string; summary: string; suggestion: string }> }
+    expect(contentBody).toMatchObject({ kind: 'content', callsUsed: 7, failureStage: 'validation', normalizationFixes: [], requestId: 'draft-error-1' })
     expect(contentBody.error).not.toContain('internal validator')
     expect(contentBody.issues).toHaveLength(12)
     expect(contentBody.issues[6]).toMatchObject({ code: 'walk-clearance', summary: expect.stringContaining('走不过去'), suggestion: expect.stringContaining('通道') })

@@ -58,6 +58,89 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
     expect((error as WorldGeneratorError).normalizationFixes).toEqual(['size:16.2x16x16->16x16x16'])
   })
 
+  it('retry feedback gives exact world coordinate bounds for out-of-bounds edits', async () => {
+    const calls: ChatMessage[][] = []
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return JSON.stringify({
+        size: { width: 16, height: 16, depth: 16 },
+        ops: [{ kind: 'place-object', objectId: 'edge-house', objectType: 'manor-main-house', anchor: { x: 15, y: 1, z: 15 }, rotation: 0 }],
+      })
+    }
+    await expect(generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })).rejects.toBeInstanceOf(WorldGeneratorError)
+    expect(calls).toHaveLength(2)
+    const feedback = calls[1][calls[1].length - 1].content
+    expect(feedback).toContain('x=0..15, y=0..15, z=0..15')
+  })
+
+  it('connectivity retries identify and preserve the unreachable location carrier', async () => {
+    const calls: ChatMessage[][] = []
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return JSON.stringify({
+        size: { width: 16, height: 16, depth: 16 },
+        ops: [
+          { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
+          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+          { kind: 'fill', from: { x: 7, y: 1, z: 7 }, to: { x: 7, y: 3, z: 9 }, block: 'stone' },
+          { kind: 'fill', from: { x: 9, y: 1, z: 7 }, to: { x: 9, y: 3, z: 9 }, block: 'stone' },
+          { kind: 'fill', from: { x: 8, y: 1, z: 7 }, to: { x: 8, y: 3, z: 7 }, block: 'stone' },
+          { kind: 'fill', from: { x: 8, y: 1, z: 9 }, to: { x: 8, y: 3, z: 9 }, block: 'stone' },
+        ],
+        locations: [{ name: '咖啡馆', objectId: 'cafe-carrier' }],
+      })
+    }
+    let error: unknown
+    try {
+      await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(WorldGeneratorError)
+    expect((error as WorldGeneratorError).failureStage).toBe('validation')
+    expect((error as WorldGeneratorError).issues.some(issue => issue.code === 'walk-connectivity')).toBe(true)
+    expect(calls).toHaveLength(2)
+    const feedback = calls[1][calls[1].length - 1].content
+    expect(feedback).toContain('cafe-carrier/stone-lantern/咖啡馆@(8,1,8)')
+    expect(feedback).toContain('保持物体及地点绑定不变')
+  })
+
+  it('reports assembly-stage failures separately from validation issues', async () => {
+    const complete: CompleteFn = async () => JSON.stringify({})
+    let error: unknown
+    try {
+      await generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(WorldGeneratorError)
+    expect((error as WorldGeneratorError).failureStage).toBe('assembly')
+    expect((error as WorldGeneratorError).issues).toEqual([])
+  })
+
+  it('retries when a generated scene omits a required world location carrier', async () => {
+    const calls: ChatMessage[][] = []
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return JSON.stringify({
+        size: { width: 16, height: 16, depth: 16 },
+        ops: [
+          { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
+          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+        ],
+        ...(calls.length > 1 ? { locations: [{ name: '咖啡馆', objectId: 'cafe-carrier' }] } : {}),
+      })
+    }
+    const doc = await generateWorld('测试世界', 'mist-manor', {
+      complete, maxAttempts: 2, requiredLocationNames: ['咖啡馆'],
+    })
+
+    expect(calls).toHaveLength(2)
+    expect(calls[1][calls[1].length - 1].content).toContain('必需地点「咖啡馆」尚未绑定')
+    expect(calls[1][calls[1].length - 1].content).toContain('逐字绑定地点名')
+    expect(doc.locations).toEqual([{ name: '咖啡馆', objectId: 'cafe-carrier' }])
+  })
+
   it('clearance-only failure is repaired before retry and passes in one provider call', async () => {
     const calls: ChatMessage[][] = []
     const complete: CompleteFn = async (messages) => {

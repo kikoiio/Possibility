@@ -5,12 +5,12 @@ import { dirname, join } from 'node:path'
 import { createDb } from '../db/client'
 import type { Env } from '../index'
 
-/** Real SQLite behind the D1 interface, including atomic batch rollback. No model/network calls.
- * Each fixture applies the checked-in migrations to a fresh in-memory database.
- * This tests SQL and route behavior; it does not emulate D1's distributed runtime.
+/** Real SQLite behind the D1 interface, including atomic batch rollback.
+ * Tests apply the checked-in migrations and do not emulate D1's distributed runtime.
+ * The optional file path supports isolated acceptance cleanup checks; default remains memory-only.
  */
-export function createTestDb() {
-  const sqlite = new DatabaseSync(':memory:')
+export function createTestDb(filename = ':memory:') {
+  const sqlite = new DatabaseSync(filename)
   const queryLog: Array<{ query: string; params: unknown[] }> = []
   sqlite.exec('PRAGMA foreign_keys = ON')
   const dir = join(dirname(fileURLToPath(import.meta.url)), '../../drizzle')

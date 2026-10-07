@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d3dea522-c7e3-4041-8b2b-d0dcc2b5b3b8",
-  "prevId": "e6836c44-bbd8-46fc-be09-2ff1dcf44594",
+  "id": "2a61745b-0c38-44ba-8480-315109473c95",
+  "prevId": "d3dea522-c7e3-4041-8b2b-d0dcc2b5b3b8",
   "tables": {
     "chapters": {
       "name": "chapters",
@@ -4799,6 +4799,232 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "native2d_layout_heads": {
+      "name": "native2d_layout_heads",
+      "columns": {
+        "world_id": {
+          "name": "world_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timeline_id": {
+          "name": "timeline_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scene_id": {
+          "name": "scene_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "current_revision_id": {
+          "name": "current_revision_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "current_version": {
+          "name": "current_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "native2d_layout_heads_world_id_worlds_id_fk": {
+          "name": "native2d_layout_heads_world_id_worlds_id_fk",
+          "tableFrom": "native2d_layout_heads",
+          "tableTo": "worlds",
+          "columnsFrom": [
+            "world_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "native2d_layout_heads_timeline_id_timelines_id_fk": {
+          "name": "native2d_layout_heads_timeline_id_timelines_id_fk",
+          "tableFrom": "native2d_layout_heads",
+          "tableTo": "timelines",
+          "columnsFrom": [
+            "timeline_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "native2d_layout_heads_world_id_timeline_id_scene_id_pk": {
+          "columns": [
+            "world_id",
+            "timeline_id",
+            "scene_id"
+          ],
+          "name": "native2d_layout_heads_world_id_timeline_id_scene_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "native2d_layout_revisions": {
+      "name": "native2d_layout_revisions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "world_id": {
+          "name": "world_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timeline_id": {
+          "name": "timeline_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scene_id": {
+          "name": "scene_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_version": {
+          "name": "parent_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "layout_json": {
+          "name": "layout_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "native2d_layout_revision_version": {
+          "name": "native2d_layout_revision_version",
+          "columns": [
+            "world_id",
+            "timeline_id",
+            "scene_id",
+            "version"
+          ],
+          "isUnique": true
+        },
+        "native2d_layout_revision_request": {
+          "name": "native2d_layout_revision_request",
+          "columns": [
+            "world_id",
+            "timeline_id",
+            "scene_id",
+            "request_id"
+          ],
+          "isUnique": true
+        },
+        "native2d_layout_revision_history": {
+          "name": "native2d_layout_revision_history",
+          "columns": [
+            "world_id",
+            "timeline_id",
+            "scene_id",
+            "version"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "native2d_layout_revisions_world_id_worlds_id_fk": {
+          "name": "native2d_layout_revisions_world_id_worlds_id_fk",
+          "tableFrom": "native2d_layout_revisions",
+          "tableTo": "worlds",
+          "columnsFrom": [
+            "world_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "native2d_layout_revisions_timeline_id_timelines_id_fk": {
+          "name": "native2d_layout_revisions_timeline_id_timelines_id_fk",
+          "tableFrom": "native2d_layout_revisions",
+          "tableTo": "timelines",
+          "columnsFrom": [
+            "timeline_id"
           ],
           "columnsTo": [
             "id"

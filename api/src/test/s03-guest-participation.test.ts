@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import app from '../index'
 import { createTestDb } from './db'
-import { demoSandboxes, events, forkSnapshots, guestSessions, persons, personStates, sessions, timelines, users, worldPersons, worlds } from '../db/schema'
+import { demoSandboxes, events, forkSnapshots, guestSessions, persons, personStates, sessions, timelines, universeEvidence, universeRevisions, users, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
 import { seedDemoWorld } from '../dev/seed-demo'
 import { createGuestSession } from '../demo/session-service'
 import { cloneWorldGraph } from '../demo/world-graph-cloner'
+import { commitWorldCommand } from '../world-state/commit'
 
 describe('S03 guest participation API', () => {
   it('allows a guest to register, enter and move only inside its sandbox', async () => {
@@ -57,6 +58,26 @@ describe('S03 guest participation API', () => {
     }, fixture.env)
     expect(participation.status, await participation.clone().text()).toBe(200)
 
+    // Regression: clone a timeline with multiple immutable fact versions while
+    // its copied universe revision already points at the newest version.
+    const guestSession = await fixture.db.select().from(guestSessions).where(eq(guestSessions.id, guest.sessionId)).get()
+    const sourceTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, guest.timelineId)).get()
+    const advancedTo = new Date(Date.parse(sourceTimeline!.simNow) + 60_000).toISOString()
+    await commitWorldCommand(fixture.db, {
+      id: 'claim-api-clock-advance', worldId: guest.worldId, timelineId: guest.timelineId,
+      userId: guestSession!.ownerUserId, actorKind: 'system', expectedVersion: 1,
+      action: { type: 'clock_advance', from: sourceTimeline!.simNow, to: advancedTo, observedAt: advancedTo },
+    })
+    const secondParticipation = await app.request(`/api/worlds/${guest.worldId}/scene/position`, {
+      method: 'POST',
+      headers: { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timelineId: guest.timelineId, location: '大厅', commandId: 'claim-api-move-again', expectedVersion: 2 }),
+    }, fixture.env)
+    expect(secondParticipation.status, await secondParticipation.clone().text()).toBe(200)
+    const sourceVisitor = await fixture.db.select({ personId: worldPersons.personId, personName: persons.name }).from(worldPersons)
+      .innerJoin(persons, eq(worldPersons.personId, persons.id))
+      .where(and(eq(worldPersons.worldId, guest.worldId), eq(persons.isUser, true))).get()
+
     const forkResponse = await app.request(`/api/demo/worlds/${guest.worldId}/fork`, {
       method: 'POST',
       headers: { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' },
@@ -67,9 +88,44 @@ describe('S03 guest participation API', () => {
     }, fixture.env)
     expect(forkResponse.status, await forkResponse.clone().text()).toBe(200)
     const fork = await forkResponse.json() as { id: string }
-    const sourceVisitor = await fixture.db.select({ personId: worldPersons.personId }).from(worldPersons)
-      .innerJoin(persons, eq(worldPersons.personId, persons.id))
-      .where(and(eq(worldPersons.worldId, guest.worldId), eq(persons.isUser, true))).get()
+
+    // Historical correction facts are persistable in the normal schema, but no
+    // current command produces supersedes_id. Build one realistic source command
+    // and fact in the isolated DB using the ordinary scope/evidence/revision/time
+    // insert triggers; do not disable guards or set clone markers on source data.
+    const latestTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, guest.timelineId)).get()
+    const finalSimTime = new Date(Date.parse(latestTimeline!.simNow) + 60_000).toISOString()
+    await commitWorldCommand(fixture.db, {
+      id: 'claim-api-clock-advance-correction', worldId: guest.worldId, timelineId: guest.timelineId,
+      userId: guestSession!.ownerUserId, actorKind: 'system', expectedVersion: 3,
+      action: { type: 'clock_advance', from: latestTimeline!.simNow, to: finalSimTime, observedAt: finalSimTime },
+    })
+    const priorLocationFact = await fixture.db.select().from(worldFacts).where(and(
+      eq(worldFacts.timelineId, guest.timelineId), eq(worldFacts.version, 3),
+    )).get()
+    expect(priorLocationFact).toMatchObject({ factType: 'location', subjectId: sourceVisitor!.personId })
+    const correctionAt = new Date().toISOString()
+    await fixture.db.batch([
+      fixture.db.insert(worldCommands).values({
+        id: 'claim-api-historical-location-correction', worldId: guest.worldId, timelineId: guest.timelineId,
+        actorKind: 'visitor', actorId: sourceVisitor!.personId, type: 'move',
+        payloadJson: JSON.stringify({ type: 'move', personId: sourceVisitor!.personId, to: '温室花房' }),
+        expectedVersion: 4, resultVersion: 5, cloneSourceCommandId: null, tickLeaseToken: null, createdAt: correctionAt,
+      }),
+      fixture.db.update(universeRevisions).set({ version: 5, simTime: finalSimTime, updatedAt: correctionAt })
+        .where(and(eq(universeRevisions.timelineId, guest.timelineId), eq(universeRevisions.version, 4))),
+      fixture.db.update(universeEvidence).set({ assessedVersion: 5, assessedAt: correctionAt })
+        .where(and(eq(universeEvidence.timelineId, guest.timelineId), eq(universeEvidence.assessedVersion, 4))),
+      fixture.db.insert(worldFacts).values({
+        id: 'claim-api-historical-location-correction-fact', timelineId: guest.timelineId, version: 5,
+        simTime: finalSimTime, factType: 'location', subjectId: sourceVisitor!.personId,
+        valueJson: JSON.stringify({ from: '大厅', to: '温室花房', personName: sourceVisitor!.personName }),
+        sourceCommandId: 'claim-api-historical-location-correction', visibility: 'world',
+        supersedesId: priorLocationFact!.id,
+      }),
+      fixture.db.update(personStates).set({ location: '温室花房', simTime: finalSimTime, updatedRealAt: correctionAt })
+        .where(and(eq(personStates.personId, sourceVisitor!.personId), eq(personStates.timelineId, guest.timelineId))),
+    ])
     await fixture.db.insert(events).values({
       id: 'claim-api-event', timelineId: guest.timelineId, simTime: '2026-10-02T00:00:00.000Z',
       title: '访客抵达花房', description: '访客留下了一条可追溯的事件。', actorPersonId: sourceVisitor!.personId,
@@ -116,11 +172,20 @@ describe('S03 guest participation API', () => {
 
     const clonedTimelines = await fixture.db.select().from(timelines).where(eq(timelines.worldId, result.worldId)).all()
     expect(clonedTimelines).toHaveLength(2)
+    const sourceFacts = await fixture.db.select().from(worldFacts).where(eq(worldFacts.timelineId, guest.timelineId)).all()
+    expect(sourceFacts.some(row => row.subjectId === sourceVisitor!.personId)).toBe(true)
+    expect(sourceFacts.some(row => row.supersedesId !== null)).toBe(true)
+    const clonedTimelineIds = clonedTimelines.map(row => row.id)
+    const clonedFacts = await fixture.db.select().from(worldFacts).where(inArray(worldFacts.timelineId, clonedTimelineIds)).all()
+    expect(clonedFacts).toHaveLength(sourceFacts.length)
+    expect(clonedFacts.map(row => row.cloneSourceFactId).sort()).toEqual(sourceFacts.map(row => row.id).sort())
     const clonedMain = clonedTimelines.find(row => row.parentTimelineId === null)!
     const clonedFork = clonedTimelines.find(row => row.id !== clonedMain.id)!
     expect(clonedFork).toMatchObject({ parentTimelineId: clonedMain.id, forkScenarioJson: expect.stringContaining('访客提前到达花房') })
     expect(clonedFork.forkSnapshotJson).toContain('fork_snapshots')
-    expect(await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()).toMatchObject({ timelineId: clonedFork.id, version: 1 })
+    const clonedForkSnapshot = await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()
+    expect(clonedForkSnapshot).toMatchObject({ timelineId: clonedFork.id, version: 1 })
+    expect(JSON.parse(clonedForkSnapshot!.payloadJson)).toMatchObject({ sourceStateVersion: 3 })
 
     const clonedEvent = await fixture.db.select().from(events).where(and(
       eq(events.timelineId, clonedMain.id), eq(events.title, '访客抵达花房'),
@@ -131,6 +196,22 @@ describe('S03 guest participation API', () => {
       .innerJoin(worldPersons, eq(worldPersons.personId, persons.id))
       .where(and(eq(worldPersons.worldId, result.worldId), eq(persons.isUser, true))).get()
     expect(visitor!.persons).toMatchObject({ userId: 'member', isUser: true })
+    const clonedFactBySourceId = new Map(clonedFacts.map(row => [row.cloneSourceFactId!, row]))
+    for (const sourceFact of sourceFacts) {
+      const clone = clonedFactBySourceId.get(sourceFact.id)!
+      expect(clone).toMatchObject({
+        version: sourceFact.version,
+        simTime: sourceFact.simTime,
+        factType: sourceFact.factType,
+        valueJson: sourceFact.valueJson,
+        visibility: sourceFact.visibility,
+      })
+      expect(clone.subjectId).toBe(sourceFact.subjectId === sourceVisitor!.personId ? visitor!.persons.id : sourceFact.subjectId)
+      expect(clone.supersedesId).toBe(sourceFact.supersedesId ? clonedFactBySourceId.get(sourceFact.supersedesId)?.id : null)
+      expect(clone.sourceCommandId).not.toBe(sourceFact.sourceCommandId)
+      const clonedCommand = await fixture.db.select().from(worldCommands).where(eq(worldCommands.id, clone.sourceCommandId)).get()
+      expect(clonedCommand?.cloneSourceCommandId).toBe(sourceFact.sourceCommandId)
+    }
     expect(clonedEvent?.actorPersonId).toBe(visitor!.persons.id)
     expect(clonedEvent?.actorPersonId).not.toBe(sourceVisitor!.personId)
     expect(await fixture.db.select().from(personStates).where(and(
@@ -138,7 +219,7 @@ describe('S03 guest participation API', () => {
     )).get()).toMatchObject({ location: '温室花房' })
     expect(await fixture.db.select().from(personStates).where(and(
       eq(personStates.personId, visitor!.persons.id), eq(personStates.timelineId, clonedFork.id),
-    )).get()).toMatchObject({ location: '温室花房' })
+    )).get()).toMatchObject({ location: '大厅' })
     expect(clonedTimelines.some(row => row.parentTimelineId === fork.id)).toBe(false)
     fixture.close()
   })

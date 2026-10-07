@@ -23,11 +23,26 @@ export interface LlmResolution {
  * It is enabled only by the launcher, never by request data or a deployed environment. */
 function a1LifeFixtureProvider() {
   const text = '我收到了庭院维护的消息，会把这段经历记下来。'
+  const structured = JSON.stringify({
+    utterance: text,
+    thought: '客人的话让我想起了今天要照看的花。',
+    shouldEnd: false,
+    memory: null,
+    word: null,
+    commitment: null,
+    visitorInvitationResponse: null,
+  })
   const chunks = [
     { choices: [{ delta: { role: 'assistant', content: text }, finish_reason: null }] },
     { choices: [{ delta: {}, finish_reason: 'stop' }] },
   ].map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n'
-  return { fetch: async () => new Response(chunks, { headers: { 'content-type': 'text/event-stream' } }) }
+  return { fetch: async (request: Request) => {
+    const body = await request.clone().json().catch(() => ({})) as { stream?: unknown }
+    if (body.stream === false) {
+      return Response.json({ choices: [{ message: { content: structured } }] })
+    }
+    return new Response(chunks, { headers: { 'content-type': 'text/event-stream' } })
+  } }
 }
 
 interface PartialLlmFields {

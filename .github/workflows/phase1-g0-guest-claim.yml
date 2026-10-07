@@ -1,0 +1,137 @@
+name: Phase 1 G0 guest claim journey (cloud)
+
+on:
+  push:
+    branches: [phase3]
+    paths:
+      - .github/workflows/phase1-g0-guest-claim.yml
+  workflow_dispatch:
+    inputs:
+      run_provider_acceptance:
+        description: Run isolated DeepSeek acceptance within the configured remaining budget
+        type: boolean
+        required: true
+        default: false
+      provider_request_cap:
+        description: Remaining authorized requests (integer from 1 to 25)
+        type: number
+        required: true
+        default: 9
+      provider_scenarios:
+        description: Comma-separated cases; full suite includes original-world-repair
+        type: string
+        required: true
+        default: official-example,custom-1,custom-3
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-g0-guest-claim-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  voxel-validation:
+    name: Voxel generation and draft regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check API types including acceptance harness
+        run: npm --workspace api run build
+      - name: Verify generation and draft contracts without provider calls
+        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
+
+  guest-claim:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance)
+    name: Isolated real API + browser guest claim slice
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Chromium runtime
+        run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Run isolated guest and public-read API acceptance slices
+        working-directory: api
+        run: |
+          set -o pipefail
+          {
+            echo "api_acceptance_files=src/test/s03-guest-participation.test.ts,src/map/bootstrap.test.ts,src/public/routes.test.ts,src/access/policy.test.ts,src/worlds/create-voxel.test.ts,src/scenes/routes.test.ts"
+            npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/s03-guest-participation.test.ts src/map/bootstrap.test.ts src/public/routes.test.ts src/access/policy.test.ts src/worlds/create-voxel.test.ts src/scenes/routes.test.ts
+          } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
+      - name: Run isolated guest fork and claim journey
+        working-directory: web
+        env:
+          PLAYWRIGHT_API_PORT: 28787
+          PLAYWRIGHT_WEB_PORT: 26173
+          PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
+          CI: true
+        run: |
+          set -o pipefail
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "journey_revision=16"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation; deterministic single-space create and original-world repair UI/save recovery"
+            echo "e2e_files=e2e/guest-claim-journey.spec.ts,e2e/scene-create.spec.ts,e2e/scene-repair.spec.ts"
+            echo "excluded=real model generation; create/repair UI draft responses are route fixtures, API save contracts use valid fixed voxel documents"
+            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts e2e/scene-create.spec.ts e2e/scene-repair.spec.ts
+          } 2>&1 | tee -a "$RUNNER_TEMP/phase1-guest-claim.log"
+      - name: Upload browser trace and run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-g0-guest-claim-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/phase1-guest-claim.log
+            /tmp/s02-playwright-results/
+          retention-days: 14
+
+  phase1-g0-provider:
+    needs: voxel-validation
+    if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && github.ref == 'refs/heads/phase3'
+    name: Isolated Phase 1 provider acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: phase1-g0-provider-acceptance
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run selected isolated provider acceptance
+        working-directory: api
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          G0_PROVIDER_REQUEST_CAP: ${{ inputs.provider_request_cap }}
+          G0_PROVIDER_SCENARIOS: ${{ inputs.provider_scenarios }}
+          G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
+        run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts
+      - name: Upload redacted provider acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-g0-provider-acceptance-${{ github.run_id }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
+          retention-days: 14

@@ -14,6 +14,7 @@ function fact(id: string, factType: string, value: Record<string, unknown>, over
     subjectId: 'subject',
     valueJson: JSON.stringify(value),
     sourceCommandId: `command:${id}`,
+    cloneSourceFactId: null,
     visibility: factType === 'knowledge' ? 'private' : 'world',
     supersedesId: null,
     ...overrides,
