@@ -19,6 +19,7 @@ function history(type: string, payload: unknown, version = 1): { command: Comman
     expectedVersion: version - 1,
     resultVersion: version,
     tickLeaseToken: null,
+    cloneSourceCommandId: null,
     createdAt: WORLD_TIME,
   }
   const fact: Fact = {
@@ -30,6 +31,7 @@ function history(type: string, payload: unknown, version = 1): { command: Comman
     subjectId: 'test',
     valueJson: '{}',
     sourceCommandId: command.id,
+    cloneSourceFactId: null,
     visibility: 'world',
     supersedesId: null,
   }

@@ -16,7 +16,7 @@ function cmd(type: string, action: Record<string, unknown>, createdAt = T0): Com
   seq += 1
   return { id: `cmd${seq}`, worldId: 'w', timelineId: 'main', actorKind: 'system', actorId: null,
     type, payloadJson: JSON.stringify({ type, ...action }), expectedVersion: seq - 1,
-    resultVersion: seq, tickLeaseToken: null, createdAt }
+    resultVersion: seq, tickLeaseToken: null, cloneSourceCommandId: null, createdAt }
 }
 
 const emptyCore: AnchorCorePayload = { version: 1, states: [], schedules: [], commitments: [] }

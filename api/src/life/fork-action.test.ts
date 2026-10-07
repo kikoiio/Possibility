@@ -10,6 +10,7 @@ const fact = (input: Partial<Fact> & Pick<Fact, 'id' | 'timelineId' | 'factType'
   id: input.id, timelineId: input.timelineId, factType: input.factType, visibility: input.visibility,
   valueJson: input.valueJson, subjectId: input.subjectId ?? 'subject', version: input.version ?? 1,
   simTime: input.simTime ?? '2026-01-01T00:00:00.000Z',
+  cloneSourceFactId: null,
   sourceCommandId: input.sourceCommandId ?? `cmd:${input.id}`, supersedesId: input.supersedesId ?? null,
 })
 
