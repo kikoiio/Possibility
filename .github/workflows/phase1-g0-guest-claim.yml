@@ -74,7 +74,7 @@ jobs:
           retention-days: 14
 
   phase1-g0-provider:
-    if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && github.ref == 'refs/heads/phase3'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && (github.ref == 'refs/heads/phase3' || github.ref == 'refs/heads/phase1-g0-timeout-fix')
     name: Isolated Phase 1 provider acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 45
