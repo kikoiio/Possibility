@@ -7,7 +7,7 @@
  * 对应已批准 plan.md「核心数据结构」与「契约约束」。
  */
 
-export type SourceKind = 'public' | 'fixture'
+export type SourceKind = 'account' | 'public' | 'fixture'
 
 export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night' | 'unknown'
 
@@ -327,6 +327,7 @@ export interface ViewportDiagnostics {
 }
 
 export type SourceConfig =
+  | { readonly kind: 'account'; readonly worldId: string; readonly timelineId?: string }
   | { readonly kind: 'public'; readonly worldId?: string; readonly timelineId?: string }
   | { readonly kind: 'fixture'; readonly fixtureId: string }
 

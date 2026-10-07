@@ -1,3 +1,6 @@
+import { and, asc, eq } from 'drizzle-orm'
+import type { Db } from '../db/client'
+import { native2dLayoutHeads, native2dLayoutRevisions } from '../db/schema'
 import { scopeKey, type Native2dLayout, type Native2dLayoutHead, type Native2dLayoutRequest, type Native2dLayoutRevision, type Native2dSaveInput, type Native2dSaveResult, type Native2dScope } from './schema'
 import { validateNative2dLayout } from './validation'
 
@@ -102,6 +105,119 @@ export function createNative2dRepository(_persistence?: unknown): Native2dReposi
     },
     async request(scope, requestId) { return clone(requests.get(`${scopeKey(scope)}:${JSON.stringify(requestId)}`) ?? null) },
     async history(scope) { return clone(revisions.get(scopeKey(scope)) ?? []) },
+  }
+  return repository
+}
+
+/** D1-backed repository used by authenticated account worlds. Head CAS and the
+ * immutable revision append execute in one D1 batch; the browser is only a cache. */
+export function createD1Native2dRepository(db: Db): Native2dRepository {
+  const whereScope = (scope: Native2dScope) => [
+    eq(native2dLayoutRevisions.worldId, scope.worldId),
+    eq(native2dLayoutRevisions.timelineId, scope.timelineId),
+    eq(native2dLayoutRevisions.sceneId, scope.sceneId),
+  ] as const
+  const readHeadRow = async (scope: Native2dScope) => db.select().from(native2dLayoutHeads).where(and(
+    eq(native2dLayoutHeads.worldId, scope.worldId),
+    eq(native2dLayoutHeads.timelineId, scope.timelineId),
+    eq(native2dLayoutHeads.sceneId, scope.sceneId),
+  )).get()
+  const headValue = (row: typeof native2dLayoutHeads.$inferSelect | null | undefined): Native2dLayoutHead | null => row ? ({
+    worldId: row.worldId, timelineId: row.timelineId, sceneId: row.sceneId,
+    currentVersion: row.currentVersion, updatedAt: row.updatedAt,
+  }) : null
+  const revisionValue = (row: typeof native2dLayoutRevisions.$inferSelect | undefined): Native2dLayoutRevision | null => row ? ({
+    worldId: row.worldId, timelineId: row.timelineId, sceneId: row.sceneId,
+    version: row.version, parentVersion: row.parentVersion, requestId: row.requestId,
+    contentHash: row.contentHash, layout: JSON.parse(row.layoutJson) as Native2dLayout, createdAt: row.createdAt,
+  }) : null
+  const readRequestRow = async (scope: Native2dScope, requestId: string) => db.select().from(native2dLayoutRevisions).where(
+    and(...whereScope(scope), eq(native2dLayoutRevisions.requestId, requestId)),
+  ).get()
+
+  const repository: Native2dRepository = {
+    async save(input): Promise<Native2dSaveResult> {
+      if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0
+        || !isScopeValue(input) || !isRequestId(input.requestId)) return invalidRequestResult()
+      const validation = validateNative2dLayout(input.layout)
+      if (!validation.valid) return { ok: false, kind: 'invalid', validation, message: 'native2d layout failed validation' }
+      const hash = native2dContentHash(input.layout)
+      const prior = await readRequestRow(input, input.requestId)
+      if (prior) {
+        if (prior.contentHash === hash && (prior.parentVersion ?? 0) === input.expectedVersion) {
+          const revision = revisionValue(prior)
+          const head = headValue(await readHeadRow(input))
+          if (revision && head) return { ok: true, kind: 'replayed', revision: clone(revision), head: clone(head) }
+        }
+        return { ok: false, kind: 'conflict', code: 'request_conflict', head: headValue(await readHeadRow(input)), message: 'requestId was already used for a different layout request' }
+      }
+      if (scopeKey(input.layout.metadata) !== scopeKey(input)) {
+        return { ok: false, kind: 'invalid', validation: { valid: false, issues: [{ code: 'invalid_scope', message: 'Request scope and layout metadata do not match' }] }, message: 'native2d request scope is invalid' }
+      }
+      const current = await readHeadRow(input)
+      const actualVersion = current?.currentVersion ?? 0
+      if (actualVersion !== input.expectedVersion) {
+        return { ok: false, kind: 'conflict', code: 'version_conflict', head: headValue(current), message: `expected version ${input.expectedVersion} does not match current version ${actualVersion}` }
+      }
+      const now = input.now ?? new Date().toISOString()
+      const version = actualVersion + 1
+      const revisionId = crypto.randomUUID()
+      const revision: Native2dLayoutRevision = {
+        worldId: input.worldId, timelineId: input.timelineId, sceneId: input.sceneId,
+        version, parentVersion: current?.currentVersion ?? null, requestId: input.requestId,
+        contentHash: hash, layout: clone(input.layout), createdAt: now,
+      }
+      const headWrite = db.insert(native2dLayoutHeads).values({
+        worldId: input.worldId, timelineId: input.timelineId, sceneId: input.sceneId,
+        currentRevisionId: revisionId, currentVersion: version, updatedAt: now,
+      }).onConflictDoUpdate({
+        target: [native2dLayoutHeads.worldId, native2dLayoutHeads.timelineId, native2dLayoutHeads.sceneId],
+        set: { currentRevisionId: revisionId, currentVersion: version, updatedAt: now },
+        setWhere: eq(native2dLayoutHeads.currentVersion, input.expectedVersion),
+      })
+      const revisionWrite = db.insert(native2dLayoutRevisions).values({
+        id: revisionId, worldId: input.worldId, timelineId: input.timelineId, sceneId: input.sceneId,
+        version, parentVersion: current?.currentVersion ?? null, requestId: input.requestId,
+        contentHash: hash, layoutJson: JSON.stringify(input.layout), createdAt: now,
+      }).onConflictDoNothing()
+      await db.batch([headWrite, revisionWrite])
+      const savedHeadRow = await readHeadRow(input)
+      const savedHead = headValue(savedHeadRow)
+      if (savedHeadRow?.currentRevisionId !== revisionId) {
+        const racedRequest = await readRequestRow(input, input.requestId)
+        if (racedRequest?.contentHash === hash && (racedRequest.parentVersion ?? 0) === input.expectedVersion) {
+          const racedRevision = revisionValue(racedRequest)
+          if (racedRevision && savedHead) return { ok: true, kind: 'replayed', revision: racedRevision, head: savedHead }
+        }
+        return { ok: false, kind: 'conflict', code: 'version_conflict', head: savedHead, message: 'scene layout changed; reload before saving' }
+      }
+      return { ok: true, kind: 'created', revision, head: savedHead! }
+    },
+    async reset(input) { return repository.save(input) },
+    async head(scope) { return headValue(await readHeadRow(scope)) },
+    async read(scope, version) {
+      if (version === undefined) {
+        const head = await readHeadRow(scope)
+        if (!head) return null
+        const row = await db.select().from(native2dLayoutRevisions).where(eq(native2dLayoutRevisions.id, head.currentRevisionId)).get()
+        return revisionValue(row)
+      }
+      const row = await db.select().from(native2dLayoutRevisions).where(
+        and(...whereScope(scope), eq(native2dLayoutRevisions.version, version)),
+      ).get()
+      return revisionValue(row)
+    },
+    async request(scope, requestId) {
+      const row = await readRequestRow(scope, requestId)
+      return row ? { worldId: row.worldId, timelineId: row.timelineId, sceneId: row.sceneId,
+        requestId: row.requestId, contentHash: row.contentHash, expectedVersion: row.parentVersion ?? 0, resultVersion: row.version } : null
+    },
+    async history(scope) {
+      const rows = await db.select().from(native2dLayoutRevisions).where(
+        and(...whereScope(scope)),
+      ).orderBy(asc(native2dLayoutRevisions.version)).all()
+      return rows.flatMap(row => { const value = revisionValue(row); return value ? [value] : [] })
+    },
   }
   return repository
 }

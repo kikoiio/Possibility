@@ -22,6 +22,7 @@
  */
 
 import { effectiveTimeZone } from '../lib/world-time'
+import { createAccountSessionAdapter } from './session-adapter'
 import { FIXTURE_IDS, createFixtureReadModel, type FixtureId } from './fixtures'
 import type {
   SampleScope,
@@ -51,6 +52,7 @@ export function createWorldSource(
   if (config.kind === 'fixture') {
     return createFixtureSource(config.fixtureId, scene)
   }
+  if (config.kind === 'account') return createAccountSessionAdapter(scene, config.worldId, config.timelineId)
   return createPublicSource(config, scene, options)
 }
 

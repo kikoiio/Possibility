@@ -16,3 +16,5 @@ LLM_MODEL = "s02-fixture"
 # (scripts/start-s02-e2e.mjs scene-compatibility-legacy) overrides via --var. Ignored unless
 # ENVIRONMENT=s02-e2e, and never taken from HTTP bodies.
 SCENE_COMPATIBILITY_FIXTURE = "off"
+ENGINE_TICK_SECRET = "phase2-isolated-engine-tick"
+DIRECTOR_LLM = "0"

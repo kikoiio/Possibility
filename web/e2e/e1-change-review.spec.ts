@@ -32,21 +32,20 @@ test('E1 returns a recorded event, expands evidence, and opens F1 from a verifie
     nextEventCursor: emptyReturn ? 0 : 3, nextRevisionVersion: emptyReturn ? 0 : 2, hasMore: false,
     summary: emptyReturn ? '暂时没有新的变化。' : '新增 1 项记录，其中 1 项状态变化。',
     changes: emptyReturn ? [] : [{ id: 'fact:weather-1', kind: 'fact', simTime: checkpoint, title: '河畔咖啡馆 · weather已变化',
-      description: '记录值：起雾', eventId: 'command:env-1', eventCursor: 3, factId: 'weather-1',
+      description: '记录值：fog', eventId: 'command:env-1', eventCursor: 3, factId: 'weather-1',
       revisionVersion: 2, sourceCommandId: 'env-1', actorPersonId: null, actorName: null, highlight: 'state_change' }],
     events: [], commitments: [], unread: 0,
   } }))
-  let evidenceReadCount = 0
+  let evidenceRetryEnabled = false
   let evidenceMode: 'complete' | 'unsupported' = 'complete'
   await page.route('**/api/worlds/world-1/events/*/evidence**', route => {
-    evidenceReadCount += 1
-    if (evidenceReadCount === 1) return route.fulfill({ status: 503, json: { error: '证据服务暂不可用' } })
+    if (!evidenceRetryEnabled) return route.fulfill({ status: 503, json: { error: '证据服务暂不可用' } })
     const detail = {
     timelineId: 'timeline-main',
-    event: { id: 'command:env-1', simTime: checkpoint, title: '河畔咖啡馆天气变化', description: '河畔咖啡馆的天气变为起雾。', kind: 'action', actorPersonId: null, actorName: null, location: '河畔咖啡馆' },
+    event: { id: 'command:env-1', simTime: checkpoint, title: '河畔咖啡馆天气变化', description: '河畔咖啡馆的天气变为雾。', kind: 'action', actorPersonId: null, actorName: null, location: '河畔咖啡馆' },
     command: { id: 'env-1', type: 'environment', version: 2, actorName: null },
     facts: [{ id: 'weather-1', factType: 'environment', simTime: checkpoint, version: 2, visibility: 'world',
-      subjectId: '河畔咖啡馆:weather', value: { location: '河畔咖啡馆', condition: 'weather', value: '起雾' }, sourceCommandId: 'env-1' }],
+      subjectId: '河畔咖啡馆:weather', value: { location: '河畔咖啡馆', condition: 'weather', value: 'fog' }, sourceCommandId: 'env-1' }],
     visibleKnowledge: [], stateSnapshot: [{ personName: 'Ada', location: '河畔咖啡馆', activity: '读书', mood: '平静' }],
     reconstruction: { status: 'complete', simTime: checkpoint, version: 2, completeDomains: ['states', 'schedules', 'events'], reason: null },
     gaps: [], forkAvailable: true,
@@ -65,6 +64,7 @@ test('E1 returns a recorded event, expands evidence, and opens F1 from a verifie
   await expect(page.getByText('新增 1 项记录，其中 1 项状态变化。')).toBeVisible()
   await page.getByRole('button', { name: '查看来源与当时状态' }).click()
   await expect(page.getByRole('button', { name: '重试读取' })).toBeVisible()
+  evidenceRetryEnabled = true
   await page.getByRole('button', { name: '重试读取' }).click()
   await expect(page.getByTestId('event-evidence-detail')).toContainText('记录事实')
   await expect(page.getByTestId('event-evidence-detail')).toContainText('当时状态')

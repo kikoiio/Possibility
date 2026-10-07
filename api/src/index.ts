@@ -24,6 +24,7 @@ import { compatibilityRoutes } from './scenes/compatibility/routes'
 import { cleanupExpiredGuestData } from './demo/cleanup'
 import { createDb } from './db/client'
 import { memoryRepairRoutes } from './admin/memory-repair-routes'
+import { native2dRoutes } from './native2d/routes'
 
 export interface Env {
   DB: D1Database
@@ -83,6 +84,7 @@ app.route('/api/demo', demoRoutes)
 app.route('/api/engine', engineRoutes)
 app.route('/api', voxelRoutes) // /api/voxel/*：体素 AI 编辑规划
 app.route('/api', mapRoutes)
+app.route('/api', native2dRoutes)
 app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
 app.route('/api', compatibilityRoutes) // 场景兼容性检查、草稿与确认
 // These routes accept either a login or a tightly scoped guest sandbox token.
