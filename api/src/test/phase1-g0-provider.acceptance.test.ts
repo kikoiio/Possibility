@@ -18,7 +18,10 @@ const PEAK_PRICE = { cacheHitInput: 0.006, cacheMissInput: 0.30, output: 1.20 }
 const MAX_REQUEST_COST_USD = ((MILLION - MAX_TOKENS) * PEAK_PRICE.cacheMissInput + MAX_TOKENS * PEAK_PRICE.output) / MILLION
 
 type Usage = { promptTokens: number; cacheHitTokens: number; cacheMissTokens: number; completionTokens: number; costUsd: number }
-type ProviderCall = { scenario: string; status: number | null; usage: Usage | null; maxTokens: number; thinkingDisabled: boolean }
+type ProviderCall = {
+  scenario: string; status: number | null; usage: Usage | null; maxTokens: number; thinkingDisabled: boolean
+  generatedContent: string | null
+}
 type Draft = { world: { name: string; description: string; locations: { name: string; description: string }[] }; document: unknown }
 type ScenarioResult = {
   id: string
@@ -120,6 +123,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       { name: '湖畔', description: '原世界湖畔' },
     ]
     const scenarios: ScenarioResult[] = []
+    const generatedDrafts: Record<string, Draft> = {}
     const providerCalls: ProviderCall[] = []
     const blockedAttempts: string[] = []
     const failures: string[] = []
@@ -184,13 +188,23 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
 
         let responseStatus: number | null = null
         let usage: Usage | null = null
-        const call: ProviderCall = { scenario: activeScenario, status: responseStatus, usage, maxTokens: requestMaxTokens, thinkingDisabled }
+        const call: ProviderCall = {
+          scenario: activeScenario, status: responseStatus, usage, maxTokens: requestMaxTokens,
+          thinkingDisabled, generatedContent: null,
+        }
         providerCalls.push(call)
         try {
           const response = await fetch(outboundRequest)
           responseStatus = response.status
           call.status = responseStatus
-          const payload = await response.clone().json().catch(() => null) as { usage?: Record<string, unknown> } | null
+          const payload = await response.clone().json().catch(() => null) as {
+            usage?: Record<string, unknown>
+            choices?: { message?: { content?: unknown } }[]
+          } | null
+          const generatedContent = payload?.choices?.[0]?.message?.content
+          // Synthetic public acceptance prompts only. Keep generated construction data
+          // for semantic/visual review; never include request headers, credentials or tokens.
+          if (typeof generatedContent === 'string') call.generatedContent = generatedContent
           const rawUsage = payload?.usage
           const promptTokens = numeric(rawUsage?.prompt_tokens)
           const completionTokens = numeric(rawUsage?.completion_tokens)
@@ -251,6 +265,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         && world.locations.length >= 5 && world.locations.length <= 8
       const valid = response.ok && worldReady && validDocument && Object.values(semanticGroups).every(Boolean)
         && forbiddenAbsent && carriersUnique && carriersResolved && carriersMatchWorld
+      if (response.ok && worldReady && validDocument) generatedDrafts[scenario.id] = draft
       const afterLedger = await ledgerRows()
       scenarios.push({
         id: scenario.id, apiStatus: response.status, valid,
@@ -442,6 +457,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', peakUsdPerMillion: PEAK_PRICE,
           oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
         scenarios: scenarios.map(result => ({ ...result, ...(result.id === 'official-example' && singleWorldId ? { savedWorldIdHash: sha(singleWorldId) } : {}) })),
+        generatedDrafts,
         singleSpace: { selected: requiresSingleSave, saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
         repair: { selected: requiresRepair, saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind,
           draftFailureStage: repairDraftFailureStage, draftNormalizationFixes: repairDraftNormalizationFixes,
