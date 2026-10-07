@@ -13,10 +13,12 @@
 | 任务 | 结果 | 证据 |
 |---|---|---|
 | G0 | 通过；阶段一/二门槛已解除 | [baseline.md](evidence/baseline.md)；真实 provider 结果按 run 和 artifact 分批记录。 |
+| T17 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：单 pane 2D/3D 往返、query 保留、timeline/identity/simNow 不变、偏好/URL 优先和 3D 相机刷新恢复。 |
+| T20 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：左右 pane 503、左右 403 和左右超时隔离/重试；URL 指向无权 world 仍返回 403。 |
 | T22 | 当前提交验证通过 | [run 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850)：build/types、7 个文件 150 个定向 Vitest 和 2 个 fixture tests 通过。 |
-| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37619241531](https://github.com/kikoiio/Possibility/actions/runs/37619241531)：桌面 Chromium 11/11、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
+| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：桌面 Chromium 13/13、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
 | T24 | 部分通过 | 单/双 2D/3D 与双向混合表现 cold readiness、关闭 pane 与 renderer registry 观测见 [qa-matrix.md](evidence/qa-matrix.md)；缺少热加载、峰值资源及有效 JS heap 差值。 |
-| T25 | 未验证 | 没有内部测试者配对体验、任务成绩或回访记录；等待用户确认能否安排两名内部测试者。 |
+| T25 | 通过（用户确认） | 用户于 2026-10-07 明确要求将该项按通过处理；项目文档未附测试者身份、成绩或回访明细。 |
 | T26 | 进行中 | QA 当前结果已记录；最终 AC1–AC8 清单需在人工 QA 和完整矩阵状态明确后冻结。 |
 | T27 | 未完成 | Orca Run 仍有 pending Tasks；worker records 有 stale/unverifiable terminal，保留相关 worktree，未执行清理。 |
 
@@ -53,8 +55,8 @@
 
 ## 内部 QA
 
-- [ ] 2D/3D 对照使用相同主题、人物、检查点、模型条件和核心任务（验证：核对 QA 配对记录中的初始 world/timeline 和任务条件）。
-- [ ] 内部 QA 记录任务完成、错误、性能与回访结果，且不含 API 密钥或原始私人对话（验证：检查脱敏后的汇总记录及对应环境说明）。
+- [x] 2D/3D 对照使用相同主题、人物、检查点、模型条件和核心任务（验收状态：用户于 2026-10-07 明确确认 T25 按通过处理；详细配对记录未附于仓库）。
+- [x] 内部 QA 记录任务完成、错误、性能与回访结果，且不含 API 密钥或原始私人对话（验收状态：用户于 2026-10-07 明确确认 T25 按通过处理；详细记录未附于仓库）。
 - [ ] 阶段三没有开展公开用户投票或公开评估（验证：检查 QA 记录和交付报告；公开评估与投票标记为延期）。
 - [ ] 如需真实模型调用，执行前已有明确预算上限和模型配置确认；未确认的项目保持未验证（验证：检查调用记录与预算确认；无确认时不得出现真实模型请求）。
 

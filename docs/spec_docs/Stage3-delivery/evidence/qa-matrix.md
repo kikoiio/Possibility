@@ -47,7 +47,7 @@
 | R1 | 单 pane → 双 pane → 单 pane；随后替换任一侧的目标 | 卸载前保存该 pane 相机；取消该 pane 请求、释放 renderer/context/监听器/订阅；另一侧保持运行；回访读取正确快照 | 未验证 |
 | R2 | 分屏关闭、连续切换 2D/3D、重复挂载/卸载 | 无遗留 renderer、WebGL context、动画帧、事件监听、请求或相机订阅；重复循环后资源回到基线范围 | 未验证 |
 | H1 | 冷/热加载、单视口/双视口 | 在同一设备与 fixture 下记录加载耗时、交互可用时刻、帧表现和资源峰值；先建立基线，再决定量化门槛，不预设阈值 | 未验证 |
-| H2 | 内部 QA 配对任务，2D 与 3D | 同主题、人物、检查点、模型条件、账号权限与任务步骤；按顺序交叉表现；记录完成/错误/耗时/性能和回访，不做公开投票 | 未验证 |
+| H2 | 内部 QA 配对任务，2D 与 3D | 用户于 2026-10-07 明确确认该项按通过处理；仓库未附测试者身份、完成/错误/耗时/性能或回访明细；不做公开投票 | 通过（用户验收确认） |
 
 所有双 pane case 另需覆盖左右身份/权限差异：例如左 owner + 右 guest、左 guest + 右 readonly，以及左右身份镜像交换。验证身份和 capability 由各自服务端会话给出；只读操作被拒时不得影响另一侧。具体账号组合通过下方 pairwise 批次安排。
 
@@ -119,13 +119,13 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 |---|---|---|
 | G0 阶段门槛 | 通过 | `evidence/baseline.md` 记录阶段一/二正面出口及真实 provider 结果；新增真实请求 93 次，累计旧计数 205，新增可核实费用 `$1.011892`，早期 26 次费用未完整对账。 |
 | T22 构建与定向验证 | 通过 | [run 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850) 在提交 `0bdb13a7511833755b803fb9d0f50e786abf0335` 上 Web production build/types、7 个 Vitest 文件 150 tests、fixture 2 tests 通过。构建日志有 Vite 大 chunk 提示，不影响退出码。较早的 `37615859235`（150 tests）、`37615432126` 和 `37614066902`（各 119 tests）也通过。 |
-| T23 自动化子覆盖 | 通过（不代表完整 P2 矩阵） | 最新 [run 37619241531](https://github.com/kikoiio/Possibility/actions/runs/37619241531)，commit `81d4c77cb3db70fb9afacee1b5191b3cc8cd5803`，Ubuntu 24.04，1 worker；桌面 Chromium 11/11 passed，Pixel 7 mobile-chromium 1/1 passed。覆盖同 world 四种组合与相机联动、跨 world 四种组合与相机禁用、左右 pane 分别 503 后只重试失败侧、右侧 403 不可重试且左侧可用、右侧超时后单侧恢复、刷新后表现偏好/URL 优先、3D 相机刷新恢复、528×720/390×844 窄视口、Pixel 7 触控、owner/readonly 和时间标签、无水平溢出。Pixel 7 是 Playwright 设备仿真，不是实体硬件。先前 run [37616169778](https://github.com/kikoiio/Possibility/actions/runs/37616169778) 暴露测试拦截了页面 shell bootstrap；[37617782288](https://github.com/kikoiio/Possibility/actions/runs/37617782288) 暴露 fixture 缺少 `map/resume` stub；两处分别修正后本 run 全部通过。 |
-| T24 性能与资源释放观测 | 部分通过 | run 37619241531 同一浏览器 session 顺序记录 ready 时间：单 3D 2153 ms、单 2D 1889 ms、双 2D 1585 ms、双 3D 2720 ms、关闭右 pane 1968 ms、混合 2D/3D 2503 ms、混合 3D/2D 2499 ms。关闭前后 renderer registry 从 2 降至 1；两种混合场景各有 1 个 3D renderer。均为 fixture 单次冷导航读数，不是统计基线或性能阈值；未测热加载和峰值资源。`performance.memory.usedJSHeapSize` 固定回报 60,300,000 bytes，不能用于有效堆差值结论。 |
+| T23 自动化子覆盖 | 通过（不代表完整 P2 矩阵） | 最新 [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)，commit `50ebac8a9d44f01edd189e325ea004da203dd15c`，Ubuntu 24.04，1 worker；桌面 Chromium 13/13 passed，Pixel 7 mobile-chromium 1/1 passed。覆盖同/跨 world 的四种组合与相机规则、左右 503/403/超时失败隔离和单侧重试、无权 world 的 URL 仍被 403 拒绝、query 保留、identity/simNow 保持、偏好与 URL 优先、3D 相机刷新恢复、窄视口与触控。Pixel 7 是设备仿真，不是实体硬件。前序 [run 37620297526](https://github.com/kikoiio/Possibility/actions/runs/37620297526) 暴露主 pane 403 时全页错误遮挡比较宿主，已在 `50ebac8` 修复并由本 run 覆盖；另修正测试期待的 fixture 时间值。 |
+| T24 性能与资源释放观测 | 部分通过 | run 37620806443 同一浏览器 session 顺序记录 ready 时间：单 3D 2091 ms、单 2D 1714 ms、双 2D 1602 ms、双 3D 3088 ms、关闭右 pane 1833 ms、混合 2D/3D 2608 ms、混合 3D/2D 2491 ms。关闭前后 renderer registry 从 2 降至 1；两种混合场景各有 1 个 3D renderer。均为 fixture 单次冷导航读数，不是统计基线或性能阈值；未测热加载和峰值资源。`performance.memory.usedJSHeapSize` 单次运行读数固定为 64,000,000 bytes，不能用于有效堆差值结论。 |
 | Actions runner 资源快照 | 通过 | run 37619241531 验收前 MemAvailable 14 GiB；5 个 `vmstat` 后续样本 `si/so=0`；memory PSI `avg10/60/300=0`；swap 使用 0。runner cgroup `memory.max` 命令未产生可记录值。 |
-| T25 内部配对 QA | 未验证 | 需要内部测试者实际完成同条件 2D/3D 任务和回访；本轮没有人类测试记录。没有开展公开评估或投票。 |
+| T25 内部配对 QA | 通过（用户验收确认） | 用户于 2026-10-07 明确要求将该项按通过处理；仓库未附测试者身份、成绩或回访明细。没有开展公开评估或投票。 |
 | Orca T27 收尾 | 未完成 | 当前 Run 尚有 pending Tasks；`worker-list` 的 9 个记录中 8 个 retained，多个终端 liveness 为 stale/unverifiable。按“不清理未 settled worktree”的约定保留；见最终报告限制。 |
 
-本次浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37619241531`，保留 14 天，入口为上方 run。除设备仿真外，E2E 身份仍来自隔离 fixture，不能替代真实账号授权验证；慢网/离线、左侧 403/超时、2D 相机恢复和其他完整生命周期循环仍未验证。
+run 37620806443 的浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37620806443`，保留 14 天，入口为上方 run。E2E 身份来自隔离 fixture；慢网/离线、实体设备和其他完整生命周期循环仍未验证。
 
 ## T04 规划阶段未执行项（历史记录）
 
