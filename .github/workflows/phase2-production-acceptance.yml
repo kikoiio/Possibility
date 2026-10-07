@@ -65,6 +65,41 @@ jobs:
         working-directory: web
         run: npx tsx scripts/phase2-release-preview.acceptance.ts
 
+      - name: Verify leave, pause, and resume against the isolated Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DEPLOYMENT_PASSWORD"
+          npx wrangler d1 execute DB --local --config api/wrangler.s02-e2e.toml \
+            --persist-to "$PHASE2_D1_PERSIST" \
+            --command "DELETE FROM world_persons WHERE world_id = '$DEPLOYMENT_WORLD_ID';"
+          (
+            while true; do
+              curl --silent --show-error --output /dev/null --request POST \
+                --header 'x-engine-secret: phase2-isolated-engine-tick' \
+                "$PHASE2_API_TARGET/api/engine/tick" || true
+              sleep 5
+            done
+          ) &
+          tick_pinger_pid=$!
+          trap 'kill "$tick_pinger_pid" 2>/dev/null || true; wait "$tick_pinger_pid" 2>/dev/null || true' EXIT
+          DEPLOYMENT_API_URL="$PHASE2_API_TARGET" npx tsx scripts/verify-deployment-journey.ts
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          const evidence = JSON.parse(readFileSync(process.env.DEPLOYMENT_EVIDENCE_PATH, 'utf8'))
+          const summary = {
+            result: evidence.ok ? 'PASS' : 'FAIL',
+            environment: 'GitHub-hosted runner; isolated local Worker and D1; no remote deployment',
+            waitMs: evidence.waitMs,
+            worldId: evidence.worldId,
+            timelineId: evidence.timelineId,
+            assertions: evidence.assertions,
+            httpStatuses: Object.fromEntries(Object.entries(evidence.steps).map(([name, step]) => [name, step.status])),
+          }
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `## Phase 2 isolated engine journey\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n`)
+          NODE
+
       - name: Stop test services
         if: always()
         shell: bash
