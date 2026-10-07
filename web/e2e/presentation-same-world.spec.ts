@@ -4,7 +4,8 @@ import { stubSplitApis } from './split-view-stubs'
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
 interface ProbeWindow {
-  __voxelEngines?: Record<string, { getOrbitPose(): { theta: number } | null; setOrbitPose(pose: unknown): void }>
+  __voxelEngines?: Record<string, { world?: unknown; getOrbitPose(): { theta: number } | null; setOrbitPose(pose: unknown): void }>
+  __linkedApplyCalls?: number
 }
 
 test('same-world linked cameras follow together, then disable for mixed renderers', async ({ page }) => {
@@ -17,14 +18,24 @@ test('same-world linked cameras follow together, then disable for mixed renderer
   const link = page.getByTestId('comparison-camera-link').locator('input')
   await expect(link).toBeEnabled()
   await link.check()
+  await expect(link).toBeChecked()
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as ProbeWindow).__voxelEngines?.left?.world && !!(window as unknown as ProbeWindow).__voxelEngines?.right?.world)).toBe(true)
+
+  await page.evaluate(() => {
+    const target = window as unknown as ProbeWindow
+    const engine = target.__voxelEngines!.right!
+    const original = engine.setOrbitPose
+    engine.setOrbitPose = function (pose: unknown) {
+      target.__linkedApplyCalls = (target.__linkedApplyCalls ?? 0) + 1
+      original.call(this, pose)
+    }
+  })
 
   const rightBefore = (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.right?.getOrbitPose()))?.theta
-  const bounds = await left.boundingBox()
-  expect(bounds).not.toBeNull()
-  await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bounds!.x + bounds!.width / 2 + 110, bounds!.y + bounds!.height / 2 + 24, { steps: 8 })
-  await page.mouse.up()
+  const pose = { theta: 1.9, phi: 0.7, distance: 90, target: { x: 5, y: 3, z: 8 } }
+  await page.evaluate(value => (window as unknown as ProbeWindow).__voxelEngines!.left!.setOrbitPose(value), pose)
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.left?.getOrbitPose()))?.theta).toBeCloseTo(1.9, 2)
+  await expect.poll(() => page.evaluate(() => (window as unknown as ProbeWindow).__linkedApplyCalls ?? 0), { timeout: 30_000 }).toBeGreaterThan(0)
   await expect.poll(async () => (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.right?.getOrbitPose()))?.theta, { timeout: 30_000 }).not.toBeCloseTo(rightBefore!, 2)
 
   await page.getByRole('group', { name: '右侧画面表现' }).getByRole('button', { name: '2D' }).click()
