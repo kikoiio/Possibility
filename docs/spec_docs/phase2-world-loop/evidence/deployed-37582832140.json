@@ -1,0 +1,71 @@
+{
+  "runId": "37582832140",
+  "workflow": "Phase 2 temporary Cloudflare acceptance",
+  "testedCommit": "252f1a39245c293ce3ce276e68096e33dd643982",
+  "result": "success",
+  "duration": "7m23s",
+  "environment": "run-scoped temporary Cloudflare Worker and isolated D1; endpoint and resource identifiers redacted",
+  "providerCalls": 0,
+  "world": {
+    "residentCount": 0,
+    "hasScene": false
+  },
+  "journey": {
+    "httpStatuses": {
+      "health": 200,
+      "statusBefore": 200,
+      "pause": 200,
+      "resume": 200,
+      "statusAndStateReads": 200
+    },
+    "awayWaitMs": 90000,
+    "simNow": {
+      "before": "2026-10-07T06:43:17.539Z",
+      "afterAway": "2026-10-07T06:52:01.975Z",
+      "whilePaused": "2026-10-07T06:52:01.975Z",
+      "afterResume": "2026-10-07T07:10:17.971Z"
+    },
+    "clockFactCount": {
+      "afterAway": 12,
+      "whilePaused": 12,
+      "afterResume": 24
+    },
+    "assertions": {
+      "engineStatusVisible": true,
+      "worldWasRunning": true,
+      "worldAdvancedWhileAway": true,
+      "pauseReasonRecorded": true,
+      "simTimeFrozenWhilePaused": true,
+      "eventsRetained": true,
+      "factsRetained": true,
+      "resumeClearsStopReason": true,
+      "worldAdvancedAfterResume": true
+    }
+  },
+  "archive": {
+    "httpStatuses": {
+      "archive": 200,
+      "archivedRead": 200,
+      "archivedWrite": 409
+    },
+    "assertions": {
+      "worldArchived": true,
+      "archivedStateReadable": true,
+      "archivedWorldWriteRejected": true
+    }
+  },
+  "cleanup": {
+    "worker": "deleted",
+    "d1": "deleted",
+    "ownershipGuardExit": 0,
+    "postDeleteVerification": "verified-absent",
+    "workerExactNameMatches": 0,
+    "d1ExactNameMatches": 0
+  },
+  "logs": {
+    "tickErrorLogBytes": 0,
+    "tickSampleCount": 42,
+    "readinessSampleCount": 4
+  },
+  "scope": "This run proves the deployed D4 clock/pause/resume path only. It does not prove the resident/location exploration loop, rendered supported change, or owner 2D journey."
+}
