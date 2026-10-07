@@ -274,6 +274,13 @@
       "when": 1791256392777,
       "tag": "0038_timeline_scene_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791308231227,
+      "tag": "0039_native2d_layout_persistence",
+      "breakpoints": true
     }
   ]
 }

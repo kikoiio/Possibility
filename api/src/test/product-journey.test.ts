@@ -105,10 +105,10 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   // ACT → FORK: change a world condition, then create a sibling universe from that past.
   const changed = await request(`/api/worlds/${worldId}/actions`, 'POST', {
     id: 'journey-main-weather', timelineId, expectedVersion: 1,
-    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'storm' },
+    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' },
   })
   expect(changed.status).toBe(200)
-  const forkScenario = { name: '晴天分支', whatIf: 'What if the storm clears before dawn?', changedVariable: 'weather after the fork' }
+  const forkScenario = { name: '晴天分支', whatIf: 'What if the rain clears before dawn?', changedVariable: 'weather after the fork' }
   const missingForkScenario = await request(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, 'POST', { requestId: 'journey-missing-fork-scenario' })
   expect(missingForkScenario.status).toBe(400)
   const forkResponse = await request(`/api/worlds/${worldId}/timelines/${timelineId}/fork`, 'POST', {
@@ -157,7 +157,7 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
     timeAlignment: 'same_sim_time',
     differences: { facts: [expect.objectContaining({
       key: 'environment:Cafe:weather',
-      left: expect.objectContaining({ value: { location: 'Cafe', condition: 'weather', value: 'storm' } }),
+      left: expect.objectContaining({ value: { location: 'Cafe', condition: 'weather', value: 'rain' } }),
       right: expect.objectContaining({ value: { location: 'Cafe', condition: 'weather', value: 'clear' } }),
     })] },
   })
@@ -167,7 +167,7 @@ it('creates a structured universe and completes observe, enter, act, fork, compa
   expect(returned.status).toBe(200)
   const sourceSnapshot = await returned.json() as { currentFacts: { value: { value?: string } }[]; currentTimelineId: string }
   expect(sourceSnapshot.currentTimelineId).toBe(timelineId)
-  expect(sourceSnapshot.currentFacts.some(fact => fact.value.value === 'storm')).toBe(true)
+  expect(sourceSnapshot.currentFacts.some(fact => fact.value.value === 'rain')).toBe(true)
   expect(sourceSnapshot.currentFacts.some(fact => fact.value.value === 'clear')).toBe(false)
 
   // Continue the return journey with a deterministic in-person exchange in the chosen universe.

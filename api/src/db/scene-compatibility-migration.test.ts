@@ -324,22 +324,22 @@ describe('A1 legacy migration', () => {
 })
 
 describe('A1 schema', () => {
-  it('0038 为最大迁移编号，DDL 与 schema 一致，唯一约束生效', async () => {
-    expect(migrationFiles().at(-1)).toBe('0038_timeline_scene_versions.sql')
+  it('0039 为最大迁移编号，native2d DDL 与 schema 一致，唯一约束生效', async () => {
+    expect(migrationFiles().at(-1)).toBe('0039_native2d_layout_persistence.sql')
     const journal = JSON.parse(readFileSync(join(drizzleDir, 'meta/_journal.json'), 'utf8')) as { entries: Array<{ tag: string }> }
-    expect(journal.entries.at(-1)?.tag).toBe('0038_timeline_scene_versions')
+    expect(journal.entries.at(-1)?.tag).toBe('0039_native2d_layout_persistence')
     expect(existsSync(join(drizzleDir, 'meta/0038_snapshot.json'))).toBe(true)
 
     const { db, sqlite, close } = createTestDb()
     try {
       // 新表与新列就位
       const tables = (sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{ name: string }>).map(row => row.name)
-      for (const table of ['scene_compatibility_drafts', 'scene_compatibility_requests', 'scene_validation_policy']) expect(tables).toContain(table)
+      for (const table of ['scene_compatibility_drafts', 'scene_compatibility_requests', 'scene_validation_policy', 'native2d_layout_heads', 'native2d_layout_revisions']) expect(tables).toContain(table)
       const revisionColumns = (sqlite.prepare("PRAGMA table_info('world_scene_revisions')").all() as Array<{ name: string }>).map(row => row.name)
       for (const column of ['compatibility_json', 'validation_json', 'commit_guard']) expect(revisionColumns).toContain(column)
       // 约束索引就位
       const indexes = (sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name").all() as Array<{ name: string }>).map(row => row.name)
-      for (const index of ['scene_compatibility_draft_scope', 'world_scene_revision_version', 'world_scene_revision_request']) expect(indexes).toContain(index)
+      for (const index of ['scene_compatibility_draft_scope', 'world_scene_revision_version', 'world_scene_revision_request', 'native2d_layout_revision_version', 'native2d_layout_revision_request']) expect(indexes).toContain(index)
       // 唯一约束生效：修订 (world, version) 与 (world, request)
       await seedUser(db, 'u1')
       await seedWorld(db, 'w1', 'u1')

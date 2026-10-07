@@ -837,7 +837,8 @@ export function createSampleController(options: SampleControllerOptions): Sample
           || !sameScope(state.readState.lastGood.scope, scope)) return
         if (!result.ok) {
           // 清除失败：保留当前布局与记录。
-          update({ pendingReset: null, notice: `重置失败：${result.message}（当前布局与服务端记录保持不变）` })
+          const preserved = scope.source === 'account' ? '服务端记录' : '本地记录'
+          update({ pendingReset: null, notice: `重置失败：${result.message}（当前布局与${preserved}保持不变）` })
           return
         }
         // 成功后才恢复基线布局并清空撤销栈。

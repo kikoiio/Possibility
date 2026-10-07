@@ -95,19 +95,31 @@ export async function compareTimelines(
     const revision = revisions.find(item => item.timelineId === timeline.id)
     const inherited = readForkSnapshot(timeline)?.worldFacts ?? []
     const local = factRows.filter(fact => fact.timelineId === timeline.id)
-    const current = new Map<string, (typeof local)[number] | (typeof inherited)[number]>()
+    const inheritedCurrent = new Map<string, (typeof inherited)[number]>()
+    const localCurrent = new Map<string, (typeof local)[number]>()
     // A timeline's own clock is always an upper bound. An explicit alignment
     // time can only move that bound earlier, never expose future records.
     const cutoff = at && at < timeline.simNow ? at : timeline.simNow
     if (cutoff) {
-      // S1 对齐截断:每 key 取 simTime ≤ T 的最大 version(继承在先,本地同版优先)
-      for (const fact of [...inherited, ...local]) {
+      // Revisions are scoped to a timeline, so a child's local version 1 may
+      // supersede an inherited parent version 8. Pick the newest version
+      // within each source first, then let current-timeline facts shadow the
+      // fork snapshot for the same fact key.
+      for (const fact of inherited) {
         if (fact.simTime > cutoff) continue
         const key = `${fact.factType}:${fact.subjectId}`
-        const prev = current.get(key)
-        if (!prev || fact.version >= prev.version) current.set(key, fact)
+        const prev = inheritedCurrent.get(key)
+        if (!prev || fact.version >= prev.version) inheritedCurrent.set(key, fact)
+      }
+      for (const fact of local) {
+        if (fact.simTime > cutoff) continue
+        const key = `${fact.factType}:${fact.subjectId}`
+        const prev = localCurrent.get(key)
+        if (!prev || fact.version >= prev.version) localCurrent.set(key, fact)
       }
     }
+    const current = new Map<string, (typeof local)[number] | (typeof inherited)[number]>(inheritedCurrent)
+    for (const [key, fact] of localCurrent) current.set(key, fact)
     return {
       worldModelVersion: revision?.worldModelVersion ?? null,
       evidenceStatus: !revision || (timeline.parentTimelineId && readForkSnapshot(timeline)?.sourceStateVersion == null)

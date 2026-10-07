@@ -198,7 +198,7 @@ function adaptRuntime(snapshot: WorldSnapshot): WorldRuntimeState {
 
 function adaptSnapshot(snapshot: WorldSnapshot, scene: SceneDefinition): WorldReadModel {
   const scope = {
-    source: 'public' as const,
+    source: 'account' as const,
     worldId: snapshot.world.id,
     timelineId: snapshot.currentTimelineId,
     sceneId: scene.id,

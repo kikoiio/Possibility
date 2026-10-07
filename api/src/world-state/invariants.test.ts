@@ -261,7 +261,7 @@ it('audits derived event timeline, world time, and event kind against its commit
   fixture = await createWorldFixture()
   await commitWorldCommand(fixture.db, { id: 'event-projection', worldId: 'home-world', timelineId: 'home-main',
     userId: 'owner', expectedVersion: 0,
-    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'Rain begins.' } })
+    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } })
   expect(await auditUniverse(fixture.db, 'home-world', 'home-main')).toEqual([])
 
   await fixture.db.update(events).set({ simTime: '2026-09-21T08:01:00.000Z' }).where(eq(events.id, 'command:event-projection'))
@@ -288,7 +288,7 @@ it('audits environment and knowledge facts against the exact command that produc
   await fixture.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'resident', joinedAt: WORLD_TIME })
   await commitWorldCommand(fixture.db, { id: 'set-rain', worldId: 'home-world', timelineId: 'home-main',
     userId: 'owner', expectedVersion: 0,
-    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'Rain begins.' } })
+    action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } })
   await commitWorldCommand(fixture.db, { id: 'tell-resident', worldId: 'home-world', timelineId: 'home-main',
     userId: 'owner', expectedVersion: 1,
     action: { type: 'inform', recipientId: 'resident', topic: 'weather', content: 'It is raining at the cafe.', sourceFactId: (await fixture.db.select().from(worldFacts).get())!.id } })

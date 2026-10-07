@@ -211,6 +211,33 @@ export const timelineSceneHeads = sqliteTable('timeline_scene_heads', {
   uniqueIndex('timeline_scene_head_revision').on(t.currentRevisionId),
 ])
 
+/** Native 2D presentation layouts have an owner timeline-scoped revision chain. */
+export const native2dLayoutHeads = sqliteTable('native2d_layout_heads', {
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  sceneId: text('scene_id').notNull(),
+  currentRevisionId: text('current_revision_id').notNull(),
+  currentVersion: integer('current_version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [primaryKey({ columns: [t.worldId, t.timelineId, t.sceneId] })])
+
+export const native2dLayoutRevisions = sqliteTable('native2d_layout_revisions', {
+  id: text('id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  sceneId: text('scene_id').notNull(),
+  version: integer('version').notNull(),
+  parentVersion: integer('parent_version'),
+  requestId: text('request_id').notNull(),
+  contentHash: text('content_hash').notNull(),
+  layoutJson: text('layout_json').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('native2d_layout_revision_version').on(t.worldId, t.timelineId, t.sceneId, t.version),
+  uniqueIndex('native2d_layout_revision_request').on(t.worldId, t.timelineId, t.sceneId, t.requestId),
+  index('native2d_layout_revision_history').on(t.worldId, t.timelineId, t.sceneId, t.version),
+])
+
 /** Child-timeline memories written before the resident-safe prompt cutover require review. */
 export const residentMemorySafety = sqliteTable('resident_memory_safety', {
   timelineId: text('timeline_id').primaryKey().references(() => timelines.id),

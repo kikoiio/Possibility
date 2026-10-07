@@ -35,27 +35,59 @@ export function createApiLayoutRepository(
 ): LayoutRepository {
   let version = new Map<string, number>()
 
+  const keyOf = (scope: SampleScope) => JSON.stringify([scope.worldId, scope.timelineId, scope.sceneId])
+  const pathFor = (scope: SampleScope) => {
+    const query = new URLSearchParams({ timelineId: scope.timelineId, sceneId: scope.sceneId })
+    return `/api/worlds/${encodeURIComponent(scope.worldId)}/native2d/layout?${query}`
+  }
+  const toServerLayout = (layout: LayoutState) => ({
+    metadata: {
+      schema: 'native2d-layout',
+      schemaVersion: 1,
+      layoutVersion: 1,
+      sceneVersion: scene.version,
+      worldId: layout.scope.worldId,
+      timelineId: layout.scope.timelineId,
+      sceneId: layout.scope.sceneId,
+      spaces: scene.spaces.map(space => ({
+        spaceId: space.id,
+        kind: space.kind,
+        width: space.bounds.width,
+        depth: space.bounds.depth,
+        walkable: space.walkableCells,
+        connectivityRoot: space.connectivityRoot,
+        blocked: space.staticObjects.filter(object => object.blocksMovement).flatMap(object => {
+          const asset = scene.assetManifest[object.assetId]
+          return asset ? asset.footprint.map(cell => ({ x: object.origin.x + cell.x, z: object.origin.z + cell.z })) : []
+        }),
+      })),
+      buildings: scene.buildings.map(building => ({
+        buildingId: building.id,
+        spaceId: building.spaceId,
+        footprint: scene.assetManifest[building.assetId]?.footprint ?? [],
+        entry: building.entryOffset,
+        locationKey: building.locationKeys[0] ?? null,
+        interiorSpaceId: building.interiorSpaceId,
+      })),
+    },
+    placements: layout.placements,
+  })
+
   const save = async (layout: LayoutState): Promise<SaveResult> => {
-    const expectedVersion = version.get(layout.scope.worldId) ?? 0
+    const expectedVersion = version.get(keyOf(layout.scope)) ?? 0
     const requestId = crypto.randomUUID()
     try {
       const response = await request<ServerLayoutResponse>(
-        `/api/worlds/${encodeURIComponent(layout.scope.worldId)}/native2d/layout`,
+        pathFor(layout.scope),
         {
           method: 'PUT',
           body: JSON.stringify({
-            expectedVersion,
-            requestId,
-            layout: {
-              sceneId: layout.scope.sceneId,
-              formatVersion: scene.version,
-              placements: layout.placements,
-            },
+            expectedVersion, requestId, layout: toServerLayout(layout),
           }),
         },
       )
       if (!response.layout) return { ok: false, reason: 'storage_error', message: '服务端未返回布局 head' }
-      version.set(layout.scope.worldId, response.layout.version)
+      version.set(keyOf(layout.scope), response.layout.version)
       return { ok: true }
     } catch (error) {
       return { ok: false, reason: 'storage_error', message: error instanceof Error ? error.message : String(error) }
@@ -66,11 +98,11 @@ export function createApiLayoutRepository(
     async load(scope: SampleScope): Promise<RestoreResult> {
       try {
         const response = await request<ServerLayoutResponse>(
-          `/api/worlds/${encodeURIComponent(scope.worldId)}/native2d/layout`,
+          pathFor(scope),
         )
         const record = response.layout
         if (!record) {
-          version.set(scope.worldId, 0)
+          version.set(keyOf(scope), 0)
           return { status: 'ready', layout: createInitialLayout(scene, scope) }
         }
         // A server record from another scene/version is not a cache miss: it
@@ -78,7 +110,7 @@ export function createApiLayoutRepository(
         if (record.sceneId !== scope.sceneId || record.formatVersion !== scene.version) {
           return { status: 'incompatible', message: '服务端 2D 场景版本与当前场景不兼容，原记录已保留' }
         }
-        version.set(scope.worldId, record.version)
+        version.set(keyOf(scope), record.version)
         return { status: 'ready', layout: { scope, placements: record.placements } }
       } catch (error) {
         return { status: 'error', reason: 'storage_error', message: error instanceof Error ? error.message : String(error) }
