@@ -135,6 +135,42 @@ describe('generateTerrainCells', () => {
     expect(new Set(columns).size).toBe(columns.length)
   })
 
+  it('terrain vegetation keeps each full asset footprint inside small and edge-heavy worlds', () => {
+    const footprints: Record<string, { width: number; depth: number; height: number }> = {
+      'veg-tree-a': { width: 2, depth: 2, height: 2 },
+      'veg-flower-a': { width: 1, depth: 1, height: 1 },
+      'veg-grass-a': { width: 1, depth: 1, height: 1 },
+      'veg-bush-a': { width: 2, depth: 2, height: 1 },
+    }
+    const sizes = [
+      { width: 8, height: 12, depth: 8 },
+      { width: 16, height: 16, depth: 12 },
+      { width: 48, height: 24, depth: 48 },
+    ]
+
+    for (const size of sizes) for (let seed = 1; seed <= 64; seed++) {
+      const generated = generateTerrain(size, {
+        seed,
+        elevation: { amplitude: 0 },
+        river: { enabled: false },
+        lakes: { enabled: false },
+        vegetation: { density: TERRAIN_QUOTAS.densityMax, trees: true, flowers: true, bushes: true },
+      })
+      for (const placement of generated.assetPlacements) {
+        const footprint = footprints[placement.assetId]
+        const [width, depth] = placement.rotation % 2 === 0
+          ? [footprint.width, footprint.depth]
+          : [footprint.depth, footprint.width]
+        expect(placement.anchor[0], `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} min x`).toBeGreaterThanOrEqual(0)
+        expect(placement.anchor[0] + width, `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} x`).toBeLessThanOrEqual(size.width)
+        expect(placement.anchor[1], `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} min y`).toBeGreaterThanOrEqual(0)
+        expect(placement.anchor[1] + footprint.height, `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} y`).toBeLessThanOrEqual(size.height)
+        expect(placement.anchor[2], `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} min z`).toBeGreaterThanOrEqual(0)
+        expect(placement.anchor[2] + depth, `${size.width}x${size.depth}, seed ${seed}, ${placement.assetId} z`).toBeLessThanOrEqual(size.depth)
+      }
+    }
+  })
+
   it('树格不注册 objectCells(物体数不增)', () => {
     const cells = generateTerrainCells(SIZE, fullParams())
     const doc = writeTerrainCells(createEmptyWorld(SIZE, 'mist-manor', 't'), cells).document
