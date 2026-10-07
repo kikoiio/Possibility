@@ -113,7 +113,12 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const model = process.env.LLM_MODEL
     const replayFile = process.env.G0_PROVIDER_REPLAY_FILE
     const replayMode = Boolean(replayFile)
+    // Recorded responses never consume the live-provider authorization. A caller
+    // may set the live cap to 1 while replaying the full five-case archive.
+    const replayRequestCap = Number(process.env.G0_REPLAY_REQUEST_CAP ?? MAX_AUTHORIZED_REQUEST_CAP)
+    const effectiveRequestCap = replayMode ? replayRequestCap : rawRequestCap
     let replaySourceRun: string | null = null
+    let replaySourceScenarioRuns: Record<string, string> | undefined
     let replaySourceModel = 'deepseek-flash'
     let replayCalls: ReplayCall[] = []
     const replayQueues = new Map<string, ReplayCall[]>()
@@ -141,6 +146,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       try {
         const archived = JSON.parse(readFileSync(replayFile, 'utf8')) as {
           workflowRunId?: unknown
+          sourceScenarioRuns?: Record<string, string>
           provider?: { model?: unknown }
           requests?: { calls?: unknown }
         }
@@ -154,6 +160,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           throw new Error('archive_schema_invalid')
         }
         replaySourceRun = archived.workflowRunId
+        replaySourceScenarioRuns = archived.sourceScenarioRuns
         if (typeof archived.provider?.model === 'string') replaySourceModel = archived.provider.model
         replayCalls = calls
         for (const call of replayCalls) {
@@ -173,6 +180,9 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     let reservedWorstCaseUsd = 0
     if (!Number.isInteger(rawRequestCap) || rawRequestCap < 1 || rawRequestCap > MAX_AUTHORIZED_REQUEST_CAP) {
       failures.push('invalid_provider_request_cap')
+    }
+    if (replayMode && (!Number.isInteger(replayRequestCap) || replayRequestCap < 1 || replayRequestCap > MAX_AUTHORIZED_REQUEST_CAP)) {
+      failures.push('invalid_replay_request_cap')
     }
     if (selectedScenarioIds.size !== requestedScenarioIds.length
       || requestedScenarioIds.some(id => !knownScenarioIds.includes(id))) {
@@ -215,7 +225,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const fetcher = {
       async fetch(request: Request): Promise<Response> {
         const perScenario = providerCalls.filter(call => call.scenario === activeScenario).length
-        if (providerCalls.length >= rawRequestCap || perScenario >= PER_SCENARIO_CAP) {
+        if (providerCalls.length >= effectiveRequestCap || perScenario >= PER_SCENARIO_CAP) {
           blockedAttempts.push(activeScenario)
           throw new Error('g0_provider_request_budget_exhausted')
         }
@@ -373,7 +383,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       fixture.env.LLM_API_KEY = providerApiKey!
       fixture.env.LLM_MODEL = providerModel!
       fixture.env.LLM_PROVIDER = fetcher as unknown as NonNullable<typeof fixture.env.LLM_PROVIDER>
-      fixture.env.PREWORLD_DAILY_CAP = String(rawRequestCap)
+      fixture.env.PREWORLD_DAILY_CAP = String(effectiveRequestCap)
       fixture.sqlite.exec(await buildTestPolicyActivationSql(now))
       await fixture.db.insert(users).values({ id: ownerId, username: ownerId, passwordHash: 'not-used', createdAt: now })
       await fixture.db.insert(sessions).values({ token, userId: ownerId, expiresAt: '2099-01-01T00:00:00.000Z' })
@@ -552,9 +562,11 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         },
         scope: {
           replay: replayMode, sourceRun: replaySourceRun, zeroProvider: replayMode,
+          ...(replaySourceScenarioRuns ? { sourceScenarioRuns: replaySourceScenarioRuns } : {}),
           selectedScenarioIds: requestedScenarioIds, fullSuite: selectedScenarioIds.size === knownScenarioIds.length,
         },
-        limits: { rawProviderRequests: rawRequestCap, perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
+        limits: { rawProviderRequests: replayMode ? 0 : rawRequestCap, replayRequests: replayMode ? replayRequestCap : 0,
+          perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
         pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', checkedAt: '2026-10-07', peakUsdPerMillion: peakPrice,
           costValuation: 'conservative peak rate; actual billing may use off-peak rates',
           reservationBasis: 'UTF-8 request bytes plus 4096 input framing tokens and full output cap, uncached peak rates',

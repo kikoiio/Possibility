@@ -1,10 +1,6 @@
 name: Phase 1 G0 guest claim journey (cloud)
 
 on:
-  push:
-    branches: [phase3]
-    paths:
-      - .github/workflows/phase1-g0-guest-claim.yml
   workflow_dispatch:
     inputs:
       run_provider_acceptance:
@@ -16,19 +12,19 @@ on:
         description: Remaining authorized requests (integer from 1 to 25)
         type: number
         required: true
-        default: 9
+        default: 25
       provider_scenarios:
         description: Comma-separated cases; full suite includes original-world-repair
         type: string
         required: true
-        default: official-example,custom-1,custom-3
+        default: official-example,custom-1,custom-2,custom-3,original-world-repair
       visual_provider_run_id:
         description: Optional completed provider run to render; no model calls in this mode
         type: string
         required: false
         default: ''
       replay_provider_run_id:
-        description: Optional saved provider responses to replay; makes zero model calls
+        description: Recorded provider run ID or comma-separated successful source runs; zero model calls
         type: string
         required: false
         default: ''
@@ -58,7 +54,7 @@ jobs:
       - name: Check API types including acceptance harness
         run: npm --workspace api run build
       - name: Verify generation and draft contracts without provider calls
-        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/edit-planner.test.ts src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
+        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism scripts/merge-phase1-provider-archives.test.ts src/voxel/edit-planner.test.ts src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
 
   guest-claim:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance && inputs.visual_provider_run_id == '' && inputs.replay_provider_run_id == '')
@@ -114,7 +110,7 @@ jobs:
 
   phase1-g0-provider:
     needs: voxel-validation
-    if: always() && (needs['voxel-validation'].result == 'success' || inputs.replay_provider_run_id != '') && github.event_name == 'workflow_dispatch' && inputs.visual_provider_run_id == '' && (inputs.run_provider_acceptance || inputs.replay_provider_run_id != '') && github.ref == 'refs/heads/phase3'
+    if: always() && needs['voxel-validation'].result == 'success' && github.event_name == 'workflow_dispatch' && inputs.visual_provider_run_id == '' && (inputs.run_provider_acceptance || inputs.replay_provider_run_id != '') && github.ref == 'refs/heads/main'
     name: Isolated Phase 1 provider acceptance or recorded replay
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -128,24 +124,47 @@ jobs:
         if: inputs.replay_provider_run_id != ''
         env:
           REPLAY_RUN_ID: ${{ inputs.replay_provider_run_id }}
-        run: '[[ "$REPLAY_RUN_ID" =~ ^[0-9]+$ ]]'
-      - uses: actions/download-artifact@v4
+        run: '[[ "$REPLAY_RUN_ID" =~ ^[0-9]+(,[0-9]+)*$ ]]'
+      - name: Download recorded source runs
         if: inputs.replay_provider_run_id != ''
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.replay_provider_run_id }}
-          name: phase1-g0-provider-acceptance-${{ inputs.replay_provider_run_id }}
-          path: ${{ runner.temp }}/provider-replay
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REPLAY_RUN_IDS: ${{ inputs.replay_provider_run_id }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a source_runs <<< "$REPLAY_RUN_IDS"
+          for source_run in "${source_runs[@]}"; do
+            gh run download "$source_run" --name "phase1-g0-provider-acceptance-$source_run" \
+              --dir "$RUNNER_TEMP/provider-replay/$source_run"
+          done
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Prepare recorded regression input with source provenance
+        if: inputs.replay_provider_run_id != ''
+        env:
+          REPLAY_RUN_IDS: ${{ inputs.replay_provider_run_id }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a source_runs <<< "$REPLAY_RUN_IDS"
+          archives=()
+          for source_run in "${source_runs[@]}"; do
+            archives+=("$RUNNER_TEMP/provider-replay/$source_run/phase1-g0-provider-$source_run.json")
+          done
+          if (( ${#archives[@]} == 1 )); then
+            cp "${archives[0]}" "$RUNNER_TEMP/provider-replay/composite.json"
+          else
+            npx tsx api/scripts/merge-phase1-provider-archives.ts \
+              "$RUNNER_TEMP/provider-replay/composite.json" "${archives[@]}"
+          fi
       - name: Diagnose archived construction responses without model calls
         if: inputs.replay_provider_run_id != ''
         env:
-          G0_EVIDENCE_FILE: ${{ runner.temp }}/provider-replay/phase1-g0-provider-${{ inputs.replay_provider_run_id }}.json
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/provider-replay/composite.json
         run: npx tsx api/scripts/phase1-generation-replay-diagnostics.ts
       - name: Upload construction replay diagnostics
         if: always() && inputs.replay_provider_run_id != ''
@@ -163,7 +182,8 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           G0_PROVIDER_REQUEST_CAP: ${{ inputs.provider_request_cap }}
           G0_PROVIDER_SCENARIOS: ${{ inputs.provider_scenarios }}
-          G0_PROVIDER_REPLAY_FILE: ${{ inputs.replay_provider_run_id != '' && format('{0}/provider-replay/phase1-g0-provider-{1}.json', runner.temp, inputs.replay_provider_run_id) || '' }}
+          G0_PROVIDER_REPLAY_FILE: ${{ inputs.replay_provider_run_id != '' && format('{0}/provider-replay/composite.json', runner.temp) || '' }}
+          G0_REPLAY_REQUEST_CAP: 25
           G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
           G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
         run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts

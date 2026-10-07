@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       confirm_provider_acceptance:
-        description: Confirm up to 25 real DeepSeek requests for the reviewed phase3 commit
+        description: Confirm up to 25 authorized real DeepSeek requests for the reviewed main commit
         type: boolean
         required: true
         default: false
       target_sha:
-        description: Full 40-character commit SHA; must equal the current phase3 branch head
+        description: Full 40-character commit SHA; must equal the current main branch head
         type: string
         required: true
 
@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: true
 
-      - name: Verify target is the current phase3 head
+      - name: Verify target is the current main head
         shell: bash
         env:
           TARGET_SHA_INPUT: ${{ inputs.target_sha }}
@@ -43,21 +43,21 @@ jobs:
             exit 1
           fi
           TARGET_SHA="${TARGET_SHA_INPUT,,}"
-          git fetch --no-tags origin +refs/heads/phase3:refs/remotes/origin/phase3
-          REMOTE_PHASE3_HEAD="$(git rev-parse refs/remotes/origin/phase3)"
-          if [[ "$TARGET_SHA" != "$REMOTE_PHASE3_HEAD" ]]; then
-            echo "target_sha does not match the current phase3 head" >&2
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          REMOTE_MAIN_HEAD="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "$TARGET_SHA" != "$REMOTE_MAIN_HEAD" ]]; then
+            echo "target_sha does not match the current main head" >&2
             exit 1
           fi
 
-      - name: Checkout reviewed phase3 commit
+      - name: Checkout reviewed main commit
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.target_sha }}
           fetch-depth: 1
           persist-credentials: true
 
-      - name: Recheck checked-out commit and current phase3 head
+      - name: Recheck checked-out commit and current main head
         shell: bash
         env:
           TARGET_SHA_INPUT: ${{ inputs.target_sha }}
@@ -65,10 +65,10 @@ jobs:
           set -euo pipefail
           TARGET_SHA="${TARGET_SHA_INPUT,,}"
           CHECKED_OUT_HEAD="$(git rev-parse HEAD)"
-          git fetch --no-tags origin +refs/heads/phase3:refs/remotes/origin/phase3
-          REMOTE_PHASE3_HEAD="$(git rev-parse refs/remotes/origin/phase3)"
-          if [[ "$CHECKED_OUT_HEAD" != "$TARGET_SHA" || "$REMOTE_PHASE3_HEAD" != "$TARGET_SHA" ]]; then
-            echo "checked-out HEAD or current phase3 head changed from target_sha" >&2
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          REMOTE_MAIN_HEAD="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "$CHECKED_OUT_HEAD" != "$TARGET_SHA" || "$REMOTE_MAIN_HEAD" != "$TARGET_SHA" ]]; then
+            echo "checked-out HEAD or current main head changed from target_sha" >&2
             exit 1
           fi
           git config --local --unset-all http.https://github.com/.extraheader || :
