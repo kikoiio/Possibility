@@ -154,7 +154,14 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
       )}
       {right && (
-        <label className="comparison-camera-link" data-testid="comparison-camera-link" data-camera-link-active={coordinator.isLinkActive()}>
+        <label
+          className="comparison-camera-link"
+          data-testid="comparison-camera-link"
+          data-camera-link-enabled={cameraLinkEnabled}
+          data-camera-left-mounted={Boolean(mountedPanes.current.left)}
+          data-camera-right-mounted={Boolean(mountedPanes.current.right)}
+          data-camera-link-active={coordinator.isLinkActive()}
+        >
           <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => {
             const enabled = event.currentTarget.checked
             setCameraLinkEnabled(enabled)
