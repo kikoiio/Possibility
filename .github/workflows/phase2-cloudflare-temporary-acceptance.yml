@@ -59,7 +59,7 @@ jobs:
           echo 'PHASE2_TEMP_D1_CREATE_STARTED=true' >> "$GITHUB_ENV"
           npx wrangler d1 create "$PHASE2_TEMP_DATABASE_NAME" > "$RUNNER_TEMP/phase2-d1-create.log" 2>&1
           echo 'PHASE2_TEMP_D1_CREATE_SUCCEEDED=true' >> "$GITHUB_ENV"
-          database_id="$(rg -o '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' "$RUNNER_TEMP/phase2-d1-create.log" | head -n 1)"
+          database_id="$(grep -m1 -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' "$RUNNER_TEMP/phase2-d1-create.log")"
           if [[ ! "$database_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
             cat "$RUNNER_TEMP/phase2-d1-create.log"
             echo 'Could not identify the newly created D1 database ID.' >&2
@@ -113,7 +113,7 @@ jobs:
           echo 'PHASE2_TEMP_WORKER_DEPLOY_STARTED=true' >> "$GITHUB_ENV"
           npx wrangler deploy --config "$PHASE2_TEMP_WRANGLER_CONFIG" 2>&1 | tee "$deploy_log"
           echo 'PHASE2_TEMP_WORKER_DEPLOYED=true' >> "$GITHUB_ENV"
-          api_url="$(rg -o 'https://[A-Za-z0-9.-]+\.workers\.dev' "$deploy_log" | head -n 1)"
+          api_url="$(grep -m1 -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' "$deploy_log")"
           if [[ -z "$api_url" ]]; then
             echo 'Wrangler did not report a workers.dev URL for the temporary Worker.' >&2
             exit 1
