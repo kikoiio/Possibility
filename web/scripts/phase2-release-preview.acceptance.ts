@@ -186,6 +186,10 @@ async function main(): Promise<void> {
 
     await page.getByTestId('native2d-fork').click()
     await waitForText(page, 'native2d-account-action-status', '已创建分叉时间线')
+    await page.waitForFunction(parentId => {
+      const select = document.querySelector<HTMLSelectElement>('[data-testid="native2d-account-timeline-select"]')
+      return Boolean(select?.value && select.value !== parentId && select.selectedOptions.length === 1)
+    }, parentTimelineId, { timeout: 20_000 })
     const forkTimelineId = await page.getByTestId('native2d-account-timeline-select').inputValue()
     assert(forkTimelineId && forkTimelineId !== parentTimelineId, 'fork did not select a new timeline')
     await page.getByTestId('native2d-source-label').filter({ hasText: forkTimelineId }).waitFor({ timeout: 20_000 })
