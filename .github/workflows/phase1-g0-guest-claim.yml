@@ -27,12 +27,17 @@ on:
         type: string
         required: false
         default: ''
+      replay_provider_run_id:
+        description: Optional saved provider responses to replay; makes zero model calls
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: phase1-g0-${{ inputs.visual_provider_run_id != '' && 'visual' || 'guest-claim' }}-${{ github.ref }}
+  group: phase1-g0-${{ inputs.visual_provider_run_id != '' && 'visual' || inputs.replay_provider_run_id != '' && 'replay' || inputs.run_provider_acceptance && 'provider' || 'guest-claim' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -48,13 +53,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify terrain footprint boundaries
+        run: npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 tests/terrain.test.ts tests/assets.test.ts
       - name: Check API types including acceptance harness
         run: npm --workspace api run build
       - name: Verify generation and draft contracts without provider calls
         run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
 
   guest-claim:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance && inputs.visual_provider_run_id == '')
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance && inputs.visual_provider_run_id == '' && inputs.replay_provider_run_id == '')
     name: Isolated real API + browser guest claim slice
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -107,15 +114,28 @@ jobs:
 
   phase1-g0-provider:
     needs: voxel-validation
-    if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && github.ref == 'refs/heads/phase3'
-    name: Isolated Phase 1 provider acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.visual_provider_run_id == '' && (inputs.run_provider_acceptance || inputs.replay_provider_run_id != '') && github.ref == 'refs/heads/phase3'
+    name: Isolated Phase 1 provider acceptance or recorded replay
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: phase1-g0-provider-acceptance
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
+      - name: Validate recorded replay identifier
+        if: inputs.replay_provider_run_id != ''
+        env:
+          REPLAY_RUN_ID: ${{ inputs.replay_provider_run_id }}
+        run: '[[ "$REPLAY_RUN_ID" =~ ^[0-9]+$ ]]'
+      - uses: actions/download-artifact@v4
+        if: inputs.replay_provider_run_id != ''
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.replay_provider_run_id }}
+          name: phase1-g0-provider-acceptance-${{ inputs.replay_provider_run_id }}
+          path: ${{ runner.temp }}/provider-replay
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -130,6 +150,7 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           G0_PROVIDER_REQUEST_CAP: ${{ inputs.provider_request_cap }}
           G0_PROVIDER_SCENARIOS: ${{ inputs.provider_scenarios }}
+          G0_PROVIDER_REPLAY_FILE: ${{ inputs.replay_provider_run_id != '' && format('{0}/provider-replay/phase1-g0-provider-{1}.json', runner.temp, inputs.replay_provider_run_id) || '' }}
           G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
           G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
         run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts
