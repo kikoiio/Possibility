@@ -119,13 +119,13 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 |---|---|---|
 | G0 阶段门槛 | 通过 | `evidence/baseline.md` 记录阶段一/二正面出口及真实 provider 结果；新增真实请求 93 次，累计旧计数 205，新增可核实费用 `$1.011892`，早期 26 次费用未完整对账。 |
 | T22 构建与定向验证 | 通过 | [run 37615859235](https://github.com/kikoiio/Possibility/actions/runs/37615859235) 在提交 `19a953b86d9eecc4cfa609c364fa2de2f22b7d5d` 上 Web production build/types、7 个 Vitest 文件 150 tests、fixture 2 tests 通过。构建日志有 Vite 大 chunk 提示，不影响退出码。较早的 `37615432126`（119 tests）和 `37614066902`（119 tests）也通过。 |
-| T23 桌面 Chromium 子覆盖 | 通过（仅列出的行为） | [run 37614807432](https://github.com/kikoiio/Possibility/actions/runs/37614807432)，commit `ea6eeb03bae9427d2eb4d89b2813ec7bc361023b`，GitHub Actions Ubuntu 24.04 / Chromium / 1280×720 / 1 worker，6/6 passed。覆盖同 world 四种 renderer 组合与 3D/3D 联动、跨 world 四种组合、跨 world 相机禁用、右 pane 失败后单侧重试且左 pane bootstrap 请求数不增加、390×844 桌面浏览器窄视口无水平溢出、单 world 3D↔2D 保持 timeline。 |
-| T24 性能与资源释放观测 | 部分通过 | 同一浏览器 session 顺序记录 ready 时间：单 3D 1780 ms、单 2D 1521 ms、双 2D 1503 ms、双 3D 2234 ms；关闭右 pane 用时 874 ms。关闭前后 renderer registry 从 2 降至 1。记录值是测试 fixture 的一次冷导航测量，不是统计基线或性能阈值；未测混合表现/真实设备峰值。`performance.memory.usedJSHeapSize` 每次都回报 60,300,000 bytes，无法反映差值，故不把它当作有效堆变化结论。 |
-| Actions runner 资源快照 | 通过 | 验收前 MemAvailable 14 GiB；5 个 `vmstat` 后续样本 `si/so=0`；memory PSI `avg10/60/300=0`；swap 使用 0。runner cgroup `memory.max` 命令未产生可记录值。 |
+| T23 桌面 Chromium 子覆盖 | 通过（仅列出的行为） | [run 37616697664](https://github.com/kikoiio/Possibility/actions/runs/37616697664)，commit `42a33c5da9a3d86a0b77071775de8b286e7f8715`，GitHub Actions Ubuntu 24.04 / Chromium / 1280×720 / 1 worker，8/8 passed。覆盖同 world 四种 renderer 组合与 3D/3D 联动、跨 world 四种组合、跨 world 相机禁用、左右 pane 分别失败后只重试失败侧、390×844 和 528×720 桌面浏览器视口堆叠且无水平溢出、单 world 3D↔2D 保持 timeline、偏好刷新恢复及 URL 表现优先级。首轮扩展 run [37616169778](https://github.com/kikoiio/Possibility/actions/runs/37616169778) 失败于测试拦截了页面 shell 的首个 bootstrap；修正注入时机后本 run 全部通过。 |
+| T24 性能与资源释放观测 | 部分通过 | 本次同一浏览器 session 顺序记录 ready 时间：单 3D 2168 ms、单 2D 1576 ms、双 2D 1539 ms、双 3D 3226 ms；关闭右 pane 用时 1852 ms。关闭前后 renderer registry 从 2 降至 1。记录值是 fixture 的一次冷导航测量，不是统计基线或性能阈值；未测混合表现/真实设备峰值。`performance.memory.usedJSHeapSize` 每次都回报 68,000,000 bytes，无法反映差值，故不把它当作有效堆变化结论。 |
+| Actions runner 资源快照 | 通过 | 本次验收前 MemAvailable 14 GiB；5 个 `vmstat` 后续样本 `si/so=0`；memory PSI `avg10/60/300=0`；swap 使用 0。runner cgroup `memory.max` 命令未产生可记录值。 |
 | T25 内部配对 QA | 未验证 | 需要内部测试者实际完成同条件 2D/3D 任务和回访；本轮没有人类测试记录。没有开展公开评估或投票。 |
 | Orca T27 收尾 | 未完成 | 当前 Run 尚有 pending Tasks；`worker-list` 的 9 个记录中 8 个 retained，多个终端 liveness 为 stale/unverifiable。按“不清理未 settled worktree”的约定保留；见最终报告限制。 |
 
-本次浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37614807432`，保留 14 天，入口为上方 run。E2E 的身份来自隔离 API fixture，不能替代不同真实 owner/guest/readonly 账号的授权验证；单侧故障只实际执行了右侧失败，非镜像的左侧拒绝/超时、慢网/离线、触控输入、刷新后的相机恢复和其他完整生命周期循环仍未验证。
+本次浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37616697664`，保留 14 天，入口为上方 run。E2E 的身份来自隔离 API fixture，不能替代不同真实 owner/guest/readonly 账号的授权验证；慢网/离线、真实触控输入、刷新后的相机恢复和其他完整生命周期循环仍未验证。
 
 ## T04 规划阶段未执行项（历史记录）
 

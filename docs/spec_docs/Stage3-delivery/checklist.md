@@ -14,7 +14,7 @@
 |---|---|---|
 | G0 | 通过；阶段一/二门槛已解除 | [baseline.md](evidence/baseline.md)；真实 provider 结果按 run 和 artifact 分批记录。 |
 | T22 | 当前提交验证通过 | [run 37615859235](https://github.com/kikoiio/Possibility/actions/runs/37615859235)：build/types、7 个文件 150 个定向 Vitest 和 2 个 fixture tests 通过。 |
-| T23 | 桌面 Chromium 自动化子集通过 | [run 37614807432](https://github.com/kikoiio/Possibility/actions/runs/37614807432)：6/6 passed；未完成完整身份、触屏、慢网/离线和生命周期矩阵。 |
+| T23 | 桌面 Chromium 自动化子集通过 | [run 37616697664](https://github.com/kikoiio/Possibility/actions/runs/37616697664)：8/8 passed；未完成完整身份、真实触屏、慢网/离线和生命周期矩阵。 |
 | T24 | 部分通过 | 单/双 2D/3D readiness、关闭 pane 与 renderer registry 观测见 [qa-matrix.md](evidence/qa-matrix.md)；缺少混合表现、真实设备和有效 JS heap 差值。 |
 | T25 | 未验证 | 没有内部测试者配对体验、任务成绩或回访记录。 |
 | T26 | 进行中 | QA 当前结果已记录；最终 AC1–AC8 清单需在人工 QA 和完整矩阵状态明确后冻结。 |
