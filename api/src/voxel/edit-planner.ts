@@ -1,6 +1,7 @@
 import {
+  getObjectTemplate,
   validateEdit,
-  type EditOperation, type ValidationIssue, type VoxelCoord, type VoxelDocument,
+  type AssetManifest, type EditOperation, type ValidationIssue, type VoxelCoord, type VoxelDocument,
 } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { buildEditPlannerMessages as defaultBuildMessages } from './prompts'
@@ -37,9 +38,60 @@ const isCoord = (v: unknown): v is VoxelCoord => {
 }
 const isRotation = (v: unknown): v is 0 | 90 | 180 | 270 => v === 0 || v === 90 || v === 180 || v === 270
 
+function normalizedAnchor(op: Record<string, unknown>): VoxelCoord | null {
+  if (isCoord(op.anchor)) return op.anchor
+  const xyz = { x: op.x, y: op.y, z: op.z }
+  return isCoord(xyz) ? xyz : null
+}
+
+function expectedPlacementSize(
+  objectType: string,
+  rotation: 0 | 90 | 180 | 270,
+  assets?: AssetManifest,
+): { width: number; height: number; depth: number } | null {
+  const template = getObjectTemplate(objectType)
+  if (template) {
+    const offsets = template.cells.map(({ offset }) => {
+      switch (rotation) {
+        case 90: return { x: -offset.z, y: offset.y, z: offset.x }
+        case 180: return { x: -offset.x, y: offset.y, z: -offset.z }
+        case 270: return { x: offset.z, y: offset.y, z: -offset.x }
+        default: return offset
+      }
+    })
+    const extent = (axis: 'x' | 'y' | 'z') => Math.max(...offsets.map(point => point[axis]))
+      - Math.min(...offsets.map(point => point[axis])) + 1
+    return { width: extent('x'), height: extent('y'), depth: extent('z') }
+  }
+  const asset = assets?.assets[objectType]
+  if (!asset) return null
+  const [width, depth] = rotation === 90 || rotation === 270
+    ? [asset.footprint[1], asset.footprint[0]]
+    : asset.footprint
+  return { width, height: Math.max(1, Math.ceil(asset.height)), depth }
+}
+
+function validateOptionalSize(
+  size: unknown,
+  expected: ReturnType<typeof expectedPlacementSize>,
+  bad: (why: string) => never,
+): void {
+  if (size === undefined) return
+  const value = size as { width?: unknown; height?: unknown; depth?: unknown } | null
+  if (!value || !Number.isInteger(value.width) || !Number.isInteger(value.height) || !Number.isInteger(value.depth)
+    || (value.width as number) < 1 || (value.width as number) > 256
+    || (value.height as number) < 1 || (value.height as number) > 64
+    || (value.depth as number) < 1 || (value.depth as number) > 256) {
+    return bad('size 需要边界内的正整数 width/height/depth')
+  }
+  if (expected && (value.width !== expected.width || value.height !== expected.height || value.depth !== expected.depth)) {
+    return bad(`size 与目录占地不一致（期望 ${expected.width}×${expected.height}×${expected.depth}）`)
+  }
+}
+
 /** 严格解析编辑操作数组；结构不合法抛 EditPlannerError。
  *  LLM 边界容错:弱模型常把判别字段写成 type,归一为 kind 后再走严格校验(契约形状不变) */
-export function parseEditOperations(content: string): EditOperation[] {
+export function parseEditOperations(content: string, assets?: AssetManifest): EditOperation[] {
   const root = extractJson(content) as { ops?: unknown }
   if (!Array.isArray(root.ops)) throw new EditPlannerError('缺少 ops 数组')
   if (root.ops.length === 0) throw new EditPlannerError('ops 为空')
@@ -155,9 +207,11 @@ export function parseEditOperations(content: string): EditOperation[] {
             : typeof op.object === 'string' && op.object ? op.object : null
         const rawRotation = op.rotation === undefined ? 0 : op.rotation
         const rotation = rawRotation === 1 || rawRotation === 2 || rawRotation === 3 ? rawRotation * 90 : rawRotation
-        if (!objectType || !isCoord(op.anchor) || !isRotation(rotation)) return bad('place-object 需要 objectType/anchor/rotation')
+        const anchor = normalizedAnchor(op)
+        if (!objectType || !anchor || !isRotation(rotation)) return bad('place-object 需要目录 objectType/assetId、整数 anchor 坐标与合法 rotation')
+        validateOptionalSize(op.size, expectedPlacementSize(objectType, rotation, assets), bad)
         return expand([{
-          kind: 'place-object', objectType, anchor: op.anchor, rotation,
+          kind: 'place-object', objectType, anchor, rotation,
           ...(typeof op.objectId === 'string' && op.objectId ? { objectId: op.objectId } : {}),
           ...(typeof op.label === 'string' && op.label ? { label: op.label } : {}),
         }])
