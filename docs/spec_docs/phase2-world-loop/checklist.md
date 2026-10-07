@@ -23,13 +23,13 @@
 | Task | 当前结果 | 证据/限制 |
 |------|----------|-----------|
 | T8–T11 | 补齐比较回归 | 修复跨时间线事实版本号误比较；产品旅程等 6 个 API 测试文件 115/115 通过。天气测试数据统一为 D3 有限枚举。 |
-| T15 | 部署旅程脚本补强，未实跑 | 脚本现在会先观察运行中的世界是否自然推进，再暂停并核对冻结状态，最后恢复；需要专用运行世界和至少 30 秒等待。 |
+| T15 | 隔离 Worker 旅程通过；远端部署未实跑 | `scripts/verify-deployment-journey.ts` 在 GitHub Actions runner 上针对隔离 D1 owner world 验证了 30 秒离页推进、暂停冻结、恢复后推进，全部断言通过（run `37564014347`）。使用真实 Worker tick/API，测试 pinger 每 5 秒触发一次；未连接已部署环境，远端 scheduler 及数据库仍未验证。 |
 | T19 | owner 浏览器旅程通过（本地隔离环境） | 账户 2D 页面用本地 owner 登录，真实调用列表、timeline、干预、fork、compare API；对话 SSE 使用 mock。完整 journey 包含在 `native2d-desktop` 35/35 中。 |
 | T20 | 实现并通过定向验证 | 新增 D1 native2d head/revision 表与 `0039` 迁移、owner API、布局元数据校验、CAS 和 requestId 重放；路由/仓库/迁移 22/22 通过。 |
 | T21 | owner 浏览器生产预览布局保存/刷新恢复通过 | GitHub Actions production preview 使用 Vite production bundle、Chromium 和隔离真实本地 Worker/D1：移动 gatehouse、保存至 fork timeline、整页 reload、重选 world/timeline 后确认 D1 placements 相等。仅聊天 SSE mock。跨设备和归档行为仍未验证。 |
-| T22 | G0 release build + real API 通过；整体出口仍受远端旅程约束 | API 全量 876 passed/1 skipped；Web 单元 536/536；开发服务器 `native2d-desktop` 35/35；GitHub Actions production preview owner journey passed（run `37560275395`，code `b68e79b`）。该次真实 Worker/D1 为 runner 上本地隔离环境，非远程部署；离页推进/暂停/恢复及公开 demo live 仍未验收，故不可据此宣称全部阶段出口完成。逐项证据见 `artifacts/phase2-acceptance-2026-10-07.md`。 |
+| T22 | G0 release build + real API 通过；整体出口仍受远端旅程约束 | API 全量 876 passed/1 skipped；Web 单元 536/536；开发服务器 `native2d-desktop` 35/35；production preview owner journey passed（run `37560275395`）；隔离 Worker/D1 上的离页推进/暂停/恢复通过（run `37564014347`，code `b4f7a13`）。远端部署 scheduler/database 与公开 demo live 仍未验收，不能宣称全部阶段出口完成。逐项证据见 `artifacts/phase2-acceptance-2026-10-07.md`。 |
 
-N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`，不会拦截访客 API。owner 账户旅程在开发服务和 production preview 均完成；production preview 的 19 个 Worker 请求无 HTTP 失败，对话 SSE 使用 mock。没有对远程部署/世界发请求，因此自然推进、暂停并恢复专用测试世界的旅程仍未验收；T15 及该项部署出口受限。
+N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`，不会拦截访客 API。owner 账户旅程在开发服务和 production preview 均完成；production preview 的 19 个 Worker 请求无 HTTP 失败，对话 SSE 使用 mock。离页推进/暂停/恢复已在 runner 的隔离 Worker/D1 通过；远程部署旅程没有目标环境，所以 T15 远端出口仍受限。
 
 ## 实现完整性
 
@@ -70,7 +70,7 @@ N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`
 - [x] 构建通过；已有大 chunk 警告如实记录。
 - [x] API 全量 876 passed/1 skipped；Web 单元 536/536；`native2d-desktop` 35/35。
 - [x] Vite production build + preview 上的 owner 浏览器旅程通过；实际 API 为 runner 上的 Cloudflare Worker/local D1，未连远端部署。完整记录见 `artifacts/phase2-acceptance-2026-10-07.md`。
-- [ ] 远端部署推进/暂停/恢复及公开 demo live 验收未执行。
+- [ ] 远端部署推进/暂停/恢复及公开 demo live 验收未执行；隔离 Worker/D1 行为验证通过，不替代部署验收。
 
 ## 端到端场景
 
