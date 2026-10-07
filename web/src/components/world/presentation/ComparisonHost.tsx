@@ -108,7 +108,11 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
   const mountedPanes = useRef<Partial<Record<CameraLinkPaneId, CameraLinkPane>>>({})
   const cameraKeys = useRef<Partial<Record<CameraLinkPaneId, string>>>({})
   const compatible = right !== null && canLinkCameras(left, right)
-  useEffect(() => { coordinator.setEnabled(cameraLinkEnabled && compatible) }, [coordinator, cameraLinkEnabled, compatible])
+  useEffect(() => {
+    if (compatible) return
+    setCameraLinkEnabled(false)
+    coordinator.setEnabled(false)
+  }, [coordinator, compatible])
   useEffect(() => () => coordinator.dispose(), [coordinator])
   const bindPane = (paneId: CameraLinkPaneId, entry: MountedPresentationForKind | null) => {
     if (entry) mountedPanes.current[paneId] = entry as CameraLinkPane
