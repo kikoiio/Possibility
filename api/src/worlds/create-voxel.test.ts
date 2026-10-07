@@ -41,8 +41,9 @@ function createBody(overrides: Record<string, unknown> = {}) {
   }
 }
 
-const post = (body: unknown) =>
-  worldsRoutes.request('/', { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, fixture!.env)
+const postAs = (token: string, body: unknown) =>
+  worldsRoutes.request('/', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, fixture!.env)
+const post = (body: unknown) => postAs('token', body)
 
 describe('POST /api/worlds 体素场景创建(S1)', () => {
   it('合法体素信封:世界创建成功、场景随初始版本入库且保持体素格式', async () => {
@@ -63,6 +64,93 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
     expect(await mismatch.json()).toMatchObject({ error: expect.stringContaining('地点绑定') })
     const noReqId = await post(createBody({ sceneRequestId: undefined }))
     expect(noReqId.status).toBe(400)
+  })
+
+  it('相同 owner 请求键和负载重放时返回原 world 与 timeline，且不重复初始数据', async () => {
+    const f = await setup()
+    const body = createBody({ sceneRequestId: 'req-idempotent-create' })
+    const first = await post(body)
+    expect(first.status).toBe(200)
+    const original = await first.json() as { id: string; timelineId: string }
+    expect(await f.db.select().from(worlds).all()).toHaveLength(1)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(1)
+
+    // A successful replay remains available even if the created world is subsequently capped.
+    await f.db.update(worlds).set({ status: 'capped', pauseReason: 'global_daily_cap' }).where(eq(worlds.id, original.id))
+    const replay = await post(body)
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toEqual(original)
+    expect(await f.db.select().from(worlds).all()).toHaveLength(1)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, original.id)).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, original.id)).all()).toHaveLength(1)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, original.id)).get()).toMatchObject({ status: 'capped' })
+  })
+
+  it('同一请求键的不同负载冲突，且不修改已创建世界', async () => {
+    const f = await setup()
+    const first = await post(createBody({ sceneRequestId: 'req-conflicting-create' }))
+    expect(first.status).toBe(200)
+    const original = await first.json() as { id: string; timelineId: string }
+    const before = await f.db.select().from(worlds).where(eq(worlds.id, original.id)).get()
+
+    const conflict = await post(createBody({ name: '改过的庄园', sceneRequestId: 'req-conflicting-create' }))
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ errorCode: 'request_id_conflict' })
+    expect(await f.db.select().from(worlds).all()).toHaveLength(1)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(1)
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, original.id)).get()).toEqual(before)
+  })
+
+  it('相同请求键在不同 owner 下隔离，重放不会返回其他账号的 world', async () => {
+    const f = await setup()
+    await f.db.insert(users).values({ id: 'u2', username: 'u2', passwordHash: 'x', createdAt: NOW })
+    await f.db.insert(sessions).values({ token: 'token-u2', userId: 'u2', expiresAt: '2099-01-01T00:00:00.000Z' })
+    await f.db.insert(persons).values({ id: 'p2', userId: 'u2', name: '阿晴', modelJson: '{}', createdAt: NOW })
+    const requestId = 'req-owner-isolation'
+    const first = await post(createBody({ sceneRequestId: requestId }))
+    const otherOwner = await postAs('token-u2', createBody({ personIds: ['p2'], sceneRequestId: requestId }))
+    expect(first.status).toBe(200)
+    expect(otherOwner.status).toBe(200)
+    const firstWorld = await first.json() as { id: string; timelineId: string }
+    const otherWorld = await otherOwner.json() as { id: string; timelineId: string }
+    expect(otherWorld.id).not.toBe(firstWorld.id)
+    expect(otherWorld.timelineId).not.toBe(firstWorld.timelineId)
+    const firstReplay = await post(createBody({ sceneRequestId: requestId }))
+    expect(await firstReplay.json()).toEqual(firstWorld)
+    expect(await f.db.select().from(worlds).all()).toHaveLength(2)
+  })
+
+  it('并发相同创建尝试收敛到一组原子 world/timeline/scene 记录', async () => {
+    const f = await setup()
+    const body = createBody({ sceneRequestId: 'req-concurrent-create' })
+    const [first, second] = await Promise.all([post(body), post(body)])
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual(await first.json())
+    expect(await f.db.select().from(worlds).all()).toHaveLength(1)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldPersons).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldScenes).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(1)
+  })
+
+  it('并发复用同一请求键提交不同负载时只接受一个并将另一请求冲突拒绝', async () => {
+    const f = await setup()
+    const [first, second] = await Promise.all([
+      post(createBody({ name: '湖畔庄园 A', sceneRequestId: 'req-concurrent-conflict' })),
+      post(createBody({ name: '湖畔庄园 B', sceneRequestId: 'req-concurrent-conflict' })),
+    ])
+    expect([first.status, second.status].sort()).toEqual([200, 409])
+    const conflict = first.status === 409 ? first : second
+    expect(await conflict.json()).toMatchObject({ errorCode: 'request_id_conflict' })
+    expect(await f.db.select().from(worlds).all()).toHaveLength(1)
+    expect(await f.db.select().from(timelines).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldPersons).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldScenes).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(1)
   })
 
   it('体素校验失败(不可行走) → 400 并携带 issues', async () => {
@@ -165,6 +253,28 @@ describe('A1 initial scene', () => {
     const res = await post(createBody({ sceneRequestId: 'req-a1-late-initial-failure' }))
     expect(res.status).toBeGreaterThanOrEqual(500)
     await expectNoPartialWorldCreate(f)
+  })
+
+  it('创建批次原子回滚后，相同请求键和负载可以安全重试', async () => {
+    const f = await setup()
+    f.sqlite.exec(await buildTestPolicyActivationSql())
+    f.sqlite.exec(`CREATE TRIGGER fail_create_once BEFORE INSERT ON world_scene_revisions
+      WHEN NEW.request_id = 'req-create-retry-after-rollback' BEGIN SELECT RAISE(ABORT, 'injected first create failure'); END`)
+    const body = createBody({ sceneRequestId: 'req-create-retry-after-rollback' })
+
+    const failed = await post(body)
+    expect(failed.status).toBeGreaterThanOrEqual(500)
+    await expectNoPartialWorldCreate(f)
+
+    f.sqlite.exec('DROP TRIGGER fail_create_once')
+    const retried = await post(body)
+    expect(retried.status).toBe(200)
+    const created = await retried.json() as { id: string; timelineId: string }
+    expect(await f.db.select().from(worlds).where(eq(worlds.id, created.id)).get()).toMatchObject({ id: created.id, userId: 'u' })
+    expect(await f.db.select().from(timelines).where(eq(timelines.id, created.timelineId)).get()).toMatchObject({ id: created.timelineId, worldId: created.id })
+    expect(await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, created.id)).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldScenes).where(eq(worldScenes.worldId, created.id)).all()).toHaveLength(1)
+    expect(await f.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, created.id)).all()).toHaveLength(1)
   })
 
   it('场景语句失败时世界/成员整批回滚（B54）', async () => {

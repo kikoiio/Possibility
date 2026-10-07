@@ -52,6 +52,35 @@ async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<
   return w ?? null
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))
+  return [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** Stable UUID-shaped identities let D1's existing primary keys serialize concurrent create retries. */
+async function stableCreateId(value: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).slice(0, 16)
+  digest[6] = (digest[6]! & 0x0f) | 0x80
+  digest[8] = (digest[8]! & 0x3f) | 0x80
+  const hex = [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+type CreateReplay = { id: string; timelineId: string } | 'conflict' | null
+
+/** Lookup is owner scoped and does not reveal whether another owner has a colliding identity. */
+async function readCreateReplay(db: Db, worldId: string, timelineId: string, userId: string): Promise<CreateReplay> {
+  const world = await loadOwnedWorld(db, worldId, userId)
+  if (!world) {
+    const collision = await db.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, worldId)).get()
+    return collision ? 'conflict' : null
+  }
+  const mainTimeline = await db.select({ id: timelines.id }).from(timelines).where(and(
+    eq(timelines.worldId, worldId), isNull(timelines.parentTimelineId),
+  )).get()
+  return mainTimeline?.id === timelineId ? { id: world.id, timelineId: mainTimeline.id } : 'conflict'
+}
+
 /** Quick World 骨架：一句话 → LLM 生成（不落库）；预世界调用，按用户当日限额设防 */
 worldsRoutes.post('/draft', async (c) => {
   const body = await c.req.json<{ prompt?: string }>().catch(() => ({}) as { prompt?: string })
@@ -82,8 +111,13 @@ worldsRoutes.post('/', async (c) => {
   if (body.timeZone !== undefined && !isValidTimeZone(body.timeZone)) return c.json({ error: 'timeZone 必须是有效的 IANA 时区' }, 400)
   if (locations.length < 5 || locations.length > 8) return c.json({ error: '地点需 5-8 个' }, 400)
   if (personIds.length < 1 || personIds.length > 6) return c.json({ error: '人物需 1-6 个' }, 400)
+  if (body.sceneRequestId !== undefined && (typeof body.sceneRequestId !== 'string'
+    || !body.sceneRequestId.trim() || body.sceneRequestId.length > 200)) {
+    return c.json({ error: 'sceneRequestId 必须是有效的创建请求标识' }, 400)
+  }
+  const sceneRequestId = body.sceneRequestId
   if (body.scene) {
-    if (!body.sceneRequestId) return c.json({ error: '场景草稿缺少创建请求标识' }, 400)
+    if (!sceneRequestId) return c.json({ error: '场景草稿缺少创建请求标识' }, 400)
     if (isSerializedVoxelDocument(body.scene)) {
       // S1 体素创建:信封 → 反序列化 → 契约+可行走性校验(含资产清单) → 地点绑定覆盖 → 归一化落库
       let doc
@@ -114,6 +148,24 @@ worldsRoutes.post('/', async (c) => {
 
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
+  const timeZone = effectiveTimeZone(body.timeZone)
+  const creationPayload = JSON.stringify({ name, description, locations, personIds, timeZone, scene: body.scene ?? null })
+  const creationFingerprint = await sha256Hex(creationPayload)
+  // Keep the request key owner scoped. The payload fingerprint is carried by the main
+  // timeline identity, so a reused key with changed content conflicts without adding a
+  // migration or a second mutable idempotency table.
+  const worldId = sceneRequestId
+    ? await stableCreateId(`possibility:create:world|${userId}|${sceneRequestId}`)
+    : crypto.randomUUID()
+  const mainTimelineId = sceneRequestId
+    ? await stableCreateId(`possibility:create:timeline|${userId}|${sceneRequestId}|${creationFingerprint}`)
+    : crypto.randomUUID()
+  if (sceneRequestId) {
+    const replay = await readCreateReplay(db, worldId, mainTimelineId, userId)
+    if (replay === 'conflict') return c.json({ error: '创建请求标识已用于不同内容', errorCode: 'request_id_conflict' }, 409)
+    if (replay) return c.json(replay)
+  }
+
   const owned = await db
     .select({ id: persons.id, name: persons.name, modelJson: persons.modelJson })
     .from(persons)
@@ -122,14 +174,12 @@ worldsRoutes.post('/', async (c) => {
   if (owned.length !== personIds.length) return c.json({ error: '包含不属于你的人物' }, 403)
 
   const now = new Date().toISOString()
-  const worldId = crypto.randomUUID()
-  const mainTimelineId = crypto.randomUUID()
   const statements: [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]] = [db.insert(worlds).values({
     id: worldId,
     userId,
     name,
     description,
-    timeZone: effectiveTimeZone(body.timeZone),
+    timeZone,
     locationsJson: JSON.stringify(locations),
     status: 'running',
     callsToday: 0,
@@ -195,8 +245,19 @@ worldsRoutes.post('/', async (c) => {
       baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
   // B30/B54：首版场景语句拼入同一批；绑定快照取本次待创建的成员/地点（此时尚未落库，不能读库）
-  if (body.scene && body.sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, body.sceneRequestId, { personIds, locations }))
-  await db.batch(statements)
+  if (body.scene && sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, sceneRequestId, { personIds, locations }))
+  try {
+    await db.batch(statements)
+  } catch (error) {
+    // Concurrent identical attempts share both deterministic identities. One atomic batch
+    // wins; the loser verifies ownership and the payload-derived timeline before replaying.
+    if (sceneRequestId) {
+      const replay = await readCreateReplay(db, worldId, mainTimelineId, userId)
+      if (replay === 'conflict') return c.json({ error: '创建请求标识已用于不同内容', errorCode: 'request_id_conflict' }, 409)
+      if (replay) return c.json(replay)
+    }
+    throw error
+  }
   return c.json({ id: worldId, timelineId: mainTimelineId })
 })
 

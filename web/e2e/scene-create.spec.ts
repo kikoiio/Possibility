@@ -64,6 +64,118 @@ test('S1 体素创建:一句话 → 体素预览 → 开始生活 → 世界页�
   await expect(page.getByTestId('voxel-tool-ai')).toBeVisible()
 })
 
+test('lost world-create response retries the identical payload with the same request key', async ({ page }) => {
+  const createBodies: Record<string, unknown>[] = []
+  let committedResult: { id: string; timelineId: string } | null = null
+  await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/persons', route => route.fulfill({ json: { persons: [{ id: 'person-1', name: 'Ada', createdAt: '2026-01-01T00:00:00Z' }] } }))
+  await page.route('**/api/scene-drafts/voxel', route => route.fulfill({ json: { world, document: voxelDoc, explanation: '旧宅、温室与庭院已就位。', warnings: [] } }))
+  await page.route('**/api/worlds', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: { worlds: [] } })
+    createBodies.push(route.request().postDataJSON() as Record<string, unknown>)
+    if (createBodies.length === 1) {
+      // Model a server commit whose successful response was lost in transit.
+      committedResult = { id: 'world-1', timelineId: 'timeline-1' }
+      return route.fulfill({ status: 503, json: { error: '创建结果暂时无法确认' } })
+    }
+    if (createBodies[1]!.sceneRequestId !== createBodies[0]!.sceneRequestId) {
+      return route.fulfill({ status: 409, json: { error: '创建请求标识已变化', errorCode: 'request_id_conflict' } })
+    }
+    return route.fulfill({ json: committedResult })
+  })
+  await page.route('**/api/worlds/world-1**', route => {
+    const url = route.request().url()
+    if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
+      access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
+      world: snapshot,
+      scene: { status: 'ready', document: voxelDoc },
+      presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
+      theme: { id: 'mist-manor', assetVersion: 'fixture' },
+      resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
+    } })
+    if (url.includes('/map/resume')) return route.fulfill({ json: { ok: true } })
+    return route.fulfill({ json: snapshot })
+  })
+
+  await page.goto('/worlds/new')
+  await page.getByTestId('scene-prompt').fill('白雾缭绕的山间旧宅,有温室和石灯庭院。')
+  await page.getByRole('button', { name: 'Ada' }).click()
+  await page.getByTestId('generate-scene').click()
+  await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
+  await page.waitForTimeout(500)
+  await page.getByTestId('start-life').click()
+  await expect(page.getByRole('alert')).toContainText('创建结果暂时无法确认')
+  await expect(page.getByTestId('start-life')).toBeEnabled()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByTestId('voxel-create-workspace')).toBeVisible({ timeout: 15000 })
+  await page.getByTestId('start-life').click()
+  await expect(page).toHaveURL('/worlds/world-1')
+  expect(createBodies).toHaveLength(2)
+  expect(createBodies[1]!.sceneRequestId).toBe(createBodies[0]!.sceneRequestId)
+  expect(createBodies[1]).toEqual(createBodies[0])
+  expect(createBodies[0]).toMatchObject({
+    name: world.name,
+    description: world.description,
+    locations: world.locations,
+    personIds: ['person-1'],
+    scene: { format: 'voxel-document' },
+  })
+  expect(createBodies[1]).toMatchObject({
+    name: createBodies[0]!.name,
+    description: createBodies[0]!.description,
+    locations: createBodies[0]!.locations,
+    personIds: createBodies[0]!.personIds,
+    scene: createBodies[0]!.scene,
+  })
+})
+
+test('changed creation payload starts a new idempotency request', async ({ page }) => {
+  const createBodies: Record<string, unknown>[] = []
+  await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await page.route('**/api/persons', route => route.fulfill({ json: { persons: [
+    { id: 'person-1', name: 'Ada', createdAt: '2026-01-01T00:00:00Z' },
+    { id: 'person-2', name: 'Bo', createdAt: '2026-01-02T00:00:00Z' },
+  ] } }))
+  await page.route('**/api/scene-drafts/voxel', route => route.fulfill({ json: { world, document: voxelDoc, explanation: '旧宅、温室与庭院已就位。', warnings: [] } }))
+  await page.route('**/api/worlds', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: { worlds: [] } })
+    createBodies.push(route.request().postDataJSON() as Record<string, unknown>)
+    if (createBodies.length === 1) return route.fulfill({ status: 503, json: { error: '创建未确认' } })
+    return route.fulfill({ json: { id: 'world-1', timelineId: 'timeline-1' } })
+  })
+  await page.route('**/api/worlds/world-1**', route => {
+    const url = route.request().url()
+    if (url.includes('/map/bootstrap')) return route.fulfill({ json: {
+      access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
+      world: snapshot,
+      scene: { status: 'ready', document: voxelDoc },
+      presentation: { timelineId: 'timeline-1', stateVersion: 1, simNow: snapshot.simNow, timeOfDay: 'day', weather: { kind: null, label: null }, residents: [], locations: [], signals: [] },
+      theme: { id: 'mist-manor', assetVersion: 'fixture' },
+      resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: snapshot.simNow },
+    } })
+    if (url.includes('/map/resume')) return route.fulfill({ json: { ok: true } })
+    return route.fulfill({ json: snapshot })
+  })
+
+  await page.goto('/worlds/new')
+  await page.getByTestId('scene-prompt').fill('白雾缭绕的山间旧宅,有温室和石灯庭院。')
+  await page.getByRole('button', { name: 'Ada' }).click()
+  await page.getByTestId('generate-scene').click()
+  await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
+  await page.getByTestId('start-life').click()
+  await expect(page.getByRole('alert')).toContainText('创建未确认')
+
+  await page.getByRole('button', { name: 'Bo' }).click()
+  await page.getByTestId('start-life').click()
+  await expect(page).toHaveURL('/worlds/world-1')
+  expect(createBodies).toHaveLength(2)
+  expect(createBodies[0]!.personIds).toEqual(['person-1'])
+  expect(createBodies[1]!.personIds).toEqual(['person-1', 'person-2'])
+  expect(createBodies[1]!.sceneRequestId).not.toBe(createBodies[0]!.sceneRequestId)
+})
+
 test('authenticated voxel-spaces world supports resident and location interaction', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
   await page.route('**/api/persons', route => route.fulfill({ json: { persons: [{ id: 'person-1', name: 'Ada', createdAt: '2026-01-01T00:00:00Z' }] } }))
