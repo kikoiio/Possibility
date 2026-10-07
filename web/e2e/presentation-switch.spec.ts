@@ -16,6 +16,6 @@ test('single world switches 3D to native 2D and back without changing its timeli
 
   await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '3D' }).click()
   await expect(page).toHaveURL(/presentation=voxel3d/)
-  await expect(page.locator('[data-voxel-instance="main"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
   await expect(page).not.toHaveURL(/timeline=timeline-fork/)
 })

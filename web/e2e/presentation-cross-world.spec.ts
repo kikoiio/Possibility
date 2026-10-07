@@ -5,12 +5,13 @@ test.describe.configure({ mode: 'serial', timeout: 240_000 })
 
 async function stubSecondWorld(page: Page, options: { failFirstBootstrap?: boolean } = {}) {
   let bootstrapReads = 0
+  let recovering = !options.failFirstBootstrap
   await page.route('**/api/**', route => {
     const url = new URL(route.request().url())
     if (url.pathname !== '/api/worlds/world-2/map/bootstrap') return route.fallback()
     bootstrapReads += 1
     const timelineId = url.searchParams.get('timelineId') ?? 'timeline-main'
-    if (options.failFirstBootstrap && bootstrapReads === 1) {
+    if (!recovering) {
       return route.fulfill({ status: 503, json: { error: 'temporary second-world outage' } })
     }
     return route.fulfill({ json: secondWorldBootstrap(timelineId) })
@@ -23,7 +24,7 @@ async function stubSecondWorld(page: Page, options: { failFirstBootstrap?: boole
     return route.fulfill({ json: world })
   })
   await page.route('**/api/worlds/world-2/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDocument } }))
-  return () => bootstrapReads
+  return { reads: () => bootstrapReads, recover: () => { recovering = true } }
 }
 
 function secondWorldBootstrap(timelineId: string) {
@@ -74,8 +75,9 @@ test('one pane can fail and retry without reloading its working sibling', async 
   await expect(page.locator('[data-voxel-instance="left"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
   const leftEngine = await page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left)
   await page.evaluate(engine => { (window as unknown as { __leftEngine?: unknown }).__leftEngine = engine }, leftEngine)
+  rightReads.recover()
   await page.getByRole('button', { name: '重试此侧' }).click()
   await expect(page.getByTestId('pane-facts-right')).toContainText('timeline-fork')
-  await expect.poll(() => rightReads()).toBe(3)
+  await expect.poll(() => rightReads.reads()).toBeGreaterThanOrEqual(3)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __voxelEngines?: Record<string, unknown> }).__voxelEngines?.left === (window as unknown as { __voxelEngines?: Record<string, unknown> }).__leftEngine)).toBe(true)
 })

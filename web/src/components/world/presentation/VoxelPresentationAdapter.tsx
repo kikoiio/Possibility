@@ -34,7 +34,7 @@ export function createVoxelPresentationAdapter(resolveProps: VoxelViewportPropsR
       const root = createRoot(host)
       let disposed = false
       let latestPose = options.camera?.pose ?? null
-      root.render(createElement(VoxelViewport, {
+      const renderViewport = () => root.render(createElement(VoxelViewport, {
         ...props,
         instanceId: context.paneId,
         probePrimary: false,
@@ -45,6 +45,7 @@ export function createVoxelPresentationAdapter(resolveProps: VoxelViewportPropsR
           options.onCameraChange?.({ kind: 'voxel3d', version: 1, pose })
         },
       }))
+      renderViewport()
       return {
         captureCamera: () => {
           const pose = engineFor(context.paneId)?.getOrbitPose() ?? latestPose
@@ -54,6 +55,9 @@ export function createVoxelPresentationAdapter(resolveProps: VoxelViewportPropsR
           if (!disposed) {
             latestPose = camera.pose
             engineFor(context.paneId)?.setOrbitPose(camera.pose)
+            // A sibling can move before this renderer finishes mounting. Keep the
+            // controlled pose so VoxelViewport applies it as soon as its engine is ready.
+            renderViewport()
           }
         },
         dispose: () => {
