@@ -1,7 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { applyEdits, createEmptyWorld, serialize, type EditOperation } from '@possibility/voxel-contract'
 
-const sceneFixture = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8')) as Record<string, any>
 const personModel = {
   identity: [{ text: '经营雾影庄', provenance: 'known' }],
   behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [],
@@ -61,15 +60,19 @@ test('timeline scene revisions fork independently, restore visible ancestry, and
   const person = await page.request.post('/api/persons', { headers, data: { name: 'Ada', model: personModel } })
   expect(person.status()).toBe(200)
   const { id: personId } = await person.json() as { id: string }
+  const locationNames = ['主楼', '温室', '庭院', '花圃', '井台']
+  const operations: EditOperation[] = [
+    { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 47, y: 0, z: 47 }, block: 'grass' },
+    ...locationNames.map((_, index): EditOperation => ({
+      kind: 'place-object', objectId: index === 0 ? 'house' : `location-${index}`,
+      objectType: 'stone-lantern', anchor: { x: 2 + index * 5, y: 1, z: 3 }, rotation: 0,
+    })),
+  ]
+  const sceneBase = applyEdits(createEmptyWorld({ width: 48, height: 24, depth: 48 }, 'mist-manor', 'fixture-timeline-scene'), operations).document
   const worldScene = {
-    ...sceneFixture,
-    locations: [
-      ...sceneFixture.locations,
-      { name: '井台', objectId: 'well' },
-      { name: '花圃', objectId: 'flowers' },
-    ],
+    ...JSON.parse(serialize(sceneBase)) as Record<string, any>,
+    locations: locationNames.map((name, index) => ({ name, objectId: index === 0 ? 'house' : `location-${index}` })),
   }
-  const locationNames = worldScene.locations.map(location => location.name) as string[]
   const created = await page.request.post('/api/worlds', { headers, data: {
     name: `X1 场景历史 ${suffix}`,
     description: 'Isolated world for the timeline scene geometry browser journey.',

@@ -4,6 +4,9 @@ import { expect, test, type Page } from '@playwright/test'
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
 
 async function mockRepairSnapshot(page: Page) {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: {
+    user: { id: 'user-1', username: 'tester', role: 'user' },
+  } }))
   await page.route('**/api/worlds/world-1', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。' },
     timelines: [{ id: 'timeline-1', parentTimelineId: null }], currentTimelineId: 'timeline-1',
@@ -44,7 +47,7 @@ test('repairs the original world and keeps the draft available after a failed sa
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
 
   await page.getByTestId('save-repair-scene').click()
-  await expect(page).toHaveURL(/\/worlds\/world-1$/)
+  await expect(page).toHaveURL(/\/worlds\/world-1(?:\?timeline=timeline-1)?$/)
   expect(saves).toHaveLength(2)
   expect(saves.every(save => save.body.expectedVersion === 0 && save.body.repair === true)).toBe(true)
   expect(saves[0]!.body.requestId).toBe(saves[1]!.body.requestId)
@@ -67,7 +70,8 @@ test('world list opens repair for the selected world id', async ({ page }) => {
 
   await page.goto('/worlds')
   await page.getByRole('link', { name: '补建场景' }).click()
-  await expect(page).toHaveURL('/worlds/world-1/scene/repair')
+  await expect(page).toHaveURL(/\/worlds\/world-1\/scene\/repair(?:\?timeline=timeline-1)?$/)
+  expect(new URL(page.url()).searchParams.get('timeline')).toBe('timeline-1')
   await expect(page.getByRole('heading', { name: '让「雾影庄」回到可进入的状态' })).toBeVisible()
 })
 
@@ -98,7 +102,8 @@ test('map missing-scene entry opens repair for the same original world', async (
   await page.goto('/worlds/world-1')
   await expect(page.getByTestId('world-canvas-missing')).toBeVisible()
   await page.getByRole('link', { name: '补建场景' }).click()
-  await expect(page).toHaveURL('/worlds/world-1/scene/repair')
+  await expect(page).toHaveURL(/\/worlds\/world-1\/scene\/repair(?:\?timeline=timeline-1)?$/)
+  expect(new URL(page.url()).searchParams.get('timeline')).toBe('timeline-1')
   await expect(page.getByRole('heading', { name: '让「雾影庄」回到可进入的状态' })).toBeVisible()
 })
 
@@ -141,7 +146,7 @@ test('a competing successful repair sends the user into the original world', asy
   await page.getByTestId('generate-repair-scene').click()
   await expect(page.getByTestId('save-repair-scene')).toBeVisible()
   await page.getByTestId('save-repair-scene').click()
-  await expect(page).toHaveURL('/worlds/world-1')
+  await expect(page).toHaveURL(/\/worlds\/world-1(?:\?timeline=timeline-1)?$/)
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15000 })
   expect(saveAttempts).toHaveLength(1)
   expect(saveAttempts[0]).toMatchObject({ expectedVersion: 0, repair: true })
