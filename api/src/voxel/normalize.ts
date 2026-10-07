@@ -5,7 +5,7 @@ import {
 
 const MIN_SIZE = { width: 8, height: 4, depth: 8 } as const
 const MAX_SIZE = { width: 256, height: 64, depth: 256 } as const
-const WALK_REPAIR_LIMIT = 3
+const WALK_REPAIR_LIMIT = 20
 const CLEAR_BLOCK = 'air'
 
 interface Size { width?: unknown; height?: unknown; depth?: unknown }
@@ -103,8 +103,11 @@ export function normalizeWorldDocument(
     }
     const candidate = applyEdits(current, [...edits.values()]).document
     const candidateIssues = allIssues(candidate, assets)
-    const previousKeys = new Set(issues.map(issueKey))
-    if (candidateIssues.some(issue => issue.code !== 'walk-clearance' || !previousKeys.has(issueKey(issue)))) {
+    if (candidateIssues.some(issue => issue.code !== 'walk-clearance')) {
+      return { document: current, fixes, repairable: false }
+    }
+    const candidateKeys = new Set(candidateIssues.map(issueKey))
+    if (!clearanceIssues.some(issue => !candidateKeys.has(issueKey(issue)))) {
       return { document: current, fixes, repairable: false }
     }
     const nextCount = candidateIssues.filter(issue => issue.code === 'walk-clearance').length

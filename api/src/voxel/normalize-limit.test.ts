@@ -26,24 +26,14 @@ describe('normalizeWorldDocument repair bound', () => {
     vi.clearAllMocks()
   })
 
-  it('stops after three clearance repair passes and hands the remaining issue back', () => {
-    const points = [
-      { x: 1, y: 1, z: 1 },
-      { x: 2, y: 1, z: 1 },
-      { x: 3, y: 1, z: 1 },
-      { x: 4, y: 1, z: 1 },
-    ]
+  it('follows newly exposed clearance issues within the bounded repair passes', () => {
+    const points = Array.from({ length: 20 }, (_, x) => ({ x, y: 1, z: 1 }))
     const issues = (indexes: number[]): ValidationIssue[] => indexes.map(index => ({
       code: 'walk-clearance',
       message: 'low passage',
       at: points[index]!,
     } as ValidationIssue))
-    const validationPasses = [
-      issues([0, 1, 2, 3]),
-      issues([1, 2, 3]),
-      issues([2, 3]),
-      issues([3]),
-    ]
+    const validationPasses = [...Array.from({ length: 20 }, (_, index) => issues([index])), []]
     let document = { theme: 'mist-manor', size: { width: 8, height: 4, depth: 8 } } as VoxelDocument
 
     contract.createBlockRegistry.mockReturnValue({})
@@ -56,13 +46,28 @@ describe('normalizeWorldDocument repair bound', () => {
 
     const result = normalizeWorldDocument(document)
 
-    expect(contract.applyEdits).toHaveBeenCalledTimes(3)
-    expect(contract.validateWalkability).toHaveBeenCalledTimes(4)
-    expect(result.repairable).toBe(false)
-    expect(result.fixes).toEqual([
-      'walk-clearance:4->3',
-      'walk-clearance:3->2',
-      'walk-clearance:2->1',
-    ])
+    expect(contract.applyEdits).toHaveBeenCalledTimes(20)
+    expect(contract.validateWalkability).toHaveBeenCalledTimes(21)
+    expect(result.repairable).toBe(true)
+    expect(result.fixes).toHaveLength(20)
+    expect(result.fixes.at(-1)).toBe('walk-clearance:1->0')
+  })
+
+  it('rejects a clearance edit that introduces a different validation issue', () => {
+    const document = { theme: 'mist-manor', size: { width: 8, height: 4, depth: 8 } } as VoxelDocument
+    const candidate = { ...document }
+    contract.createBlockRegistry.mockReturnValue({})
+    contract.validateDocument.mockReturnValue([])
+    contract.validateWalkability.mockReturnValueOnce([{
+      code: 'walk-clearance', message: 'low passage', at: { x: 1, y: 1, z: 1 },
+    } as ValidationIssue]).mockReturnValueOnce([{
+      code: 'walk-connectivity', message: 'unreachable carrier', at: { x: 2, y: 1, z: 2 },
+    } as ValidationIssue])
+    contract.applyEdits.mockReturnValue({ document: candidate })
+
+    const result = normalizeWorldDocument(document)
+
+    expect(result).toEqual({ document, fixes: [], repairable: false })
+    expect(contract.applyEdits).toHaveBeenCalledTimes(1)
   })
 })
