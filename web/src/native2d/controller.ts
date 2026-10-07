@@ -70,6 +70,8 @@ import type {
 import { createInitialLayout } from './layout-validation'
 import { createLayoutEditor } from './editor'
 import { buildPresentation, resolveResidentPlacement } from './presentation'
+import { projectEnvironmentFacts } from '../scene/life/environment'
+import { projectEnvironmentFor2d } from './projection'
 
 /** 跟随意图：following=视觉定位中；paused=目标暂不可呈现，保留意图与真实地点提示。 */
 export interface FollowState {
@@ -221,7 +223,14 @@ export function createSampleController(options: SampleControllerOptions): Sample
     const world = state.readState.lastGood
     const layout = state.layout
     if (!world || !layout) return null
-    const presentation = buildPresentation(world, scene, layout, state.spaceId)
+    const environmentProjection = projectEnvironmentFacts((world.environment ?? []).map((fact) => ({
+      factType: 'environment',
+      value: { location: fact.locationName, condition: fact.condition, value: fact.value },
+    })))
+    const presentation: ScenePresentation = {
+      ...buildPresentation(world, scene, layout, state.spaceId),
+      environment: projectEnvironmentFor2d(environmentProjection),
+    }
     viewport?.setPresentation(presentation)
     return presentation
   }

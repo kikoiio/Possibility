@@ -43,7 +43,7 @@ function abortError(): Error {
 }
 
 interface ViewportLog {
-  presentations: WorldReadModel['scope'][]
+  presentations: Array<import('../types').ScenePresentation>
   selections: Array<unknown>
   follows: Array<string | null>
   previews: Array<unknown>
@@ -51,7 +51,7 @@ interface ViewportLog {
 
 function fakeViewport(log: ViewportLog): Native2dViewport {
   return {
-    setPresentation: (value) => log.presentations.push(value.scope),
+    setPresentation: (value) => log.presentations.push(value),
     setSelection: (value) => log.selections.push(value),
     setFollow: (value) => log.follows.push(value),
     setMovePreview: (value) => log.previews.push(value),
@@ -136,6 +136,38 @@ function originOf(state: SampleControllerState, buildingId: string) {
 }
 
 describe('T37 读取协调', () => {
+  it('同范围刷新把新的有限环境投影推入视口，不写入世界或布局', async () => {
+    let model: WorldReadModel = {
+      ...createFixtureReadModel('mist-manor-day'),
+      environment: [{ id: 'fact-weather', locationName: null, condition: 'weather', value: 'rain', simTime: '2026-09-21T08:00:00.000Z', version: 1 }],
+    }
+    const repository = repositoryHarness()
+    const log: ViewportLog = { presentations: [], selections: [], follows: [], previews: [] }
+    const controller = createSampleController({
+      scene,
+      repository: repository.repository,
+      viewport: fakeViewport(log),
+      createSource: () => sourceFor(model),
+    })
+    controller.selectSource(DAY_CONFIG)
+    await flush()
+    expect(log.presentations[log.presentations.length - 1]?.environment).toMatchObject({ weather: 'rain' })
+
+    model = {
+      ...model,
+      stateVersion: (model.stateVersion ?? 0) + 1,
+      environment: [{ id: 'fact-weather', locationName: null, condition: 'weather', value: 'fog', simTime: '2026-09-21T08:01:00.000Z', version: 2 }],
+    }
+    controller.refresh()
+    await flush()
+
+    expect(log.presentations[log.presentations.length - 1]?.environment).toMatchObject({ weather: 'fog' })
+    expect(repository.saves).toHaveLength(0)
+    expect(repository.resets).toHaveLength(0)
+    expect(repository.loads).toHaveLength(1)
+    controller.dispose()
+  })
+
   it('乱序结果只接受最新请求，旧响应不覆盖状态或布局范围', async () => {
     const first = deferred<WorldReadModel>()
     const second = deferred<WorldReadModel>()
