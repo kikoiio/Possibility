@@ -57,12 +57,12 @@ if (process.env.PHASE2_TEMP_DATABASE_CREATED === 'true' && db && !d1DeleteVerifi
 if (flagsPath) {
   const { writeFileSync } = await import('node:fs')
   writeFileSync(flagsPath,
-    `PHASE2_TEMP_WORKER_DELETE_VERIFIED=${workerDeleteVerified}\nPHASE2_TEMP_D1_DELETE_VERIFIED=${d1DeleteVerified}\n`)
+    `PHASE2_TEMP_WORKER_DELETE_VERIFIED=${workerDeleteVerified}\nPHASE2_TEMP_D1_DELETE_VERIFIED=${d1DeleteVerified}\nPHASE2_TEMP_WORKER_PRESENT=${Boolean(script)}\nPHASE2_TEMP_D1_PRESENT=${Boolean(db)}\n`)
 }
 if (process.env.GITHUB_ENV) {
   const { appendFileSync } = await import('node:fs')
   appendFileSync(process.env.GITHUB_ENV,
-    `PHASE2_TEMP_WORKER_DELETE_VERIFIED=${workerDeleteVerified}\nPHASE2_TEMP_D1_DELETE_VERIFIED=${d1DeleteVerified}\n`)
+    `PHASE2_TEMP_WORKER_DELETE_VERIFIED=${workerDeleteVerified}\nPHASE2_TEMP_D1_DELETE_VERIFIED=${d1DeleteVerified}\nPHASE2_TEMP_WORKER_PRESENT=${Boolean(script)}\nPHASE2_TEMP_D1_PRESENT=${Boolean(db)}\n`)
   appendFileSync(process.env.GITHUB_STEP_SUMMARY,
     `## Temporary Cloudflare cleanup ownership check\n\nRun ID/attempt: \`${runId}/${attempt}\`. Worker exact-name match: \`${script?.id === workerName}\`; D1 exact-name and created UUID match: \`${db?.name === databaseName && db?.uuid === databaseId}\`. Only verified resources are passed to deletion.\n`)
 }
