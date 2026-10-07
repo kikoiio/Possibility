@@ -244,7 +244,7 @@ async function main(): Promise<void> {
     // Account actions live in the facts drawer, which is intentionally closed on mobile.
     await mobilePage.getByTestId('native2d-panel-toggle').click()
     await mobilePage.getByTestId('native2d-account-actions').waitFor()
-    await mobilePage.getByTestId('native2d-read-status').getByText('事实已更新').waitFor({ timeout: 20_000 })
+    await mobilePage.getByTestId('native2d-read-status').getByText('事实已更新').waitFor({ state: 'attached', timeout: 20_000 })
     const mobileLayout = await apiWithToken(childLayoutPath, token)
     assert(mobileLayout.status === 200 && JSON.stringify(mobileLayout.body?.layout?.placements) === savedPlacements,
       'a separate mobile browser context did not read the persisted layout')
