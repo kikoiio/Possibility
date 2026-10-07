@@ -11,13 +11,13 @@
 
 | 门槛项 | 结果 | 实测与限制 |
 |---|---|---|
-| 真实多空间访客进入与交互 | **部分通过** | run `37570453870` 的同一 Playwright 旅程通过访客 `/demo`、温室移动、确定性 fixture 交谈、创建真实分支、认领、管理、编辑、分屏刷新后继续对话。对话不是外部模型生成；多空间访客 bootstrap 由该 UI 旅程调用，但专门接口隔离与越权断言仍需补充。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log)。 |
+| 真实多空间访客进入与交互 | **部分通过** | run `37570453870` 的同一 Playwright 旅程通过访客 `/demo`、温室移动、确定性 fixture 交谈、创建真实分支、认领、管理、编辑、分屏刷新后继续对话。run `37571095445` 补上 Guest bootstrap/resume 路由边界、匿名 public read-only 和能力策略 API 检查；run `37571774129` 再通过 guest/public-read API slices 与浏览器旅程。对话不是外部模型生成。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log)。 |
 | 访客认领与进度保留 | **通过（本旅程）** | run `37570453870` 注册新账户并通过真实 claim；在所有者世界确认两条时间线、访客在场、对话记录和编辑修订跨刷新保留；API clone regression 同时通过完整 source→clone 字段映射。范围限该隔离多空间 world 与桌面 Chromium。 |
 | 所有者管理 | **部分通过** | 本旅程经 UI 执行暂停与继续，并断言按钮状态返回。世界归档、时间线管理、管理设置和失败/权限边界未核验。 |
 | 编辑与持久化 | **通过（本旅程）** | 所有者通过真实多空间场景编辑移除未绑定装饰资产，等待 `POST /scene/voxel-revision` 成功；刷新后同一 placement ID 仍不存在。其他编辑类型及冲突/失败恢复未核验。 |
 | 分屏比较与刷新继续 | **通过（限 3D/3D smoke）** | 同一已认领 world 的两条时间线真实分屏分别挂载两个视口；刷新仍恢复左右标题与两个画布，切回“在场”后访客地点状态和对话仍在。未覆盖 2D/2D、混合表现、跨世界、相机/权限隔离、资源释放矩阵。 |
 | 三个自写描述与官方示例的真实生成 | **未通过** | 四条真实 API 生成共计 17 次 provider 请求。custom-1 API 返回 200，但 8 个地点仅对应 3 个场景对象，不能判为成功；custom-2、custom-3、官方示例均返回 502 内容校验错误。完整输入、返回、问题码和调用数见 [`phase1-generation-results.json`](phase1-generation-results.json)。 |
-| 自建单空间与原世界补建对照 | **未通过** | 再次用官方示例走自建生成，5 次 provider 请求后仍 502，未进入 `POST /api/worlds`，没有生成自建单空间。隔离 D1 中创建的无场景原世界保留 1 位居民、1 条时间线；`repair-context` 为 200，但真实 `repair-draft` 4 次 provider 请求后以 walk-connectivity / walk-gap 返回 502，场景修订仍为 0。原 worldId 未变化，但没有成功补建保存。 |
+| 自建单空间与原世界补建对照 | **未通过** | 再次用官方示例走自建生成，5 次 provider 请求后仍 502，未进入 `POST /api/worlds`，没有生成自建单空间。隔离 D1 中创建的无场景原世界保留 1 位居民、1 条时间线；`repair-context` 为 200，但真实 `repair-draft` 4 次 provider 请求后以 walk-connectivity / walk-gap 返回 502，场景修订仍为 0。原 worldId 未变化，但没有成功补建保存。run `37571774129` 的静态合法文档 API 持久化和 route-stub UI smoke 通过，但不替代真实生成后保存门槛。 |
 
 ## 真实生成诊断
 
@@ -36,9 +36,9 @@
 
 ## G0 判定
 
-**阶段一 G0 未通过，集成开发仍锁定。** run `37570453870` 已补齐确定性对话、claim、暂停/继续、场景保存、同 world 双 3D 分屏及刷新后恢复这一旅程；这不替代真实模型生成验收。剩余阶段一硬门槛是用真实 provider 按三条自写提示和官方示例完成有效生成，并完成自建单空间保存与原 worldId 补建保存对照。此前真实生成有三条 502 和一条地点对象不完整的 200，自建单空间与原世界补建均未成功。阶段二仍由另一 session 负责且未纳入本提交。
+**阶段一 G0 仍 blocked，集成开发仍锁定。** Actions 已通过 guest/public-read API、guest fork/claim browser 旅程、静态合法文档创建/补建 API 持久化契约，以及 route-stub 的创建/补建 UI 流程。阶段一仍欠真实 provider 对三条自写提示和官方示例的有效生成、生成后自建单空间保存、以及原 `worldId` 的真实 repair 生成后保存。已有真实调用是一条 200 但地点对象不完整、三条生成 502；自建保存和原世界补建保存均未成功。阶段二仍欠部署环境中的 progression / pause / resume 验收（Phase 2 checkpoint: [`phase2-acceptance-2026-10-07.md`](phase2-acceptance-2026-10-07.md)）；其他 session 负责，未纳入本提交。
 
-下一次完整验收需在资源允许时，用真实多空间会话完成同一账号旅程的剩余步骤；修正生成地点绑定/通行失败后，以同一四条输入复验，并完成自建世界保存和原世界原 ID 补建保存。阶段二 session 提供其通过证据后，协调者再更新 G0 判定。
+若继续真实生成验收，应先由协调者审阅调用计划、provider/model 计价及失败重试上限，再复验三条自写提示与官方示例，并把至少一个有效生成结果用于单空间创建保存；随后对隔离的既有原 `worldId` 做真实 repair 生成和保存。阶段二 session 提供其通过证据后，协调者再综合更新 G0 判定。
 
 ## G0 补充复核：Actions guest-claim slice
 
@@ -86,6 +86,17 @@
 - Artifact `phase1-g0-guest-claim-37571095445`（ID `11460489345`，1,519 bytes，未过期）；完整逐步日志可从 run 页面复查。此 run 重跑了 guest fork/claim/owner/edit/split/reload 浏览器旅程，结果维持通过。
 - `access-audit.md` 中 Guest bootstrap route 专项状态更新为已核验。账户型 readonly 未发现独立产品身份/授权契约，不虚构接口或功能，继续标未核验。
 
-## 独立非 provider 创建/补建契约 smoke（待 Actions）
+## 独立非 provider 创建/补建契约 smoke（已通过，范围有限）
 
-下一版专用 Actions workflow 将追加真实 SQLite migration-backed 的 `api/src/worlds/create-voxel.test.ts`（用固定合法 voxel document 验证新 world + 初版场景同事务保存/校验拒绝）和 `api/src/scenes/routes.test.ts`（用固定合法 repair document 验证原 worldId 补建、scene-repair revision 幂等、居民与 timeline 保持）。同时运行 `web/e2e/scene-create.spec.ts`、`web/e2e/scene-repair.spec.ts`，其 draft API 响应由 Playwright route fixture 提供，覆盖 UI 流程/保存失败恢复。全部不调用模型，只作为持久化/UI 子契约证据；不得折算为真实生成 G0 通过。
+GitHub Actions run [37571774129](https://github.com/kikoiio/Possibility/actions/runs/37571774129)，`phase3` commit `548de701fdfbb0f53ab0bbbd809647e2983ad090`，job `112631785249`，workflow revision 16，2026-10-07 04:30:23–04:34:41 UTC，结论 **success**。
+
+- API：6 files / **33 tests passed**，包括 `s03-guest-participation.test.ts`、`map/bootstrap.test.ts`、`public/routes.test.ts`、`access/policy.test.ts`、`worlds/create-voxel.test.ts`、`scenes/routes.test.ts`。其中 create/repair API 使用固定合法 voxel 文档验证保存契约。
+- Browser：**10/10 passed**（3 E2E files，1 worker）：`guest-claim-journey.spec.ts`（guest fork/claim journey 通过）、`scene-create.spec.ts`、`scene-repair.spec.ts`。后两者使用 route fixtures 提供 draft API 响应。
+- Artifact `phase1-g0-guest-claim-37571774129`（ID `11460956808`，2,887 bytes，未过期）；provider calls **0**。测试结果与日志可从 Actions run 和 artifact 复查。
+- 此 run 的 UI/API 子契约通过不证明真实模型生成或生成后保存成功，不改变 G0 blocked 判定。
+
+## 下一阶段解锁缺口
+
+- **阶段一未通过**：真实 provider 下的 3 条自写 prompt + 官方示例有效生成；将有效生成结果保存为自建单空间；对既有原 `worldId` 完成真实 repair 生成与保存。
+- **阶段二未通过/待另一 session**：部署环境 progression、pause、resume 验收；现有证据只覆盖 Actions 上 local Worker/D1 production preview，未触达已部署 world。详见 Phase 2 checkpoint。
+- **本轮没有发起 provider 请求，也没有启动新 Actions run。**

@@ -133,6 +133,17 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 - 这只证明 API 路由/权限/数据契约，不替代双 pane UI identity、failure isolation 或 renderer 矩阵。账户型 readonly 未发现独立产品身份，仍未验证；上方 C/W/P/E/PW/H/R 固定矩阵未由本次完整覆盖，状态不升为通过。
 
 
-## 独立非 provider 创建与补建 smoke（待执行）
+## 独立非 provider 创建与补建 smoke（已执行）
 
-专用 Actions workflow 下一 revision 将顺序追加 `api/src/worlds/create-voxel.test.ts`、`api/src/scenes/routes.test.ts` 与 `web/e2e/scene-create.spec.ts`、`web/e2e/scene-repair.spec.ts`。API 使用固定合法体素文档实测 world + 初版场景保存、原 worldId 补建 revision 幂等及居民/timeline 保持；浏览器的草稿生成由本地 Playwright route fixture 响应，用于验证创建/补建 UI、保存和重试流程。无 provider 调用；真实生成后成功创建/补建仍是独立 G0 gate，未核验。
+专用 Actions workflow 已执行 `api/src/worlds/create-voxel.test.ts`、`api/src/scenes/routes.test.ts` 与 `web/e2e/scene-create.spec.ts`、`web/e2e/scene-repair.spec.ts`。API 使用固定合法体素文档实测 world + 初版场景保存、原 worldId 补建 revision 幂等及居民/timeline 保持；浏览器的草稿生成由 Playwright route fixture 响应，用于验证创建/补建 UI、保存和重试流程。无 provider 调用；真实生成后成功创建/补建仍是独立 G0 gate，未核验。
+
+- **run/commit**：GitHub Actions [run 37571774129](https://github.com/kikoiio/Possibility/actions/runs/37571774129)，`phase3` commit `548de701fdfbb0f53ab0bbbd809647e2983ad090`，job `112631785249`，workflow revision 16；job 4m18s，结论 success，provider calls 0。
+- **API 通过**：6 个测试文件 / 33 tests passed。包含 guest participation/clone、Guest bootstrap、anonymous public routes、access policy、`worlds/create-voxel.test.ts` 与 `scenes/routes.test.ts`。创建/补建 API 使用固定合法文档，验证保存契约，不涉及 provider 生成。
+- **Browser 通过**：Playwright 10/10 passed（3 files，1 worker），包括 `guest-claim-journey.spec.ts`、`scene-create.spec.ts`、`scene-repair.spec.ts`。guest fork/claim 全旅程通过 1/1；创建和补建用 route fixture 提供 draft 响应。
+- **Artifact**：`phase1-g0-guest-claim-37571774129`（ID `11460956808`，2,887 bytes，未过期）；run 页面日志和 artifact 可复查 API/browser 输出。
+- **限制/G0**：本项只证明隔离 API 与 fixture-backed UI 行为。真实 custom prompts/official example 生成、自建单空间生成后保存、原 worldId 真实 repair 生成后保存仍未通过。矩阵中的其他固定 2D/3D、跨 world、混合 renderer、权限隔离、设备/性能与生命周期场景仍按矩阵状态保留未验证。
+
+## 上游 G0 汇总
+
+- **阶段一仍 blocked**：缺真实 provider 对 3 条自写 prompt + 官方示例的有效生成、有效生成后自建单空间保存，以及在既有原 `worldId` 上真实 repair 生成后保存。先前 26 次调用结果见 [`phase1-generation-results.json`](phase1-generation-results.json)；本轮未调用 provider。
+- **阶段二仍待部署验收**：部署环境 progression / pause / resume 未验证；已通过的 production preview 使用 hosted runner 上的 local Worker/D1，不是远端部署 world。由另一 session 负责，证据见 [`phase2-acceptance-2026-10-07.md`](phase2-acceptance-2026-10-07.md)。
