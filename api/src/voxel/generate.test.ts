@@ -383,7 +383,7 @@ describe('assembleWorld × S2b assetPlacements 契约', () => {
     }, 'mist-manor', 'ap-3')).toThrow(/assetPlacements\[0\]/)
     expect(() => assembleWorld({
       size: { width: 16, height: 16, depth: 16 },
-      assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 }, rotation: 90 }],
+      assetPlacements: [{ assetId: 'bld-hut-a', anchor: { x: 4, y: 1, z: 4 }, rotation: 45 }],
     }, 'mist-manor', 'ap-4')).toThrow(/rotation/)
   })
 
@@ -517,7 +517,7 @@ describe('generateWorld semantic building carriers', () => {
       size: { width: 16, height: 16, depth: 16 },
       assetPlacements: [
         { assetId: 'manor-main-house', placementId: 'main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 1 },
-        { assetId: 'bld-hut-a', placementId: 'legacy-glb', anchor: { x: 10, y: 1, z: 10 }, rotation: 180 },
+        { assetId: 'bld-hut-a', placementId: 'legacy-glb', anchor: { x: 12, y: 1, z: 12 }, rotation: 180 },
       ],
       locations: [{ name: '主楼', objectId: 'main-house' }],
       lockedObjectIds: ['main-house'],
