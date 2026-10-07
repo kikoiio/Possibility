@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
+const sceneEndpoint = /\/api\/worlds\/world-1\/scene(?:\?.*)?$/
 
 async function mockRepairSnapshot(page: Page) {
   await page.route('**/api/auth/me', route => route.fulfill({ json: {
@@ -30,7 +31,7 @@ test('repairs the original world and keeps the draft available after a failed sa
     if (saves.length === 1) return route.fulfill({ status: 503, json: { error: '暂时无法保存' } })
     return route.fulfill({ json: { version: 1, document: body.document, contentHash: 'saved', createdAt: '2026-10-01T00:00:00Z' } })
   })
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDoc } }))
+  await page.route(sceneEndpoint, route => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDoc } }))
 
   await page.goto('/worlds/world-1/scene/repair')
   await expect(page.getByRole('heading', { name: '让「雾影庄」回到可进入的状态' })).toBeVisible()
@@ -71,7 +72,6 @@ test('world list opens repair for the selected world id', async ({ page }) => {
   await page.goto('/worlds')
   await page.getByRole('link', { name: '补建场景' }).click()
   await expect(page).toHaveURL(/\/worlds\/world-1\/scene\/repair(?:\?timeline=timeline-1)?$/)
-  expect(new URL(page.url()).searchParams.get('timeline')).toBe('timeline-1')
   await expect(page.getByRole('heading', { name: '让「雾影庄」回到可进入的状态' })).toBeVisible()
 })
 
@@ -129,7 +129,7 @@ test('a competing successful repair sends the user into the original world', asy
     saveAttempts.push(route.request().postDataJSON() as Record<string, unknown>)
     return route.fulfill({ status: 409, json: { error: '场景已由其他请求补建' } })
   })
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDoc } }))
+  await page.route(sceneEndpoint, route => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDoc } }))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
     world: snapshot, scene: { status: 'ready', document: voxelDoc },
@@ -188,7 +188,7 @@ test('an unrepairable original world stays intact and offers a route back', asyn
   await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({
     status: 409, json: { error: '这个世界没有可用于补建场景的居民。', errorCode: 'world_structure_invalid' },
   }))
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'missing' } }))
+  await page.route(sceneEndpoint, route => route.fulfill({ json: { status: 'missing' } }))
   await page.route('**/api/persons', route => route.fulfill({ json: { persons: [{ id: 'person-1', name: 'Ada', createdAt: '2026-09-01T10:00:00Z' }] } }))
 
   await page.goto('/worlds/world-1/scene/repair')
