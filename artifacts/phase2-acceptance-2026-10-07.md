@@ -32,6 +32,7 @@ The owner browser journey exercised a real local owner account and local D1 pers
 
 - An earlier API full-suite run had eight failures after the new layout route's authentication middleware also intercepted guest endpoints. The middleware was narrowed to `/worlds/:worldId/native2d/layout`; the final full run above passed with one existing skip.
 - Early local owner-journey attempts exposed test-fixture setup issues (a seeded demo-baseline marker, then compare selection / active-timeline limits). The isolated fixture and journey setup were corrected; the final owner journey passed as part of the 35/35 desktop run. These setup failures were not left as unresolved product failures.
+- Runs [37564782533](https://github.com/kikoiio/Possibility/actions/runs/37564782533) and [37565035809](https://github.com/kikoiio/Possibility/actions/runs/37565035809) completed the production build but failed in the new mobile-context acceptance harness: it initially expected account controls to be visible before opening the mobile facts drawer, then expected the responsive read-status label to be visible outside that drawer. The harness now follows the mobile drawer interaction and waits for the loaded state to mount; final run `37565225272` passed. These were test synchronization/visibility assumptions, not product/API failures.
 - The Web production build passed with the existing large-chunk warning (>500 kB). It did not fail the build.
 
 ## Failed or unverified
