@@ -193,7 +193,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
   const presentationRoute = readPresentationRoute(worldId, search, presentationStore.getPreferred())
-  const comparisonWorkspaceActive = search.has('presentation') || search.has('rightWorld')
+  const comparisonWorkspaceActive = search.has('rightWorld') || presentationRoute.left.presentation === 'native2d'
   const presentationWorlds = useMemo(() => {
     const options = worldChoices.map(world => ({
       id: world.id,
