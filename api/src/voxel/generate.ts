@@ -67,6 +67,17 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
       return bad('rotation 需要 0..3(四分之一圈)')
     }
     if (p.seed !== undefined && (typeof p.seed !== 'number' || !Number.isFinite(p.seed))) return bad('seed 需要有限数')
+    // Older model responses sometimes put voxel object templates in the GLB
+    // assetPlacements list. Convert only known templates; unknown ids remain
+    // asset references and are validated against the manifest as before.
+    if (getObjectTemplate(p.assetId)) {
+      const objectId = p.placementId ?? p.id
+      return {
+        kind: 'place-object', objectType: p.assetId, anchor: p.anchor,
+        rotation: ((p.rotation ?? 0) * 90) as 0 | 90 | 180 | 270,
+        ...(typeof objectId === 'string' ? { objectId } : {}),
+      }
+    }
     return {
       kind: 'place-asset', assetId: p.assetId, anchor: p.anchor,
       rotation: (p.rotation ?? 0) as 0 | 1 | 2 | 3,

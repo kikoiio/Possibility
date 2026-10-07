@@ -487,17 +487,33 @@ describe('generateWorld semantic building carriers', () => {
     expect(parseEditOperations(JSON.stringify({ ops: [
       { op: 'add', block: 'cobble', x: 2, y: 0, z: 4 },
       { type: 'set', block: 'stone', x: 3, y: 1, z: 4 },
+      { op: 'place-object', objectId: 'single-cell-road', block: 'cobble', x: 4, y: 0, z: 6 },
       { kind: 'place-object', objectId: 'road', block: 'cobble', x: 5, y: 0, z: 6, xLength: 8, zLength: 1 },
       { kind: 'place-object', objectId: 'cafe-building', block: 'stone', anchor: { x: 8, y: 1, z: 8 }, geometry: { type: 'cube', sx: 3, sy: 2, sz: 3 } },
     ] }))).toEqual([
       { kind: 'set-block', at: { x: 2, y: 0, z: 4 }, block: 'cobble' },
       { kind: 'set-block', at: { x: 3, y: 1, z: 4 }, block: 'stone' },
+      { kind: 'set-block', at: { x: 4, y: 0, z: 6 }, block: 'cobble' },
       { kind: 'fill', from: { x: 5, y: 0, z: 6 }, to: { x: 12, y: 0, z: 6 }, block: 'cobble' },
       { kind: 'fill', from: { x: 8, y: 1, z: 8 }, to: { x: 10, y: 2, z: 10 }, block: 'stone' },
     ])
     expect(() => parseEditOperations(JSON.stringify({ ops: [
       { kind: 'place-object', block: 'stone', anchor: { x: 0, y: 1, z: 0 }, geometry: { sx: 64, sy: 64, sz: 64 } },
     ] }))).toThrow('place-object 需要目录 objectType/assetId')
+  })
+
+  it('converts known object templates mistakenly returned as asset placements', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'manor-main-house', placementId: 'main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 1 }],
+      locations: [{ name: '主楼', objectId: 'main-house' }],
+      lockedObjectIds: ['main-house'],
+    }, 'mist-manor', 'legacy-template-placement')
+    expect(doc.objects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'main-house', objectType: 'manor-main-house', rotation: 90 }),
+    ]))
+    expect(doc.locations).toEqual([{ name: '主楼', objectId: 'main-house' }])
+    expect(doc.lockedObjectIds).toContain('main-house')
   })
 
   it('accepts a building template or building asset for a required semantic location', async () => {

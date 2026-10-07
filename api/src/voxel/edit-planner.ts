@@ -122,8 +122,8 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
         }
       }
     }
-    // Region operations are block fills, even when the model incorrectly labels
-    // them as place-object and attaches an objectId that cannot exist in the document.
+    // Block edits are not object carriers, even when a model incorrectly labels
+    // a one-cell or region operation as place-object and attaches an objectId.
     if (op && op.kind === 'place-object' && typeof op.block === 'string') {
       const anchor = normalizedAnchor(op)
       const dimensions = (value: unknown): { width: number; height: number; depth: number } | null => {
@@ -150,6 +150,9 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
           y: anchor.y + extents.height - 1,
           z: anchor.z + extents.depth - 1,
         }
+      } else if (anchor) {
+        op.kind = 'set-block'
+        op.at = anchor
       }
     }
     // 弱模型操作名变种:place-block = set-block
