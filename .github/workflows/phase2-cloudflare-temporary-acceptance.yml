@@ -1,0 +1,229 @@
+name: Phase 2 temporary Cloudflare acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  temporary-worker-d1:
+    name: Temporary run-scoped Worker and D1 acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Validate Cloudflare configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo 'Both Actions secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be configured before dispatch.' >&2
+            exit 1
+          fi
+
+      - name: Derive isolated resource names
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_name="possibility-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          database_name="possibility-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "PHASE2_TEMP_WORKER_NAME=$worker_name" >> "$GITHUB_ENV"
+          echo "PHASE2_TEMP_DATABASE_NAME=$database_name" >> "$GITHUB_ENV"
+          echo "Temporary Worker and D1 names are scoped to Actions run ${GITHUB_RUN_ID}, attempt ${GITHUB_RUN_ATTEMPT}."
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Verify the run-scoped names are unused
+        run: node scripts/phase2-cloudflare-resource-guard.mjs before-create
+
+      - name: Create temporary D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'PHASE2_TEMP_D1_CREATE_STARTED=true' >> "$GITHUB_ENV"
+          npx wrangler d1 create "$PHASE2_TEMP_DATABASE_NAME" --json > "$RUNNER_TEMP/phase2-d1-create.json"
+          echo 'PHASE2_TEMP_D1_CREATE_SUCCEEDED=true' >> "$GITHUB_ENV"
+          database_id="$(rg -o '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' "$RUNNER_TEMP/phase2-d1-create.json" | head -n 1)"
+          if [[ ! "$database_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            cat "$RUNNER_TEMP/phase2-d1-create.json"
+            echo 'Could not identify the newly created D1 database ID.' >&2
+            exit 1
+          fi
+          echo "PHASE2_TEMP_DATABASE_ID=$database_id" >> "$GITHUB_ENV"
+          echo 'PHASE2_TEMP_DATABASE_CREATED=true' >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/phase2-d1-create.json"
+
+      - name: Write run-scoped Wrangler config
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="api/wrangler.phase2-temporary.toml"
+          cat > "$config" <<EOF
+          name = "$PHASE2_TEMP_WORKER_NAME"
+          main = "src/index.ts"
+          compatibility_date = "2025-01-01"
+          workers_dev = true
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "$PHASE2_TEMP_DATABASE_NAME"
+          database_id = "$PHASE2_TEMP_DATABASE_ID"
+          migrations_dir = "drizzle"
+
+          [vars]
+          ENVIRONMENT = "phase2-acceptance"
+          DIRECTOR_LLM = "0"
+          PHASE2_ACCEPTANCE_RUN_ID = "$GITHUB_RUN_ID"
+          PHASE2_ACCEPTANCE_RUN_ATTEMPT = "$GITHUB_RUN_ATTEMPT"
+          EOF
+          echo "PHASE2_TEMP_WRANGLER_CONFIG=$config" >> "$GITHUB_ENV"
+
+      - name: Apply migrations to temporary D1
+        run: npx wrangler d1 migrations apply DB --remote --config "$PHASE2_TEMP_WRANGLER_CONFIG"
+
+      - name: Set temporary engine secret and deploy Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$engine_secret"
+          printf '%s' "$engine_secret" | npx wrangler secret put ENGINE_TICK_SECRET \
+            --name "$PHASE2_TEMP_WORKER_NAME" --config "$PHASE2_TEMP_WRANGLER_CONFIG"
+          deploy_log="$RUNNER_TEMP/phase2-worker-deploy.log"
+          echo 'PHASE2_TEMP_WORKER_DEPLOY_STARTED=true' >> "$GITHUB_ENV"
+          npx wrangler deploy --config "$PHASE2_TEMP_WRANGLER_CONFIG" 2>&1 | tee "$deploy_log"
+          echo 'PHASE2_TEMP_WORKER_DEPLOYED=true' >> "$GITHUB_ENV"
+          api_url="$(rg -o 'https://[A-Za-z0-9.-]+\.workers\.dev' "$deploy_log" | head -n 1)"
+          if [[ -z "$api_url" ]]; then
+            echo 'Wrangler did not report a workers.dev URL for the temporary Worker.' >&2
+            exit 1
+          fi
+          expected_prefix="https://${PHASE2_TEMP_WORKER_NAME}."
+          if [[ "$api_url" != "$expected_prefix"* ]]; then
+            echo 'Deployed URL does not match the run-scoped temporary Worker name.' >&2
+            exit 1
+          fi
+          echo "PHASE2_TEMP_API_URL=$api_url" >> "$GITHUB_ENV"
+          echo "PHASE2_TEMP_ENGINE_SECRET=$engine_secret" >> "$GITHUB_ENV"
+          node scripts/phase2-cloudflare-worker-marker.mjs set
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail "$api_url/api/health" > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo 'Temporary Worker health check did not become ready.' >&2
+          exit 1
+
+      - name: Bootstrap one-off owner world and timeline
+        run: node scripts/phase2-temporary-cloudflare-bootstrap.mjs
+
+      - name: Verify deployed leave, pause, and resume journey
+        shell: bash
+        env:
+          DEPLOYMENT_WAIT_MS: '90000'
+          DEPLOYMENT_EVIDENCE_PATH: ${{ runner.temp }}/phase2-cloudflare-deployment-journey.json
+        run: |
+          set -euo pipefail
+          printf '%s' "$PHASE2_TEMP_ENGINE_SECRET" > "$RUNNER_TEMP/phase2-engine-secret"
+          chmod 600 "$RUNNER_TEMP/phase2-engine-secret"
+          (
+            while true; do
+              curl --silent --show-error --max-time 15 --request POST \
+                --header "x-engine-secret: $(cat "$RUNNER_TEMP/phase2-engine-secret")" \
+                "$DEPLOYMENT_API_URL/api/engine/tick" >> "$RUNNER_TEMP/phase2-cloudflare-ticks.jsonl" 2>&1 || true
+              sleep 5
+            done
+          ) &
+          tick_pinger_pid=$!
+          trap 'kill "$tick_pinger_pid" 2>/dev/null || true; wait "$tick_pinger_pid" 2>/dev/null || true' EXIT
+          npx tsx scripts/verify-deployment-journey.ts
+
+      - name: Archive temporary world and verify archived read-only behavior
+        if: always()
+        env:
+          PHASE2_TEMP_READONLY_EVIDENCE: ${{ runner.temp }}/phase2-cloudflare-archive-readonly.json
+        run: node scripts/phase2-temporary-cloudflare-finalize.mjs
+
+      - name: Delete only this run's temporary Worker and D1
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cleanup_failed=0
+          cleanup_flags="$RUNNER_TEMP/phase2-cloudflare-cleanup-flags.env"
+          PHASE2_TEMP_WORKER_DELETE_VERIFIED=false
+          PHASE2_TEMP_D1_DELETE_VERIFIED=false
+          guard_status=0
+          worker_cleanup='not-created'
+          d1_cleanup='not-created'
+          if [[ "$PHASE2_TEMP_WORKER_DEPLOY_STARTED" == true || "$PHASE2_TEMP_D1_CREATE_STARTED" == true ]]; then
+            PHASE2_TEMP_WORKER_MARKER_VERIFIED=false
+            if [[ "$PHASE2_TEMP_WORKER_DEPLOYED" == true ]]; then
+              node scripts/phase2-cloudflare-worker-marker.mjs verify
+              marker_status=$?
+              if [[ $marker_status -eq 0 ]]; then PHASE2_TEMP_WORKER_MARKER_VERIFIED=true; else cleanup_failed=1; fi
+            fi
+            export PHASE2_TEMP_WORKER_MARKER_VERIFIED
+            PHASE2_CLEANUP_FLAGS_PATH="$cleanup_flags" node scripts/phase2-cloudflare-resource-guard.mjs before-cleanup
+            guard_status=$?
+            if [[ $guard_status -ne 0 ]]; then cleanup_failed=1; fi
+            if [[ -f "$cleanup_flags" ]]; then source "$cleanup_flags"; fi
+          else
+            echo 'No Cloudflare resource creation was started; cleanup is not needed.'
+          fi
+          if [[ "$PHASE2_TEMP_WORKER_DELETE_VERIFIED" == true ]]; then
+            printf 'y\n' | npx wrangler delete --name "$PHASE2_TEMP_WORKER_NAME" --config "$PHASE2_TEMP_WRANGLER_CONFIG"
+            if [[ $? -eq 0 ]]; then worker_cleanup='deleted'; else worker_cleanup='delete-failed'; cleanup_failed=1; fi
+          elif [[ "$PHASE2_TEMP_WORKER_DEPLOY_STARTED" == true && "$PHASE2_TEMP_WORKER_DEPLOYED" != true ]]; then
+            worker_cleanup='partial-deploy-unverified-not-deleted'
+            cleanup_failed=1
+          elif [[ "$PHASE2_TEMP_WORKER_DEPLOYED" == true ]]; then
+            if [[ $guard_status -eq 0 && "$PHASE2_TEMP_WORKER_MARKER_VERIFIED" == true ]]; then worker_cleanup='already-absent'; else worker_cleanup='ownership-check-failed-not-deleted'; cleanup_failed=1; fi
+          fi
+          if [[ "$PHASE2_TEMP_D1_DELETE_VERIFIED" == true ]]; then
+            npx wrangler d1 delete "$PHASE2_TEMP_DATABASE_NAME" --skip-confirmation --config "$PHASE2_TEMP_WRANGLER_CONFIG"
+            if [[ $? -eq 0 ]]; then d1_cleanup='deleted'; else d1_cleanup='delete-failed'; cleanup_failed=1; fi
+          elif [[ "$PHASE2_TEMP_D1_CREATE_SUCCEEDED" == true && "$PHASE2_TEMP_DATABASE_CREATED" != true ]]; then
+            d1_cleanup='created-without-captured-id-not-deleted'
+            cleanup_failed=1
+          elif [[ "$PHASE2_TEMP_D1_CREATE_STARTED" == true && "$PHASE2_TEMP_D1_CREATE_SUCCEEDED" != true ]]; then
+            d1_cleanup='partial-create-unverified-not-deleted'
+            cleanup_failed=1
+          elif [[ "$PHASE2_TEMP_DATABASE_CREATED" == true ]]; then
+            if [[ $guard_status -eq 0 ]]; then d1_cleanup='already-absent'; else d1_cleanup='ownership-check-failed-not-deleted'; cleanup_failed=1; fi
+          fi
+          printf '{"worker":"%s","d1":"%s","ownershipGuardExit":%s}\n' \
+            "$worker_cleanup" "$d1_cleanup" "$guard_status" > "$RUNNER_TEMP/phase2-cloudflare-cleanup.json"
+          {
+            echo '## Temporary Cloudflare cleanup outcome'
+            echo
+            echo "- Worker: \`$worker_cleanup\`"
+            echo "- D1: \`$d1_cleanup\`"
+            echo "- Ownership guard exit: \`$guard_status\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f api/wrangler.phase2-temporary.toml "$RUNNER_TEMP/phase2-engine-secret"
+          exit "$cleanup_failed"
+
+      - name: Upload temporary Cloudflare acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-cloudflare-temporary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/phase2-cloudflare-deployment-journey.json
+            ${{ runner.temp }}/phase2-cloudflare-archive-readonly.json
+            ${{ runner.temp }}/phase2-cloudflare-cleanup.json
+          if-no-files-found: ignore
+          retention-days: 14
