@@ -96,7 +96,7 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
 
   // 8. 真实 UI 场景编辑：挑选未绑定地点的装饰资产并移除，等待服务端 revision 保存
   const removable = await page.evaluate(() => {
-    const engine = (window as unknown as { __voxelEngine?: { world?: { doc?: { locations?: { objectId: string }[]; assetPlacements?: { id?: string; assetId: string; anchor: [number, number, number] }[] } }; assetsManifest?: { assets: Record<string, { category: string; height: number }> }; worldToScreen?: (at: { x: number; y: number; z: number }) => { x: number; y: number } | null }).__voxelEngine
+    const engine = (window as any).__voxelEngine
     const doc = engine?.world?.doc
     if (!doc || !engine?.worldToScreen) return []
     const bound = new Set((doc.locations ?? []).map(location => location.objectId))
