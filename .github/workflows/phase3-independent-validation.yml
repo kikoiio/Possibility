@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           tests=()
-          for candidate in src/lib/presentation-state.test.ts src/components/world/presentation/presentation-route.test.ts src/components/world/presentation/CameraLinkCoordinator.test.ts; do
+          for candidate in src/lib/presentation-state.test.ts src/components/world/presentation/presentation-route.test.ts src/components/world/presentation/CameraLinkCoordinator.test.ts src/components/world/presentation/PresentationLifecycle.test.ts; do
             if [[ -f "web/$candidate" ]]; then tests+=("$candidate"); fi
           done
           if (( ${#tests[@]} > 0 )); then
