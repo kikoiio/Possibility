@@ -466,7 +466,6 @@ describe('generateWorld semantic building carriers', () => {
     ] }), assets)).toEqual([
       { kind: 'place-object', objectType: 'bld-hut-a', anchor: { x: 4, y: 1, z: 6 }, rotation: 90 },
     ])
-
     let error: unknown
     try {
       await generateWorld('一条沿海街道', 'mist-manor', {

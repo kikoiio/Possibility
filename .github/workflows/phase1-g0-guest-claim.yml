@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_provider_acceptance:
-        description: Run isolated DeepSeek acceptance within the configured remaining budget
+        description: Run the isolated five-scenario DeepSeek acceptance (up to 25 requests)
         type: boolean
         required: true
         default: false
