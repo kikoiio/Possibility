@@ -253,6 +253,39 @@ async function main(): Promise<void> {
     assert(mobileRecords.every(record => record.source !== 'worker' || record.status < 400),
       `mobile context Worker requests failed: ${JSON.stringify(mobileRecords)}`)
 
+    const currentVersion = Number(savedLayout.body.layout.version)
+    const invalidatedWrite = await apiWithToken(childLayoutPath, token, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion - 1, layout: savedLayout.body.layout }),
+    })
+    assert(invalidatedWrite.status === 409 && invalidatedWrite.body?.errorCode === 'version_conflict',
+      `stale layout write returned HTTP ${invalidatedWrite.status} (${invalidatedWrite.body?.errorCode})`)
+    const layoutAfterConflict = await apiWithToken(childLayoutPath, token)
+    assert(layoutAfterConflict.status === 200 && layoutAfterConflict.body?.layout?.version === currentVersion
+      && JSON.stringify(layoutAfterConflict.body.layout.placements) === savedPlacements,
+    'a rejected stale write changed the persisted layout')
+
+    const recoveredWrite = await apiWithToken(childLayoutPath, token, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion, layout: savedLayout.body.layout }),
+    })
+    assert(recoveredWrite.status === 200 && recoveredWrite.body?.layout?.version === currentVersion + 1,
+      `layout retry after version conflict returned HTTP ${recoveredWrite.status}`)
+
+    const archivedTimeline = await apiWithToken(`/api/timelines/${encodeURIComponent(forkTimelineId)}/archive`, token, { method: 'POST' })
+    assert(archivedTimeline.status === 200 && archivedTimeline.body?.status === 'archived',
+      `timeline archive returned HTTP ${archivedTimeline.status}`)
+    const archivedWrite = await apiWithToken(childLayoutPath, token, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion + 1, layout: savedLayout.body.layout }),
+    })
+    assert(archivedWrite.status === 409 && archivedWrite.body?.errorCode === 'archived_read_only',
+      `archived timeline write returned HTTP ${archivedWrite.status} (${archivedWrite.body?.errorCode})`)
+    const layoutAfterArchive = await apiWithToken(childLayoutPath, token)
+    assert(layoutAfterArchive.status === 200 && layoutAfterArchive.body?.layout?.version === currentVersion + 1
+      && JSON.stringify(layoutAfterArchive.body.layout.placements) === savedPlacements,
+    'archiving the timeline changed or hid its saved layout')
+
     const workerErrors = records.filter(record => record.source === 'worker' && record.status >= 400)
     assert(workerErrors.length === 0, `real Worker requests failed: ${JSON.stringify(workerErrors)}`)
     const required = [
@@ -281,6 +314,16 @@ async function main(): Promise<void> {
       layoutRestoredAfterReload: true,
       layoutRestoredInMobileContext: true,
       mobileContextWorkerRequests: mobileRecords.length,
+      staleWriteRejected: true,
+      staleWriteStatus: invalidatedWrite.status,
+      layoutRetryAfterConflictSucceeded: true,
+      layoutRetryStatus: recoveredWrite.status,
+      versionAfterRecovery: recoveredWrite.body.layout.version,
+      archivedTimelineReadOnly: true,
+      archiveStatus: archivedTimeline.status,
+      archivedWriteStatus: archivedWrite.status,
+      archivedLayoutReadable: true,
+      temporaryTestWorldCleanup: 'the isolated local D1 store is removed by the workflow cleanup step after acceptance',
     }
     const report = `${JSON.stringify(result, null, 2)}\n`
     process.stdout.write(report)
