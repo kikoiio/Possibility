@@ -286,7 +286,7 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
     const sourceTimelineId = clonedTimelineToSource.get(row.timelineId)
     const sourceHead = sourceTimelineId ? sourceNative2dHeadRows.find(candidate => candidate.timelineId === sourceTimelineId
       && candidate.sceneId === row.sceneId) : undefined
-    const sourceHeadRevision = sourceHead ? sourceNative2dRevisionFor(sourceHead.timelineId, sourceHead.sceneId, sourceHead.currentVersion) : undefined
+    const sourceHeadRevision = sourceHead ? sourceNativeRevisionFor(sourceHead.timelineId, sourceHead.sceneId, sourceHead.currentVersion) : undefined
     const expectedCloneHeadRevision = sourceHeadRevision ? clonedNative2dRevisionRows.find(candidate =>
       candidate.timelineId === row.timelineId && candidate.sceneId === row.sceneId && candidate.version === sourceHeadRevision.version) : undefined
     if (!sourceHead || sourceHead.currentVersion !== row.currentVersion || expectedCloneHeadRevision?.id !== row.currentRevisionId) {

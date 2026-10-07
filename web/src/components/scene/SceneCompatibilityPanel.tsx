@@ -7,6 +7,7 @@ import type {
   SceneValidationReportView,
 } from '@possibility/voxel-contract'
 import type { CompatibilityContinuation } from '../../scene/compatibility-store'
+import type { SceneScope } from '../../api/types'
 import { sceneCompatibilityApi } from '../../api/client'
 
 const PAGE_SIZE = 20
@@ -153,6 +154,7 @@ function SpaceProgress({ report }: { report: SceneValidationReport | SceneValida
 
 export interface SceneCompatibilityPanelProps {
   continuation: CompatibilityContinuation
+  sceneScope?: SceneScope
   /** 现有编辑权限；无权限时不展示任何会产生副作用的按钮 */
   canEdit: boolean
   /** 修复前后只读预览（preview 状态时由调用方挂载，保持单一视口实例） */
@@ -165,7 +167,7 @@ export interface SceneCompatibilityPanelProps {
 }
 
 /** 场景兼容诊断与修复预览面板（只读展示；所有副作用都经回调交给会话层）。 */
-export function SceneCompatibilityPanel({ continuation, canEdit, preview, onBuild, onConfirm, onRecheck, onQueryResult, onClose }: SceneCompatibilityPanelProps) {
+export function SceneCompatibilityPanel({ continuation, sceneScope, canEdit, preview, onBuild, onConfirm, onRecheck, onQueryResult, onClose }: SceneCompatibilityPanelProps) {
   const { state, inspection, draft, failure, receipt, message } = continuation
   const busy = state === 'checking' || state === 'building' || state === 'submitting'
   const report = draft?.report ?? inspection?.report ?? failure?.report ?? null
@@ -193,7 +195,8 @@ export function SceneCompatibilityPanel({ continuation, canEdit, preview, onBuil
     setPageLoading(kind)
     setPageError(null)
     try {
-      const result = await sceneCompatibilityApi.readDraft(continuation.scope.worldId, draft.id, {
+      if (!sceneScope) throw new Error('当前时间线信息不可用，请重新打开兼容检查')
+      const result = await sceneCompatibilityApi.readDraft(continuation.scope.worldId, sceneScope, draft.id, {
         page: {
           limit: PAGE_SIZE,
           issuesOffset: kind === 'issues' ? offset : issues?.offset ?? 0,

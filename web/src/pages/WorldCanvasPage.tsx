@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, authApi, getGuestToken, getToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeAuthIdentityChange, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, SceneHistoryRevision, TimelineComparison, WorldSnapshot,
+  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, SceneHistoryRevision, SceneScope, TimelineComparison, WorldSnapshot,
 } from '../api/types'
 import type { SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
 import { SceneCompatibilityPanel } from '../components/scene/SceneCompatibilityPanel'
@@ -743,7 +743,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (issues.some(issue => issue.origin === 'existing')) void openCompatibility('repair-current', { kind: 'current' })
   }, [worldId, activeTimelineId])
   // A1(W21):AI 规划命中服务端模型前闸门(422 compatibility-required)时,直接打开修复旅程,原输入保留在面板里。
-  const planSceneEdits = useCallback((engine: VoxelEngine, intent: string, scope = {
+  const planSceneEdits = useCallback((engine: VoxelEngine, intent: string, scope: SceneScope & { spaceId: string } = {
     timelineId: activeTimelineId, representation: 'voxel' as const, spaceId: 'exterior',
   }) => planEditsViaApi(engine, worldId, intent, scope).catch(error => {
       if (error instanceof EditPlanRequestError && error.errorCode === 'compatibility-required') {
@@ -797,7 +797,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       />
     : undefined
   const compatPanel = currentCompatContinuation && currentCompatContinuation.state !== 'idle'
-    ? <SceneCompatibilityPanel
+    ? <SceneCompatibilityPanel sceneScope={{ timelineId: activeTimelineId, representation: 'voxel' }}
         continuation={currentCompatContinuation}
         canEdit={canEditScene && !readonly}
         preview={compatPreview}
