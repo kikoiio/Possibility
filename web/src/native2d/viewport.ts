@@ -8,6 +8,7 @@
 import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { createPointerInput, type PickTarget, type PointerInputController } from './input'
 import { applyCamera, gridToProjected, IDENTITY_CAMERA, type Camera } from './projection'
+import type { EnvironmentValue } from '../scene/life/environment'
 import type {
   MovePreview,
   Native2dViewport,
@@ -54,7 +55,21 @@ function includeRect(bounds: ProjectedBounds, x: number, y: number, width: numbe
 export interface Native2dViewportOptions {
   readonly signal?: AbortSignal
   readonly onEvent: (event: ViewportEvent) => void
-  readonly onDiagnostics?: (value: ViewportDiagnostics) => void
+  readonly onDiagnostics?: (value: Native2dViewportDiagnostics) => void
+}
+
+export interface Native2dViewportDiagnostics extends ViewportDiagnostics {
+  readonly environment: {
+    readonly weather: EnvironmentValue | null
+    readonly lighting: 'day' | 'dusk' | 'night' | null
+    readonly access: Readonly<Record<string, 'open' | 'closed'>>
+  }
+  /** Items whose Pixi graphics were submitted in the latest render. */
+  readonly environmentVisuals: readonly {
+    readonly kind: 'weather' | 'lighting' | 'access'
+    readonly value: EnvironmentValue
+    readonly locationName?: string
+  }[]
 }
 
 interface ViewportState {
@@ -83,7 +98,14 @@ function drawDiamond(graphics: Graphics, x: number, y: number, width = 64, heigh
   graphics.poly([x, y, x + width / 2, y + height / 2, x, y + height, x - width / 2, y + height / 2]).fill({ color, alpha })
 }
 
-function drawPrimitive(graphics: Graphics, object: PresentedObject, scene: SceneDefinition, selected: boolean, alpha: number): void {
+function drawPrimitive(
+  graphics: Graphics,
+  object: PresentedObject,
+  scene: SceneDefinition,
+  selected: boolean,
+  alpha: number,
+  access?: 'open' | 'closed',
+): void {
   const asset = object.assetId ? scene.assetManifest[object.assetId] : null
   const color = COLORS[object.assetId ?? ''] ?? 0x8aa0a3
   const foot = gridToProjected(object.origin)
@@ -94,8 +116,13 @@ function drawPrimitive(graphics: Graphics, object: PresentedObject, scene: Scene
   if (object.kind === 'decoration' && object.assetId === 'ground') {
     drawDiamond(graphics, foot.x, foot.y, 64, 32, color, alpha)
   } else if (object.kind === 'location') {
-    graphics.circle(foot.x, foot.y - 8, 8).fill({ color: 0xd5b779, alpha })
-    graphics.circle(foot.x, foot.y - 8, 12).stroke({ color: 0xf0d9a0, width: 2, alpha: alpha * 0.75 })
+    const markerColor = access === 'closed' ? 0xd77872 : access === 'open' ? 0x79c7a3 : 0xd5b779
+    graphics.circle(foot.x, foot.y - 8, 8).fill({ color: markerColor, alpha })
+    graphics.circle(foot.x, foot.y - 8, 12).stroke({ color: markerColor, width: 2, alpha: alpha * 0.85 })
+    if (access === 'closed') {
+      graphics.moveTo(foot.x - 4, foot.y - 12).lineTo(foot.x + 4, foot.y - 4).stroke({ color: 0x341d20, width: 2, alpha })
+      graphics.moveTo(foot.x + 4, foot.y - 12).lineTo(foot.x - 4, foot.y - 4).stroke({ color: 0x341d20, width: 2, alpha })
+    }
   } else if (object.kind === 'resident') {
     graphics.circle(foot.x, foot.y - 24, 10).fill({ color, alpha })
     graphics.roundRect(foot.x - 8, foot.y - 16, 16, 20, 4).fill({ color, alpha })
@@ -142,6 +169,10 @@ export async function createNative2dViewport(
   const world = new Container()
   world.sortableChildren = true
   app.stage.addChild(world)
+  const environmentLayer = new Container()
+  environmentLayer.label = 'environment-overlays'
+  environmentLayer.eventMode = 'none'
+  app.stage.addChild(environmentLayer)
   const state: ViewportState = {
     camera: IDENTITY_CAMERA,
     presentation: null,
@@ -154,6 +185,7 @@ export async function createNative2dViewport(
   let drawCount = 0
   let lastRenderMs = 0
   let latestBounds: ViewportDiagnostics['objectBounds'] = {}
+  let latestEnvironmentVisuals: Native2dViewportDiagnostics['environmentVisuals'] = []
   let input: PointerInputController | null = null
   let activeMoveBuildingId: string | null = null
   const textureCache = new Map<string, Texture>()
@@ -281,8 +313,13 @@ export async function createNative2dViewport(
 
   const rebuild = (): void => {
     world.removeChildren().forEach((child) => child.destroy({ children: true }))
+    environmentLayer.removeChildren().forEach((child) => child.destroy({ children: true }))
     const presentation = state.presentation
-    if (!presentation) return
+    const environmentVisuals: Native2dViewportDiagnostics['environmentVisuals'][number][] = []
+    if (!presentation) {
+      latestEnvironmentVisuals = environmentVisuals
+      return
+    }
     const current = space()
     const ground = new Graphics()
     ground.label = 'ground-backdrop'
@@ -298,14 +335,23 @@ export async function createNative2dViewport(
     const focusFoot = focus ? gridToProjected(focus.origin) : null
     for (const object of objects) {
       const selected = sameSelection(state.selection, object.selection) || (state.followPersonId !== null && object.id === `resident:${state.followPersonId}`)
+      const locationKey = object.selection?.kind === 'location' ? object.selection.locationKey : null
+      const presentedLocation = object.kind === 'location' && locationKey
+        ? presentation.locations.find((location) => location.locationKey === locationKey)
+        : undefined
+      const access = presentedLocation?.name ? presentation.environment?.access[presentedLocation.name] : undefined
       const asset = object.assetId ? scene.assetManifest[object.assetId] : null
       const visibleLayers = asset?.layers.filter((layer) => visibleLayer(layer, presentation.timeOfDay)) ?? []
       const loadedLayers = visibleLayers.map((layer) => ({ layer, texture: requestTexture(layer.url) }))
       if (!loadedLayers.some(({ layer, texture }) => layer.role === 'base' && texture)) {
         const graphic = new Graphics()
         graphic.zIndex = depth(object, scene) * 10
-        drawPrimitive(graphic, object, scene, selected, 1)
+        if (object.kind === 'location') graphic.label = access ? `access:${presentedLocation?.name}:${access}` : `location:${presentedLocation?.name ?? object.id}`
+        drawPrimitive(graphic, object, scene, selected, 1, access)
         world.addChild(graphic)
+        if (object.kind === 'location' && presentedLocation && access) {
+          environmentVisuals.push({ kind: 'access', locationName: presentedLocation.name, value: access })
+        }
       }
       if (asset) {
         const projected = gridToProjected(object.origin)
@@ -379,7 +425,42 @@ export async function createNative2dViewport(
         world.addChild(conflicts)
       }
     }
+    const environment = presentation.environment
+    const width = Math.max(1, host.clientWidth)
+    const height = Math.max(1, host.clientHeight)
+    if (environment?.weather) {
+      const weather = new Graphics()
+      weather.label = `environment:weather:${environment.weather}`
+      if (environment.weather === 'rain') {
+        weather.rect(0, 0, width, height).fill({ color: 0x19374c, alpha: 0.055 })
+        const spacing = 46
+        for (let x = -height; x < width + height; x += spacing) {
+          weather.moveTo(x, 0).lineTo(x + height * 0.32, height).stroke({ color: 0x9dc7df, width: 1, alpha: 0.34 })
+        }
+      } else if (environment.weather === 'fog') {
+        weather.rect(0, 0, width, height).fill({ color: 0xb5c9c8, alpha: 0.13 })
+        for (let row = 0; row < 3; row += 1) {
+          weather.rect(0, height * (0.24 + row * 0.22), width, Math.max(14, height * 0.055))
+            .fill({ color: 0xd8e2df, alpha: 0.12 })
+        }
+      } else {
+        weather.circle(width - 34, 34, 11).fill({ color: 0xf2d48d, alpha: 0.82 })
+        weather.circle(width - 34, 34, 16).stroke({ color: 0xf2d48d, width: 2, alpha: 0.34 })
+      }
+      environmentLayer.addChild(weather)
+      environmentVisuals.push({ kind: 'weather', value: environment.weather })
+    }
+    if (environment?.lighting) {
+      const lighting = new Graphics()
+      lighting.label = `environment:lighting:${environment.lighting}`
+      const color = environment.lighting === 'night' ? 0x101b3b : environment.lighting === 'dusk' ? 0xc66b4c : 0xf2cf83
+      const alpha = environment.lighting === 'night' ? 0.18 : environment.lighting === 'dusk' ? 0.095 : 0.035
+      lighting.rect(0, 0, width, height).fill({ color, alpha })
+      environmentLayer.addChild(lighting)
+      environmentVisuals.push({ kind: 'lighting', value: environment.lighting })
+    }
     latestBounds = createBounds()
+    latestEnvironmentVisuals = environmentVisuals
   }
 
   const renderFrame = (): void => {
@@ -392,6 +473,7 @@ export async function createNative2dViewport(
     app.renderer.render(app.stage)
     lastRenderMs = (globalThis.performance?.now?.() ?? Date.now()) - startedAt
     drawCount += 1
+    const environment = state.presentation?.environment
     options.onDiagnostics?.({
       width: host.clientWidth,
       height: host.clientHeight,
@@ -400,6 +482,12 @@ export async function createNative2dViewport(
       drawCount,
       lastRenderMs,
       objectBounds: latestBounds,
+      environment: {
+        weather: environment?.weather ?? null,
+        lighting: environment?.lighting ?? null,
+        access: environment?.access ?? {},
+      },
+      environmentVisuals: latestEnvironmentVisuals,
     })
   }
 

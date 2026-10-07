@@ -6,11 +6,13 @@ import {
   gridToScreen,
   projectedToGrid,
   removeCamera,
+  projectEnvironmentFor2d,
   screenToGrid,
   snapScreenToGrid,
   snapToGrid,
   type Camera,
 } from '../projection'
+import { projectEnvironmentFacts } from '../../scene/life/environment'
 
 const REPRESENTATIVE_GRID_POINTS = [
   { x: 0, z: 0 },
@@ -123,5 +125,22 @@ describe('snapToGrid', () => {
     const screen = gridToScreen({ x: 4, z: -2 }, camera)
     const target = snapScreenToGrid({ x: screen.x + 5, y: screen.y - 2 }, camera)
     expect(target).toEqual({ x: 4, z: -2 })
+  })
+})
+
+describe('projectEnvironmentFor2d', () => {
+  it('keeps finite world weather, lighting and location access for the renderer', () => {
+    const projection = projectEnvironmentFacts([
+      { factType: 'environment', value: { location: null, condition: 'weather', value: 'fog' } },
+      { factType: 'environment', value: { location: null, condition: 'lighting', value: 'night' } },
+      { factType: 'environment', value: { location: '大厅', condition: 'access', value: 'closed' } },
+      { factType: 'environment', value: { location: '书房', condition: 'access', value: 'restricted' } },
+      { factType: 'environment', value: { location: '世界', condition: 'weather', value: 'storm' } },
+    ])
+    expect(projectEnvironmentFor2d(projection)).toEqual({
+      weather: 'fog',
+      lighting: 'night',
+      access: { 大厅: 'closed' },
+    })
   })
 })
