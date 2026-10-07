@@ -107,6 +107,7 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PHASE2_READINESS_EVIDENCE_PATH: ${{ runner.temp }}/phase2-cloudflare-readiness.jsonl
         run: |
           set -euo pipefail
           engine_secret="$(openssl rand -hex 32)"
@@ -130,12 +131,7 @@ jobs:
           echo "PHASE2_TEMP_API_URL=$api_url" >> "$GITHUB_ENV"
           echo "PHASE2_TEMP_ENGINE_SECRET=$engine_secret" >> "$GITHUB_ENV"
           node scripts/phase2-cloudflare-worker-marker.mjs set
-          for attempt in $(seq 1 60); do
-            if curl --silent --fail "$api_url/api/health" > /dev/null; then exit 0; fi
-            sleep 2
-          done
-          echo 'Temporary Worker health check did not become ready.' >&2
-          exit 1
+          node scripts/phase2-cloudflare-readiness.mjs
 
       - name: Bootstrap one-off owner world and timeline
         run: node scripts/phase2-temporary-cloudflare-bootstrap.mjs
@@ -282,5 +278,6 @@ jobs:
             ${{ runner.temp }}/phase2-cloudflare-cleanup.json
             ${{ runner.temp }}/phase2-cloudflare-post-delete.json
             ${{ runner.temp }}/phase2-cloudflare-migration-evidence.json
+            ${{ runner.temp }}/phase2-cloudflare-readiness.jsonl
           if-no-files-found: ignore
           retention-days: 14
