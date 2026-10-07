@@ -502,7 +502,7 @@ export async function createNative2dViewport(
   const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     if (disposed) return
     app.renderer.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight))
-    state.camera = fitOverview()
+    state.camera = clampCamera(state.camera)
     applyFollowCamera()
     requestRender()
   })

@@ -24,6 +24,9 @@ export default function PresentationHost({
   const hostRef = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<unknown>(null)
   const [attempt, setAttempt] = useState(0)
+  const callbacksRef = useRef({ onCameraChange, onTransition })
+  callbacksRef.current = { onCameraChange, onTransition }
+  const capabilitiesKey = JSON.stringify(context.capabilities)
 
   useEffect(() => {
     const host = hostRef.current
@@ -31,20 +34,22 @@ export default function PresentationHost({
     let active = true
     const lifecycle = createPresentationLifecycle({ adapters, store })
     setFailure(null)
-    void lifecycle.transition(context, host, { onCameraChange }).then(result => {
+    void lifecycle.transition(context, host, {
+      onCameraChange: camera => callbacksRef.current.onCameraChange?.(camera),
+    }).then(result => {
       if (!active) return
       if (result.kind === 'error') setFailure(result.error)
-      onTransition?.(result)
+      callbacksRef.current.onTransition?.(result)
     })
     return () => {
       active = false
       lifecycle.destroy()
     }
-  }, [context, adapters, store, onCameraChange, onTransition, attempt])
+  }, [context.paneId, context.worldId, context.timelineId, context.presentation, context.identity, context.stateVersion, context.simNow, capabilitiesKey, adapters, store, attempt])
 
   const message = failure instanceof Error ? failure.message : failure == null ? '' : String(failure)
   return (
-    <div className={className} data-testid={`presentation-host-${context.paneId}`}>
+    <div className={`relative min-h-0 min-w-0 ${className ?? ''}`} data-testid={`presentation-host-${context.paneId}`}>
       <div ref={hostRef} className="h-full min-h-0 min-w-0" data-presentation={context.presentation} />
       {failure != null && (
         <div role="alert" className="absolute inset-0 grid place-content-center gap-3 bg-sheet/95 p-4 text-center">
