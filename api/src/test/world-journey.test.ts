@@ -304,7 +304,7 @@ describe('small world journey without an LLM', () => {
     expect(JSON.parse(childTimeline!.forkScenarioJson!)).toMatchObject(forkScenario)
 
     const condition = await post('/api/worlds/home-world/actions', { id: 'main-weather', timelineId: 'home-main', expectedVersion: 1,
-      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'storm' } })
+      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } })
     expect(condition.status).toBe(200)
     const sourceFactId = (await condition.json() as { factId: string }).factId
     const informed = await post('/api/worlds/home-world/scene/inform', { commandId: 'child-message', timelineId: childId, expectedVersion: 0,

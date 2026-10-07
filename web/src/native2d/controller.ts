@@ -70,6 +70,8 @@ import type {
 import { createInitialLayout } from './layout-validation'
 import { createLayoutEditor } from './editor'
 import { buildPresentation, resolveResidentPlacement } from './presentation'
+import { projectEnvironmentFacts } from '../scene/life/environment'
+import { projectEnvironmentFor2d } from './projection'
 
 /** 跟随意图：following=视觉定位中；paused=目标暂不可呈现，保留意图与真实地点提示。 */
 export interface FollowState {
@@ -221,7 +223,14 @@ export function createSampleController(options: SampleControllerOptions): Sample
     const world = state.readState.lastGood
     const layout = state.layout
     if (!world || !layout) return null
-    const presentation = buildPresentation(world, scene, layout, state.spaceId)
+    const environmentProjection = projectEnvironmentFacts((world.environment ?? []).map((fact) => ({
+      factType: 'environment',
+      value: { location: fact.locationName, condition: fact.condition, value: fact.value },
+    })))
+    const presentation: ScenePresentation = {
+      ...buildPresentation(world, scene, layout, state.spaceId),
+      environment: projectEnvironmentFor2d(environmentProjection),
+    }
     viewport?.setPresentation(presentation)
     return presentation
   }
@@ -837,7 +846,8 @@ export function createSampleController(options: SampleControllerOptions): Sample
           || !sameScope(state.readState.lastGood.scope, scope)) return
         if (!result.ok) {
           // 清除失败：保留当前布局与记录。
-          update({ pendingReset: null, notice: `重置失败：${result.message}（当前布局与服务端记录保持不变）` })
+          const preserved = scope.source === 'account' ? '服务端记录' : '本地记录'
+          update({ pendingReset: null, notice: `重置失败：${result.message}（当前布局与${preserved}保持不变）` })
           return
         }
         // 成功后才恢复基线布局并清空撤销栈。

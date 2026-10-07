@@ -38,7 +38,7 @@ test('E1 uses a real isolated account and D1 world without calling a model', asy
     } })
     expect(response.status()).toBe(200)
   }
-  await writeEnvironmentChange(`e1-${suffix}-first`, 0, '薄雾')
+  await writeEnvironmentChange(`e1-${suffix}-first`, 0, 'fog')
 
   await page.addInitScript((authToken: string) => localStorage.setItem('possibility_token', authToken), token)
   // The voxel document is only a rendering fixture; auth, world state, return, evidence and seen APIs stay real.
@@ -67,19 +67,19 @@ test('E1 uses a real isolated account and D1 world without calling a model', asy
   await expect(page.getByText(/新增 1 项记录/)).toBeVisible()
   await page.getByRole('button', { name: '查看来源与当时状态' }).click()
   await expect(page.getByTestId('event-evidence-detail')).toContainText('记录事实')
-  await expect(page.getByTestId('event-evidence-detail')).toContainText('薄雾')
+  await expect(page.getByTestId('event-evidence-detail')).toContainText('fog')
   await expect(page.getByTestId('event-evidence-detail')).toContainText('Cafe')
   await expect(page.getByTestId('event-evidence-detail')).toContainText('Ada')
   await expect(page.getByTestId('event-evidence-detail')).toContainText(new Date().toISOString().slice(0, 10))
   await expect(page.getByTestId('event-evidence-detail')).toContainText('可能相关与未知')
 
   // Emulate a world write after the page watermarks were read but before the user marks it seen.
-  await writeEnvironmentChange(`e1-${suffix}-second`, 1, '小雨')
+  await writeEnvironmentChange(`e1-${suffix}-second`, 1, 'rain')
   await page.getByRole('button', { name: '看完了，记下这个时间点' }).click()
   await returnButton.click()
   await expect(page.getByText(/新增 1 项记录/)).toBeVisible()
-  await expect(page.getByText('记录值：小雨')).toBeVisible()
-  await expect(page.getByText('记录值：薄雾')).toHaveCount(0)
+  await expect(page.getByText('记录值：rain')).toBeVisible()
+  await expect(page.getByText('记录值：fog')).toHaveCount(0)
   await page.getByRole('button', { name: '查看来源与当时状态' }).click()
   await page.getByTestId('fork-from-event').click()
   const forkDialog = page.getByRole('dialog', { name: '创建平行宇宙' })

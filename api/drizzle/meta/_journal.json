@@ -281,6 +281,13 @@
       "when": 1791344009926,
       "tag": "0039_clone_fact_history_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791344009927,
+      "tag": "0039_native2d_layout_persistence",
+      "breakpoints": true
     }
   ]
 }

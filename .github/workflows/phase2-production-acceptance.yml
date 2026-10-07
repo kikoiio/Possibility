@@ -1,0 +1,154 @@
+name: Phase 2 production acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-preview:
+    name: Production preview with real local Worker API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PHASE2_API_TARGET: http://127.0.0.1:18891
+      PHASE2_PREVIEW_URL: http://127.0.0.1:15175
+      PHASE2_D1_PERSIST: /tmp/phase2-release-d1-${{ github.run_id }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build the Vite production bundle
+        run: npm --workspace web run build
+
+      - name: Start isolated local Worker and D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PHASE2_D1_PERSIST"
+          setsid npm --workspace api run dev:s02-e2e -- "$PHASE2_D1_PERSIST" 18891 > "$RUNNER_TEMP/phase2-worker.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/phase2-worker.pgid"
+          for attempt in $(seq 1 120); do
+            if curl --silent --fail "$PHASE2_API_TARGET/api/health" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/phase2-worker.log"
+          exit 1
+
+      - name: Serve the production bundle with Vite preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          setsid npm --workspace web run preview -- --host 127.0.0.1 --port 15175 > "$RUNNER_TEMP/phase2-preview.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/phase2-preview.pgid"
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail "$PHASE2_PREVIEW_URL/dev/native-2d" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/phase2-preview.log"
+          exit 1
+
+      - name: Verify owner journey against the production preview
+        working-directory: web
+        run: npx tsx scripts/phase2-release-preview.acceptance.ts
+
+      - name: Verify leave, pause, and resume against the isolated Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --local --config api/wrangler.s02-e2e.toml \
+            --persist-to "$PHASE2_D1_PERSIST" \
+            --command "DELETE FROM world_persons WHERE world_id = '$DEPLOYMENT_WORLD_ID';"
+          (
+            while true; do
+              response="$(curl --silent --show-error --request POST \
+                --header 'x-engine-secret: phase2-isolated-engine-tick' \
+                "$PHASE2_API_TARGET/api/engine/tick" || true)"
+              printf '%s\n' "$response" >> "$RUNNER_TEMP/phase2-tick-responses.jsonl"
+              sleep 5
+            done
+          ) &
+          tick_pinger_pid=$!
+          trap 'kill "$tick_pinger_pid" 2>/dev/null || true; wait "$tick_pinger_pid" 2>/dev/null || true' EXIT
+          journey_status=0
+          DEPLOYMENT_API_URL="$PHASE2_API_TARGET" npx tsx scripts/verify-deployment-journey.ts || journey_status=$?
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          const evidence = JSON.parse(readFileSync(process.env.DEPLOYMENT_EVIDENCE_PATH, 'utf8'))
+          const ticks = readFileSync(`${process.env.RUNNER_TEMP}/phase2-tick-responses.jsonl`, 'utf8')
+            .trim().split('\n').filter(Boolean).slice(-8).map(line => {
+              try { return JSON.parse(line) } catch { return line }
+            })
+          const timelineTime = name => {
+            const body = evidence.steps[name]?.body ?? {}
+            const world = (body.worlds ?? []).find(item => item.id === evidence.worldId)
+            return world?.timelines?.find(item => item.id === evidence.timelineId)?.simNow
+          }
+          const summary = {
+            result: evidence.ok ? 'PASS' : 'FAIL',
+            environment: 'GitHub-hosted runner; isolated local Worker and D1; no remote deployment',
+            waitMs: evidence.waitMs,
+            worldId: evidence.worldId,
+            timelineId: evidence.timelineId,
+            error: evidence.error,
+            assertions: evidence.assertions,
+            httpStatuses: Object.fromEntries(Object.entries(evidence.steps).map(([name, step]) => [name, step.status])),
+            observedSimTime: {
+              before: timelineTime('statusBefore'),
+              afterLeave: timelineTime('statusAfterLeave'),
+              atPause: timelineTime('statusAfterPause'),
+              whilePaused: timelineTime('statusWhilePaused'),
+              afterResume: timelineTime('statusAfterResume'),
+              afterResumeWait: timelineTime('statusAfterResumeWait'),
+            },
+            recentTicks: ticks,
+          }
+          process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `## Phase 2 isolated engine journey\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n`)
+          NODE
+          exit "$journey_status"
+
+      - name: Verify mobile touch interactions
+        working-directory: web
+        env:
+          PLAYWRIGHT_NATIVE2D_API_TARGET: http://127.0.0.1:18891
+        run: npx playwright test --config playwright.native2d.config.ts --project=native2d-mobile --workers=1
+
+      - name: Verify live public demo is read-only
+        if: ${{ vars.PHASE2_PUBLIC_DEMO_API_URL != '' }}
+        working-directory: web
+        env:
+          PLAYWRIGHT_NATIVE2D_API_TARGET: ${{ vars.PHASE2_PUBLIC_DEMO_API_URL }}
+        run: npx playwright test --config playwright.native2d.config.ts --project=native2d-live --workers=1
+
+      - name: Record missing public demo URL
+        if: ${{ vars.PHASE2_PUBLIC_DEMO_API_URL == '' }}
+        run: |
+          echo '## Public demo read-only acceptance: NOT RUN' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Configure the repository Actions variable `PHASE2_PUBLIC_DEMO_API_URL` with the public demo API origin, then rerun this workflow.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop test services
+        if: always()
+        shell: bash
+        run: |
+          for pid_file in "$RUNNER_TEMP/phase2-preview.pgid" "$RUNNER_TEMP/phase2-worker.pgid"; do
+            if [[ -f "$pid_file" ]]; then
+              kill -TERM -- "-$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          rm -rf "$PHASE2_D1_PERSIST"

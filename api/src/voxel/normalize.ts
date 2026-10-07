@@ -111,8 +111,6 @@ export function normalizeWorldDocument(
       return { document: current, fixes, repairable: false }
     }
     const nextCount = candidateIssues.filter(issue => issue.code === 'walk-clearance').length
-    if (nextCount >= clearanceIssues.length) return { document: current, fixes, repairable: false }
-
     current = candidate
     issues = candidateIssues
     fixes.push(`walk-clearance:${clearanceIssues.length}->${nextCount}`)

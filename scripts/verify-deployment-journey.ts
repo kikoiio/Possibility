@@ -1,5 +1,5 @@
 /**
- * Verify a deployed runtime's pause/resume journey and write durable evidence.
+ * Verify a deployed runtime keeps advancing while away, then honors pause/resume.
  *
  * Usage:
  *   DEPLOYMENT_API_URL=https://example.workers.dev \
@@ -8,8 +8,8 @@
  *   npx tsx scripts/verify-deployment-journey.ts
  *
  * The script uses existing auth, world, and engine status routes. It does not
- * create test records or require a database connection, so it is suitable for
- * a real deployment after a browser has left and returned to a world.
+ * create test records or require a database connection. It advances a running
+ * world naturally, then pauses and resumes it; use a dedicated test world.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -70,12 +70,19 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-function stateFingerprint(body: Json | undefined): { simNow: unknown; events: string[]; facts: string[] } {
-  const root = object(body)
+function stateFingerprint(engineStatus: Json | undefined, worldId: string, timelineId: string,
+  state: Json | undefined): { simNow: unknown; events: string[]; facts: string[] } {
+  const status = object(engineStatus)
+  const statusWorlds = Array.isArray(status.worlds) ? status.worlds : []
+  const world = object(statusWorlds.find(candidate => object(candidate).id === worldId))
+  const timelines = Array.isArray(world.timelines) ? world.timelines : []
+  const timeline = object(timelines.find(candidate => object(candidate).id === timelineId))
+  const root = object(state)
   const events = Array.isArray(root.events) ? root.events : []
-  const facts = Array.isArray(root.currentFacts) ? root.currentFacts : []
+  const facts = Array.isArray(root.current) ? root.current
+    : Array.isArray(root.currentFacts) ? root.currentFacts : []
   return {
-    simNow: root.simNow,
+    simNow: timeline.simNow,
     events: events.map((event) => object(event).id).filter((id): id is string => typeof id === 'string').sort(),
     facts: facts.map((fact) => object(fact).id).filter((id): id is string => typeof id === 'string').sort(),
   }
@@ -89,6 +96,7 @@ function recordAssertion(name: string, value: boolean): void {
 const startedAt = now()
 let result: JourneyEvidence | undefined
 try {
+  if (waitMs < 30_000) throw new Error('set DEPLOYMENT_WAIT_MS to at least 30000 to verify background progress')
   if (!suppliedToken && (!username || !password)) {
     throw new Error('set DEPLOYMENT_TOKEN or DEPLOYMENT_USERNAME and DEPLOYMENT_PASSWORD')
   }
@@ -118,7 +126,7 @@ try {
   if (!timelineId) throw new Error(`no active timeline found for world: ${worldId}`)
   const beforePath = `/api/worlds/${encodeURIComponent(worldId)}/state${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`
   const stateBefore = await request('stateBeforeLeave', beforePath, {}, token)
-  const beforeFingerprint = stateFingerprint(stateBefore)
+  const beforeFingerprint = stateFingerprint(statusBefore, worldId, timelineId, stateBefore)
   result = {
     ok: false, startedAt, finishedAt: now(), apiUrl, waitMs, worldId, timelineId,
     steps, assertions,
@@ -127,6 +135,16 @@ try {
   recordAssertion('engineStatusVisible', Object.prototype.hasOwnProperty.call(statusBefore, 'engine'))
   recordAssertion('worldWasRunning', worldObject.status === 'running')
 
+  // Simulate leaving the world while its scheduler runs naturally.
+  await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
+  const stateReturnRunning = await request('stateAfterLeave', beforePath, {}, token)
+  const statusAfterLeave = await request('statusAfterLeave', '/api/engine/status', {}, token)
+  const awayFingerprint = stateFingerprint(statusAfterLeave, worldId, timelineId, stateReturnRunning)
+  recordAssertion('worldAdvancedWhileAway',
+    beforeFingerprint.simNow !== awayFingerprint.simNow
+    || JSON.stringify(beforeFingerprint.events) !== JSON.stringify(awayFingerprint.events)
+    || JSON.stringify(beforeFingerprint.facts) !== JSON.stringify(awayFingerprint.facts))
+
   await request('pause', `/api/worlds/${encodeURIComponent(worldId)}/pause`, { method: 'POST' }, token)
   pausedWorldId = worldId
   const statusAway = object(await request('statusAfterPause', '/api/engine/status', {}, token))
@@ -134,12 +152,15 @@ try {
     ? object(statusAway.worlds.find((candidate) => object(candidate).id === worldId)) : {}
   recordAssertion('pauseReasonRecorded', worldAway.status === 'paused' && worldAway.pauseReason === 'manual')
 
-  if (waitMs > 0) await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
-  const stateReturn = await request('stateAfterReturn', beforePath, {}, token)
-  const afterFingerprint = stateFingerprint(stateReturn)
-  recordAssertion('simTimeFrozenWhilePaused', beforeFingerprint.simNow === afterFingerprint.simNow)
-  recordAssertion('eventsRetained', JSON.stringify(beforeFingerprint.events) === JSON.stringify(afterFingerprint.events))
-  recordAssertion('factsRetained', JSON.stringify(beforeFingerprint.facts) === JSON.stringify(afterFingerprint.facts))
+  const stateAtPause = await request('stateAtPause', beforePath, {}, token)
+  const pauseFingerprint = stateFingerprint(statusAway, worldId, timelineId, stateAtPause)
+  await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
+  const stateWhilePaused = await request('stateWhilePaused', beforePath, {}, token)
+  const statusWhilePaused = await request('statusWhilePaused', '/api/engine/status', {}, token)
+  const pausedFingerprint = stateFingerprint(statusWhilePaused, worldId, timelineId, stateWhilePaused)
+  recordAssertion('simTimeFrozenWhilePaused', pauseFingerprint.simNow === pausedFingerprint.simNow)
+  recordAssertion('eventsRetained', JSON.stringify(pauseFingerprint.events) === JSON.stringify(pausedFingerprint.events))
+  recordAssertion('factsRetained', JSON.stringify(pauseFingerprint.facts) === JSON.stringify(pausedFingerprint.facts))
 
   await request('resume', `/api/worlds/${encodeURIComponent(worldId)}/resume`, { method: 'POST' }, token)
   const statusAfterResume = object(await request('statusAfterResume', '/api/engine/status', {}, token))
@@ -147,6 +168,13 @@ try {
     ? object(statusAfterResume.worlds.find((candidate) => object(candidate).id === worldId)) : {}
   recordAssertion('resumeClearsStopReason', worldResumed.status === 'running' && worldResumed.pauseReason === null)
   pausedWorldId = null
+  const stateAfterResume = await request('stateAfterResume', beforePath, {}, token)
+  await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
+  const stateAfterResumeWait = await request('stateAfterResumeWait', beforePath, {}, token)
+  const statusAfterResumeWait = await request('statusAfterResumeWait', '/api/engine/status', {}, token)
+  const resumedFingerprint = stateFingerprint(statusAfterResumeWait, worldId, timelineId, stateAfterResumeWait)
+  recordAssertion('worldAdvancedAfterResume',
+    stateFingerprint(statusAfterResume, worldId, timelineId, stateAfterResume).simNow !== resumedFingerprint.simNow)
   result.ok = true
 } catch (error) {
   // Never leave a production world paused because an evidence assertion failed.

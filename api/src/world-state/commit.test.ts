@@ -310,7 +310,7 @@ describe('versioned world command', () => {
   it('preserves rumor certainty when relayed and keeps private knowledge out of public snapshots', async () => {
     const fixture = await setup()
     const weather = await commitWorldCommand(fixture.db, { ...base, id: 'verified-weather', expectedVersion: 0,
-      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain has started' } })
+      action: { type: 'environment', location: 'Cafe', condition: 'weather', value: 'rain' } })
     const verifiedMessage = await commitWorldCommand(fixture.db, { ...base, id: 'tell-a-weather', expectedVersion: 1,
       action: { type: 'inform', recipientId: 'a', topic: 'weather', content: 'It is raining.', sourceFactId: weather.factId } })
     const rumor = await commitWorldCommand(fixture.db, { ...base, id: 'tell-a-secret', expectedVersion: 2,
@@ -336,7 +336,7 @@ describe('versioned world command', () => {
     expect(bFacts.some(fact => fact.text.includes('It is raining.'))).toBe(false)
     const publicSnapshot = (await worldSnapshot(fixture.db, 'home-world', 'home-main'))!
     expect(JSON.stringify(publicSnapshot.currentFacts)).not.toContain('spare key')
-    expect(JSON.stringify(publicSnapshot.currentFacts)).toContain('rain has started')
+    expect(JSON.stringify(publicSnapshot.currentFacts)).toContain('"value":"rain"')
   })
 
   it('API reads are side-effect free and invalid scoped IDs are rejected', async () => {

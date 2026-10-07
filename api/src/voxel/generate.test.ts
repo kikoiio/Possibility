@@ -64,7 +64,7 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
       calls.push(messages)
       return JSON.stringify({
         size: { width: 16, height: 16, depth: 16 },
-        ops: [{ kind: 'set-block', at: { x: 16, y: 4, z: 8 }, block: 'stone' }],
+        ops: [{ kind: 'place-object', objectId: 'edge-house', objectType: 'manor-main-house', anchor: { x: 15, y: 1, z: 15 }, rotation: 0 }],
       })
     }
     await expect(generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })).rejects.toBeInstanceOf(WorldGeneratorError)

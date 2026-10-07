@@ -55,3 +55,25 @@
 - 阶段二新证据：main commit `19089f6d75ad9b74262034b4eca5fc8ec32e8700` 更新了 [`phase2-acceptance-2026-10-07.md`](phase2-acceptance-2026-10-07.md) 和阶段二 checklist；该报告已作为独立证据文件加入 phase3，不包含阶段二应用代码。GitHub Actions run `37560275395` 在 production bundle + preview 下连接隔离 Cloudflare Worker/local D1，19 个真实 Worker 请求、HTTP 失败 0；owner 完成登录、读取、干预、分叉、比较、布局保存、整页 reload、重选和布局回读。聊天 SSE 是唯一 mock。API 全量 876 passed/1 skipped、Web 单测 536/536、开发服务器 native2d-desktop 35/35 也有记录。
 - 阶段二判定：**未通过**。production preview 的布局保存与 reload/回读现已通过，但 T15 的部署世界离页推进、暂停、恢复没有运行；公开 demo live 检查、触屏、跨设备布局恢复和归档行为仍未验证。阶段二实现代码 commit `b68e79b9762a0e071515e5549305ee64480bcae9` 在 `main`，尚未并入本 `phase3` 分支。
 - 最新 G0 判定：**未通过，T05 及后续集成开发保持锁定**。阶段一有明确失败和未覆盖项，阶段二也有正式的出口未验证项；两个阶段均未达到批准的通过门槛。不得以部分旅程或单项回归替代出口。
+
+## G0 与提前独立开发复核（2026-10-07 14:41）
+
+- 用户本轮授权：尽可能并行推进前两阶段门槛，同时可提前开发不依赖门槛的 phase3 部分。四份规格已记录调度更新；提前实现范围为 T05/T06/T07/T10 独立模块，不接入真实世界会话、renderer 或页面。G0 仍约束依赖集成。
+- phase3 已从 `18dedf1` 快进到远端已提交 `e33809c`；随后新增公共契约与云端独立验证 `2ba51ee`、比较 fixture `17053cf`。没有从其他 worktree 复制未提交改动。
+- 阶段一 UI/API 旅程：[Actions run 37581579770](https://github.com/kikoiio/Possibility/actions/runs/37581579770)，commit `8305393`，6 个 API 文件 33 tests passed、浏览器 10 tests passed。范围包含多空间访客交谈/分叉/认领、owner 暂停/恢复、编辑持久化、真实分屏、reload 继续及固定草稿的 create/repair UI。对话和生成草稿的确定性 fixture 不作为真实生成证据。
+- 阶段一真实生成：[Actions run 37581260623](https://github.com/kikoiio/Possibility/actions/runs/37581260623)，commit `068e93d`。16 次 provider 请求，实际费用 `$0.040377`、账本对账通过、清理通过。custom-2 通过；custom-1 净空、custom-3 连通性、official-example 内容失败。原世界补建保存通过，官方示例单空间保存未完成。脱敏原始证据见 [phase1-provider-37581260623.json](phase1-provider-37581260623.json)。这批 25 次授权剩余最多 9 次，由协调者集中调度，不另启 25 次完整批次。
+- 阶段二部署诊断：[run 37581995275](https://github.com/kikoiio/Possibility/actions/runs/37581995275)，commit `c520548`，tick summary 明确为缺失 LLM_BASE_URL 导致 `undefined.replace`，未进入时钟推进；归档和严格零残留清理通过。fixture 配置修复 `252f1a3` 正在 [run 37582832140](https://github.com/kikoiio/Possibility/actions/runs/37582832140) 复验。公共 demo live-read 仍需独立证据。
+- 提前实现 P05：公共契约 commit `2ba51ee` 在 [run 37582294420](https://github.com/kikoiio/Possibility/actions/runs/37582294420) Web production build/类型检查通过。P06/P07 在 `p3-independent-state-route` 子 worktree 开发；P10 fixture 的发现/数据烟测由独立云端 CI 验证，尚不构成浏览器集成通过。
+- 当前判定：**G0 未通过**。阶段一真实生成仍失败，阶段二部署旅程复验与公共 demo 验收待完成。提前独立模块已正式开始；renderer、会话与页面集成继续等待正面证据。
+- worktree 所有权：`phase3` 为协调者集成分支；`phase1-claim-fix`/`phase1-g0-timeout-fix` 为阶段一生成修复；`phase2-clock-fix` 为阶段二临时验收修复；`p3-independent-state-route` 为纯存储/路由实现。主 worktree `/home/neo/Projects/Possibility` 已恢复 `main` 且干净。T01–T04 的旧审计 worktree 和 user-owned 终端保留为可复查记录，未擅自删除或终止。
+
+## 集成基线与提前实现复核（2026-10-07 14:57）
+
+- 四项独立模块已实现并汇入 `phase3`：公共契约 `2ba51ee`、隔离 fixture `17053cf`、存储及 URL `57e94c2`。最新集成基线 `51b8d75` 在 [run 37583769998](https://github.com/kikoiio/Possibility/actions/runs/37583769998) Web production build/类型检查通过，存储与 URL 共 **79 tests passed**，fixture 数据 **2 tests passed**。这不是 renderer 或页面集成验收。
+- 阶段二已提交代码与验收工具从 `phase2-clock-fix` 合入 `phase3`（merge `efaf7b5`）。两阶段各自的历史 `0039` SQL 文件名均保留，避免改名导致既有按文件名记录的迁移被重新应用；`0039_snapshot` 保留认领来源列，合并后的 `0040_snapshot` 增加 native2d 两表，journal idx 39/40 各自保留对应历史 tag。API 类型检查及本轮 fresh D1 迁移、认领与布局定向测试已通过；已部署旧数据库升级不由本轮临时 fresh D1 证据代替。
+- 阶段二真实部署： [run 37582832140](https://github.com/kikoiio/Possibility/actions/runs/37582832140)，tested commit `252f1a3`，临时远端 Cloudflare Worker/隔离 D1 的离页推进、暂停冻结、恢复推进 **9/9 断言通过**；归档、归档可读和写入拒绝 **3/3 通过**；Worker/D1 清理后精确名称匹配均为 0。原始摘要见 [deployed-37582832140.md](../../phase2-world-loop/evidence/deployed-37582832140.md) 和对应 JSON（evidence commit `9304b1b`，集成 `1c03c25`）。此 fixture 无居民、无 scene、零 provider，仅补齐部署时钟出口。
+- 阶段二发布构建和 owner/mobile 布局回归在集成 SHA `51b8d75` 的 [run 37583839313](https://github.com/kikoiio/Possibility/actions/runs/37583839313) 为 success。公开 demo URL 尚未提供，但 arrangement 阶段二门槛没有把 demo live-read 单列为必需出口；按扩展 QA 留待补证，不单独阻塞 G0。居民/地点循环及改变的事实/规则/画面/证据连续性仍按已有与新增证据逐项核对。
+- 阶段一修复已汇入：地点绑定检查进入生成重试、净空有限轮修复、不可达承载物反馈、安全 failureStage 和归一记录。云端回归发现等数量新净空仍被旧判断拦截，已在 `cc25984` 修正；越界反馈用例改为真实越界物体，未放宽 validator。[run 37584142096](https://github.com/kikoiio/Possibility/actions/runs/37584142096) 的 API build 与 10 文件/81 项定向回归已通过，随后执行仅 official-example/custom-1/custom-3 的真实生成复验，硬上限 **9 次**。先前 `37583830342` 因回归失败跳过 provider，调用数为 0。
+- 阶段一完整确定性 UI/API 旅程在 [run 37583487064](https://github.com/kikoiio/Possibility/actions/runs/37583487064) 的 browser job 仍为 success；该 run 整体因 API typed fixture/harness 编译问题失败，已另行修复且在 `37584142096` API build 通过。不得把整个失败 run 标为成功。
+- 当前 **G0 仍未通过**：等待真实生成复验结果，并继续核对两阶段完整出口的证据范围。原集成 DAG 未解锁；P05/P06/P07/P10 的成功只记录提前独立实施，不能冒充完整 phase3 交付。
+- Orca 独立 worker 的完成消息已处理，release 返回 `retained/user_takeover`，未终止用户接管的终端；当前 Run 的 reclaimable worker 列表为空。所有新重型检查运行于已授权 GitHub Actions，未在本机启动新 build/browser/provider 服务。

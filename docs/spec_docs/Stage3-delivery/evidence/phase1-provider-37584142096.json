@@ -1,0 +1,327 @@
+{
+  "schema": "phase1-g0-provider-acceptance-v1",
+  "workflowRunId": "37584142096",
+  "commit": "cc259840f19fcf95e2041821241a5d1b1663652f",
+  "provider": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "keyConfigured": true
+  },
+  "scope": {
+    "selectedScenarioIds": [
+      "official-example",
+      "custom-1",
+      "custom-3"
+    ],
+    "fullSuite": false
+  },
+  "limits": {
+    "rawProviderRequests": 9,
+    "perScenario": 5,
+    "apiMaxTokens": 16000,
+    "thinking": "disabled",
+    "costCapUsd": 10
+  },
+  "pricing": {
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "peakUsdPerMillion": {
+      "cacheHitInput": 0.006,
+      "cacheMissInput": 0.3,
+      "output": 1.2
+    },
+    "oneMillionContextWorstCaseFor25RequestsUsd": 7.86
+  },
+  "scenarios": [
+    {
+      "id": "official-example",
+      "apiStatus": 200,
+      "valid": false,
+      "worldReady": true,
+      "validDocument": true,
+      "forbiddenAbsent": true,
+      "issueCodes": [],
+      "semanticGroups": {
+        "coast": true,
+        "oldStation": true,
+        "street": false,
+        "cafe": true,
+        "garden": true,
+        "residence": true
+      },
+      "locationCount": 8,
+      "objectCount": 7,
+      "carrierCount": 8,
+      "carriersUnique": true,
+      "carriersResolved": true,
+      "carriersMatchWorld": true,
+      "providerRequests": 3,
+      "llmCallLogRows": 3
+    },
+    {
+      "id": "custom-1",
+      "apiStatus": 200,
+      "valid": true,
+      "worldReady": true,
+      "validDocument": true,
+      "forbiddenAbsent": true,
+      "issueCodes": [],
+      "semanticGroups": {
+        "cobblestonePath": true,
+        "northSouth": true,
+        "cafe": true,
+        "twoStoryHome": true,
+        "northPlaza": true,
+        "stoneLantern": true
+      },
+      "locationCount": 8,
+      "objectCount": 16,
+      "carrierCount": 8,
+      "carriersUnique": true,
+      "carriersResolved": true,
+      "carriersMatchWorld": true,
+      "providerRequests": 2,
+      "llmCallLogRows": 2
+    },
+    {
+      "id": "custom-3",
+      "apiStatus": 429,
+      "valid": false,
+      "worldReady": false,
+      "validDocument": false,
+      "forbiddenAbsent": true,
+      "errorKind": "budget",
+      "issueCodes": [],
+      "semanticGroups": {
+        "openGrass": false,
+        "straightPath": false,
+        "cafe": false,
+        "courtyard": false
+      },
+      "locationCount": 0,
+      "objectCount": 0,
+      "carrierCount": 0,
+      "carriersUnique": false,
+      "carriersResolved": true,
+      "carriersMatchWorld": false,
+      "providerRequests": 4,
+      "llmCallLogRows": 4
+    }
+  ],
+  "singleSpace": {
+    "selected": true,
+    "saved": false,
+    "worldIdHash": null,
+    "timelineIdHash": null,
+    "source": "official-example"
+  },
+  "repair": {
+    "selected": false,
+    "saved": false,
+    "draftStatus": null,
+    "draftKind": null,
+    "draftFailureStage": null,
+    "draftNormalizationFixes": [],
+    "draftIssueCodes": [],
+    "providerRequests": 0,
+    "llmCallLogRows": -1,
+    "originalWorldIdHash": "9d14b2193d5df7dce7a33488f8b816fd0dce4655f1ca1dfeef25806d3d31aa93",
+    "originalWorldName": "phase1-g0-37584142096-repair"
+  },
+  "requests": {
+    "totalRawProviderRequests": 9,
+    "blockedAttempts": 0,
+    "byScenario": {
+      "custom-1": 2,
+      "custom-2": 0,
+      "custom-3": 4,
+      "official-example": 3,
+      "original-world-repair": 0
+    },
+    "llmCallLogRows": 9,
+    "llmCallLogSummary": [
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "world_draft",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      },
+      {
+        "purpose": "scene",
+        "status": "completed",
+        "errorCode": null
+      }
+    ],
+    "reconciled": true,
+    "calls": [
+      {
+        "scenario": "official-example",
+        "status": 200,
+        "usage": {
+          "promptTokens": 207,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 207,
+          "completionTokens": 402,
+          "costUsd": 0.0005445
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "official-example",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1732,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 580,
+          "completionTokens": 2408,
+          "costUsd": 0.0030705119999999996
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "official-example",
+        "status": 200,
+        "usage": {
+          "promptTokens": 4576,
+          "cacheHitTokens": 4096,
+          "cacheMissTokens": 480,
+          "completionTokens": 2408,
+          "costUsd": 0.003058176
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 229,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 229,
+          "completionTokens": 463,
+          "costUsd": 0.0006243
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-1",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1775,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 623,
+          "completionTokens": 1812,
+          "costUsd": 0.002368212
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 214,
+          "cacheHitTokens": 0,
+          "cacheMissTokens": 214,
+          "completionTokens": 417,
+          "costUsd": 0.0005646000000000001
+        },
+        "maxTokens": 8000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 1726,
+          "cacheHitTokens": 1152,
+          "cacheMissTokens": 574,
+          "completionTokens": 2821,
+          "costUsd": 0.003564312
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 4582,
+          "cacheHitTokens": 4352,
+          "cacheMissTokens": 230,
+          "completionTokens": 2070,
+          "costUsd": 0.002579112
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      },
+      {
+        "scenario": "custom-3",
+        "status": 200,
+        "usage": {
+          "promptTokens": 7061,
+          "cacheHitTokens": 6528,
+          "cacheMissTokens": 533,
+          "completionTokens": 2970,
+          "costUsd": 0.003763068
+        },
+        "maxTokens": 16000,
+        "thinkingDisabled": true
+      }
+    ]
+  },
+  "usage": {
+    "actualCostUsd": 0.020137,
+    "usageUnavailableRequests": 0,
+    "reservedWorstCaseUsd": 2.8296
+  },
+  "cleanup": {
+    "exactNameCounts": {
+      "phase1-g0-37584142096-single": 0,
+      "phase1-g0-37584142096-repair": 0
+    },
+    "remainingTableRows": 0,
+    "d1Deleted": true
+  },
+  "failures": [
+    "one_or_more_prompt_scenarios_invalid",
+    "official_example_single_space_save_not_verified"
+  ],
+  "passed": false
+}

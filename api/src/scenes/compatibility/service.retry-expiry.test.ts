@@ -26,7 +26,10 @@ import {
 } from './service'
 import type { SceneValidationAccess } from './context'
 
-const NOW = new Date('2026-10-06T00:00:00.000Z')
+// Keep the frozen JavaScript clock aligned with SQLite's real `now` value.
+// Otherwise a past fixed date makes a freshly created 30-second lease appear
+// expired to SQLite before the retry-expiry assertions even begin.
+const NOW = new Date()
 const ACTOR = { actorKey: 'retry-expiry-actor', userId: 'retry-expiry-user' }
 const control = (): Partial<SceneWorkControl> => ({
   signal: new AbortController().signal,
