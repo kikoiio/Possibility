@@ -483,6 +483,23 @@ describe('generateWorld semantic building carriers', () => {
     expect((error as Error).message).toContain('road-marker')
   })
 
+  it('normalizes legacy block-edit aliases and block geometry without inventing object carriers', () => {
+    expect(parseEditOperations(JSON.stringify({ ops: [
+      { op: 'add', block: 'cobble', x: 2, y: 0, z: 4 },
+      { type: 'set', block: 'stone', x: 3, y: 1, z: 4 },
+      { kind: 'place-object', objectId: 'road', block: 'cobble', x: 5, y: 0, z: 6, xLength: 8, zLength: 1 },
+      { kind: 'place-object', objectId: 'cafe-building', block: 'stone', anchor: { x: 8, y: 1, z: 8 }, geometry: { type: 'cube', sx: 3, sy: 2, sz: 3 } },
+    ] }))).toEqual([
+      { kind: 'set-block', at: { x: 2, y: 0, z: 4 }, block: 'cobble' },
+      { kind: 'set-block', at: { x: 3, y: 1, z: 4 }, block: 'stone' },
+      { kind: 'fill', from: { x: 5, y: 0, z: 6 }, to: { x: 12, y: 0, z: 6 }, block: 'cobble' },
+      { kind: 'fill', from: { x: 8, y: 1, z: 8 }, to: { x: 10, y: 2, z: 10 }, block: 'stone' },
+    ])
+    expect(() => parseEditOperations(JSON.stringify({ ops: [
+      { kind: 'place-object', block: 'stone', anchor: { x: 0, y: 1, z: 0 }, geometry: { sx: 64, sy: 64, sz: 64 } },
+    ] }))).toThrow('place-object 需要目录 objectType/assetId')
+  })
+
   it('accepts a building template or building asset for a required semantic location', async () => {
     const manifest = {
       version: 2 as const,

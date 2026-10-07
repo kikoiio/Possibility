@@ -104,6 +104,9 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
       if (typeof op.type === 'string') op.kind = op.type
       else if (typeof op.op === 'string') op.kind = op.op
     }
+    // Older generation responses use add/set as single-cell block edits.
+    // Normalize only these unambiguous aliases; object operations stay strict.
+    if (op && (op.kind === 'add' || op.kind === 'set')) op.kind = 'set-block'
     // Alternate block-placement shorthand emitted by several compatible models.
     if (op && op.kind === 'place-block' && typeof op.block === 'string' && isCoord(op.anchor)
       && !!op.size && typeof op.size === 'object') {
@@ -121,19 +124,31 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
     }
     // Region operations are block fills, even when the model incorrectly labels
     // them as place-object and attaches an objectId that cannot exist in the document.
-    if (op && op.kind === 'place-object' && typeof op.block === 'string'
-      && (isCoord(op.from) && isCoord(op.to) || isCoord(op.anchor) && !!op.size)) {
-      op.kind = 'fill'
-      if (!op.from && isCoord(op.anchor) && op.size && typeof op.size === 'object') {
-        const size = op.size as Record<string, unknown>
-        if (Number.isInteger(size.width) && Number.isInteger(size.height) && Number.isInteger(size.depth)
-          && Number(size.width) > 0 && Number(size.height) > 0 && Number(size.depth) > 0) {
-          op.from = op.anchor
-          op.to = {
-            x: op.anchor.x + Number(size.width) - 1,
-            y: op.anchor.y + Number(size.height) - 1,
-            z: op.anchor.z + Number(size.depth) - 1,
-          }
+    if (op && op.kind === 'place-object' && typeof op.block === 'string') {
+      const anchor = normalizedAnchor(op)
+      const dimensions = (value: unknown): { width: number; height: number; depth: number } | null => {
+        if (!value || typeof value !== 'object') return null
+        const shape = value as Record<string, unknown>
+        const width = shape.width ?? shape.sx ?? shape.xLength
+        const height = shape.height ?? shape.sy ?? shape.yLength ?? 1
+        const depth = shape.depth ?? shape.sz ?? shape.zLength
+        if (![width, height, depth].every(n => Number.isInteger(n) && Number(n) > 0 && Number(n) <= 256)) return null
+        if (Number(width) * Number(height) * Number(depth) > 4096) return null
+        return { width: Number(width), height: Number(height), depth: Number(depth) }
+      }
+      const geometry = op.geometry && typeof op.geometry === 'object'
+        ? op.geometry as Record<string, unknown>
+        : null
+      const extents = dimensions(op.size) ?? dimensions(geometry) ?? dimensions(op)
+      if (isCoord(op.from) && isCoord(op.to)) {
+        op.kind = 'fill'
+      } else if (anchor && extents) {
+        op.kind = 'fill'
+        op.from = anchor
+        op.to = {
+          x: anchor.x + extents.width - 1,
+          y: anchor.y + extents.height - 1,
+          z: anchor.z + extents.depth - 1,
         }
       }
     }
