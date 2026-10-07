@@ -142,6 +142,19 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Diagnose archived construction responses without model calls
+        if: inputs.replay_provider_run_id != ''
+        env:
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/provider-replay/phase1-g0-provider-${{ inputs.replay_provider_run_id }}.json
+        run: npx tsx api/scripts/phase1-generation-replay-diagnostics.ts
+      - name: Upload construction replay diagnostics
+        if: always() && inputs.replay_provider_run_id != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-generation-replay-diagnostics-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/phase1-generation-replay-diagnostics.json
       - name: Run selected isolated provider acceptance
         working-directory: api
         env:
