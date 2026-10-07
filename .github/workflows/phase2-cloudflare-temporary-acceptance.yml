@@ -176,11 +176,16 @@ jobs:
           set +e
           cleanup_failed=0
           cleanup_flags="$RUNNER_TEMP/phase2-cloudflare-cleanup-flags.env"
+          post_cleanup_flags="$RUNNER_TEMP/phase2-cloudflare-post-cleanup-flags.env"
           PHASE2_TEMP_WORKER_DELETE_VERIFIED=false
           PHASE2_TEMP_D1_DELETE_VERIFIED=false
           guard_status=0
+          post_guard_status=1
           worker_cleanup='not-created'
           d1_cleanup='not-created'
+          post_delete_verification='not-run'
+          worker_post_delete_matches=null
+          d1_post_delete_matches=null
           if [[ "$PHASE2_TEMP_WORKER_DEPLOY_STARTED" == true || "$PHASE2_TEMP_D1_CREATE_STARTED" == true ]]; then
             PHASE2_TEMP_WORKER_MARKER_VERIFIED=false
             if [[ "$PHASE2_TEMP_WORKER_DEPLOYED" == true ]]; then
@@ -229,14 +234,38 @@ jobs:
           elif [[ "$PHASE2_TEMP_DATABASE_CREATED" == true ]]; then
             if [[ $guard_status -eq 0 ]]; then d1_cleanup='already-absent'; else d1_cleanup='ownership-check-failed-not-deleted'; cleanup_failed=1; fi
           fi
-          printf '{"worker":"%s","d1":"%s","ownershipGuardExit":%s}\n' \
-            "$worker_cleanup" "$d1_cleanup" "$guard_status" > "$RUNNER_TEMP/phase2-cloudflare-cleanup.json"
+          PHASE2_CLEANUP_FLAGS_PATH="$post_cleanup_flags" \
+            PHASE2_CLEANUP_EVIDENCE_PATH="$RUNNER_TEMP/phase2-cloudflare-post-delete.json" \
+            node scripts/phase2-cloudflare-resource-guard.mjs after-cleanup
+          post_guard_status=$?
+          if [[ -f "$post_cleanup_flags" ]]; then source "$post_cleanup_flags"; fi
+          if [[ $post_guard_status -eq 0 \
+            && "$PHASE2_TEMP_CLEANUP_VERIFIED_ABSENT" == true \
+            && "$PHASE2_TEMP_WORKER_POST_DELETE_MATCHES" == 0 \
+            && "$PHASE2_TEMP_D1_POST_DELETE_MATCHES" == 0 ]]; then
+            post_delete_verification='verified-absent'
+            worker_post_delete_matches="$PHASE2_TEMP_WORKER_POST_DELETE_MATCHES"
+            d1_post_delete_matches="$PHASE2_TEMP_D1_POST_DELETE_MATCHES"
+          elif [[ -f "$post_cleanup_flags" ]]; then
+            post_delete_verification='resources-remain'
+            worker_post_delete_matches="$PHASE2_TEMP_WORKER_POST_DELETE_MATCHES"
+            d1_post_delete_matches="$PHASE2_TEMP_D1_POST_DELETE_MATCHES"
+            cleanup_failed=1
+          else
+            post_delete_verification='verification-failed'
+            cleanup_failed=1
+          fi
+          printf '{"worker":"%s","d1":"%s","ownershipGuardExit":%s,"postDeleteVerification":"%s","workerExactNameMatches":%s,"d1ExactNameMatches":%s}\n' \
+            "$worker_cleanup" "$d1_cleanup" "$guard_status" "$post_delete_verification" \
+            "$worker_post_delete_matches" "$d1_post_delete_matches" \
+            > "$RUNNER_TEMP/phase2-cloudflare-cleanup.json"
           {
             echo '## Temporary Cloudflare cleanup outcome'
             echo
             echo "- Worker: \`$worker_cleanup\`"
             echo "- D1: \`$d1_cleanup\`"
             echo "- Ownership guard exit: \`$guard_status\`"
+            echo "- Post-delete exact-name verification: \`$post_delete_verification\` (Worker matches: \`$worker_post_delete_matches\`; D1 matches: \`$d1_post_delete_matches\`)"
           } >> "$GITHUB_STEP_SUMMARY"
           rm -f api/wrangler.phase2-temporary.toml "$RUNNER_TEMP/phase2-engine-secret"
           exit "$cleanup_failed"
@@ -250,6 +279,7 @@ jobs:
             ${{ runner.temp }}/phase2-cloudflare-deployment-journey.json
             ${{ runner.temp }}/phase2-cloudflare-archive-readonly.json
             ${{ runner.temp }}/phase2-cloudflare-cleanup.json
+            ${{ runner.temp }}/phase2-cloudflare-post-delete.json
             ${{ runner.temp }}/phase2-cloudflare-migration-evidence.json
           if-no-files-found: ignore
           retention-days: 14
