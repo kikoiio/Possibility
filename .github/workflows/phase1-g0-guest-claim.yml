@@ -5,6 +5,13 @@ on:
     branches: [phase3]
     paths:
       - .github/workflows/phase1-g0-guest-claim.yml
+  workflow_dispatch:
+    inputs:
+      run_provider_acceptance:
+        description: Run the isolated five-scenario DeepSeek acceptance (up to 25 requests)
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -15,6 +22,7 @@ concurrency:
 
 jobs:
   guest-claim:
+    if: github.event_name == 'push'
     name: Isolated real API + browser guest claim slice
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -63,4 +71,38 @@ jobs:
           path: |
             ${{ runner.temp }}/phase1-guest-claim.log
             /tmp/s02-playwright-results/
+          retention-days: 14
+
+  phase1-g0-provider:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && github.ref == 'refs/heads/phase3'
+    name: Isolated Phase 1 provider acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: phase1-g0-provider-acceptance
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run isolated five-scenario provider acceptance
+        working-directory: api
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
+        run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts
+      - name: Upload redacted provider acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-g0-provider-acceptance-${{ github.run_id }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
           retention-days: 14
