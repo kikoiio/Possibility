@@ -1,5 +1,4 @@
 import { createNative2dViewport } from './viewport'
-import type { Camera } from './projection'
 import type { SceneDefinition, ScenePresentation } from './types'
 import type { PresentationAdapter, WorldPresentationContext } from '../components/world/presentation/presentation-types'
 
