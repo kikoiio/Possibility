@@ -17,9 +17,11 @@ BEGIN
 			JOIN `timelines` target_timeline ON target_timeline.`id` = NEW.`timeline_id`
 			WHERE source_fact.`id` = NEW.`clone_source_fact_id`
 				AND source_fact.`source_command_id` = source_command.`id`
+				AND target_command.`clone_source_command_id` = source_fact.`source_command_id`
 				AND source_fact.`version` = NEW.`version`
 				AND source_fact.`sim_time` = NEW.`sim_time`
 				AND source_fact.`fact_type` = NEW.`fact_type`
+				AND source_fact.`value_json` = NEW.`value_json`
 				AND source_fact.`visibility` = NEW.`visibility`
 				AND target_command.`world_id` = target_timeline.`world_id`
 				AND target_command.`world_id` <> source_command.`world_id`
@@ -39,9 +41,11 @@ BEGIN
 			JOIN `timelines` target_timeline ON target_timeline.`id` = NEW.`timeline_id`
 			WHERE source_fact.`id` = NEW.`clone_source_fact_id`
 				AND source_fact.`source_command_id` = source_command.`id`
+				AND target_command.`clone_source_command_id` = source_fact.`source_command_id`
 				AND source_fact.`version` = NEW.`version`
 				AND source_fact.`sim_time` = NEW.`sim_time`
 				AND source_fact.`fact_type` = NEW.`fact_type`
+				AND source_fact.`value_json` = NEW.`value_json`
 				AND source_fact.`visibility` = NEW.`visibility`
 				AND target_command.`world_id` = target_timeline.`world_id`
 				AND target_command.`world_id` <> source_command.`world_id`
@@ -68,9 +72,11 @@ BEGIN
 			JOIN `timelines` target_timeline ON target_timeline.`id` = NEW.`timeline_id`
 			WHERE source_fact.`id` = NEW.`clone_source_fact_id`
 				AND source_fact.`source_command_id` = source_command.`id`
+				AND target_command.`clone_source_command_id` = source_fact.`source_command_id`
 				AND source_fact.`version` = NEW.`version`
 				AND source_fact.`sim_time` = NEW.`sim_time`
 				AND source_fact.`fact_type` = NEW.`fact_type`
+				AND source_fact.`value_json` = NEW.`value_json`
 				AND source_fact.`visibility` = NEW.`visibility`
 				AND target_command.`world_id` = target_timeline.`world_id`
 				AND target_command.`world_id` <> source_command.`world_id`

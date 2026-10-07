@@ -54,3 +54,9 @@
 - 同一隔离旅程已断言访客进入、温室移动、固定 fixture 交谈、创建真实分叉并打开来源/新分支比较面板；注册成功后真实 claim 在克隆保存时失败，服务端日志为 `world_state_version_conflict`，页面停留于 `login?claimDemo=1`。因未进入已认领世界，所有者管理、编辑保存、真实分屏、刷新继续均未执行。
 - provider 调用数为 0；对话来自仅在 `s02-e2e` 隔离环境启用的确定性 fixture，不等于真实模型生成验收。run 失败，不能以此证明 claim 或 G0 通过。
 - runner/job 已完成并释放；保留的专用 workflow 仍只响应 `phase3` 上 workflow 文件自身的变更。失败 trace/log artifact 可复查；当前工作流未配置自动上传应用源码或 secrets。
+
+## G0 补充复核：历史事实克隆回归夹具修正
+
+- Actions run [37567552608](https://github.com/kikoiio/Possibility/actions/runs/37567552608) 在 API 回归阶段失败，未启动浏览器旅程。失败发生在测试构造第二条居民移动时：同一模拟时刻不允许居民移动到另一地点（HTTP 409），所以本次没有触及克隆触发器，不能用于判断克隆修复。
+- 已将回归夹具改为 `move -> clock_advance(+60s) -> move`，并强化 source->clone 的逐字段断言以及迁移触发器证明；修正版本为后续独立提交，待 Actions 复跑。
+- 此次失败不改变 G0 未通过结论；完整旅程和真实生成、自建单空间/原世界补建仍待验收。
