@@ -93,7 +93,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
   it('verifies selected prompt/save/repair cases, caps, reconciles, and cleans the isolated D1', async () => {
     const rawRequestCap = Number(process.env.G0_PROVIDER_REQUEST_CAP ?? MAX_AUTHORIZED_REQUEST_CAP)
     const knownScenarioIds: string[] = [...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
-    const requestedScenarioIds = (process.env.G0_PROVIDER_SCENARIOS ?? knownScenarioIds.join(','))
+    const requestedScenarioIds: string[] = String(process.env.G0_PROVIDER_SCENARIOS ?? knownScenarioIds.join(','))
       .split(',').map(id => id.trim())
     const selectedScenarioIds = new Set(requestedScenarioIds)
     const selectedScenarios = requestedScenarioIds.flatMap(id => SCENARIOS.filter(scenario => scenario.id === id))
@@ -184,7 +184,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
 
         let responseStatus: number | null = null
         let usage: Usage | null = null
-        const call = { scenario: activeScenario, status: responseStatus, usage, maxTokens: requestMaxTokens, thinkingDisabled }
+        const call: ProviderCall = { scenario: activeScenario, status: responseStatus, usage, maxTokens: requestMaxTokens, thinkingDisabled }
         providerCalls.push(call)
         try {
           const response = await fetch(outboundRequest)
