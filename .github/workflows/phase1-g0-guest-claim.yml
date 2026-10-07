@@ -8,10 +8,20 @@ on:
   workflow_dispatch:
     inputs:
       run_provider_acceptance:
-        description: Run the isolated five-scenario DeepSeek acceptance (up to 25 requests)
+        description: Run isolated DeepSeek acceptance within the configured remaining budget
         type: boolean
         required: true
         default: false
+      provider_request_cap:
+        description: Remaining authorized requests (integer from 1 to 25)
+        type: number
+        required: true
+        default: 9
+      provider_scenarios:
+        description: Comma-separated cases; full suite includes original-world-repair
+        type: string
+        required: true
+        default: official-example,custom-1,custom-3
 
 permissions:
   contents: read
@@ -21,6 +31,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  voxel-validation:
+    name: Voxel generation and draft regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check API types including acceptance harness
+        run: npm --workspace api run build
+      - name: Verify generation and draft contracts without provider calls
+        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts
+
   guest-claim:
     if: github.event_name == 'push'
     name: Isolated real API + browser guest claim slice
@@ -74,6 +100,7 @@ jobs:
           retention-days: 14
 
   phase1-g0-provider:
+    needs: voxel-validation
     if: github.event_name == 'workflow_dispatch' && inputs.run_provider_acceptance && github.ref == 'refs/heads/phase3'
     name: Isolated Phase 1 provider acceptance
     runs-on: ubuntu-latest
@@ -89,12 +116,14 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Run isolated five-scenario provider acceptance
+      - name: Run selected isolated provider acceptance
         working-directory: api
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
+          G0_PROVIDER_REQUEST_CAP: ${{ inputs.provider_request_cap }}
+          G0_PROVIDER_SCENARIOS: ${{ inputs.provider_scenarios }}
           G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
           G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
         run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts

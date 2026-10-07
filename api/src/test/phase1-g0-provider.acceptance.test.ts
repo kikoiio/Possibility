@@ -9,7 +9,7 @@ import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compat
 import { createTestDb } from './db'
 import { llmCallLog, persons, sessions, timelines, universeEvidence, users, worldPersons, worldScenes, worldSceneRevisions, worlds } from '../db/schema'
 
-const RAW_REQUEST_CAP = 25
+const MAX_AUTHORIZED_REQUEST_CAP = 25
 const PER_SCENARIO_CAP = 5
 const MAX_TOKENS = 16_000
 const COST_CAP_USD = 10
@@ -90,7 +90,15 @@ function sha(value: string): string { return createHash('sha256').update(value).
 function numeric(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null }
 
 describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)', () => {
-  it('generates four prompt cases, saves the official example, repairs the original world, caps, reconciles, and cleans the isolated D1', async () => {
+  it('verifies selected prompt/save/repair cases, caps, reconciles, and cleans the isolated D1', async () => {
+    const rawRequestCap = Number(process.env.G0_PROVIDER_REQUEST_CAP ?? MAX_AUTHORIZED_REQUEST_CAP)
+    const knownScenarioIds: string[] = [...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
+    const requestedScenarioIds = (process.env.G0_PROVIDER_SCENARIOS ?? knownScenarioIds.join(','))
+      .split(',').map(id => id.trim())
+    const selectedScenarioIds = new Set(requestedScenarioIds)
+    const selectedScenarios = requestedScenarioIds.flatMap(id => SCENARIOS.filter(scenario => scenario.id === id))
+    const requiresSingleSave = selectedScenarioIds.has('official-example')
+    const requiresRepair = selectedScenarioIds.has('original-world-repair')
     const dbPath = process.env.G0_D1_PATH
     const reportPath = process.env.G0_EVIDENCE_FILE
     const baseUrl = process.env.LLM_BASE_URL
@@ -115,6 +123,13 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const providerCalls: ProviderCall[] = []
     const blockedAttempts: string[] = []
     const failures: string[] = []
+    if (!Number.isInteger(rawRequestCap) || rawRequestCap < 1 || rawRequestCap > MAX_AUTHORIZED_REQUEST_CAP) {
+      failures.push('invalid_provider_request_cap')
+    }
+    if (selectedScenarioIds.size !== requestedScenarioIds.length
+      || requestedScenarioIds.some(id => !knownScenarioIds.includes(id))) {
+      failures.push('invalid_provider_scenario_selection')
+    }
     let activeScenario = 'setup'
     let fixture: ReturnType<typeof createTestDb> | undefined
     let singleWorldId: string | undefined
@@ -144,7 +159,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const fetcher = {
       async fetch(request: Request): Promise<Response> {
         const perScenario = providerCalls.filter(call => call.scenario === activeScenario).length
-        if (providerCalls.length >= RAW_REQUEST_CAP || perScenario >= PER_SCENARIO_CAP
+        if (providerCalls.length >= rawRequestCap || perScenario >= PER_SCENARIO_CAP
           || (providerCalls.length + 1) * MAX_REQUEST_COST_USD > COST_CAP_USD) {
           blockedAttempts.push(activeScenario)
           throw new Error('g0_provider_request_budget_exhausted')
@@ -263,7 +278,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       fixture.env.LLM_API_KEY = apiKey!
       fixture.env.LLM_MODEL = model!
       fixture.env.LLM_PROVIDER = fetcher as unknown as NonNullable<typeof fixture.env.LLM_PROVIDER>
-      fixture.env.PREWORLD_DAILY_CAP = String(RAW_REQUEST_CAP)
+      fixture.env.PREWORLD_DAILY_CAP = String(rawRequestCap)
       fixture.sqlite.exec(await buildTestPolicyActivationSql(now))
       await fixture.db.insert(users).values({ id: ownerId, username: ownerId, passwordHash: 'not-used', createdAt: now })
       await fixture.db.insert(sessions).values({ token, userId: ownerId, expiresAt: '2099-01-01T00:00:00.000Z' })
@@ -281,7 +296,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       await fixture.db.insert(universeEvidence).values({ timelineId: repairTimelineId, level: 'complete', assessedVersion: 0,
         baselineVersion: 0, reasonCodesJson: '["phase1_g0_repair_fixture"]', assessedAt: now })
 
-      for (const scenario of SCENARIOS) {
+      for (const scenario of selectedScenarios) {
         const generated = await generateScenario(scenario)
         if (scenario.id === 'official-example' && generated.valid) officialDraft = generated.draft
       }
@@ -316,69 +331,72 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         if (!singleSaved) failures.push('official_example_single_space_save_not_verified')
       }
 
-      activeScenario = 'original-world-repair'
-      const repairBeforeWorld = await fixture.db.select({ id: worlds.id, name: worlds.name, locationsJson: worlds.locationsJson })
-        .from(worlds).where(eq(worlds.id, repairWorldId)).get()
-      const repairBeforeTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, repairTimelineId)).get()
-      const repairBeforeResidents = await fixture.db.select().from(worldPersons).where(eq(worldPersons.worldId, repairWorldId)).all()
-      const repairLedgerBefore = (await ledgerRows()).length
-      const repairProviderBefore = providerCalls.length
-      const contextResponse = await app.request(`/api/worlds/${repairWorldId}/scene/repair-context`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }, fixture.env)
-      if (!contextResponse.ok) failures.push('repair_context_failed')
-      const repairDraftResponse = await callApi(`/api/worlds/${repairWorldId}/scene/repair-draft`, {
-        requestId: `${runId}-original-world-repair`,
-        prompt: '沿用原来的主楼、温室、庭院、书房和湖畔，补齐入口之间可步行的石板路。',
-      })
-      repairDraftStatus = repairDraftResponse.status
-      const repairPayload = await repairDraftResponse.clone().json().catch(() => ({})) as Record<string, unknown>
-      repairDraftKind = typeof repairPayload.kind === 'string' ? repairPayload.kind : null
-      repairDraftFailureStage = typeof repairPayload.failureStage === 'string' ? repairPayload.failureStage : null
-      repairDraftNormalizationFixes = Array.isArray(repairPayload.normalizationFixes)
-        ? repairPayload.normalizationFixes.filter((value): value is string => typeof value === 'string')
-        : []
-      repairDraftIssueCodes = Array.isArray(repairPayload.issues)
-        ? repairPayload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : [])
-        : []
-      if (repairDraftResponse.ok) {
-        const repairDraft = repairPayload as { document?: unknown; worldId?: string }
-        if (repairDraft.worldId !== repairWorldId || !isSerializedVoxelDocument(repairDraft.document)) {
-          failures.push('repair_draft_world_or_document_mismatch')
-        } else {
-          const response = await callApi(`/api/worlds/${repairWorldId}/scene/voxel-revision`, {
-            requestId: `${runId}-original-world-repair-save`, expectedVersion: 0, repair: true, document: repairDraft.document,
-          })
-          if (response.ok) {
-            const revision = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, repairWorldId)).get()
-            const afterWorld = await fixture.db.select({ id: worlds.id, name: worlds.name, locationsJson: worlds.locationsJson })
-              .from(worlds).where(eq(worlds.id, repairWorldId)).get()
-            const afterTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, repairTimelineId)).get()
-            const afterResidents = await fixture.db.select().from(worldPersons).where(eq(worldPersons.worldId, repairWorldId)).all()
-            repairSaved = afterWorld?.id === repairBeforeWorld?.id && afterWorld?.name === repairBeforeWorld?.name
-              && afterWorld?.locationsJson === repairBeforeWorld?.locationsJson
-              && afterTimeline?.id === repairBeforeTimeline?.id && afterTimeline?.simNow === repairBeforeTimeline?.simNow
-              && JSON.stringify(afterResidents) === JSON.stringify(repairBeforeResidents)
-              && revision?.worldId === repairWorldId && revision.kind === 'scene-repair' && revision.version === 1
-          } else failures.push('repair_save_rejected')
-        }
-      } else failures.push('repair_draft_rejected')
+      if (requiresRepair) {
+        activeScenario = 'original-world-repair'
+        const repairBeforeWorld = await fixture.db.select({ id: worlds.id, name: worlds.name, locationsJson: worlds.locationsJson })
+          .from(worlds).where(eq(worlds.id, repairWorldId)).get()
+        const repairBeforeTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, repairTimelineId)).get()
+        const repairBeforeResidents = await fixture.db.select().from(worldPersons).where(eq(worldPersons.worldId, repairWorldId)).all()
+        const repairLedgerBefore = (await ledgerRows()).length
+        const repairProviderBefore = providerCalls.length
+        const contextResponse = await app.request(`/api/worlds/${repairWorldId}/scene/repair-context`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }, fixture.env)
+        if (!contextResponse.ok) failures.push('repair_context_failed')
+        const repairDraftResponse = await callApi(`/api/worlds/${repairWorldId}/scene/repair-draft`, {
+          requestId: `${runId}-original-world-repair`,
+          prompt: '沿用原来的主楼、温室、庭院、书房和湖畔，补齐入口之间可步行的石板路。',
+        })
+        repairDraftStatus = repairDraftResponse.status
+        const repairPayload = await repairDraftResponse.clone().json().catch(() => ({})) as Record<string, unknown>
+        repairDraftKind = typeof repairPayload.kind === 'string' ? repairPayload.kind : null
+        repairDraftFailureStage = typeof repairPayload.failureStage === 'string' ? repairPayload.failureStage : null
+        repairDraftNormalizationFixes = Array.isArray(repairPayload.normalizationFixes)
+          ? repairPayload.normalizationFixes.filter((value): value is string => typeof value === 'string')
+          : []
+        repairDraftIssueCodes = Array.isArray(repairPayload.issues)
+          ? repairPayload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : [])
+          : []
+        if (repairDraftResponse.ok) {
+          const repairDraft = repairPayload as { document?: unknown; worldId?: string }
+          if (repairDraft.worldId !== repairWorldId || !isSerializedVoxelDocument(repairDraft.document)) {
+            failures.push('repair_draft_world_or_document_mismatch')
+          } else {
+            const response = await callApi(`/api/worlds/${repairWorldId}/scene/voxel-revision`, {
+              requestId: `${runId}-original-world-repair-save`, expectedVersion: 0, repair: true, document: repairDraft.document,
+            })
+            if (response.ok) {
+              const revision = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, repairWorldId)).get()
+              const afterWorld = await fixture.db.select({ id: worlds.id, name: worlds.name, locationsJson: worlds.locationsJson })
+                .from(worlds).where(eq(worlds.id, repairWorldId)).get()
+              const afterTimeline = await fixture.db.select().from(timelines).where(eq(timelines.id, repairTimelineId)).get()
+              const afterResidents = await fixture.db.select().from(worldPersons).where(eq(worldPersons.worldId, repairWorldId)).all()
+              repairSaved = afterWorld?.id === repairBeforeWorld?.id && afterWorld?.name === repairBeforeWorld?.name
+                && afterWorld?.locationsJson === repairBeforeWorld?.locationsJson
+                && afterTimeline?.id === repairBeforeTimeline?.id && afterTimeline?.simNow === repairBeforeTimeline?.simNow
+                && JSON.stringify(afterResidents) === JSON.stringify(repairBeforeResidents)
+                && revision?.worldId === repairWorldId && revision.kind === 'scene-repair' && revision.version === 1
+            } else failures.push('repair_save_rejected')
+          }
+        } else failures.push('repair_draft_rejected')
 
-      repairProviderRequests = providerCalls.length - repairProviderBefore
-      repairLedgerRowCount = (await ledgerRows()).length - repairLedgerBefore
+        repairProviderRequests = providerCalls.length - repairProviderBefore
+        repairLedgerRowCount = (await ledgerRows()).length - repairLedgerBefore
+      }
 
       const ledger = await ledgerRows()
       finalLedgerRows = ledger.length
       finalLedgerSummary = ledger.map(row => ({ purpose: row.purpose, status: row.status, errorCode: row.errorCode }))
       const requestsByScenario = Object.fromEntries([...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
         .map(id => [id, providerCalls.filter(call => call.scenario === id).length]))
-      reconciled = ledger.length === providerCalls.length && providerCalls.length <= RAW_REQUEST_CAP
+      reconciled = ledger.length === providerCalls.length && providerCalls.length <= rawRequestCap
         && Object.values(requestsByScenario).every(count => count <= PER_SCENARIO_CAP)
         && scenarios.every(result => result.providerRequests === result.llmCallLogRows)
-        && repairProviderRequests === repairLedgerRowCount
+        && (!requiresRepair || repairProviderRequests === repairLedgerRowCount)
       if (!reconciled) failures.push('llm_call_log_provider_request_reconciliation_failed')
       if (scenarios.some(result => !result.valid)) failures.push('one_or_more_prompt_scenarios_invalid')
-      if (!repairSaved) failures.push('original_world_repair_save_not_verified')
+      if (requiresSingleSave && !singleSaved && !failures.includes('official_example_single_space_save_not_verified')) failures.push('official_example_single_space_save_not_verified')
+      if (requiresRepair && !repairSaved) failures.push('original_world_repair_save_not_verified')
     } catch (error) {
       failures.push(`harness_error:${error instanceof Error ? error.name : 'unknown'}`)
     } finally {
@@ -419,12 +437,13 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         workflowRunId: runId,
         commit: process.env.GITHUB_SHA ?? 'local-uncommitted',
         provider: { baseUrl, model, keyConfigured: !!apiKey },
-        limits: { rawProviderRequests: RAW_REQUEST_CAP, perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
+        scope: { selectedScenarioIds: requestedScenarioIds, fullSuite: selectedScenarioIds.size === knownScenarioIds.length },
+        limits: { rawProviderRequests: rawRequestCap, perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
         pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', peakUsdPerMillion: PEAK_PRICE,
           oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
         scenarios: scenarios.map(result => ({ ...result, ...(result.id === 'official-example' && singleWorldId ? { savedWorldIdHash: sha(singleWorldId) } : {}) })),
-        singleSpace: { saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
-        repair: { saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind,
+        singleSpace: { selected: requiresSingleSave, saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
+        repair: { selected: requiresRepair, saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind,
           draftFailureStage: repairDraftFailureStage, draftNormalizationFixes: repairDraftNormalizationFixes,
           draftIssueCodes: repairDraftIssueCodes,
           providerRequests: repairProviderRequests, llmCallLogRows: repairLedgerRowCount,
@@ -440,8 +459,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           reservedWorstCaseUsd: Number((providerCalls.length * MAX_REQUEST_COST_USD).toFixed(6)) },
         cleanup,
         failures,
-        passed: failures.length === 0 && scenarios.length === 4 && scenarios.every(result => result.valid)
-          && singleSaved && repairSaved && reconciled && cleanup.d1Deleted,
+        passed: failures.length === 0 && scenarios.length === selectedScenarios.length && scenarios.every(result => result.valid)
+          && (!requiresSingleSave || singleSaved) && (!requiresRepair || repairSaved) && reconciled && cleanup.d1Deleted,
       }
       if (reportPath) {
         mkdirSync(dirname(reportPath), { recursive: true })
@@ -450,10 +469,10 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     }
 
     expect(failures, 'G0 acceptance failure codes').toEqual([])
-    expect(scenarios).toHaveLength(4)
+    expect(scenarios).toHaveLength(selectedScenarios.length)
     expect(scenarios.every(result => result.valid)).toBe(true)
-    expect(singleSaved).toBe(true)
-    expect(repairSaved).toBe(true)
+    if (requiresSingleSave) expect(singleSaved).toBe(true)
+    if (requiresRepair) expect(repairSaved).toBe(true)
     expect(reconciled).toBe(true)
     expect(cleanup.d1Deleted).toBe(true)
   }, 40 * 60 * 1000)
