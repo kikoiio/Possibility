@@ -60,3 +60,4 @@
 - Actions run [37567552608](https://github.com/kikoiio/Possibility/actions/runs/37567552608) 在 API 回归阶段失败，未启动浏览器旅程。失败发生在测试构造第二条居民移动时：同一模拟时刻不允许居民移动到另一地点（HTTP 409），所以本次没有触及克隆触发器，不能用于判断克隆修复。
 - 已将回归夹具改为 `move -> clock_advance(+60s) -> move`，并强化 source->clone 的逐字段断言以及迁移触发器证明；修正版本为后续独立提交，待 Actions 复跑。
 - 此次失败不改变 G0 未通过结论；完整旅程和真实生成、自建单空间/原世界补建仍待验收。
+- 后续 run [37567910009](https://github.com/kikoiio/Possibility/actions/runs/37567910009) 中，合法 `move -> clock_advance(+60s) -> move` 已通过，访客 subject remap 前置断言也通过；测试因产品当前没有通过 command 生成 `supersedes_id` 的路径，在覆盖前置断言处失败，尚未进入 claim。检索确认 world facts 有不可变 UPDATE trigger；下个回归将在隔离测试库中创建代表历史更正的 source command+fact，通过现有普通 insert triggers 校验 command/timeline/version/time/value/subject/type/visibility/supersedes 后再执行真实 clone/claim。
