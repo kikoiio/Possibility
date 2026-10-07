@@ -49,7 +49,11 @@ try {
     .filter(name => name.endsWith('.txt'))
     .map(name => zipText(logsPath, name))
     .join('\n')
-  const absentPreflight = /"preexistingMatches"\s*:\s*\{\s*"worker"\s*:\s*false\s*,\s*"d1"\s*:\s*false\s*\}/s.test(logs)
+  const preflightLog = logs.split(/\r?\n/)
+    .filter(line => line.includes('Verify the run-scoped names are unused'))
+    .map(line => line.replace(/^.*?\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?/, ''))
+    .join('\n')
+  const absentPreflight = /"preexistingMatches"\s*:\s*\{\s*"worker"\s*:\s*false\s*,\s*"d1"\s*:\s*false\s*\}/s.test(preflightLog)
   const createSucceeded = /PHASE2_TEMP_D1_CREATE_SUCCEEDED:\s*true/.test(logs)
   if (!absentPreflight || !createSucceeded) {
     throw new Error(`Required historical evidence missing (preflightAbsent=${absentPreflight}, createSucceeded=${createSucceeded})`)
