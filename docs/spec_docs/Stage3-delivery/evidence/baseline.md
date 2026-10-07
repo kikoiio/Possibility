@@ -125,3 +125,11 @@
 - 新两层模板首次云端检查 [37592030411](https://github.com/kikoiio/Possibility/actions/runs/37592030411) 证明楼梯旁存在真实 walk-clearance 问题，0 provider 请求。补齐第二踏步下方支撑后，[37592376850](https://github.com/kikoiio/Possibility/actions/runs/37592376850) 的 API build、phase1 voxel 回归（含四种旋转的住宅净空/通行路径）通过；该 run 正在执行真实 provider 全套验收，调用及费用待归档报告确认。
 - T13 纯生命周期模块已合入 `8a3d2fa`，用转换 generation 防止同步重入复写；延迟 mount、取消、相机恢复/保存、旧视口释放和幂等 destroy 均有测试。[Phase3 independent validation 37592945905](https://github.com/kikoiio/Possibility/actions/runs/37592945905) 成功：production Web build/types、独立模块 **118 tests**、fixture **2 tests**。应用页面及真实 renderer/双 pane 集成仍未验收，G0继续阻塞该集成波次。
 - 零模型回放 [37593108274](https://github.com/kikoiio/Possibility/actions/runs/37593108274) 使用源 run37587238422的20个归档响应，新增 provider请求0、增量费用$0；未通过，原因包括官方/原有场景使用旧 carrier/操作格式，且原世界补建两轮末仍有walk-gap（共重放4次）。当前格式诊断显示源报告中的official地点复用dock-path、custom-1对象重叠/重复carrier、custom-2未稳定placementId、repair通路在湖岸交界；它只诊断历史响应，不计作本轮实现的真实provider验收。完整回放及诊断 JSON 保留于 `/tmp/phase1-replay-report-37593108274/` 与 `/tmp/phase1-diagnostics-37593108274/`。
+
+
+## 2026-10-07：37592376850 真实生成与 37594525129 零模型回放
+
+- [真实 provider run 37592376850](https://github.com/kikoiio/Possibility/actions/runs/37592376850)，代码提交 `21ddb040`，使用 DeepSeek V4 Pro。报告记录 **24 次实际 provider calls**、`reconciled=true`、费用 **$0.452166**。四条提示各尝试 5 次后均以 API 502 assembly failure 结束；官方示例单空间未保存。原世界 repair 额外调用 4 次后也返回 502，未保存。隔离数据清理精确核验为 **0 rows**，D1 文件已删除。
+- [零模型回放 run 37594525129](https://github.com/kikoiio/Possibility/actions/runs/37594525129)，提交 `84ece66`，使用历史响应重放：实际 provider calls **0**、replayed calls **20**、新增费用 **$0**。旧四条提示各重放 5 次，仍因 assembly failure 返回 502；原世界 repair 重放返回 200 并成功保存。清理精确核验为 **0 rows**，D1 文件已删除。该 repair replay 只证明归档响应在回放链路中的结果，不构成新的真实 provider 成功证据。
+- **G0 仍未通过**：四条提示的真实生成未成功，自建单空间没有保存，真实 repair 也没有保存；历史 repair 成功回放不能代替真实请求验收。
+- 预算余额不能按当前文档断定：此前记载的 **88 次**旧计数之后，run 375923 新增 **24 次**真实调用；更早运行也有单独记录，现有记录不足以确认“100 次授权”还剩多少。暂停所有真实 provider 请求，直到逐 run 对账实际 calls 与费用，并核对累计授权上限。

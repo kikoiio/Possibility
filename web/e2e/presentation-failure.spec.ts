@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createPresentationFixtures, installPresentationFixtures } from './presentation.fixtures'
+import { createPresentationFixtures, installPresentationFixtures, PRESENTATION_SLOW_RESPONSE_DELAY_MS } from './presentation.fixtures'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -54,4 +54,35 @@ test('a timed-out left pane can retry without reloading the ready right pane', a
   await page.getByTestId('comparison-pane-left').getByRole('button', { name: '重试此侧' }).click()
   await expect(page.getByTestId('pane-facts-left')).toContainText('presentation-world-a-main')
   await expect.poll(() => fixture.reads.filter(read => read.side === 'right' && read.path.endsWith('/map/bootstrap')).length).toBe(rightReadsBeforeRetry)
+})
+
+test('a delayed pane stays loading while its sibling is ready, then retries only that pane', async ({ page }) => {
+  const fixture = await installPresentationFixtures(page, createPresentationFixtures(), { right: 'slow' })
+  await page.goto(comparisonUrl())
+
+  await expect(page.getByTestId('pane-facts-left')).toContainText('presentation-world-a-main')
+  await expect(page.getByTestId('comparison-pane-right').getByRole('status')).toContainText(
+    '正在读取 presentation-world-b', { timeout: PRESENTATION_SLOW_RESPONSE_DELAY_MS / 2 },
+  )
+  await expect(page.getByTestId('comparison-pane-right').getByRole('alert')).toContainText('Fixture response delayed before temporary outage')
+
+  const leftBootstrapReadsBeforeRetry = fixture.reads.filter(read => read.side === 'left' && read.path.endsWith('/map/bootstrap')).length
+  fixture.setOutcome('right', 'ready')
+  await page.getByTestId('comparison-pane-right').getByRole('button', { name: '重试此侧' }).click()
+  await expect(page.getByTestId('pane-facts-right')).toContainText('presentation-world-b-fork')
+  await expect.poll(() => fixture.reads.filter(read => read.side === 'left' && read.path.endsWith('/map/bootstrap')).length).toBe(leftBootstrapReadsBeforeRetry)
+})
+
+test('an internet-disconnected pane can recover without reloading its ready sibling', async ({ page }) => {
+  const fixture = await installPresentationFixtures(page, createPresentationFixtures(), { left: 'offline' })
+  await page.goto(comparisonUrl())
+
+  await expect(page.getByTestId('comparison-pane-left').getByRole('alert')).toBeVisible()
+  await expect(page.getByTestId('pane-facts-right')).toContainText('presentation-world-b-fork')
+  const rightBootstrapReadsBeforeRetry = fixture.reads.filter(read => read.side === 'right' && read.path.endsWith('/map/bootstrap')).length
+
+  fixture.setOutcome('left', 'ready')
+  await page.getByTestId('comparison-pane-left').getByRole('button', { name: '重试此侧' }).click()
+  await expect(page.getByTestId('pane-facts-left')).toContainText('presentation-world-a-main')
+  await expect.poll(() => fixture.reads.filter(read => read.side === 'right' && read.path.endsWith('/map/bootstrap')).length).toBe(rightBootstrapReadsBeforeRetry)
 })

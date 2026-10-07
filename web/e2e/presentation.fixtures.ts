@@ -6,7 +6,10 @@ import type { WorldSnapshot } from '../src/api/types'
 
 export type FixtureSide = 'left' | 'right'
 export type FixtureIdentity = 'owner' | 'guest' | 'readonly'
-export type FixtureOutcome = 'ready' | 'denied' | 'error' | 'timeout'
+export type FixtureOutcome = 'ready' | 'denied' | 'error' | 'timeout' | 'offline' | 'slow'
+
+/** Fixed latency for the slow-response fixture; slow requests then return a recoverable 503. */
+export const PRESENTATION_SLOW_RESPONSE_DELAY_MS = 2500
 
 export interface PresentationFixture {
   identity: FixtureIdentity
@@ -107,6 +110,11 @@ export async function installPresentationFixtures(
     reads.push({ side, path: url.pathname })
     const outcome = outcomes[side]
     if (outcome === 'timeout') return route.abort('timedout')
+    if (outcome === 'offline') return route.abort('internetdisconnected')
+    if (outcome === 'slow') {
+      await new Promise(resolve => setTimeout(resolve, PRESENTATION_SLOW_RESPONSE_DELAY_MS))
+      return route.fulfill({ status: 503, json: { error: 'Fixture response delayed before temporary outage' } })
+    }
     if (outcome !== 'ready') return route.fulfill({
       status: outcome === 'denied' ? 403 : 503,
       json: { error: outcome === 'denied' ? 'Fixture access denied' : 'Fixture unavailable' },
