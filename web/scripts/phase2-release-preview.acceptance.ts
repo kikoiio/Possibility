@@ -253,7 +253,14 @@ async function main(): Promise<void> {
     assert(mobileRecords.every(record => record.source !== 'worker' || record.status < 400),
       `mobile context Worker requests failed: ${JSON.stringify(mobileRecords)}`)
 
-    const currentVersion = Number(savedLayout.body.layout.version)
+    const initialLayoutVersion = Number(savedLayout.body.layout.version)
+    const preparedWrite = await apiWithToken(childLayoutPath, token, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: initialLayoutVersion, layout: savedLayout.body.layout }),
+    })
+    assert(preparedWrite.status === 200 && preparedWrite.body?.layout?.version === initialLayoutVersion + 1,
+      `preparing a valid revision returned HTTP ${preparedWrite.status}`)
+    const currentVersion = Number(preparedWrite.body.layout.version)
     const invalidatedWrite = await apiWithToken(childLayoutPath, token, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: currentVersion - 1, layout: savedLayout.body.layout }),
