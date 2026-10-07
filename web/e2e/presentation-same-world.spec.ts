@@ -47,6 +47,17 @@ test('same-world linked cameras follow together, then disable for mixed renderer
   await expect(page).toHaveURL(/rightPresentation=native2d/)
   await expect(page.getByTestId('pane-facts-left')).toContainText('timeline-main')
   await expect(page.getByTestId('pane-facts-right')).toContainText('timeline-fork')
+
+  await page.getByRole('group', { name: '左侧画面表现' }).getByRole('button', { name: '2D' }).click()
+  await expect(page.locator('[data-testid="presentation-host-left"] [data-presentation]')).toHaveAttribute('data-presentation', 'native2d')
+  await expect(page.locator('[data-testid="presentation-host-right"] [data-presentation]')).toHaveAttribute('data-presentation', 'native2d')
+  await page.getByRole('group', { name: '左侧画面表现' }).getByRole('button', { name: '3D' }).click()
+  await expect(page.locator('[data-testid="presentation-host-left"] [data-presentation]')).toHaveAttribute('data-presentation', 'voxel3d')
+  await expect(page.locator('[data-testid="presentation-host-right"] [data-presentation]')).toHaveAttribute('data-presentation', 'native2d')
+  await page.getByRole('group', { name: '右侧画面表现' }).getByRole('button', { name: '3D' }).click()
+  await expect(page.locator('[data-testid="presentation-host-right"] [data-presentation]')).toHaveAttribute('data-presentation', 'voxel3d')
+  await expect(link).toBeEnabled()
+  await expect(link).not.toBeChecked()
 })
 
 test('narrow comparison panes remain stacked and usable without horizontal overflow', async ({ page }) => {
