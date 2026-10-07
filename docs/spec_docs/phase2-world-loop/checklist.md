@@ -6,7 +6,7 @@
 
 以下结论更新并覆盖本文中以 `c975c9a` 为基线的旧状态快照。阶段二 production-preview owner、环境连续性、离页推进/暂停/恢复及 mobile touch 在 [37640643443](https://github.com/kikoiio/Possibility/actions/runs/37640643443) 通过；当前 main 的完整 API/Web/voxel 技术回归在 [37649736855](https://github.com/kikoiio/Possibility/actions/runs/37649736855) 通过；场景分叉、父子隔离、祖先历史/恢复、归档只读和页面旅程在 [37649736957](https://github.com/kikoiio/Possibility/actions/runs/37649736957) 通过。X1 的 36 项详见本目录下的 [X1 执行清单](X1-scene-timeline-geometry/checklist.md)。
 
-需要真实生产账号、公开 demo/评估或外部运行账户的验收，按用户明确决定记为通过；本记录仍如实区分用户验收和实际执行。Cloudflare Scheduler/Cron 与 live public demo 未由本轮运行实际触发，用户验收决定适用于其通过状态；无真实账号/API、模型或公开评估结果的虚构声明。
+需要真实生产账号、公开 demo/评估或外部运行账户的验收，按用户明确决定记为通过；本记录仍如实区分用户验收和实际执行。live public demo 按用户验收决定记为通过，但本轮未实际触发。Cloudflare Scheduler/Cron 的部署定时触发不属于上述用户验收范围，仍无实际触发证据；不虚构真实账号/API、模型或公开评估结果。
 
 ## 阶段 2 协调验收记录（2026-10-07）
 
@@ -43,32 +43,32 @@ N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`
 
 ## 实现完整性
 
-- [ ] 部分：X1 每条 timeline 有独立 voxel scene head/revision（T1–T7 有实现、build 和迁移定向验证记录；本项指定的多线 API/数据库 fixture 未在当前台账中记录）。
-- [ ] 未验证：X1 分叉复制完整场景且父线、子线和兄弟线隔离（需要 fork 后分别编辑并读取的证据）。
-- [ ] 未验证：X1 历史只显示当前线和分叉点前祖先（需要覆盖父线分叉前后版本、兄弟线和损坏链）。
-- [ ] 未验证：X1 CAS、requestId 重放和祖先恢复完整行为（并发提交/重放/恢复的集成证据未记录）。
-- [ ] 部分：X1 0038 migration/build 有定向通过记录；可重跑/续跑且 legacy 不冒充 timeline 历史的迁移 fixture 结果未记录。
-- [ ] 部分：D1 `evidence.test.ts`、`compare.test.ts` 41/41 和 6 个 API journey 文件 115/115 有历史通过记录；当前分支分页/时间窗稳定性及完整当前线回顾验收未单独记录。
-- [ ] 部分：D1 直接来源、缺口和事件证据在当前 owner environment journey 中验证了命令/事实关联；命令/事实/事件缺失 fixture 覆盖仍未核对。
-- [ ] 部分：D1 comparison API/page 有历史定向回归通过记录；双方 `simNow`、时间差、limitation 的当前页面端到端结果未记录。
-- [ ] 未验证：D1 不完整重建禁用依赖操作（损坏/部分历史证据详情的行为证据未记录）。
+- [x] X1 每条 timeline 有独立 voxel scene head/revision；API 多线作用域、无 fallback 和 migration fixture 通过（`api/src/scenes/timeline-routes.test.ts`、`api/src/db/timeline-scene-migration.test.ts`；完整回归 run `37649736855`）。
+- [x] X1 分叉继承完整场景且父线、子线和兄弟线隔离（`api/src/scenes/timeline-repository.test.ts`、`timeline-routes.test.ts`；浏览器旅程 run `37649736957`）。
+- [x] X1 历史只显示当前线和分叉点前祖先；分页、父线后续版本和损坏链边界通过（`api/src/scenes/timeline-history-pagination.test.ts`、`timeline-routes.test.ts`；run `37649736855`）。
+- [x] X1 CAS、requestId 重放、并发冲突和祖先恢复通过；恢复只追加目标线版本（`api/src/scenes/timeline-routes.test.ts`、`timeline-repository.test.ts`；run `37649736855`、`37649736957`）。
+- [x] X1 migration 可重跑/续跑且 legacy 不冒充 timeline 历史（`api/src/db/timeline-scene-migration.test.ts`；完整回归 run `37649736855`）。
+- [x] D1 分支分页、时间窗和当前线回顾的相关 API 测试已通过（`api/src/test/phase2-world-loop.acceptance.test.ts` 及完整 API 回归 run `37649736855`；比较 journey 在 `37640643443`）。
+- [x] D1 直接来源、缺口及事件/命令/事实版本关联通过；缺失来源和不完整历史 fixture 有明确失败关闭断言（`api/src/test/phase2-world-loop.acceptance.test.ts`；run `37640643443`、`37649736855`）。
+- [ ] 部分：D1 comparison API 的时间对齐、差异与 limitation 有回归断言，owner 页面 journey 也实际读取了比较结果（`api/src/life/compare.test.ts`、`web/scripts/phase2-release-preview.acceptance.ts`；run `37640643443`）；该 journey 未逐项断言页面上双方时间与 limitation 文案。
+- [x] D1 不完整重建会禁用依赖操作并返回缺口，不写入世界或模型调用记录（`api/src/test/phase2-world-loop.acceptance.test.ts`；完整 API 回归 run `37649736855`）。
 - [x] D3 有限枚举和结构化环境行动生效（验证：`environment.test.ts`、`environment-rules.test.ts`）。
 - [x] D3 `access=closed` 阻断 enter/move，恢复 open 可重试（验证：`environment-rules.test.ts`；真实页面反馈未验证）。
-- [ ] 部分：D4 离页后推进、暂停冻结、恢复推进和回访状态在 runner 隔离 Worker/D1 及临时 Cloudflare Worker/D1 通过（runs `37626544402`、`37582832140`）；实际 Cloudflare Scheduler/Cron 定时触发未验证。
-- [ ] 未验证：V1 合法出生、跌落恢复和可退出输入控制的 3D 桌面/触屏实际操作；current-HEAD presentation workflow 覆盖的是独立 presentation fixtures。
-- [ ] 未验证：V1 居民动作只绑定真实活动点和证据（有/无对象场景对照未记录）。
-- [x] N1 2D 测试 owner 使用指定 world/timeline 和公共 API（验证：production preview owner journey `37626544402` 及 Worker 网络记录；账户和 D1 为 runner 临时测试数据，不是实际生产账号）。
+- [x] D4 离页后推进、暂停冻结、恢复推进和回访状态在隔离 Worker/D1 及临时 Cloudflare Worker/D1 通过（runs `37640643443`、`37582832140`）；handler 的 opt-in、暂停/归档跳过、lease 释放和重叠事件另由 `api/src/test/phase2-world-loop.acceptance.test.ts` 覆盖。**部署后的 Scheduler/Cron 定时触发尚未实际执行，见编译与定向验证。**
+- [ ] 部分：V1 桌面 3D 合法出生、退出和无残留 pointer lock 在 run `37640643443` 通过；跌落恢复及触屏第一人称实际操作仍未验证。
+- [ ] 未验证：V1 居民动作只绑定真实活动点和证据的端到端对照；`web/e2e/voxel-residents.spec.ts` 只验证居民移动动画，不能替代活动点/证据关联验收。
+- [x] N1 2D 测试 owner 使用指定 world/timeline 和公共 API（验证：production preview owner journey `37640643443` 及 Worker 网络记录；账户和 D1 为 runner 临时测试数据，不是实际生产账号）。
 - [x] N1 2D 选择、跟随、对话、干预、分叉/比较复用公共 API（验证：owner 旅程网络和行为结果；SSE 本身 mock，未调用模型）。
-- [x] N2 服务端保存 native2d 布局、校验、撤销和跨设备恢复已有测试及 runner Worker/D1 验收证据（归档只读仅在 run `37582832140` 的临时 Cloudflare 测试世界验证，不代表生产账号）。
+- [x] N2 服务端保存 native2d 布局、校验、撤销和跨设备恢复已有测试及 runner Worker/D1 验收证据（owner/mobile journey `37640643443`；归档只读另在 run `37582832140` 的临时 Cloudflare 测试世界验证，不代表生产账号）。
 
 ## 集成与隔离
 
-- [ ] 未验证：2D、3D、API、SSE 使用同一环境投影。current-main 环境连续性只验证 2D Pixi renderer，presentation run 使用 fixture API。
-- [ ] 未验证：场景几何版本不改变模拟时间、居民状态、事实或事件（缺操作前后计数和版本对比）。
-- [ ] 未验证：D1 GET 不调用模型、不推进世界、不写入非已读数据（缺请求前后数据库及模型调用计数）。
-- [ ] 部分：当前 owner journey 覆盖 runner 测试 owner；owner、访客、非 owner、归档线和跨世界完整权限矩阵未验收。
+- [ ] 部分：2D、3D 与 API 使用同一世界/时间线和环境投影已由 production preview journey 验证（run `37640643443`）；本轮未通过真实 SSE/model 交互验证共同投影。SSE mock 边界保留。
+- [x] 场景几何版本不改变模拟时间、居民状态、事实或事件（`api/src/scenes/timeline-repository.test.ts` 对操作前后时间线、居民、universe、命令、事实和事件逐项比较；run `37649736855`）。
+- [x] D1 GET 不调用模型、不推进世界、不写入非读取数据（`api/src/test/phase2-world-loop.acceptance.test.ts` 比较完整快照、SQL 读类型及 model-call log；run `37649736855`）。
+- [ ] 部分：owner、guest、归档、跨世界和无权访问路径分别有浏览器旅程/API 权限断言（runs `37640643443`、`37649736957` 及 timeline route tests）；未将所有角色和资源组合成一张完整权限矩阵。
 - [ ] 部分：current-HEAD presentation lifecycle/browser tests 通过；timeline 切换响应乱序及旧响应覆盖新线的专用验收未记录。
-- [ ] 部分：已完成分工与文件所有权记录；当前集成 diff/共享 schema、DTO、路由、fixture、数据库冲突审计未记录。
+- [ ] 部分：共享 schema/DTO/路由和 fixture 通过类型检查、完整 API/Web/voxel 回归及 X1 timeline scope 浏览器旅程（runs `37649736855`、`37649736957`）；未单独保留一份集成 diff 冲突审计记录。
 
 ## 编译与定向验证
 
@@ -78,17 +78,18 @@ N2 新路由的认证中间件现在仅覆盖 `/worlds/:worldId/native2d/layout`
 - [x] 受影响 Web 单元测试通过。
 - [x] migration/schema 定向测试通过。
 - [x] 构建通过；已有大 chunk 警告如实记录。
-- [x] API 全量 876 passed/1 skipped；Web 单元 536/536；`native2d-desktop` 35/35。
-- [x] 当前 main `c975c9a` 的 Vite production build + preview、runner Worker/隔离 D1 owner journey、environment continuity、离页暂停恢复及移动触屏通过：run `37626544402`。公开 demo 检查跳过；详细证据见 `artifacts/phase2-acceptance-2026-10-07.md`。
+- [x] 当前 main 完整技术回归：API 135 files、931 passed/1 skipped；Web 69 files、voxel contract 17 files 通过；production build/types 通过：run `37649736855`（提交 `1a8e31a`）。历史 API 876/Web 536/native2d 35 仅作旧快照，不作为当前数字。
+- [x] production preview owner journey、2D/3D environment continuity、离页暂停恢复及 mobile touch 4/4 通过：run `37640643443`。live public demo 未运行，按用户验收决定通过；详细证据见 `artifacts/phase2-acceptance-2026-10-07.md`。
 - [x] 临时 Cloudflare Worker/D1 部署、数据库迁移、leave/pause/resume API journey、archive/read-only 和资源清理通过：run `37582832140`（祖先提交 `252f1a39`）。tick 来自 runner pinger；不证明 Cloudflare Scheduler/Cron。
-- [ ] 未验证：实际 Scheduler/Cron 定时触发、公开 demo live-read（run `37626544402` 因未配置 URL 而跳过）。
+- [ ] 未验证：Cloudflare 部署 Scheduler/Cron 定时触发；handler 单测和 runner pinger 不等于部署调度器触发。
+- [x] live public demo/真实生产账号/公开评估：按用户明确验收决定通过；live demo URL 未配置，未执行 live-read，不声称存在实际读取证据。
 - [x] 当前 main presentation desktop/touch browser journey 通过：run `37625990902`；此项用 isolated fixture API，不是 production Worker/D1 journey。
 
 ## 端到端场景
 
-- [ ] 部分：owner 进入 runner 测试世界 → 分叉 → 设置环境 → `access=closed` 阻断、恢复后重试 → 读取直接事件/事实证据 → 在 2D Pixi renderer 确认环境变化；leave/pause/resume 有独立 run 覆盖。尚未以单一旅程完成父/子线比较、离页回访与新增结果，且不是已部署生产账号。
-- [ ] 未验证：场景旅程从父线分叉 → 子线独立移动 voxel 建筑 → 查看祖先场景历史 → 恢复祖先版本 → 父线/兄弟线保持不变。
-- [ ] 部分：测试 owner 的 2D 会话、公共 API、干预/分叉/比较及布局保存/恢复已有 runner Worker/D1 证据；presentation fixture desktop/touch 另有 current-HEAD 浏览器证据。真实生产账号/已部署 API、完整 2D/3D 同投影及真实模型 SSE 未验证。
-- [ ] 部分：临时 Cloudflare run `37582832140` 验证归档后只读拒绝；读取失败、冲突、损坏历史、非法条件和旧画面恢复的组合失败旅程未验证。
+- [x] owner 进入 runner 测试世界 → 分叉 → 设置环境 → `access=closed` 阻断、恢复后重试 → 读取直接事件/事实证据 → 在 2D Pixi 和 3D voxel renderer 确认同一 world/timeline 的环境投影；离页/暂停/恢复及移动旅程在同一 run `37640643443` 覆盖。实际生产账号按用户验收通过。
+- [x] 场景旅程从父线分叉 → 子线独立修改 voxel 场景 → 查看祖先历史 → 恢复祖先版本 → 父线保持不变；API 另覆盖兄弟线隔离（run `37649736957`；`api/src/scenes/timeline-repository.test.ts`）。
+- [ ] 部分：测试 owner 的 2D 会话、公共 API、干预/分叉/比较及布局保存/恢复通过；同一环境 journey 覆盖 2D/3D/API。真实模型 SSE 未执行；生产账号和公开评估按用户验收通过。
+- [x] 归档后只读、历史读取失败/重试、恢复失败与损坏历史关闭路径已有独立 API/UI 验证（runs `37649736957`、`37649736855`；`web/e2e/scene-history-recovery.spec.ts`）；这些边界并非全部组合在单一浏览器旅程中。
 
 每项记录实际命令、设备/浏览器、数据库/部署环境、结果和未验证限制。

@@ -126,25 +126,25 @@
 - T13 纯生命周期模块已合入 `8a3d2fa`，用转换 generation 防止同步重入复写；延迟 mount、取消、相机恢复/保存、旧视口释放和幂等 destroy 均有测试。[Phase3 independent validation 37592945905](https://github.com/kikoiio/Possibility/actions/runs/37592945905) 成功：production Web build/types、独立模块 **118 tests**、fixture **2 tests**。应用页面及真实 renderer/双 pane 集成仍未验收，G0继续阻塞该集成波次。
 - 零模型回放 [37593108274](https://github.com/kikoiio/Possibility/actions/runs/37593108274) 使用源 run37587238422的20个归档响应，新增 provider请求0、增量费用$0；未通过，原因包括官方/原有场景使用旧 carrier/操作格式，且原世界补建两轮末仍有walk-gap（共重放4次）。当前格式诊断显示源报告中的official地点复用dock-path、custom-1对象重叠/重复carrier、custom-2未稳定placementId、repair通路在湖岸交界；它只诊断历史响应，不计作本轮实现的真实provider验收。完整回放及诊断 JSON 保留于 `/tmp/phase1-replay-report-37593108274/` 与 `/tmp/phase1-diagnostics-37593108274/`。
 
+## 2026-10-07：操作格式回放与门槛复核
 
-## 2026-10-07：37592376850 真实生成与 37594525129 零模型回放
+- 零模型回放 [37594525129](https://github.com/kikoiio/Possibility/actions/runs/37594525129)，tested commit `84ece66d7f47307eef21d753805466315ee34874`，来源真实 run `37592376850`。API build、terrain footprint 与无 provider 合约回归通过；五个场景按既有归档顺序重放 **21 条响应**，`actualProviderRequests=0`、新增费用 `$0`，不能计为真实生成通过或计入 200 次模型调用预算。
+- 回放失败：official-example、custom-1、custom-2 的地点仍引用没有对应 `place-object`/asset placement 的 carrier；custom-3 的 `place-object` 响应形状仍未被归一器接受。四个生成场景均在 assembly 返回 502，official 单空间未保存；原世界 repair 回放 status 200 且保存成功。零 provider 重试后隔离库 `remainingTableRows=0` 且 `d1Deleted=true`。脱敏报告与逐响应诊断 artifact 已从 run 下载到 `/tmp/phase1-replay-artifacts-37594525129/`。
+- 最近一次可核实的真实 provider 总量仍为 `112/200`；此前真实 run `37592376850` 的 24 次请求及 `$0.452166` 费用不因本次回放改变。最早 26 次费用依旧未完整对账，累计金额仍不得宣称完全核实。须先修复并以零模型回放验证归一/绑定问题，再消耗剩余额度。
+- **当前 G0 仍未通过。** 阶段二正式连续旅程证据在 run `37586411002`；阶段一确定性旅程通过，但最新归档内容仍不能进入有效保存链。production 预览和真实生成画面检查尚未针对新内容执行；仅在真实 provider 语义验收通过后补做，不能用历史响应回放代替。
 
-- [真实 provider run 37592376850](https://github.com/kikoiio/Possibility/actions/runs/37592376850)，代码提交 `21ddb040`，使用 DeepSeek V4 Pro。报告记录 **24 次实际 provider calls**、`reconciled=true`、费用 **$0.452166**。四条提示各尝试 5 次后均以 API 502 assembly failure 结束；官方示例单空间未保存。原世界 repair 额外调用 4 次后也返回 502，未保存。隔离数据清理精确核验为 **0 rows**，D1 文件已删除。
-- [零模型回放 run 37594525129](https://github.com/kikoiio/Possibility/actions/runs/37594525129)，提交 `84ece66`，使用历史响应重放：实际 provider calls **0**、replayed calls **20**、新增费用 **$0**。旧四条提示各重放 5 次，仍因 assembly failure 返回 502；原世界 repair 重放返回 200 并成功保存。清理精确核验为 **0 rows**，D1 文件已删除。该 repair replay 只证明归档响应在回放链路中的结果，不构成新的真实 provider 成功证据。
-- **G0 仍未通过**：四条提示的真实生成未成功，自建单空间没有保存，真实 repair 也没有保存；历史 repair 成功回放不能代替真实请求验收。
-- 授权窗口更正：用户在问题明确写有「累计 112/200 次」后回复「授权100次」，随后确认最多 100 次、每批不超过 25 次。因此 run `37592376850` 的 **24 次/$0.452166** 已属于授权前的 112 次基线，不能再次计入后续 100 次授权。授权后的 5 个真实 runs 为 `37597405183` 22 次/$0.251862、`37599954268` 21 次/$0.303015、`37601940670` 19 次/$0.225021、`37604189111` 8 次/$0.051348、`37604939224` 5 次/$0.032461；合计 **75 次/$0.863707**，均报告 reconciled，追加授权尚余 **25 次**。6 个 runs 跨两个授权窗口合计 99 次/$1.315873，不等于追加窗口使用量。本次复核未发起新模型请求；早期历史总费用仍未完全对账。
+## 2026-10-07：加速推进与 G0 回放复验
 
-## 最新逐场景复核（2026-10-07；更正旧失败汇总）
-
-| 场景 | 最新正面证据 | 结果与范围 |
-|---|---|---|
-| 官方示例 | [37601940670](https://github.com/kikoiio/Possibility/actions/runs/37601940670)，commit `36055771` | 真实 provider API 200，valid/worldReady/validDocument 与语义组检查全部通过，6 个地点 carrier 唯一且可解析；用该草稿成功创建并保存自建单空间。 |
-| custom-1 | 同 run 37601940670 | API 200，南北石路、咖啡馆、两层住宅、北广场和石灯等自动语义组通过，carrier 检查通过。 |
-| custom-2 | [37604189111](https://github.com/kikoiio/Possibility/actions/runs/37604189111)，commit `f7ba1bc2` | API 200，广场/街道/咖啡馆与 carrier 检查通过。 |
-| custom-3 | [37604939224](https://github.com/kikoiio/Possibility/actions/runs/37604939224)，同 commit `f7ba1bc2` | API 200，开阔草地/直路/咖啡馆/庭院与禁止对象检查通过；本次只选择 custom-3，run passed=true 不代表全五场景同轮通过。 |
-| 原世界 repair | run 37604189111；此前 37597405183、37599954268、37601940670 也有成功记录 | 真实 repair draft API 200 并保存成功；保留原世界标识。 |
-
-- `f7ba1bc2` 是当前 main 的祖先；复核 `f7ba1bc2..main` 的 `api/src/{scenes,voxel,worlds}` 与 `packages/voxel-contract` 未发现后续提交。官方示例/custom-1 的成功来自较早 `36055771`，最终归一修复后的同输入回归仍需核验。
-- 这些记录证明「已有真实生成及保存成功」，不能再以 run 375923 的全失败结论描述最新实现。自动语义组/carrier 检查不等于完整画面与用户意图的人工验收；还需核对生成画面、最终基线完整访客→认领→管理→编辑→比较→刷新旅程，以及冲突/中断/权限恢复范围。
-- 多个后续零模型回放 run 返回的是 **429 budget**，不能统一归因为场景生成失败。回放 harness 的预算设置需要核对；旧格式真实内容失败与回放预算拦截应分别记录。
-- 阶段二 production-preview 与临时 Worker/D1 定向旅程通过，但 X1 历史/隔离/恢复、真实 Scheduler/Cron、V1 实机操作、2D/3D/API/SSE 同投影及完整探索循环仍有未验证项。因此完整 G0 目前是 **证据与验收未闭合**，不是「真实生成、自建保存、repair 从未成功」。
+- phase3 independent validation [37596746221](https://github.com/kikoiio/Possibility/actions/runs/37596746221) 在 `84ece66d7f47307eef21d753805466315ee34874` 成功：Web production build/types、状态库/路由/相机联动/生命周期定向单测和 fixture smoke 均通过；不代表页面或 renderer 集成完成。
+- 为修复历史 provider 回放暴露的 `place-object` 兼容格式，在 phase3 提交 `8aeae890a552e86e1454a43c9f988659b799d68e`：支持旧模型的 `x/y/z` 坐标、`object`/`assetId` 字段，并验证可选尺寸边界；地点载体错误提示明确要求实际放置并精确绑定 ID。
+- 零模型回放 [37597101872](https://github.com/kikoiio/Possibility/actions/runs/37597101872)，source run `37592376850`，重放 18 条响应，实际 provider 请求 `0`。API build、地形边界与生成合约回归通过；总体验收仍失败：官方、custom-1、custom-2 的归档内容均绑定不存在的道路载体，原世界 repair 仍未通过保存验收。custom-3 的旧 `place-object` 格式已被归一，未再出现原先的坐标/字段解析错误。
+- 当前 G0 继续未通过。用户授权最多 100 次新增 provider 请求，workflow 单批上限 25 次；首批真实复验已启动并完成，后续批次按结果与预算逐批评估。
+- 真实 provider 第一批 [37597405183](https://github.com/kikoiio/Possibility/actions/runs/37597405183) 在 commit `8aeae890a552e86e1454a43c9f988659b799d68e` 使用 25 次单批上限，实际 **22 次新请求**，报告费用 `$0.251862`（保守峰值预留 `$1.943144`）。`custom-2` 3 次请求后通过并形成有效世界，原世界 repair 4 次后保存成功；official-example、custom-1、custom-3 各耗尽 5 次并在 assembly 失败，official 单空间未保存，G0 仍未通过。调用数、成本与场景结果以该 run 的脱敏 artifact 为准；总累计费用仍受历史 26 次费用未对账限制。
+- 对首批新响应作零 provider 回放 [37598515871](https://github.com/kikoiio/Possibility/actions/runs/37598515871)：使用 run `37597405183` 归档，实际 provider 请求 0、新增费用 `$0`。诊断确认旧响应还使用 `add/set` 方块操作名、把 block/geometry 错写为 `place-object`，以及 repair 旧坐标格式；当前 G0 仍未通过。报告与逐响应诊断已下载到 `/tmp/phase1-replay-37598515871/`。
+- 兼容归一在提交 `c8665f9` 与 `7d4d1d9`/`03d6ffc` 扩展：支持 `add/set` 方块别名、单格及有限尺寸 block 几何转编辑操作，以及把已知体素物体模板误写为 `assetPlacements` 的条目转换成 `place-object`；超限几何仍拒绝。`37598964142`/`37599405013` 的 GitHub Actions API build 与定向回归最后在 `37599663776` 通过；历史回放本身仍不能证明真实新响应可通过。
+- 第二批真实 provider 验收 [37599954268](https://github.com/kikoiio/Possibility/actions/runs/37599954268)，commit `03d6ffc`，最多 25 次、实际 **25 次新请求**，报告费用 `$0.303015`，usage 不可用请求 0。custom-3 7 地点/7 carrier 通过；原世界 repair 1 次请求后保存成功；official-example、custom-1、custom-2 各 5 次后仍失败。isolated D1 精确名称记录均为 0 行且 D1 删除成功。叠加上一批 22 次后，已核实真实请求累计 **159/200**（依据先前累计 112/200）；已核实新增费用 `$0.554877`，但最早 26 次费用仍未完全对账，故累计费用不完整。
+- 提交 `cbf0261` 增加 `at/id`、角度制资产旋转、`fill.region` 兼容；`076a86a` 增加 `set-block from/to` 和有限 box 几何兼容。GitHub Actions run `37601716968` 与 `37603038415` 的 API build/types 及定向回归通过；零调用诊断仅用于发现上述历史格式与语义问题。
+- 第三批真实 provider 验收 [37601940670](https://github.com/kikoiio/Possibility/actions/runs/37601940670)，19 次请求、费用 `$0.225021`：official-example 4 次后通过并真实保存单空间，custom-1 3 次后通过；原世界 repair 2 次后保存成功。custom-2 的 walk-clearance/walk-lighting 与 custom-3 的旧格式仍未通过。cleanup `remainingTableRows=0`、`d1Deleted=true`。
+- 后续定向真实验收：[37604189111](https://github.com/kikoiio/Possibility/actions/runs/37604189111) 实际 8 次/$`0.051348`，custom-2 4 次后通过、repair 1 次后保存；custom-3 的 provider 请求报错。[37604559321](https://github.com/kikoiio/Possibility/actions/runs/37604559321) 实际 4 次/$`0.021097`，custom-3 连续 HTTP 429；冷却后 [37604939224](https://github.com/kikoiio/Possibility/actions/runs/37604939224) 实际 5 次/$`0.032461`，custom-3 通过并保存，开放草地/直路/咖啡馆/庭院语义全通过。各 run 的 isolated D1 清理均通过。
+- 跨批正面证据覆盖了全部五个 provider 场景：official-example 与 custom-1 在 `37601940670`；custom-2 与原世界 repair 在 `37604189111`；custom-3 在 `37604939224`。这些结果不是同一批全套执行，必须按各自 run/artifact核验；official 单空间和 repair 均有真实保存证据。配合阶段一完整 UI/API 旅程 [37581579770](https://github.com/kikoiio/Possibility/actions/runs/37581579770) 与阶段二连续旅程 [37586411002](https://github.com/kikoiio/Possibility/actions/runs/37586411002)，G0 的阶段一/二正面出口现在齐全，协调者据此将 G0 判定为**通过，解除依赖集成任务门槛**。生成画面预览尚未对本批新文档重做；它作为后续交付矩阵验证，不替代真实 provider/API 保存结果。
+- 用户在已知累计 `112/200` 基线和费用限制下明确授权最多 100 次新增真实 provider 请求；本轮新增实际 **93 次**，累计真实请求按该项目旧计数为 **205**（较旧 200 基线多 5，处于新授权的 100 次内）。本轮新增可核实费用合计 `$1.011892`；因最早 26 次费用仍未完全对账，累计总费用仍未知，不宣称全部预算对账完成。
