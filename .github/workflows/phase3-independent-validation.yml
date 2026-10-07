@@ -10,6 +10,7 @@ on:
       - web/src/native2d/WorldPresentationAdapter.tsx
       - web/src/native2d/viewport.ts
       - web/src/native2d/types.ts
+      - web/src/pages/WorldCanvasPage.tsx
       - web/e2e/presentation.fixtures.ts
       - web/e2e/presentation-fixtures.spec.ts
   workflow_dispatch:

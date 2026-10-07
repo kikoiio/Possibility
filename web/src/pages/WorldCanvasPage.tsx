@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, authApi, getGuestToken, getToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeAuthIdentityChange, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
   CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, TimelineComparison, WorldSnapshot,
@@ -29,6 +29,11 @@ import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
 import WorldHeader from '../components/world/shell/WorldHeader'
 import SplitViewStage from '../components/world/shell/SplitViewStage'
 import WorldModalsContainer from '../components/world/shell/WorldModalsContainer'
+import ComparisonHost from '../components/world/presentation/ComparisonHost'
+import PresentationSwitcher from '../components/world/presentation/PresentationSwitcher'
+import { createPresentationRuntime } from '../components/world/presentation/presentation-runtime'
+import { readPresentationRoute, updatePanePresentation, updatePaneTimeline, updateRightPaneTarget } from '../components/world/presentation/presentation-route'
+import { createPresentationStateStore } from '../lib/presentation-state'
 
 type AsyncReadState<T> =
   | { status: 'closed' | 'loading' }
@@ -41,6 +46,9 @@ type AsyncReadState<T> =
  */
 export default function WorldCanvasPage({ worldId, readonly = false, guest = false, claimPending = false }: { worldId: string; readonly?: boolean; guest?: boolean; claimPending?: boolean }) {
   const [search, setSearch] = useSearchParams(); const timelineId = search.get('timeline')
+  const navigate = useNavigate()
+  const presentationStore = useMemo(() => createPresentationStateStore(), [])
+  const presentationRuntime = useMemo(() => createPresentationRuntime(guest ? 'guest' : readonly ? 'public' : 'account'), [guest, readonly])
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
@@ -184,6 +192,35 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const snapshotVersion = useRef(0); snapshotVersion.current = snapshot?.stateVersion ?? 0
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
+  const presentationRoute = readPresentationRoute(worldId, search, presentationStore.getPreferred())
+  const comparisonWorkspaceActive = search.has('presentation') || search.has('rightWorld')
+  const presentationWorlds = useMemo(() => {
+    const options = worldChoices.map(world => ({
+      id: world.id,
+      name: world.name,
+      timelineIds: world.id === worldId ? snapshot?.timelines.map(timeline => timeline.id) : undefined,
+    }))
+    if (!options.some(world => world.id === worldId)) {
+      options.unshift({ id: worldId, name: snapshot?.world.name ?? worldId, timelineIds: snapshot?.timelines.map(timeline => timeline.id) })
+    }
+    return options
+  }, [worldChoices, worldId, snapshot])
+  const updatePresentationTarget = useCallback((pane: 'single' | 'left' | 'right', target: import('../components/world/presentation/presentation-types').PaneTarget | null) => {
+    if (pane === 'right') {
+      if (target) presentationStore.setPreferred(target.presentation)
+      setSearch(updateRightPaneTarget(search, target), { replace: true })
+      return
+    }
+    if (!target) return
+    presentationStore.setPreferred(target.presentation)
+    const next = updatePanePresentation(updatePaneTimeline(search, 'left', target.timelineId ?? null), 'left', target.presentation)
+    if (target.worldId === worldId) setSearch(next, { replace: true })
+    else navigate(`/worlds/${encodeURIComponent(target.worldId)}?${next.toString()}`)
+  }, [navigate, presentationStore, search, setSearch, worldId])
+  const selectSinglePresentation = useCallback((presentation: 'native2d' | 'voxel3d') => {
+    presentationStore.setPreferred(presentation)
+    setSearch(updatePanePresentation(search, 'single', presentation), { replace: true })
+  }, [presentationStore, search, setSearch])
   const otherSnapshot = rightSceneRead.status === 'ready' ? rightSceneRead.value : null
   const comparison = comparisonRead.status === 'ready' ? comparisonRead.value : null
   const compareSummary = comparison ? {
@@ -754,15 +791,26 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   )
 
   if (voxelSpaces) return <>
+    {!comparisonWorkspaceActive && <div className="fixed left-3 top-3 z-[60] rounded-full bg-sheet/90 p-1 shadow-md sm:left-5 sm:top-5">
+      <PresentationSwitcher paneId="single" value={presentationRoute.left.presentation} onChange={selectSinglePresentation} />
+    </div>}
     <GuestWorldMap
       voxelSpaces={voxelSpaces}
       snapshot={snapshot}
       overlay={overlay}
       initialSpaceId={resumeSpaceId}
       initialMode={mode === 'possibility' ? 'possibility' : resumeMode}
-      splitActive={splitActive}
+      splitActive={comparisonWorkspaceActive || splitActive}
       onCloseSplit={() => closeSplit('right')}
-      splitStage={snapshot && splitVoxelDoc ? <SplitViewStage
+      splitStage={comparisonWorkspaceActive ? <ComparisonHost
+        left={presentationRoute.left}
+        right={presentationRoute.right}
+        loadSession={presentationRuntime.loadSession}
+        adapters={presentationRuntime.adapters}
+        store={presentationStore}
+        worlds={presentationWorlds}
+        onTargetChange={updatePresentationTarget}
+      /> : snapshot && splitVoxelDoc ? <SplitViewStage
         isSmall={isSmall}
         snapshot={snapshot}
         otherSnapshot={otherSnapshot}
@@ -849,10 +897,19 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
 
   if (readonly) return <main className="relative h-screen overflow-hidden bg-sage-100" data-testid="world-canvas-page">
-    <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} />
+    {comparisonWorkspaceActive ? <ComparisonHost
+      left={presentationRoute.left}
+      right={presentationRoute.right}
+      loadSession={presentationRuntime.loadSession}
+      adapters={presentationRuntime.adapters}
+      store={presentationStore}
+      worlds={presentationWorlds}
+      onTargetChange={updatePresentationTarget}
+    /> : <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} />}
     <div className="pointer-events-none absolute inset-0 z-stage">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-sage-900/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
+        {!comparisonWorkspaceActive && <PresentationSwitcher paneId="single" value={presentationRoute.left.presentation} onChange={selectSinglePresentation} />}
         <a href="/login" className="rounded-full border border-white/35 bg-sheet-dark px-4 py-2 text-xs backdrop-blur-md transition hover:bg-sage-900/70 sm:text-sm">登录，创建你的世界</a>
       </header>
       <div className="absolute bottom-4 left-3 rounded-full border border-white bg-sheet px-3 py-2 text-[10px] text-sage-800 shadow-sm sm:left-5">拖动浏览 · 滚轮缩放 · 点击建筑或人物</div>
@@ -915,8 +972,19 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     {error && <p role="status" className="rounded-xl bg-sheet px-4 py-2 text-sm text-red-700 border border-red-200">{error}</p>}
     {actionError && <p role="status" className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{actionError}</p>}
     {regenerateError && <p role="status" className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{regenerateError}</p>}
+    {!comparisonWorkspaceActive && <div className="self-start rounded-full bg-sheet/90 p-1 shadow-sm">
+      <PresentationSwitcher paneId="single" value={presentationRoute.left.presentation} onChange={selectSinglePresentation} />
+    </div>}
     <div className="flex min-h-0 flex-1 gap-3"><div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="owner-map-stage">
-      {mode === 'possibility' ? (
+      {comparisonWorkspaceActive ? <ComparisonHost
+        left={presentationRoute.left}
+        right={presentationRoute.right}
+        loadSession={presentationRuntime.loadSession}
+        adapters={presentationRuntime.adapters}
+        store={presentationStore}
+        worlds={presentationWorlds}
+        onTargetChange={updatePresentationTarget}
+      /> : mode === 'possibility' ? (
         <SplitViewStage
           isSmall={isSmall}
           snapshot={snapshot}
