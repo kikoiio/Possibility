@@ -5,6 +5,7 @@ on:
     branches: [phase3]
     paths:
       - .github/workflows/phase1-g0-guest-claim.yml
+      - web/e2e/presentation-switch.spec.ts
   workflow_dispatch:
     inputs:
       run_provider_acceptance:
@@ -97,9 +98,9 @@ jobs:
             echo "journey_revision=16"
             echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation; deterministic single-space create and original-world repair UI/save recovery"
-            echo "e2e_files=e2e/guest-claim-journey.spec.ts,e2e/scene-create.spec.ts,e2e/scene-repair.spec.ts"
+            echo "e2e_files=e2e/guest-claim-journey.spec.ts,e2e/scene-create.spec.ts,e2e/scene-repair.spec.ts,e2e/presentation-switch.spec.ts"
             echo "excluded=real model generation; create/repair UI draft responses are route fixtures, API save contracts use valid fixed voxel documents"
-            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts e2e/scene-create.spec.ts e2e/scene-repair.spec.ts
+            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts e2e/scene-create.spec.ts e2e/scene-repair.spec.ts e2e/presentation-switch.spec.ts
           } 2>&1 | tee -a "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Upload browser trace and run log
         if: always()
