@@ -6,6 +6,9 @@ import { join } from 'node:path'
 const config = process.env.PHASE2_TEMP_WRANGLER_CONFIG
 const evidencePath = process.env.PHASE2_MIGRATION_EVIDENCE_PATH
 const migrationDir = 'api/drizzle'
+// This allowlist is limited to byte-pinned migrations whose trigger contains
+// SELECT CASE ... RAISE(...), the syntax confirmed by the D1 splitter issue.
+// Plain SELECT RAISE trigger files are intentionally excluded.
 const knownParserFallbacks = new Map([
   ['0008_cool_spiral.sql', {
     sha256: '27d6f081d7d5f6c1a4f3b7d5d4d8c8fe0ad36a273d42ef41a3b60af42651c067',
@@ -14,6 +17,38 @@ const knownParserFallbacks = new Map([
   ['0011_universe_revision_sim_time.sql', {
     sha256: '896d47d531932ac7361250fb5e1a41d02cea999477720ad6abbe1efa4b574d5b',
     expectedQueries: 3,
+  }],
+  ['0012_dialogue_recovery_guard.sql', {
+    sha256: '603fa9d8361fd835b0bfdb11af6d014bd31f45865f324f1a7e5116a222577490',
+    expectedQueries: 1,
+  }],
+  ['0013_immutable_fork_provenance.sql', {
+    sha256: '89a9caaa5ca273da1afe89a2d5f11b3411aa45f430de3bf58e84394c262f6ac8',
+    expectedQueries: 1,
+  }],
+  ['0014_fork_schedule_checkpoint_guard.sql', {
+    sha256: '4cbafc4d6b3adbcc83568a1f0a5661cdf2f9fee41fa014f3c944c6e171d91ac4',
+    expectedQueries: 1,
+  }],
+  ['0015_curly_ikaris.sql', {
+    sha256: '610c6bb2f2d70f0b1a4b285209a6f1365600726eed6ceb0f6f794445fe0e2e53',
+    expectedQueries: 2,
+  }],
+  ['0016_active_fork_limit_guard.sql', {
+    sha256: 'db65ddf9da0f71f004c1dc89ddfe706923eb9b66cc9d1d40160dc5ce9035bc5e',
+    expectedQueries: 2,
+  }],
+  ['0017_universe_revision_step_guard.sql', {
+    sha256: '640d2a3ab4df946f50bc3bb57771e373b67b81c9f87890fd86a8f28f0e03c22b',
+    expectedQueries: 1,
+  }],
+  ['0018_smart_queen_noir.sql', {
+    sha256: '132b153aa3f1846dbb9137ebdcfedc13a9e6cdfd93048599f3e9a44f09148956',
+    expectedQueries: 3,
+  }],
+  ['0037_scene_compatibility.sql', {
+    sha256: 'cdd06fe7b5340eb1c47c4ba704f635d17fdc69b6e4a9528f876b9bded0d32b7e',
+    expectedQueries: 15,
   }],
 ])
 
