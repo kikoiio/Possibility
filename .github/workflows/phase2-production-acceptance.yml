@@ -92,6 +92,11 @@ jobs:
             .trim().split('\n').filter(Boolean).slice(-8).map(line => {
               try { return JSON.parse(line) } catch { return line }
             })
+          const timelineTime = name => {
+            const body = evidence.steps[name]?.body ?? {}
+            const world = (body.worlds ?? []).find(item => item.id === evidence.worldId)
+            return world?.timelines?.find(item => item.id === evidence.timelineId)?.simNow
+          }
           const summary = {
             result: evidence.ok ? 'PASS' : 'FAIL',
             environment: 'GitHub-hosted runner; isolated local Worker and D1; no remote deployment',
@@ -102,10 +107,12 @@ jobs:
             assertions: evidence.assertions,
             httpStatuses: Object.fromEntries(Object.entries(evidence.steps).map(([name, step]) => [name, step.status])),
             observedSimTime: {
-              before: evidence.steps.stateBeforeLeave?.body?.simNow,
-              afterLeave: evidence.steps.stateAfterLeave?.body?.simNow,
-              atPause: evidence.steps.stateAtPause?.body?.simNow,
-              whilePaused: evidence.steps.stateWhilePaused?.body?.simNow,
+              before: timelineTime('statusBefore'),
+              afterLeave: timelineTime('statusAfterLeave'),
+              atPause: timelineTime('statusAfterPause'),
+              whilePaused: timelineTime('statusWhilePaused'),
+              afterResume: timelineTime('statusAfterResume'),
+              afterResumeWait: timelineTime('statusAfterResumeWait'),
             },
             recentTicks: ticks,
           }

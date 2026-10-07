@@ -70,12 +70,19 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-function stateFingerprint(body: Json | undefined): { simNow: unknown; events: string[]; facts: string[] } {
-  const root = object(body)
+function stateFingerprint(engineStatus: Json | undefined, worldId: string, timelineId: string,
+  state: Json | undefined): { simNow: unknown; events: string[]; facts: string[] } {
+  const status = object(engineStatus)
+  const statusWorlds = Array.isArray(status.worlds) ? status.worlds : []
+  const world = object(statusWorlds.find(candidate => object(candidate).id === worldId))
+  const timelines = Array.isArray(world.timelines) ? world.timelines : []
+  const timeline = object(timelines.find(candidate => object(candidate).id === timelineId))
+  const root = object(state)
   const events = Array.isArray(root.events) ? root.events : []
-  const facts = Array.isArray(root.currentFacts) ? root.currentFacts : []
+  const facts = Array.isArray(root.current) ? root.current
+    : Array.isArray(root.currentFacts) ? root.currentFacts : []
   return {
-    simNow: root.simNow,
+    simNow: timeline.simNow,
     events: events.map((event) => object(event).id).filter((id): id is string => typeof id === 'string').sort(),
     facts: facts.map((fact) => object(fact).id).filter((id): id is string => typeof id === 'string').sort(),
   }
@@ -119,7 +126,7 @@ try {
   if (!timelineId) throw new Error(`no active timeline found for world: ${worldId}`)
   const beforePath = `/api/worlds/${encodeURIComponent(worldId)}/state${timelineId ? `?timelineId=${encodeURIComponent(timelineId)}` : ''}`
   const stateBefore = await request('stateBeforeLeave', beforePath, {}, token)
-  const beforeFingerprint = stateFingerprint(stateBefore)
+  const beforeFingerprint = stateFingerprint(statusBefore, worldId, timelineId, stateBefore)
   result = {
     ok: false, startedAt, finishedAt: now(), apiUrl, waitMs, worldId, timelineId,
     steps, assertions,
@@ -131,7 +138,8 @@ try {
   // Simulate leaving the world while its scheduler runs naturally.
   await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
   const stateReturnRunning = await request('stateAfterLeave', beforePath, {}, token)
-  const awayFingerprint = stateFingerprint(stateReturnRunning)
+  const statusAfterLeave = await request('statusAfterLeave', '/api/engine/status', {}, token)
+  const awayFingerprint = stateFingerprint(statusAfterLeave, worldId, timelineId, stateReturnRunning)
   recordAssertion('worldAdvancedWhileAway',
     beforeFingerprint.simNow !== awayFingerprint.simNow
     || JSON.stringify(beforeFingerprint.events) !== JSON.stringify(awayFingerprint.events)
@@ -145,10 +153,11 @@ try {
   recordAssertion('pauseReasonRecorded', worldAway.status === 'paused' && worldAway.pauseReason === 'manual')
 
   const stateAtPause = await request('stateAtPause', beforePath, {}, token)
-  const pauseFingerprint = stateFingerprint(stateAtPause)
+  const pauseFingerprint = stateFingerprint(statusAway, worldId, timelineId, stateAtPause)
   await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
   const stateWhilePaused = await request('stateWhilePaused', beforePath, {}, token)
-  const pausedFingerprint = stateFingerprint(stateWhilePaused)
+  const statusWhilePaused = await request('statusWhilePaused', '/api/engine/status', {}, token)
+  const pausedFingerprint = stateFingerprint(statusWhilePaused, worldId, timelineId, stateWhilePaused)
   recordAssertion('simTimeFrozenWhilePaused', pauseFingerprint.simNow === pausedFingerprint.simNow)
   recordAssertion('eventsRetained', JSON.stringify(pauseFingerprint.events) === JSON.stringify(pausedFingerprint.events))
   recordAssertion('factsRetained', JSON.stringify(pauseFingerprint.facts) === JSON.stringify(pausedFingerprint.facts))
@@ -159,6 +168,13 @@ try {
     ? object(statusAfterResume.worlds.find((candidate) => object(candidate).id === worldId)) : {}
   recordAssertion('resumeClearsStopReason', worldResumed.status === 'running' && worldResumed.pauseReason === null)
   pausedWorldId = null
+  const stateAfterResume = await request('stateAfterResume', beforePath, {}, token)
+  await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
+  const stateAfterResumeWait = await request('stateAfterResumeWait', beforePath, {}, token)
+  const statusAfterResumeWait = await request('statusAfterResumeWait', '/api/engine/status', {}, token)
+  const resumedFingerprint = stateFingerprint(statusAfterResumeWait, worldId, timelineId, stateAfterResumeWait)
+  recordAssertion('worldAdvancedAfterResume',
+    stateFingerprint(statusAfterResume, worldId, timelineId, stateAfterResume).simNow !== resumedFingerprint.simNow)
   result.ok = true
 } catch (error) {
   // Never leave a production world paused because an evidence assertion failed.
