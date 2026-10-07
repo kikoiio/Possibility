@@ -103,7 +103,7 @@ it('D4 scheduled handler selects daily cleanup and opt-in engine cadence indepen
   const dispatch = async (cron: string, env: Env) => {
     const scheduledWork: Promise<unknown>[] = []
     app.scheduled({ cron, scheduledTime: Date.now() } as ScheduledController,
-      env, { waitUntil: promise => { scheduledWork.push(promise) } } as unknown as ExecutionContext)
+      env, { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } } as unknown as ExecutionContext)
     await Promise.all(scheduledWork)
   }
 
@@ -136,7 +136,7 @@ it('D4 scheduled handler dispatches an opted-in engine tick, preserves default p
   const dispatch = async (env: typeof f.env, cron = '17 3 * * *') => {
     const scheduledWork: Promise<unknown>[] = []
     app.scheduled({ cron, scheduledTime: Date.now() } as ScheduledController,
-      env, { waitUntil: promise => { scheduledWork.push(promise) } } as unknown as ExecutionContext)
+      env, { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } } as unknown as ExecutionContext)
     await Promise.all(scheduledWork)
   }
 

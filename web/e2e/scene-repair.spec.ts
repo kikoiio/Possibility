@@ -94,6 +94,7 @@ test('map missing-scene entry opens repair for the same original world', async (
 })
 
 test('a competing successful repair sends the user into the original world', async ({ page }) => {
+  const saveAttempts: Record<string, unknown>[] = []
   const now = '2026-10-01T00:00:00.000Z'
   const snapshot = {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', status: 'paused', pauseReason: 'manual', isDemo: false, callsToday: 0, locations: [{ name: '主楼', description: '旧宅' }, { name: '温室', description: '玻璃温室' }, { name: '庭院', description: '石灯庭院' }] },
@@ -109,7 +110,10 @@ test('a competing successful repair sends the user into the original world', asy
   await page.route('**/api/worlds/world-1/scene/repair-draft', route => route.fulfill({ json: {
     worldId: 'world-1', document: voxelDoc, explanation: '场景草稿。', warnings: [], callsUsed: 1,
   } }))
-  await page.route('**/api/worlds/world-1/scene/voxel-revision', route => route.fulfill({ status: 409, json: { error: '场景已由其他请求补建' } }))
+  await page.route('**/api/worlds/world-1/scene/voxel-revision', route => {
+    saveAttempts.push(route.request().postDataJSON() as Record<string, unknown>)
+    return route.fulfill({ status: 409, json: { error: '场景已由其他请求补建' } })
+  })
   await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDoc } }))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: false, fork: true, compare: true, persist: true, resetDemo: false },
@@ -129,6 +133,11 @@ test('a competing successful repair sends the user into the original world', asy
   await page.getByTestId('save-repair-scene').click()
   await expect(page).toHaveURL('/worlds/world-1')
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15000 })
+  expect(saveAttempts).toHaveLength(1)
+  expect(saveAttempts[0]).toMatchObject({ expectedVersion: 0, repair: true })
+  // 409 switches to the winning scene in the same world without replaying the stale repair draft.
+  await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
+  await expect.poll(() => page.evaluate(() => (window as any).__voxelEngine?.world?.doc?.id)).toBe('fixture-mist-manor')
 })
 
 test('generation errors keep the original context and description available for retry', async ({ page }) => {

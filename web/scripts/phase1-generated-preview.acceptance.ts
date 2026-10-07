@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { chromium, type BrowserContext, type Page } from '@playwright/test'
 
@@ -44,7 +44,7 @@ interface PreviewResult {
     assetId?: string
     anchor?: { x: number; y: number; z: number }
   }[]
-  screenshots: { overview: string; alternate: string }
+  screenshots: { overview: string; overviewBytes: number; alternate: string; alternateBytes: number }
   render: 'ready' | 'failed'
 }
 
@@ -124,6 +124,8 @@ async function previewScenario(context: BrowserContext, page: Page, scenarioId: 
   const overviewPath = `${screenshotBase}-overview.png`
   const alternatePath = `${screenshotBase}-alternate.png`
   await page.screenshot({ path: overviewPath, fullPage: true, animations: 'disabled' })
+  const overviewBytes = statSync(overviewPath).size
+  assert(overviewBytes > 10_000, `${scenarioId} overview screenshot is unexpectedly small (${overviewBytes} bytes)`)
   const alternateSet = await page.evaluate(() => {
     const engine = (window as Window & { __voxelEngine?: {
       getOrbitPose: () => { theta: number; phi: number; distance: number; target: { x: number; y: number; z: number } } | null
@@ -137,6 +139,8 @@ async function previewScenario(context: BrowserContext, page: Page, scenarioId: 
   assert(alternateSet, `${scenarioId} did not expose the orbit camera probe`)
   await page.waitForTimeout(350)
   await page.screenshot({ path: alternatePath, fullPage: true, animations: 'disabled' })
+  const alternateBytes = statSync(alternatePath).size
+  assert(alternateBytes > 10_000, `${scenarioId} alternate screenshot is unexpectedly small (${alternateBytes} bytes)`)
   assert(apiRequests.every(path => path === 'GET /api/persons' || path === 'POST /api/scene-drafts/voxel'),
     `${scenarioId} attempted an API outside the read-only preview stubs`)
 
@@ -147,7 +151,8 @@ async function previewScenario(context: BrowserContext, page: Page, scenarioId: 
     locations: draft.world.locations,
     documentSha256: sha256(JSON.stringify(draft.document)),
     locationBindings: inspectBindings(draft),
-    screenshots: { overview: overviewPath, alternate: alternatePath },
+    // The source hash identifies the exact archived document returned by the isolated draft API stub.
+    screenshots: { overview: overviewPath, overviewBytes, alternate: alternatePath, alternateBytes },
     render: 'ready',
   }
 }

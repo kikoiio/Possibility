@@ -73,7 +73,14 @@ export default function WorldPanel({ engine, controller }: WorldPanelProps) {
   const terrainMeta = doc?.terrain
   const [form, setForm] = useState<TerrainForm>(() => (terrainMeta ? formFromParams(terrainMeta.params) : DEFAULT_FORM))
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
-  const [tweaks, setTweaks] = useState({ fogDensity: 0, exposure: 0, saturation: 0 })
+  const [tweaks, setTweaks] = useState(() => {
+    const saved = engine.getStyle()?.tweaks
+    return {
+      fogDensity: saved?.fogDensity ?? 0,
+      exposure: saved?.exposure ?? 0,
+      saturation: saved?.saturation ?? 0,
+    }
+  })
 
   const patch = (p: Partial<TerrainForm>) => setForm((f) => ({ ...f, ...p }))
 

@@ -692,4 +692,52 @@ describe('EditController × S3b 地形重生成与风格包', () => {
     expect(engine.world!.doc.style?.clamps).toEqual([{ field: 'style.preset', from: 'cyberpunk', to: 'default' }])
     engine.dispose()
   })
+
+  it('风格预检失败不改变文档，用户重试后以同一参数保存(A3 failure recovery)', async () => {
+    const { engine } = terrainEngine()
+    const original = engine.world!.doc
+    const saved: VoxelDocument[] = []
+    let preflightCalls = 0
+    const controller = new EditController({
+      engine,
+      preflight: async () => {
+        preflightCalls += 1
+        if (preflightCalls === 1) throw new Error('网络暂时不可用')
+        return {
+          status: 'valid',
+          basis: {
+            expectedCurrentVersion: 1,
+            currentContentHash: 'style-source-hash',
+            source: { worldId: 'world-1', version: 1, contentHash: 'style-source-hash' },
+            candidateHash: 'sha256:style-retry',
+            rulesVersion: 'rules-1', assetManifestHash: 'assets-1', templateCatalogHash: 'templates-1',
+            bindingHash: 'bindings-1', contextFingerprint: 'context-1', baseline: null,
+          },
+          report: {
+            status: 'valid', issues: [], issueCount: 0, countIsExact: true, stopReason: null,
+            checkedSpaceIds: ['exterior'], pendingSpaceIds: [], workUnitsUsed: 1, elapsedMs: 1,
+            ruleNotes: { items: [], total: 0, hasMore: false },
+          },
+        }
+      },
+      save: doc => { saved.push(doc) },
+    })
+
+    const failed = await controller.setStyleAsync({ preset: 'dusk-warm', tweaks: { exposure: 0.3 } })
+    expect(failed.ok).toBe(false)
+    expect(failed.blocked?.kind).toBe('unavailable')
+    expect(engine.world!.doc).toBe(original)
+    expect(engine.getStyle()).toBeUndefined()
+
+    const retried = await controller.setStyleAsync({ preset: 'dusk-warm', tweaks: { exposure: 0.3 } })
+    expect(retried.ok).toBe(true)
+    expect(engine.world!.doc.style?.tweaks?.exposure).toBe(0.3)
+    expect(engine.getStyle()?.tweaks?.exposure).toBe(0.3)
+    controller.flushSave()
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.style?.tweaks?.exposure).toBe(0.3)
+    expect(preflightCalls).toBe(2)
+    controller.dispose()
+    engine.dispose()
+  })
 })

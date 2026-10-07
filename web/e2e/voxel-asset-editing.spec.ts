@@ -18,7 +18,7 @@ interface PerfProbe { timedEdit(ops: unknown[]): number }
 interface EngineProbe {
   worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
   feedback: { assetGhostActive: boolean }
-  world: { doc: { assetPlacements?: Placement[] } }
+  world: { doc: { assetPlacements?: Placement[]; style?: { tweaks?: { exposure?: number } } } }
 }
 
 declare global {
@@ -240,6 +240,27 @@ test('产品页：放置资产 → 保存 → 刷新仍在；guest 无编辑入�
   await page.reload()
   await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
   await expect.poll(() => page.evaluate(() => window.__voxelEngine!.world.doc.assetPlacements?.length ?? 0)).toBe(1)
+
+  // A3:保存済み外观参数从权威场景文档恢复，关闭/重开面板及整页重载不回到默认值。
+  await page.getByTestId('voxel-tool-world').click()
+  const exposure = page.getByTestId('voxel-style-tweak-exposure')
+  await expect(exposure).toHaveValue('0')
+  await exposure.focus()
+  await page.keyboard.press('End')
+  await expect(exposure).toHaveValue('0.3')
+  await expect.poll(() => currentDoc.style?.tweaks?.exposure).toBe(0.3)
+
+  await page.getByTestId('voxel-tool-asset').click()
+  await expect(page.getByTestId('voxel-style-form')).toHaveCount(0)
+  await page.getByTestId('voxel-tool-world').click()
+  await expect(page.getByTestId('voxel-style-tweak-exposure')).toHaveValue('0.3')
+
+  // The saved style is part of the scene document and survives a full renderer rebuild.
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15000 })
+  await expect.poll(() => page.evaluate(() => window.__voxelEngine!.world.doc.style?.tweaks?.exposure)).toBe(0.3)
+  await page.getByTestId('voxel-tool-world').click()
+  await expect(page.getByTestId('voxel-style-tweak-exposure')).toHaveValue('0.3')
 })
 
 test('guest 演示世界无编辑入口', async ({ page }) => {
