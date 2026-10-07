@@ -245,12 +245,22 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
   }
   let i = 0
   let treeCount = 0
+  const fitsFootprint = (assetId: string, x: number, z: number) => {
+    const footprint: Record<string, readonly [number, number]> = {
+      'veg-tree-a': [2, 2],
+      'veg-flower-a': [1, 1],
+      'veg-grass-a': [1, 1],
+      'veg-bush-a': [2, 2],
+    }
+    const [w, d] = footprint[assetId]
+    return x >= 0 && z >= 0 && x + w <= width && z + d <= depth
+  }
   if (params.vegetation?.trees ?? true) {
     for (let z = 1; z < depth && treeCount < TERRAIN_QUOTAS.treeMax; z += 4) for (let x = 1; x < width && treeCount < TERRAIN_QUOTAS.treeMax; x += 4) {
       const tx = x + Math.floor(rng() * 3) - 1
       const tz = z + Math.floor(rng() * 3) - 1
       const y = columns.get(`${tx},${tz}`)
-      if (y === undefined || y + 3 > size.height - 1 || rng() >= density) continue
+      if (y === undefined || y + 3 > size.height - 1 || rng() >= density || !fitsFootprint('veg-tree-a', tx, tz)) continue
       push('veg-tree-a', tx, y + 1, tz, i++)
       treeCount++
     }
@@ -260,11 +270,13 @@ export function generateTerrain(size: VoxelSize, params: ResolvedTerrainParams):
     if (y === undefined || occupied.has(`${x},${z}`) || rng() >= density * 0.65) continue
     const flowersOn = params.vegetation?.flowers ?? true
     const assetId = flowersOn && rng() < 0.6 ? 'veg-flower-a' : 'veg-grass-a'
+    if (!fitsFootprint(assetId, x, z)) continue
     push(assetId, x, y + 1, z, i++)
   }
   if (params.vegetation?.bushes ?? true) for (let z = 2; z < depth && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; z += 5) for (let x = 2; x < width && assetPlacements.length < TERRAIN_QUOTAS.treeMax + TERRAIN_QUOTAS.decorMax; x += 5) {
     const y = columns.get(`${x},${z}`)
     if (y === undefined || occupied.has(`${x},${z}`) || rng() >= density * 0.35) continue
+    if (!fitsFootprint('veg-bush-a', x, z)) continue
     push('veg-bush-a', x, y + 1, z, i++)
   }
   return { cells, assetPlacements }

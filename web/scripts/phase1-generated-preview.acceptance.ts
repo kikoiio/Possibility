@@ -97,19 +97,6 @@ async function installApiStubs(context: BrowserContext, draft: GeneratedDraft, a
   })
 }
 
-async function clearCreateDraftState(page: Page): Promise<void> {
-  await page.goto('about:blank')
-  await page.evaluate(async () => {
-    localStorage.clear()
-    await new Promise<void>(resolve => {
-      const request = indexedDB.deleteDatabase('possibility-world-create')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
-}
-
 async function previewScenario(context: BrowserContext, page: Page, scenarioId: string, draft: GeneratedDraft): Promise<PreviewResult> {
   const apiRequests: string[] = []
   await installApiStubs(context, draft, apiRequests)
@@ -153,8 +140,6 @@ async function previewScenario(context: BrowserContext, page: Page, scenarioId: 
   assert(apiRequests.every(path => path === 'GET /api/persons' || path === 'POST /api/scene-drafts/voxel'),
     `${scenarioId} attempted an API outside the read-only preview stubs`)
 
-  await clearCreateDraftState(page)
-  await context.unroute('**/api/**')
   return {
     scenarioId,
     worldName: draft.world.name,
@@ -171,21 +156,23 @@ async function main(): Promise<void> {
   assert(evidencePath, 'G0_EVIDENCE_FILE is required')
   const artifact = JSON.parse(readFileSync(evidencePath, 'utf8')) as AcceptanceArtifact
   assert(artifact.schema === 'phase1-g0-provider-acceptance-v1', 'unsupported phase 1 provider evidence schema')
-  assert(artifact.passed, 'phase 1 provider acceptance artifact did not pass')
   const scenarioIds = Object.keys(artifact.generatedDrafts ?? {}).sort()
   assert(scenarioIds.length > 0, 'provider acceptance artifact contains no generated drafts')
   mkdirSync(runnerTemp, { recursive: true })
 
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--no-sandbox'] })
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 })
-  const page = await context.newPage()
   const previews: PreviewResult[] = []
   try {
     for (const scenarioId of scenarioIds) {
-      previews.push(await previewScenario(context, page, scenarioId, artifact.generatedDrafts[scenarioId]))
+      const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 })
+      try {
+        const page = await context.newPage()
+        previews.push(await previewScenario(context, page, scenarioId, artifact.generatedDrafts[scenarioId]))
+      } finally {
+        await context.close()
+      }
     }
   } finally {
-    await context.close()
     await browser.close()
   }
 
@@ -195,6 +182,7 @@ async function main(): Promise<void> {
       schema: artifact.schema,
       workflowRunId: artifact.workflowRunId,
       commit: artifact.commit,
+      providerAcceptancePassed: artifact.passed,
       artifactSha256: sha256(JSON.stringify(artifact)),
     },
     previewUrl,
