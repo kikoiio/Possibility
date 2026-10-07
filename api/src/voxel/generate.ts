@@ -401,7 +401,9 @@ export async function generateWorld(
       hints.push(`以下地点承载物不可从室外到达：${connectivityTargets.join('、')};保持物体及地点绑定不变，在每个物体一侧留出可站立位置，并清开墙体/围栏形成与室外连续、净高至少 2 格的路线`)
     }
     if (issues.some(issue => issue.code === 'out-of-bounds')) {
-      hints.push(`本世界坐标范围为 x=0..${doc.size.width - 1}, y=0..${doc.size.height - 1}, z=0..${doc.size.depth - 1};检查操作端点及物体/资产完整占地`)
+      const outOfBoundsDetails = issues.filter(issue => issue.code === 'out-of-bounds').slice(0, 8)
+        .map(issue => `${issue.message}${issue.at ? `@(${issue.at.x},${issue.at.y},${issue.at.z})` : ''}`)
+      hints.push(`本世界坐标范围为 x=0..${doc.size.width - 1}, y=0..${doc.size.height - 1}, z=0..${doc.size.depth - 1};以下位置或完整占地越界：${outOfBoundsDetails.join('；')}。根据对象/资产 footprint 将它们移回边界内；不要只移动 anchor 后再次输出同一布局`)
     }
     const hintText = hints.length > 0 ? `修复方向:${[...new Set(hints)].join('；')}。` : ''
     messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界未通过契约校验：${detail}。${hintText}请修正后重新返回完整世界 JSON。` }]
