@@ -1,6 +1,6 @@
 import { appendFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 
 const apiUrl = process.env.PHASE2_TEMP_API_URL?.replace(/\/$/, '')
 const databaseName = process.env.PHASE2_TEMP_DATABASE_NAME
@@ -26,11 +26,84 @@ function requireStatus(result, status, label) {
   if (result.status !== status) throw new Error(`${label} returned HTTP ${result.status}: ${JSON.stringify(result.body)}`)
 }
 
+function isWorkersDevScriptNotFound(result) {
+  const body = result?.body
+  return result?.status === 404
+    && body?.cloudflare_error === true
+    && body?.error_category === 'worker'
+    && body?.error_code === 1042
+    && body?.error_name === 'workers_dev_script_not_found'
+    && body?.title === 'Error 1042: Cloudflare Error'
+    && body?.detail === 'No Workers script was found for this host on workers.dev.'
+}
+
+function logRegistrationAttempt({ attempt, result, retryScheduled }) {
+  const edgeError = isWorkersDevScriptNotFound(result)
+  process.stdout.write(`${JSON.stringify({
+    event: 'temporary-registration-attempt',
+    attempt,
+    status: result.status,
+    retryableEdgePropagationError: edgeError,
+    ...(edgeError ? { edgeErrorCode: 1042, edgeErrorName: 'workers_dev_script_not_found' } : {}),
+    retryScheduled,
+  })}\n`)
+}
+
+async function verifyHealthBeforeRetry(nextAttempt) {
+  const healthUrl = `${apiUrl}/api/health`
+  let healthStatus = null
+  try {
+    const response = await fetch(healthUrl, { headers: { accept: 'application/json' } })
+    healthStatus = response.status
+    // Do not log a health response body; it is not needed for this gate.
+    if (response.body) await response.body.cancel().catch(() => {})
+  } catch {
+    process.stdout.write(`${JSON.stringify({
+      event: 'temporary-registration-retry-health',
+      beforeAttempt: nextAttempt,
+      reachable: false,
+      status: null,
+    })}\n`)
+    throw new Error(`registration retry ${nextAttempt} stopped because the same Worker health endpoint was unreachable`)
+  }
+  const reachable = healthStatus === 200
+  process.stdout.write(`${JSON.stringify({
+    event: 'temporary-registration-retry-health',
+    beforeAttempt: nextAttempt,
+    reachable,
+    status: healthStatus,
+  })}\n`)
+  if (!reachable) {
+    throw new Error(`registration retry ${nextAttempt} stopped because the same Worker health endpoint returned HTTP ${healthStatus}`)
+  }
+}
+
+async function registerTemporaryAccount(username, password) {
+  const retryDelaysMs = [1500, 3000]
+  for (let attempt = 1; attempt <= retryDelaysMs.length + 1; attempt += 1) {
+    const result = await request('/api/auth/register', {
+      method: 'POST',
+      body: { username, password },
+    })
+    const retryable = isWorkersDevScriptNotFound(result)
+    const retryScheduled = retryable && attempt <= retryDelaysMs.length
+    logRegistrationAttempt({ attempt, result, retryScheduled })
+    if (result.status === 200) return result
+    if (!retryable || !retryScheduled) {
+      const errorCode = retryable ? '1042 workers_dev_script_not_found' : 'not retryable'
+      throw new Error(`temporary account registration stopped after attempt ${attempt}: HTTP ${result.status} (${errorCode})`)
+    }
+
+    await new Promise(resolve => setTimeout(resolve, retryDelaysMs[attempt - 1]))
+    await verifyHealthBeforeRetry(attempt + 1)
+  }
+  throw new Error('temporary account registration exhausted its bounded retry attempts')
+}
+
 const runSuffix = `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${randomBytes(3).toString('hex')}`
 const username = `phase2_${runSuffix}`
 const password = randomBytes(32).toString('base64url')
-const registration = await request('/api/auth/register', { method: 'POST', body: { username, password } })
-requireStatus(registration, 200, 'temporary account registration')
+const registration = await registerTemporaryAccount(username, password)
 const token = registration.body?.token
 if (typeof token !== 'string' || !token) throw new Error('registration response did not include a session token')
 

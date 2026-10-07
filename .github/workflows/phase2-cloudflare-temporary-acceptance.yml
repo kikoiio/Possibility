@@ -198,11 +198,12 @@ jobs:
             guard_status=$?
             if [[ $guard_status -ne 0 ]]; then cleanup_failed=1; fi
             if [[ -f "$cleanup_flags" ]]; then source "$cleanup_flags"; fi
+            export PHASE2_TEMP_WORKER_DELETE_VERIFIED
           else
             echo 'No Cloudflare resource creation was started; cleanup is not needed.'
           fi
           if [[ "$PHASE2_TEMP_WORKER_DELETE_VERIFIED" == true ]]; then
-            printf 'y\n' | npx wrangler delete --name "$PHASE2_TEMP_WORKER_NAME" --config "$PHASE2_TEMP_WRANGLER_CONFIG"
+            node scripts/phase2-cloudflare-delete-worker.mjs
             if [[ $? -eq 0 ]]; then worker_cleanup='deleted'; else worker_cleanup='delete-failed'; cleanup_failed=1; fi
           elif [[ "$PHASE2_TEMP_WORKER_DEPLOY_STARTED" == true && "$PHASE2_TEMP_WORKER_DEPLOYED" != true ]]; then
             if [[ $guard_status -eq 0 && "$PHASE2_TEMP_WORKER_PRESENT" != true ]]; then
