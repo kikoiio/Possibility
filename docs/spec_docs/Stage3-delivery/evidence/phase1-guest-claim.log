@@ -1,0 +1,11 @@
+Branch: phase3
+Application source base: 07dcdb40e9cfec19524bded888faee6498f2cea1
+Test: web/e2e/guest-claim-journey.spec.ts
+Command: PLAYWRIGHT_API_PORT=27887 PLAYWRIGHT_WEB_PORT=25173 npx playwright test --workers=1 --project=desktop-chromium --output=/tmp/p3-g0-evidence/guest-claim e2e/guest-claim-journey.spec.ts
+
+Running 1 test using 1 worker
+✓ [desktop-chromium] guest interacts, forks, claims on register and keeps progress in the saved world (16.1s)
+1 passed (39.0s)
+
+Observed path: local isolated D1 seed → /demo → enter greenhouse and move visitor → create real fork → register and claim → open claimed owner world → find two timelines and visitor at greenhouse.
+Limitations: no dialogue step, no post-claim management action, no edit/save, no side-by-side split, and no page reload. This is partial journey evidence only.

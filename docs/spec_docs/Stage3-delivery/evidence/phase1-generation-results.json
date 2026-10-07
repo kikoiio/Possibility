@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-07",
+  "applicationBase": "07dcdb40e9cfec19524bded888faee6498f2cea1",
+  "environment": "local isolated Wrangler D1; provider from local api/.dev.vars; no secret values recorded",
+  "authorizedProviderCallLimit": 200,
+  "providerCallsUsed": 26,
+  "cases": [
+    {
+      "id": "custom-1",
+      "prompt": "一条笔直的鹅卵石路从南到北穿过小镇，路旁有一家咖啡馆和一栋两层住宅，路的北端是一个小广场，广场中央有一盏石灯。",
+      "apiStatus": 200,
+      "providerCalls": 2,
+      "worldName": "石灯镇",
+      "worldLocations": ["石灯广场", "灰阶咖啡馆", "梧桐屋", "南端旧车站", "磨坊面包房", "镇立图书室", "坡上暖房与菜园", "石桥与浅溪"],
+      "sceneLocationBindingCount": 8,
+      "sceneObjectCount": 3,
+      "assessment": "API success is not accepted: the returned scene has fewer objects than bound locations, so several required core structures are not represented. The draft was not persisted."
+    },
+    {
+      "id": "custom-2",
+      "prompt": "小镇广场旁的一条街，街上有一家咖啡馆。",
+      "apiStatus": 502,
+      "providerCalls": 5,
+      "errorKind": "content",
+      "issues": ["walk-clearance"],
+      "assessment": "Generation failed after repeated clearance validation errors."
+    },
+    {
+      "id": "custom-3",
+      "prompt": "一片开阔的草地，中间有一条直路，路边只有一间带大院子的咖啡馆，没有围墙没有走廊。",
+      "apiStatus": 502,
+      "providerCalls": 5,
+      "errorKind": "content",
+      "issues": ["walk-clearance"],
+      "assessment": "Generation failed with clearance errors despite the prompt explicitly excluding walls and corridors."
+    },
+    {
+      "id": "official-example",
+      "prompt": "海边旧车站旁的小街，路边有咖啡馆、花园和安静的住宅。",
+      "apiStatus": 502,
+      "providerCalls": 5,
+      "errorKind": "content",
+      "issues": ["walk-connectivity"],
+      "assessment": "Official example failed walk-connectivity validation."
+    },
+    {
+      "id": "single-space-create-repeat",
+      "prompt": "海边旧车站旁的小街，路边有咖啡馆、花园和安静的住宅。",
+      "apiStatus": 502,
+      "providerCalls": 5,
+      "errorKind": "content",
+      "issues": ["walk-connectivity"],
+      "assessment": "The flow stopped at draft generation; POST /api/worlds was not reached, so no self-built single-space world was saved."
+    },
+    {
+      "id": "original-world-repair",
+      "prompt": "沿用原来的主楼、温室、庭院、书房和湖畔，补齐入口之间可步行的石板路。",
+      "apiStatus": 502,
+      "providerCalls": 4,
+      "errorKind": "content",
+      "issues": ["walk-connectivity", "walk-gap"],
+      "assessment": "The original world had one resident, one timeline, five locations, and no scene revisions before the attempt. Repair draft failed; no save was attempted and the original world remained unchanged."
+    }
+  ],
+  "providerCallBreakdown": {
+    "fourBaselinePrompts": 17,
+    "singleSpaceCreateRepeat": 5,
+    "originalWorldRepair": 4
+  }
+}
