@@ -56,5 +56,5 @@
 
 @media (max-width: 767px) {
   .comparison-workspace-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(22rem, 1fr)); }
-  .comparison-camera-link { position: static; grid-row: 1; justify-self: center; transform: none; }
+  .comparison-camera-link { position: static; grid-row: auto; justify-self: center; transform: none; }
 }

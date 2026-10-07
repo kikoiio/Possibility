@@ -375,7 +375,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       if (rightTimelineId && params.get('right') !== rightTimelineId) { params.set('right', rightTimelineId); changed = true }
     } else {
       if (params.has('mode')) { params.delete('mode'); changed = true }
-      if (params.has('right')) { params.delete('right'); changed = true }
+      const presentationComparison = params.has('rightWorld') || params.has('rightPresentation') || params.get('presentation') === 'native2d'
+      if (params.has('right') && !presentationComparison) { params.delete('right'); changed = true }
     }
     if (changed) setSearch(params, { replace: true })
   }, [mode, rightTimelineId, search, setSearch])
