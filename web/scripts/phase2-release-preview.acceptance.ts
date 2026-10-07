@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium, type Page } from '@playwright/test'
+import { chromium, type BrowserContext, type Page } from '@playwright/test'
 import { ASSET_MANIFEST } from '../src/native2d/assets'
 import { MIST_MANOR_SCENE } from '../src/native2d/scene'
 
@@ -45,6 +45,29 @@ async function apiJson(path: string, init?: RequestInit): Promise<ApiResult> {
 
 async function waitForText(page: Page, testId: string, text: string, timeout = 20_000): Promise<void> {
   await page.getByTestId(testId).filter({ hasText: text }).waitFor({ timeout })
+}
+
+async function routeApiToWorker(context: BrowserContext, page: Page, records: ApiRecord[]): Promise<void> {
+  await context.route('**/api/**', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/scene') && request.method() === 'POST') {
+      records.push({ method: request.method(), path: url.pathname, status: 200, source: 'mocked-sse' })
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+        body: 'data: {"type":"delta","text":"release preview accepted"}\n\ndata: {"type":"done"}\n\n',
+      })
+      return
+    }
+    try {
+      const response = await route.fetch({ url: `${apiTarget}${url.pathname}${url.search}` })
+      records.push({ method: request.method(), path: url.pathname, status: response.status(), source: 'worker' })
+      await route.fulfill({ response })
+    } catch (error) {
+      if (!page.isClosed()) throw error
+    }
+  })
 }
 
 async function prepareOwnerWorld(): Promise<{ username: string; password: string; worldId: string }> {
@@ -142,28 +165,10 @@ async function main(): Promise<void> {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
   const page = await context.newPage()
   const records: ApiRecord[] = []
-  await page.route('**/api/**', async route => {
-    const request = route.request()
-    const url = new URL(request.url())
-    if (url.pathname.endsWith('/scene') && request.method() === 'POST') {
-      records.push({ method: request.method(), path: url.pathname, status: 200, source: 'mocked-sse' })
-      await route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-        body: 'data: {"type":"delta","text":"release preview accepted"}\n\ndata: {"type":"done"}\n\n',
-      })
-      return
-    }
-    try {
-      const response = await route.fetch({ url: `${apiTarget}${url.pathname}${url.search}` })
-      records.push({ method: request.method(), path: url.pathname, status: response.status(), source: 'worker' })
-      await route.fulfill({ response })
-    } catch (error) {
-      if (!page.isClosed()) throw error
-    }
-  })
+  let mobileContext: BrowserContext | undefined
 
   try {
+    await routeApiToWorker(context, page, records)
     const landing = await page.goto(`${previewUrl}/login`)
     assert(landing?.status() === 200, 'production preview login page did not load')
     await page.getByLabel('用户名').fill(owner.username)
@@ -224,6 +229,28 @@ async function main(): Promise<void> {
     assert(restoredLayout.status === 200, `layout read after reload returned HTTP ${restoredLayout.status}`)
     assert(JSON.stringify(restoredLayout.body?.layout?.placements) === savedPlacements, 'D1 layout changed after reload and timeline reselection')
 
+    mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true })
+    await mobileContext.addInitScript(tokenValue => localStorage.setItem('possibility_token', tokenValue), token)
+    const mobilePage = await mobileContext.newPage()
+    const mobileRecords: ApiRecord[] = []
+    await routeApiToWorker(mobileContext, mobilePage, mobileRecords)
+    await mobilePage.goto(`${previewUrl}/dev/native-2d`)
+    await mobilePage.getByTestId('native2d-source-account').click()
+    await mobilePage.waitForFunction(() => document.querySelectorAll('[data-testid="native2d-account-world-select"] option').length > 1)
+    await mobilePage.getByTestId('native2d-account-world-select').selectOption(owner.worldId)
+    await mobilePage.waitForFunction(() => document.querySelectorAll('[data-testid="native2d-account-timeline-select"] option').length > 1)
+    await mobilePage.getByTestId('native2d-account-timeline-select').selectOption(forkTimelineId)
+    await mobilePage.getByTestId('native2d-source-apply').click()
+    await mobilePage.getByTestId('native2d-account-actions').waitFor()
+    await mobilePage.getByTestId('native2d-read-status').getByText('事实已更新').waitFor({ timeout: 20_000 })
+    const mobileLayout = await apiWithToken(childLayoutPath, token)
+    assert(mobileLayout.status === 200 && JSON.stringify(mobileLayout.body?.layout?.placements) === savedPlacements,
+      'a separate mobile browser context did not read the persisted layout')
+    assert(mobileRecords.some(record => record.source === 'worker' && record.method === 'GET' && record.path === `/api/worlds/${owner.worldId}/native2d/layout`),
+      'mobile context did not load its layout from the real Worker')
+    assert(mobileRecords.every(record => record.source !== 'worker' || record.status < 400),
+      `mobile context Worker requests failed: ${JSON.stringify(mobileRecords)}`)
+
     const workerErrors = records.filter(record => record.source === 'worker' && record.status >= 400)
     assert(workerErrors.length === 0, `real Worker requests failed: ${JSON.stringify(workerErrors)}`)
     const required = [
@@ -242,14 +269,16 @@ async function main(): Promise<void> {
       result: 'PASS',
       commit: process.env.GITHUB_SHA ?? 'local',
       build: 'Vite production bundle served by vite preview',
-      browser: 'Chromium desktop 1280x720',
+      browser: 'Chromium desktop 1280x720 and isolated mobile context 390x844',
       api: 'local Cloudflare Worker with isolated local D1; browser API responses forwarded without fixtures',
-      operations: ['login', 'world/timeline read', 'intervention', 'fork', 'compare', 'layout save', 'reload and layout restore'],
+      operations: ['login', 'world/timeline read', 'intervention', 'fork', 'compare', 'layout save', 'reload and layout restore', 'second mobile context layout restore'],
       mocked: ['account chat SSE response only; no model provider call'],
       workerRequests: records.filter(record => record.source === 'worker').length,
       workerStatusFailures: workerErrors.length,
       layoutVersion: restoredLayout.body.layout.version,
       layoutRestoredAfterReload: true,
+      layoutRestoredInMobileContext: true,
+      mobileContextWorkerRequests: mobileRecords.length,
     }
     const report = `${JSON.stringify(result, null, 2)}\n`
     process.stdout.write(report)
@@ -257,6 +286,7 @@ async function main(): Promise<void> {
       appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Phase 2 production preview acceptance\n\n\`\`\`json\n${report}\`\`\`\n`)
     }
   } finally {
+    await mobileContext?.close()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
     await context.close()
     await browser.close()

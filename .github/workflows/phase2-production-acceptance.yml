@@ -122,6 +122,12 @@ jobs:
           NODE
           exit "$journey_status"
 
+      - name: Verify mobile touch interactions
+        working-directory: web
+        env:
+          PLAYWRIGHT_NATIVE2D_API_TARGET: http://127.0.0.1:18891
+        run: npx playwright test --config playwright.native2d.config.ts --project=native2d-mobile --workers=1
+
       - name: Stop test services
         if: always()
         shell: bash
