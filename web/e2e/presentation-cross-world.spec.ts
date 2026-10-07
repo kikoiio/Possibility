@@ -93,7 +93,11 @@ test('left pane can fail and retry while the right pane stays ready', async ({ p
   let failLeft = true
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => {
     leftBootstrapReads += 1
-    if (failLeft) return route.fulfill({ status: 503, json: { error: 'temporary first-world outage' } })
+    // Let the page's own initial world bootstrap succeed; fail the later
+    // pane-scoped load so this exercises sibling isolation, not the page shell.
+    if (failLeft && leftBootstrapReads > 1) {
+      return route.fulfill({ status: 503, json: { error: 'temporary first-world outage' } })
+    }
     return route.fallback()
   })
   const rightReads = await stubSecondWorld(page)
