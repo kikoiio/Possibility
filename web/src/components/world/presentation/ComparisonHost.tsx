@@ -103,6 +103,7 @@ function Pane({
 
 export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange, onExit }: ComparisonHostProps) {
   const coordinator = useMemo(() => createCameraLinkCoordinator(), [])
+  const coordinatorEffectGeneration = useRef(0)
   const [cameraLinkEnabled, setCameraLinkEnabled] = useState(false)
   const [, setBindingRevision] = useState(0)
   const mountedPanes = useRef<Partial<Record<CameraLinkPaneId, CameraLinkPane>>>({})
@@ -113,7 +114,16 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
     setCameraLinkEnabled(false)
     coordinator.setEnabled(false)
   }, [coordinator, compatible])
-  useEffect(() => () => coordinator.dispose(), [coordinator])
+  useEffect(() => {
+    const generation = ++coordinatorEffectGeneration.current
+    return () => {
+      // React StrictMode replays effect cleanup/setup without replacing the memoized
+      // coordinator. Defer disposal one microtask so the replay can claim the lifetime.
+      queueMicrotask(() => {
+        if (coordinatorEffectGeneration.current === generation) coordinator.dispose()
+      })
+    }
+  }, [coordinator])
   const bindPane = (paneId: CameraLinkPaneId, entry: MountedPresentationForKind | null) => {
     if (entry) mountedPanes.current[paneId] = entry as CameraLinkPane
     else delete mountedPanes.current[paneId]
