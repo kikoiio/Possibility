@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ComparisonPane, { type PaneSessionLoader } from './ComparisonPane'
 import PresentationHost from './PresentationHost'
 import PresentationSwitcher from './PresentationSwitcher'
-import { createCameraLinkCoordinator, type CameraLinkPane } from './CameraLinkCoordinator'
-import { canLinkCameras, type PaneId, type PaneTarget, type PresentationStateStore } from './presentation-types'
+import { createCameraLinkCoordinator, type CameraLinkPane, type CameraLinkPaneId } from './CameraLinkCoordinator'
+import { canLinkCameras, type CameraSnapshot, type PaneId, type PaneTarget, type PresentationStateStore } from './presentation-types'
 import type { PresentationContext, PresentationLifecycleAdapters, MountedPresentationForKind } from './PresentationLifecycle'
 import './comparison.css'
 
@@ -25,7 +25,7 @@ export interface ComparisonHostProps {
 }
 
 function Pane({
-  paneId, target, loadSession, adapters, store, worlds, onTargetChange, coordinator,
+  paneId, target, loadSession, adapters, store, worlds, onTargetChange, coordinator, onMounted, onCameraChange,
 }: {
   paneId: PaneId
   target: PaneTarget
@@ -35,6 +35,8 @@ function Pane({
   worlds: ComparisonWorldOption[]
   onTargetChange: ComparisonHostProps['onTargetChange']
   coordinator: ReturnType<typeof createCameraLinkCoordinator>
+  onMounted: (paneId: CameraLinkPaneId, entry: MountedPresentationForKind | null) => void
+  onCameraChange: (paneId: PaneId, camera: CameraSnapshot) => void
 }) {
   const cameraLinkPane = paneId === 'right' ? 'right' : 'left'
   return (
@@ -88,10 +90,9 @@ function Pane({
               context={state.context as PresentationContext}
               adapters={adapters}
               store={store}
-              onCameraChange={camera => coordinator.notifyCameraChange(paneId, camera)}
+              onCameraChange={camera => onCameraChange(paneId, camera)}
               onMounted={(entry: MountedPresentationForKind | null) => {
-                if (paneId === 'single') return
-                coordinator.bind(cameraLinkPane, entry as CameraLinkPane | null)
+                if (paneId !== 'single') onMounted(cameraLinkPane, entry)
               }}
             />
           </>
@@ -104,19 +105,60 @@ function Pane({
 export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange, onExit }: ComparisonHostProps) {
   const coordinator = useMemo(() => createCameraLinkCoordinator(), [])
   const [cameraLinkEnabled, setCameraLinkEnabled] = useState(false)
+  const mountedPanes = useRef<Partial<Record<CameraLinkPaneId, CameraLinkPane>>>({})
+  const cameraKeys = useRef<Partial<Record<CameraLinkPaneId, string>>>({})
   const compatible = right !== null && canLinkCameras(left, right)
   useEffect(() => { coordinator.setEnabled(cameraLinkEnabled && compatible) }, [coordinator, cameraLinkEnabled, compatible])
   useEffect(() => () => coordinator.dispose(), [coordinator])
+  const bindPane = (paneId: CameraLinkPaneId, entry: MountedPresentationForKind | null) => {
+    if (entry) mountedPanes.current[paneId] = entry as CameraLinkPane
+    else delete mountedPanes.current[paneId]
+    delete cameraKeys.current[paneId]
+    coordinator.bind(paneId, entry as CameraLinkPane | null)
+  }
+  const reportCamera = (paneId: PaneId, camera: CameraSnapshot) => {
+    if (paneId !== 'single') cameraKeys.current[paneId] = JSON.stringify(camera)
+    coordinator.notifyCameraChange(paneId, camera)
+  }
+  useEffect(() => {
+    if (!cameraLinkEnabled || !compatible) return
+    let frame = 0
+    const sample = () => {
+      for (const paneId of ['left', 'right'] as const) {
+        const pane = mountedPanes.current[paneId]
+        if (!pane) continue
+        try {
+          const camera = pane.mounted.captureCamera()
+          if (!camera) continue
+          const key = JSON.stringify(camera)
+          if (cameraKeys.current[paneId] === undefined) {
+            cameraKeys.current[paneId] = key
+            continue
+          }
+          if (cameraKeys.current[paneId] === key) continue
+          cameraKeys.current[paneId] = key
+          coordinator.notifyCameraChange(paneId, camera as CameraSnapshot)
+        } catch { /* A broken pane cannot block camera updates in its sibling. */ }
+      }
+      frame = requestAnimationFrame(sample)
+    }
+    frame = requestAnimationFrame(sample)
+    return () => cancelAnimationFrame(frame)
+  }, [coordinator, cameraLinkEnabled, compatible])
 
   return (
     <div className={`comparison-workspace ${right ? 'comparison-workspace-split' : 'comparison-workspace-single'}`} data-testid="comparison-workspace">
-      <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} />
-      {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} /> : (
+      <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} onMounted={bindPane} onCameraChange={reportCamera} />
+      {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} onMounted={bindPane} onCameraChange={reportCamera} /> : (
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
       )}
       {right && (
         <label className="comparison-camera-link" data-testid="comparison-camera-link">
-          <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => setCameraLinkEnabled(event.currentTarget.checked)} />
+          <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => {
+            const enabled = event.currentTarget.checked
+            setCameraLinkEnabled(enabled)
+            coordinator.setEnabled(enabled && compatible)
+          }} />
           联动相机
         </label>
       )}
