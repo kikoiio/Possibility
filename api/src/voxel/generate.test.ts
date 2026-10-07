@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { getBlock, validateDocument, validateWalkability } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
+import { parseEditOperations } from './edit-planner'
 import { assembleWorld, generateWorld, WorldGeneratorError } from './generate'
 import type { CompleteFn } from './edit-planner'
+import { WORLD_GEN_SPEC } from './prompts'
 
 const payload = (ops: unknown[]) => JSON.stringify({
   size: { width: 16, height: 16, depth: 16 },
@@ -81,7 +83,7 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
         size: { width: 16, height: 16, depth: 16 },
         ops: [
           { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
-          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'manor-main-house', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
           { kind: 'fill', from: { x: 7, y: 1, z: 7 }, to: { x: 7, y: 3, z: 9 }, block: 'stone' },
           { kind: 'fill', from: { x: 9, y: 1, z: 7 }, to: { x: 9, y: 3, z: 9 }, block: 'stone' },
           { kind: 'fill', from: { x: 8, y: 1, z: 7 }, to: { x: 8, y: 3, z: 7 }, block: 'stone' },
@@ -352,6 +354,21 @@ describe('assembleWorld × S2b assetPlacements 契约', () => {
     expect(Number.isInteger(doc.assetPlacements![1].seed)).toBe(true)
   })
 
+  it('assetPlacements 的 id 别名可被地点绑定复用,冲突时明确拒绝', () => {
+    const doc = assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'bld-hut-a', id: 'cafe-building', anchor: { x: 4, y: 1, z: 4 } }],
+      locations: [{ name: '咖啡馆', objectId: 'cafe-building' }],
+    }, 'mist-manor', 'ap-id-alias')
+    expect(doc.assetPlacements![0].id).toBe('cafe-building')
+    expect(doc.locations[0].objectId).toBe('cafe-building')
+
+    expect(() => assembleWorld({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'bld-hut-a', id: 'one', placementId: 'two', anchor: { x: 4, y: 1, z: 4 } }],
+    }, 'mist-manor', 'ap-id-conflict')).toThrow(/id 与 placementId 不一致/)
+  })
+
   it('旧字段 placements 报明确改名错误(N4)', () => {
     expect(() => assembleWorld({
       size: { width: 16, height: 16, depth: 16 },
@@ -389,5 +406,66 @@ describe('assembleWorld × S2b assetPlacements 契约', () => {
     // 沉降到世界底面基岩之上(y=1),一次通过
     expect(call).toBe(1)
     expect(doc.assetPlacements![0].anchor).toEqual([4, 1, 4])
+  })
+})
+
+describe('generateWorld semantic building carriers', () => {
+  it('keeps the default payload flat and makes terrain and asset identity explicitly optional', () => {
+    const defaultExample = WORLD_GEN_SPEC.slice(0, WORLD_GEN_SPEC.indexOf('可选地形'))
+    expect(defaultExample).not.toContain('"terrain"')
+    expect(WORLD_GEN_SPEC).toContain('"placementId":"building-1"')
+    expect(WORLD_GEN_SPEC).toContain('locations.objectId 中逐字使用同一个值')
+  })
+
+  it('normalizes the model object alias and rejects furniture as a required cafe carrier', async () => {
+    expect(parseEditOperations(JSON.stringify({ ops: [
+      { type: 'place-object', objectId: 'cafe', object: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 } },
+    ] }))).toMatchObject([{ kind: 'place-object', objectType: 'manor-main-house' }])
+
+    let error: unknown
+    try {
+      await generateWorld('咖啡馆', 'mist-manor', {
+        id: 'required-cafe-marker',
+        maxAttempts: 1,
+        requiredLocationNames: ['街角咖啡馆'],
+        complete: async () => JSON.stringify({
+          size: { width: 16, height: 16, depth: 16 },
+          ops: [{ kind: 'place-object', objectId: 'cafe-bench', objectType: 'bench', anchor: { x: 4, y: 1, z: 4 } }],
+          locations: [{ name: '街角咖啡馆', objectId: 'cafe-bench' }],
+        }),
+      })
+    } catch (caught) { error = caught }
+    expect(error).toBeInstanceOf(WorldGeneratorError)
+    expect((error as WorldGeneratorError).issues).toContainEqual(expect.objectContaining({
+      code: 'location-unbound', message: expect.stringContaining('必须绑定建筑物体'),
+    }))
+  })
+
+  it('accepts a building template or building asset for a required semantic location', async () => {
+    const manifest = {
+      version: 2 as const,
+      assets: {
+        'bld-hut-a': { id: 'bld-hut-a', category: 'building' as const, url: '/x.glb', footprint: [2, 2] as [number, number], height: 2, thumbnail: '/x.png', sway: 0 },
+      },
+    }
+    const complete = async () => JSON.stringify({
+      size: { width: 16, height: 16, depth: 16 },
+      assetPlacements: [{ assetId: 'bld-hut-a', placementId: 'cafe-building', anchor: { x: 4, y: 1, z: 4 } }],
+      locations: [{ name: '街角咖啡馆', objectId: 'cafe-building' }],
+    })
+    const byAsset = await generateWorld('咖啡馆', 'mist-manor', {
+      id: 'required-cafe-asset', requiredLocationNames: ['街角咖啡馆'], assets: manifest, complete,
+    })
+    expect(byAsset.locations[0].objectId).toBe('cafe-building')
+
+    const byTemplate = await generateWorld('咖啡馆', 'mist-manor', {
+      id: 'required-cafe-template', requiredLocationNames: ['街角咖啡馆'],
+      complete: async () => JSON.stringify({
+        size: { width: 16, height: 16, depth: 16 },
+        ops: [{ kind: 'place-object', objectId: 'cafe-house', objectType: 'manor-main-house', anchor: { x: 4, y: 1, z: 4 } }],
+        locations: [{ name: '街角咖啡馆', objectId: 'cafe-house' }],
+      }),
+    })
+    expect(byTemplate.locations[0].objectId).toBe('cafe-house')
   })
 })
