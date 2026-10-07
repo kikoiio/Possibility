@@ -1,0 +1,101 @@
+name: Phase 1 G0 provider acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_provider_acceptance:
+        description: Confirm up to 25 real DeepSeek requests for the reviewed phase3 commit
+        type: boolean
+        required: true
+        default: false
+      target_sha:
+        description: Full 40-character commit SHA; must equal the current phase3 branch head
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-g0-provider-acceptance
+  cancel-in-progress: false
+
+jobs:
+  provider-acceptance:
+    if: github.ref == 'refs/heads/main' && github.event.repository.default_branch == 'main' && inputs.confirm_provider_acceptance == true
+    name: Isolated Phase 1 provider acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout workflow definition revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Verify target is the current phase3 head
+        shell: bash
+        env:
+          TARGET_SHA_INPUT: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_SHA_INPUT" =~ ^[[:xdigit:]]{40}$ ]]; then
+            echo "target_sha must be exactly 40 hexadecimal characters" >&2
+            exit 1
+          fi
+          TARGET_SHA="${TARGET_SHA_INPUT,,}"
+          git fetch --no-tags origin +refs/heads/phase3:refs/remotes/origin/phase3
+          REMOTE_PHASE3_HEAD="$(git rev-parse refs/remotes/origin/phase3)"
+          if [[ "$TARGET_SHA" != "$REMOTE_PHASE3_HEAD" ]]; then
+            echo "target_sha does not match the current phase3 head" >&2
+            exit 1
+          fi
+
+      - name: Checkout reviewed phase3 commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Recheck checked-out commit and current phase3 head
+        shell: bash
+        env:
+          TARGET_SHA_INPUT: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          TARGET_SHA="${TARGET_SHA_INPUT,,}"
+          CHECKED_OUT_HEAD="$(git rev-parse HEAD)"
+          git fetch --no-tags origin +refs/heads/phase3:refs/remotes/origin/phase3
+          REMOTE_PHASE3_HEAD="$(git rev-parse refs/remotes/origin/phase3)"
+          if [[ "$CHECKED_OUT_HEAD" != "$TARGET_SHA" || "$REMOTE_PHASE3_HEAD" != "$TARGET_SHA" ]]; then
+            echo "checked-out HEAD or current phase3 head changed from target_sha" >&2
+            exit 1
+          fi
+          git config --local --unset-all http.https://github.com/.extraheader || :
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run isolated five-scenario provider acceptance
+        working-directory: api
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          G0_D1_PATH: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.sqlite
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
+        run: npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/phase1-g0-provider.acceptance.test.ts
+
+      - name: Upload redacted provider acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-g0-provider-acceptance-${{ github.run_id }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
+          retention-days: 14
