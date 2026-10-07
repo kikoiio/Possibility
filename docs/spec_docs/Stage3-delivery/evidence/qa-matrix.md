@@ -117,7 +117,7 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 
 | 项目 | 状态 / 结果 | 范围与证据 |
 |---|---|---|
-| G0 阶段门槛 | 通过 | `evidence/baseline.md` 记录阶段一/二正面出口及真实 provider 结果；新增真实请求 93 次，累计旧计数 205，新增可核实费用 `$1.011892`，早期 26 次费用未完整对账。 |
+| G0 阶段门槛 | 完整验收未闭合 | `evidence/baseline.md` 最新复核确认阶段一四种提示、自建保存和原世界 repair 保存均已有分批真实成功记录；阶段一最终完整旅程/视觉质量和阶段二完整出口仍待核验。追加 100 次授权后的 5 个 runs 对账为 75 次/$0.863707，余 25 次；授权前 run 375923 的 24 次不得重复扣除。 |
 | T22 构建与定向验证 | 通过 | [run 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850) 在提交 `0bdb13a7511833755b803fb9d0f50e786abf0335` 上 Web production build/types、7 个 Vitest 文件 150 tests、fixture 2 tests 通过。构建日志有 Vite 大 chunk 提示，不影响退出码。较早的 `37615859235`（150 tests）、`37615432126` 和 `37614066902`（各 119 tests）也通过。 |
 | T23 自动化子覆盖 | 通过（不代表完整 P2 矩阵） | 最新 [run 37627964474](https://github.com/kikoiio/Possibility/actions/runs/37627964474)，commit `b47173050ebe222026fef7cb98c12dc4975569bc`，Ubuntu 24.04，1 worker；桌面 Chromium 15/15 passed，Pixel 7 mobile-chromium 1/1 passed。保留 run 37622734845 的同/跨 world 四种组合与相机规则、左右 503/403/超时隔离、query/identity/simNow、偏好/URL优先、3D相机刷新恢复、窄视口与触控；新增固定 2.5 秒响应延迟和 `internetdisconnected` 断网恢复，两例均断言另一侧可用且只重试失败侧。Pixel 7 是设备仿真，不是实体硬件；真实慢网/账号/触屏仍未验证。 |
 | T24 性能与资源释放观测 | 测量完成；峰值指标未验证 | run 37627964474 在单 worker 下记录 ready 时间：单 3D 冷 2151 ms、单 2D 冷 1691 ms、2D→3D 热切换 759 ms、3D→2D 热切换 942 ms、双 2D 冷 1651 ms、双 3D 冷 3061 ms、关闭右 pane 1949 ms、混合 2D/3D 冷 2591 ms、混合 3D/2D 冷 2579 ms、离开世界页 1517 ms。双 3D renderer 从 2 关闭右侧后降至 1，离场后降至 0；混合方向各有 1 个 3D renderer。`usedJSHeapSize` 单次测量保持 60,300,000 bytes，不能表示有效堆差值；未采集峰值物理/GPU 内存及 worker/订阅清理读数，耗时也不构成统计基线或性能阈值。 |
@@ -156,7 +156,7 @@ run 37627964474 的浏览器 trace/log 由 Actions 上传为 artifact `phase3-pr
 - **Artifact**：`phase1-g0-guest-claim-37571774129`（ID `11460956808`，2,887 bytes，未过期）；run 页面日志和 artifact 可复查 API/browser 输出。
 - **限制/G0**：本项只证明隔离 API 与 fixture-backed UI 行为。真实 custom prompts/official example 生成、自建单空间生成后保存、原 worldId 真实 repair 生成后保存仍未通过。矩阵中的其他固定 2D/3D、跨 world、混合 renderer、权限隔离、设备/性能与生命周期场景仍按矩阵状态保留未验证。
 
-## 上游 G0 汇总
+## 上游 G0 汇总（早期检查点；最新结果见 baseline.md）
 
 - **阶段一仍 blocked**：缺真实 provider 对 3 条自写 prompt + 官方示例的有效生成、有效生成后自建单空间保存，以及在既有原 `worldId` 上真实 repair 生成后保存。先前 26 次调用结果见 [`phase1-generation-results.json`](phase1-generation-results.json)；本轮未调用 provider。
 - **阶段二仍待部署验收**：部署环境 progression / pause / resume 未验证；已通过的 production preview 使用 hosted runner 上的 local Worker/D1，不是远端部署 world。由另一 session 负责，证据见 [`phase2-acceptance-2026-10-07.md`](phase2-acceptance-2026-10-07.md)。
