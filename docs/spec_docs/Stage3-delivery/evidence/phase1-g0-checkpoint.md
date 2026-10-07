@@ -11,8 +11,8 @@
 
 | 门槛项 | 结果 | 实测与限制 |
 |---|---|---|
-| 真实多空间访客进入与交互 | **部分通过** | Playwright `guest-claim-journey.spec.ts` 使用隔离 Wrangler D1 和真实本地 API；访客进入 `/demo`、进入温室并移动到场、创建真实分支。没有交谈步骤。测试 1/1 通过。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log)。 |
-| 访客认领与进度保留 | **部分通过** | 同一 E2E 注册账户并执行真实 claim；新账户落在非 demo 的已认领世界，世界有 2 条时间线、7 位居民和 1 个场景修订。页面确认时间线选择器有两条线，并确认访客仍在温室。认领后未刷新页面。 |
+| 真实多空间访客进入与交互 | **部分通过** | Playwright `guest-claim-journey.spec.ts` 使用隔离 Wrangler D1 和真实 API；访客进入 `/demo`、进入温室并移动到场、创建真实分支。没有交谈步骤。本机与 GitHub Actions 各 1/1 通过；云端 run `37561465283` 复验的是同一片段。详见 [`phase1-guest-claim.log`](phase1-guest-claim.log) 和 [`phase1-g0-cloud-guest-claim.md`](phase1-g0-cloud-guest-claim.md)。 |
+| 访客认领与进度保留 | **部分通过** | 同一 E2E 注册账户并执行真实 claim；新账户落在非 demo 的已认领世界，世界有 2 条时间线、7 位居民和 1 个场景修订。页面确认时间线选择器有两条线，并确认访客仍在温室。本机和云端结果均未刷新页面；云端只复验访客交互/分叉/认领片段。 |
 | 所有者管理 | **未核验** | 页面进入了已认领世界，但本次没有逐项操作/断言暂停、继续、历史或管理能力。数据库所有权与 `is_demo=0` 只能证明 claim 结果，不能替代管理 UI 验收。 |
 | 编辑与持久化 | **未核验** | 本次没有在认领后的多空间世界提交编辑并刷新验证。独立旧场景兼容测试不属于这次同一旅程，也没有运行。 |
 | 分屏比较与刷新继续 | **未核验** | 访客分叉后的“两种人生”比较是弹窗/面板，不是左右分屏。E2E 未执行 `page.reload()`。因此不满足“编辑 → 分屏 → 刷新继续”。现有 split E2E 使用 API stub，不作为本项真实 API 证据。 |
@@ -39,3 +39,10 @@
 **阶段一 G0 未通过，集成开发仍锁定。** 本检查点只证明访客交互/分叉/认领的一部分；完整交谈、认领后所有者管理、编辑保存、真实分屏和刷新回访尚无同一旅程证据。真实生成出现三条 502 及一条地点对象不完整的 200；自建单空间和原世界补建均未成功保存。阶段二真实验收仍由另一个 session 负责，亦未纳入本提交。
 
 下一次完整验收需在资源允许时，用真实多空间会话完成同一账号旅程的剩余步骤；修正生成地点绑定/通行失败后，以同一四条输入复验，并完成自建世界保存和原世界原 ID 补建保存。阶段二 session 提供其通过证据后，协调者再更新 G0 判定。
+
+## G0 补充复核：Actions guest-claim slice
+
+- GitHub Actions run [37561465283](https://github.com/kikoiio/Possibility/actions/runs/37561465283) 在 `phase3` commit `12393a8127ad830b066d5d400473bd8068cf17c8` 上完成，工作流与逐项结果见 [`phase1-g0-cloud-guest-claim.md`](phase1-g0-cloud-guest-claim.md)。
+- 结果：`guest-claim-journey.spec.ts` **1 passed**；总 Playwright 用时 52.8 秒，测试主体 35.5 秒。使用 GitHub 托管 Ubuntu、隔离 Wrangler/D1、单 worker Chromium；未调用 provider 或读取 secrets。
+- 此 run 仅重验访客进入/移动、分叉、注册认领和认领后状态可见；不覆盖交谈、所有者管理、编辑保存、真实分屏、刷新继续、真实生成、自建单空间保存或原世界补建保存。因此它加强的是同一子路径的复查证据，**不改变阶段一 G0 未通过结论**。
+- 临时 runner/job 已随 Actions 完成并释放；专用 workflow 保留在 `phase3` 供复跑，触发器限定为 `phase3` 上该 workflow 文件自身的变更，证据文档提交不会再次触发。

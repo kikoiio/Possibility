@@ -9,3 +9,10 @@ Running 1 test using 1 worker
 
 Observed path: local isolated D1 seed → /demo → enter greenhouse and move visitor → create real fork → register and claim → open claimed owner world → find two timelines and visitor at greenhouse.
 Limitations: no dialogue step, no post-claim management action, no edit/save, no side-by-side split, and no page reload. This is partial journey evidence only.
+
+Cloud recheck (2026-10-07): GitHub Actions run https://github.com/kikoiio/Possibility/actions/runs/37561465283
+Workflow/test commit: 12393a8127ad830b066d5d400473bd8068cf17c8
+Result: 1 passed (52.8s total Playwright time; test body 35.5s), 1 worker, desktop-chromium; isolated Wrangler/D1 + Vite, no provider calls or secrets.
+Observed scope is the same partial slice: guest enters demo, moves to greenhouse, forks, registers/claims, and sees the claimed world with two timelines and preserved presence.
+Cloud limitations are unchanged: no dialogue, owner management, edit/save, real split comparison, or reload continuation. This reruns the guest-interaction/fork/claim slice only and does not change the G0-not-passed decision.
+Run log artifact: phase1-g0-guest-claim-37561465283 (Actions artifact ID 11456638070, retained 14 days). The ephemeral GitHub runner/job has completed and been released; the repository workflow remains on phase3 and only triggers when its own workflow file changes on phase3.
