@@ -1,7 +1,10 @@
 name: Phase 1 G0 guest claim journey (cloud)
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [phase3]
+    paths:
+      - .github/workflows/phase1-g0-guest-claim.yml
 
 permissions:
   contents: read
