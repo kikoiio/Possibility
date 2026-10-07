@@ -4,7 +4,7 @@ import type { BatchItem } from 'drizzle-orm/batch'
 import { applyEdits, createEmptyWorld, deserialize, serialize, setBlockMut, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import {
   native2dLayoutHeads, native2dLayoutRevisions, persons, timelineSceneHeads, timelineSceneRevisions,
-  worldPersons, worldSceneRevisions, worlds,
+  timelines, worldPersons, worldSceneRevisions, worlds,
 } from '../../db/schema'
 import { createWorldFixture } from '../../test/world-fixture'
 import { scenesRoutes } from '../routes'
@@ -183,8 +183,11 @@ describe('I09 clone scene semantics', () => {
     }
 
     await fixture.db.insert(worlds).values({ id: 'invalid-source', userId: 'owner', name: '无效来源', description: '', locationsJson, status: 'running' })
+    const invalidTimelineId = 'invalid-source-main'
+    await fixture.db.insert(timelines).values({ id: invalidTimelineId, worldId: 'invalid-source', simNow: NOW, createdAt: NOW })
     const invalid = invalidScene()
-    await commitScene(fixture.db, { worldId: 'invalid-source', expectedVersion: 0, requestId: 'invalid-init', document: invalid, summary: 'invalid', kind: 'initial' })
+    await commitScene(fixture.db, { worldId: 'invalid-source', scope: { worldId: 'invalid-source', timelineId: invalidTimelineId, representation: 'voxel' },
+      expectedVersion: 0, requestId: 'invalid-init', document: invalid, summary: 'invalid', kind: 'initial' })
     await fixture.db.insert(worlds).values({ id: 'invalid-copy', userId: 'owner', name: '无效副本', description: '', locationsJson, status: 'running' })
     const invalidPointer = { worldId: 'invalid-source', currentVersion: 1, themeId: 'mist-manor', updatedAt: NOW }
     const invalidRows = await fixture.db.select().from(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, 'invalid-source')).all()
@@ -215,7 +218,7 @@ describe('I09 clone scene semantics', () => {
       method: 'POST',
       headers: { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requestId: 'http-copy-bypass', expectedVersion: 1, document: invalid,
+        requestId: 'http-copy-bypass', expectedVersion: 1, timelineId: invalidTimelineId, document: invalid,
         mode: 'clone-copy', source: { worldId: 'valid-copy', version: 1, contentHash: 'forged' },
         targetOwnerId: 'owner', validationJson: { mode: 'clone-copy' },
       }),
