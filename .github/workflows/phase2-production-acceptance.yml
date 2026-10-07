@@ -1,0 +1,77 @@
+name: Phase 2 production acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-preview:
+    name: Production preview with real local Worker API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PHASE2_API_TARGET: http://127.0.0.1:18891
+      PHASE2_PREVIEW_URL: http://127.0.0.1:15175
+      PHASE2_D1_PERSIST: ${{ runner.temp }}/phase2-release-d1
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build the Vite production bundle
+        run: npm --workspace web run build
+
+      - name: Start isolated local Worker and D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PHASE2_D1_PERSIST"
+          setsid npm --workspace api run dev:s02-e2e -- "$PHASE2_D1_PERSIST" 18891 > "$RUNNER_TEMP/phase2-worker.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/phase2-worker.pgid"
+          for attempt in $(seq 1 120); do
+            if curl --silent --fail "$PHASE2_API_TARGET/api/health" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/phase2-worker.log"
+          exit 1
+
+      - name: Serve the production bundle with Vite preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          setsid npm --workspace web run preview -- --host 127.0.0.1 --port 15175 > "$RUNNER_TEMP/phase2-preview.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/phase2-preview.pgid"
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail "$PHASE2_PREVIEW_URL/dev/native-2d" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/phase2-preview.log"
+          exit 1
+
+      - name: Verify owner journey against the production preview
+        working-directory: web
+        run: npx tsx scripts/phase2-release-preview.acceptance.ts
+
+      - name: Stop test services
+        if: always()
+        shell: bash
+        run: |
+          for pid_file in "$RUNNER_TEMP/phase2-preview.pgid" "$RUNNER_TEMP/phase2-worker.pgid"; do
+            if [[ -f "$pid_file" ]]; then
+              kill -TERM -- "-$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          rm -rf "$PHASE2_D1_PERSIST"
