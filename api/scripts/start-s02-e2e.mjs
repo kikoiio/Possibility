@@ -11,10 +11,12 @@ const port = process.argv[3] ?? '8787'
 const dataMode = process.argv[4] ?? 'standard'
 const config = 'wrangler.s02-e2e.toml'
 const LEGACY_DATA_MODE = 'scene-compatibility-legacy'
+const LIFE_FIXTURE_DATA_MODE = 'standard-life-fixture'
 const LEGACY_MIGRATION_CEILING = 36
 const FIXTURE_MODE_VALUE = 'compatibility-legacy'
-const fixtureProfile = dataMode === LEGACY_DATA_MODE ? 'compatibility-life-v1' : 'standard'
-const KNOWN_MODES = new Set(['standard', LEGACY_DATA_MODE])
+const fixtureProfile = dataMode === LEGACY_DATA_MODE ? 'compatibility-life-v1'
+  : dataMode === LIFE_FIXTURE_DATA_MODE ? 'standard-life-v1' : 'standard'
+const KNOWN_MODES = new Set(['standard', LEGACY_DATA_MODE, LIFE_FIXTURE_DATA_MODE])
 
 if (!KNOWN_MODES.has(dataMode)) {
   console.error(`未知数据模式 "${dataMode}"，可选: ${[...KNOWN_MODES].join(' | ')}`)
@@ -108,6 +110,10 @@ if (dataMode === LEGACY_DATA_MODE) {
   // 仅 s02-e2e 的明确 deterministic fixture 模式（模式取自启动参数 → 环境变量，绝不取 HTTP body）
   devArgs.push('--var', `SCENE_COMPATIBILITY_FIXTURE:${FIXTURE_MODE_VALUE}`)
   // Enables only the deterministic reply used by the authenticated A1 conversation journey.
+  devArgs.push('--var', 'A1_E2E_LIFE_FIXTURE:on')
+} else if (dataMode === LIFE_FIXTURE_DATA_MODE) {
+  // Deterministic chat reply for the phase-one real API journey; no external provider or credentials.
+  devArgs.push('--var', 'SCENE_COMPATIBILITY_FIXTURE:compatibility-legacy')
   devArgs.push('--var', 'A1_E2E_LIFE_FIXTURE:on')
 }
 const server = spawn('npx', devArgs, { cwd: packageRoot, stdio: 'inherit' })

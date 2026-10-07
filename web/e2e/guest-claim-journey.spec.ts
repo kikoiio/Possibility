@@ -54,6 +54,9 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   await expect(page.getByLabel('进入地点')).toHaveValue('温室花房')
   await page.getByRole('button', { name: '移动', exact: true }).click()
   await expect(page.getByText('你在 温室花房')).toBeVisible({ timeout: 15000 })
+  await page.getByPlaceholder('开口说话…（Enter 发送，Shift+Enter 换行）').fill('今天的兰花开得很好。')
+  await page.getByRole('button', { name: '说', exact: true }).click()
+  await expect(page.getByText('我收到了庭院维护的消息，会把这段经历记下来。')).toBeVisible({ timeout: 30000 })
   await page.getByRole('button', { name: '关闭', exact: true }).click()
 
   // 4. 创建分叉并对照
@@ -84,8 +87,72 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   await expect(switcher).toBeVisible({ timeout: 30000 })
   await expect(switcher.locator('option')).toHaveCount(2)
 
-  // 7. 点击地点得到面板反馈,且访客(已在温室花房)的到场状态随克隆保留
+  // 7. 认领后的所有者管理：暂停并恢复世界，通过 UI 与真实 API 改变状态
+  await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '暂停', exact: true }).click()
+  await expect(page.getByRole('button', { name: '继续', exact: true })).toBeVisible({ timeout: 15000 })
+  await page.getByRole('button', { name: '继续', exact: true }).click()
+  await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible({ timeout: 15000 })
+
+  // 8. 真实 UI 场景编辑：挑选未绑定地点的装饰资产并移除，等待服务端 revision 保存
+  const removable = await page.evaluate(() => {
+    const engine = (window as unknown as { __voxelEngine?: { world?: { doc?: { locations?: { objectId: string }[]; assetPlacements?: { id?: string; assetId: string; anchor: [number, number, number] }[] } }; assetsManifest?: { assets: Record<string, { category: string; height: number }> }; worldToScreen?: (at: { x: number; y: number; z: number }) => { x: number; y: number } | null }).__voxelEngine
+    const doc = engine?.world?.doc
+    if (!doc || !engine?.worldToScreen) return []
+    const bound = new Set((doc.locations ?? []).map(location => location.objectId))
+    return (doc.assetPlacements ?? []).filter(item => item.id && !bound.has(item.id)
+      && ['decoration', 'vegetation'].includes(engine.assetsManifest?.assets[item.assetId]?.category ?? ''))
+      .map(item => ({ id: item.id!, x: item.anchor[0], y: item.anchor[1] + Math.max(1, (engine.assetsManifest?.assets[item.assetId]?.height ?? 2) / 2), z: item.anchor[2] }))
+  })
+  expect(removable.length, 'claimed world should contain a removable unbound decorative asset').toBeGreaterThan(0)
+  await page.getByTestId('voxel-tool-asset').click()
+  await expect(page.getByTestId('voxel-asset-panel')).toBeVisible()
+  let selectedAssetId: string | null = null
+  for (const candidate of removable) {
+    const point = await page.evaluate(at => (window.__voxelEngine as never as {
+      worldToScreen(at: { x: number; y: number; z: number }): { x: number; y: number } | null
+    } | undefined)?.worldToScreen(candidate), candidate)
+    if (!point) continue
+    await page.mouse.click(point.x, point.y)
+    if (await page.getByTestId('voxel-asset-actions').isVisible().catch(() => false)) {
+      selectedAssetId = candidate.id
+      break
+    }
+  }
+  expect(selectedAssetId, 'an unbound decorative asset should be selectable in the owner editor').not.toBeNull()
+  const revisionResponse = page.waitForResponse(response => response.request().method() === 'POST'
+    && response.url().includes('/scene/voxel-revision') && response.status() === 200)
+  await page.getByTestId('voxel-asset-remove').click()
+  await revisionResponse
+  await expect(page.getByTestId('voxel-asset-actions')).toHaveCount(0)
+
+  // 9. 从多空间 owner renderer 发起真实分屏；记录当前 renderer 是否支持并继续验证刷新
+  await page.getByRole('button', { name: '对照宇宙', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '两种人生' })).toBeVisible({ timeout: 15000 })
+  await page.getByTestId('compare-split-entry').click()
+  await expect(page).toHaveURL(/mode=possibility/)
+  const splitAvailable = await page.getByTestId('split-view').isVisible().catch(() => false)
+  if (splitAvailable) {
+    await expect(page.getByTestId('split-title-left')).toBeVisible()
+    await expect(page.getByTestId('split-title-right')).toBeVisible()
+    await page.getByTestId('split-close-right').click()
+  }
+
+  // 10. 刷新继续：认领世界、时间线、对话记录与已保存的场景编辑均保留
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 60_000 })
+  await skipTour(page)
+  await expect(page.getByTestId('timeline-switcher').locator('option')).toHaveCount(2)
+  const persistedPlacements = await page.evaluate(() => (window.__voxelEngine as never as {
+    world?: { doc?: { assetPlacements?: { id?: string }[] } }
+  } | undefined)?.world?.doc?.assetPlacements?.map(item => item.id) ?? [])
+  expect(persistedPlacements).not.toContain(selectedAssetId)
+
+  // 11. 访客的到场状态与交谈记录随认领克隆保留
   await clickGreenhouse(page)
   await expect(page.getByText(/此刻在这里：.*访客/)).toBeVisible({ timeout: 15000 })
   await expect(page.getByRole('button', { name: '进入此地点' })).toBeVisible()
+  await page.getByRole('button', { name: '进入此地点' }).click()
+  await expect(page.getByText('我收到了庭院维护的消息，会把这段经历记下来。')).toBeVisible({ timeout: 15000 })
+  expect(splitAvailable, 'the claimed multi-space renderer should expose the real side-by-side timeline view').toBe(true)
 })

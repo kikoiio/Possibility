@@ -33,14 +33,15 @@ jobs:
         env:
           PLAYWRIGHT_API_PORT: 28787
           PLAYWRIGHT_WEB_PORT: 26173
+          PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
           CI: true
         run: |
           set -o pipefail
           {
             echo "commit=${GITHUB_SHA}"
             echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "scope=guest interaction, fork, account claim, claimed-world continuity"
-            echo "excluded=dialogue, owner management, edit persistence, real split comparison, reload continuation, real model generation"
+            echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation"
+            echo "excluded=real model generation, single-space creation, existing-world repair"
             npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts
           } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Upload browser trace and run log
