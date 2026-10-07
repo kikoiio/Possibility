@@ -150,7 +150,10 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
           y: anchor.y + extents.height - 1,
           z: anchor.z + extents.depth - 1,
         }
-      } else if (anchor) {
+      } else if (anchor && !op.size && !geometry
+        && op.width === undefined && op.height === undefined && op.depth === undefined
+        && op.sx === undefined && op.sy === undefined && op.sz === undefined
+        && op.xLength === undefined && op.yLength === undefined && op.zLength === undefined) {
         op.kind = 'set-block'
         op.at = anchor
       }
