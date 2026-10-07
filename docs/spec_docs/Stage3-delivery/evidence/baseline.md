@@ -48,6 +48,7 @@
 复核日期：2026-10-07（Asia/Shanghai）
 
 - 阶段一新证据：[`phase1-g0-checkpoint.md`](phase1-g0-checkpoint.md)，commit `1613b38906712dfa82331c826b105a9b9c832250`。该证据确认访客交互/分叉/认领仅部分通过；同一旅程缺少交谈、认领后管理、编辑持久化、真实分屏和刷新继续。
+- 阶段一云端复核：新增 [`phase1-g0-cloud-guest-claim.md`](phase1-g0-cloud-guest-claim.md)，证据 commit `e1b22d874e20ed7ed6ca08b75556c0da13a8dca1`，workflow commit `12393a8127ad830b066d5d400473bd8068cf17c8`，GitHub Actions run `37561465283` 为 1/1 passed。它复验的是同一访客分叉/认领片段，不增加交谈、管理、编辑、分屏或刷新覆盖，不改变 G0 判定。
 - 阶段一生成诊断：[`phase1-generation-diagnosis.md`](phase1-generation-diagnosis.md)，commit `bdbd5464d6d7fa9444511e45784c2dedcbf5925a`。它静态定位了通行性重试和地点承载物校验的候选缺口，没有新增实测，也没有确认单次失败根因或改变验收结果。
 - 阶段一生成门槛：四条基线提示消耗 17 次 provider 调用，其中三条返回 502，另一条虽返回 200 但地点绑定 8 项、场景对象仅 3 个；单空间创建复测消耗 5 次后仍为 502，未保存世界。原世界补建消耗 4 次后返回 502，未保存场景。总计 26 次调用，低于既有 200 次授权上限；详细响应见 [`phase1-generation-results.json`](phase1-generation-results.json)。
 - 阶段一判定：**未通过**。访客认领的单项 E2E 通过不满足完整阶段一出口，生成、自建与补建对照也未通过。
