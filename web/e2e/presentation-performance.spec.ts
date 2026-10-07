@@ -54,6 +54,20 @@ test('records viewport readiness and renderer release observations', async ({ pa
   observations.afterCloseRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
   observations.afterCloseHeapBytes = await heapBytes(page)
 
+  started = Date.now()
+  await page.goto('/worlds/world-1?timeline=timeline-main&presentation=native2d&rightWorld=world-1&right=timeline-fork&rightPresentation=voxel3d')
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible()
+  await page.waitForFunction(() => !!(window as unknown as PerformanceWindow).__voxelEngines?.right?.world)
+  observations.mixed2d3dReadyMs = Date.now() - started
+  observations.mixed2d3dRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
+
+  started = Date.now()
+  await page.goto('/worlds/world-1?timeline=timeline-main&presentation=voxel3d&rightWorld=world-1&right=timeline-fork&rightPresentation=native2d')
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible()
+  await page.waitForFunction(() => !!(window as unknown as PerformanceWindow).__voxelEngines?.left?.world)
+  observations.mixed3d2dReadyMs = Date.now() - started
+  observations.mixed3d2dRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
+
   console.info(`PHASE3_PERF_OBSERVATIONS ${JSON.stringify({
     commit: process.env.GITHUB_SHA ?? 'workflow checkout commit',
     browser: 'GitHub Actions desktop Chromium',
@@ -62,4 +76,6 @@ test('records viewport readiness and renderer release observations', async ({ pa
   })}`)
   expect(observations.double3dRendererCount).toBe(2)
   expect(observations.afterCloseRendererCount).toBe(1)
+  expect(observations.mixed2d3dRendererCount).toBe(1)
+  expect(observations.mixed3d2dRendererCount).toBe(1)
 })

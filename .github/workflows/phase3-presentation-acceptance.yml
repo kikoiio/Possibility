@@ -46,7 +46,7 @@ jobs:
           PLAYWRIGHT_WEB_PORT: 26173
           PLAYWRIGHT_API_DATA_MODE: standard-life-fixture
           CI: true
-        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/presentation-switch.spec.ts e2e/presentation-cross-world.spec.ts e2e/presentation-same-world.spec.ts e2e/presentation-performance.spec.ts
+        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/presentation-switch.spec.ts e2e/presentation-cross-world.spec.ts e2e/presentation-same-world.spec.ts e2e/presentation-failure.spec.ts e2e/presentation-performance.spec.ts
       - name: Run touch presentation journey
         working-directory: web
         env:

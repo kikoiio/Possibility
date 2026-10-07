@@ -40,3 +40,30 @@ test('browser preference restores on reload while explicit URL presentation take
   await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('pane-facts-single')).toContainText('timeline-main')
 })
+
+test('3D camera restores from its world, timeline and presentation scope after reload', async ({ page }) => {
+  await stubSplitApis(page)
+  const pose = { theta: 1.25, phi: 0.8, distance: 88, target: { x: 4, y: 3, z: -2 } }
+  await page.addInitScript(value => localStorage.setItem(
+    'possibility:presentation:camera:["world-1","timeline-main","voxel3d"]',
+    JSON.stringify({
+      formatVersion: 1,
+      worldId: 'world-1',
+      timelineId: 'timeline-main',
+      presentation: 'voxel3d',
+      camera: { kind: 'voxel3d', version: 1, pose: value },
+      savedAt: Date.now(),
+    }),
+  ), pose)
+  const restoredTheta = async () => page.evaluate(() => {
+    const engine = (window as unknown as {
+      __voxelEngines?: Record<string, { world?: unknown; getOrbitPose(): { theta: number } | null }>
+    }).__voxelEngines?.single
+    return engine?.world ? engine.getOrbitPose()?.theta ?? null : null
+  })
+
+  await page.goto('/worlds/world-1?timeline=timeline-main&presentation=voxel3d')
+  await expect.poll(restoredTheta).toBeCloseTo(pose.theta, 2)
+  await page.reload()
+  await expect.poll(restoredTheta).toBeCloseTo(pose.theta, 2)
+})
