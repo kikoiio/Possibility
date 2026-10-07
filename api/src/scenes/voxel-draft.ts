@@ -35,7 +35,9 @@ export function buildVoxelSceneDescription(world: WorldDraft, prompt: string, re
     ...(residentNames.length ? [`这里已经绑定的居民:${residentNames.join('、')}`] : []),
     `创建者的一句话:${prompt}`,
     `世界包含 ${world.locations.length} 个地点:${spots}。`,
-    '每个地点必须由 ops 中一个独立的 place-object 建筑或标志物承载,并登记进 locations(name 与上文逐字一致,objectId 指向承载它的物体);严禁多个地点绑定同一物体。',
+    '每个地点必须由 ops 中一个独立的 place-object 或 assetPlacements 中带独立 id 的摆放承载，并登记进 locations(name 与上文逐字一致,objectId 指向该物体或摆放 id);严禁多个地点绑定同一物体。',
+    '咖啡馆、车站、住宅等主要建筑必须在实际几何中可辨认，不能只在地点名或说明里声称存在，也不能用灯、长椅、树或其他装饰替代建筑。库中没有对应建筑时，用允许的方块构造其形状并保留独立承载物。',
+    '保留创建者明确要求的道路材质、走向、层数和禁止项；道路要在画面中连续可辨认，并连接主要建筑的可站立入口。先给道路留出净空，再把建筑放在道路两侧，不要用连续围栏或墙把入口围死。',
     '地点之间留出可行走的道路与庭院;不要逐格铺满植被;主建筑加锁。',
   ].join('\n')
 }
