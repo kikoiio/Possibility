@@ -93,24 +93,17 @@ export const WORLD_GEN_SPEC = `返回 JSON 对象：
 {
   "size": {"width":48,"height":24,"depth":48},
   "groundBlock": "grass",
-  "terrain": {
-    "seed": 123,                                          // 可选,不填自动分配
-    "elevation": {"amplitude":4,"scale":24},              // 起伏:振幅 0–8 格(0=平地),尺度 8–96(越大越平缓)
-    "river": {"enabled":true,"width":2},                  // 河流:宽 1–3
-    "lakes": {"enabled":true,"size":4},                   // 湖泊/池塘:size 2–8
-    "vegetation": {"density":0.05,"trees":true,"flowers":true,"bushes":true}  // 密度 0–0.1
-  },
   "style": {
     "preset": "dusk-warm",                                // 四选一:${STYLE_PRESETS.map((p) => p.id).join(' / ')}
     "tweaks": {"fogDensity":0,"exposure":0,"saturation":0} // 数值微调,雾密度 ±0.5,曝光/饱和 ±0.3
   },
   "ops": [ ...编辑操作（同编辑规划的操作集；需要承载地点绑定的建筑用 place-object 放这里）... ],
-  "assetPlacements": [ {"assetId":"库内资产id","anchor":{...},"rotation":0,"seed":123} ],
-  "locations": [ {"name":"地点名","objectId":"ops 中 place-object 的 objectId"} ],
+  "assetPlacements": [ {"assetId":"bld-hut-a","placementId":"building-1","anchor":{"x":12,"y":1,"z":12},"rotation":0} ],
+  "locations": [ {"name":"地点名","objectId":"place-object 的 objectId 或 assetPlacements 的 placementId"} ],
   "spaceEntries": [ {"spaceId":"空间id","label":"进入主楼 →","at":{...}} ],
   "lockedObjectIds": ["承载地点的建筑 objectId"]
 }
-硬约束：世界尺寸 width/depth ≤ 64、height ≤ 32。每个坐标都必须满足 0 ≤ x < size.width、0 ≤ y < size.height、0 ≤ z < size.depth；放置物体或资产时，整个占地 footprint 和高度都必须在这些边界内，不能只检查 anchor。terrain 与 style 整个可选；用户没有明确要求坡地、河流、湖泊或大面积植被时，必须省略 terrain，不要擅自增加随机高差、水体或森林；“开阔草地”表示用 grass groundBlock 做平坦草地，不表示随机坡地或森林。默认用 groundBlock 在 y=0 铺平地，建筑 anchor.y=1，省略 style 时用默认氛围。用户明确要求起伏/河流/植被时才用 terrain 参数表达，不要用大量 fill 硬堆地形；带 terrain 的世界基准地面在 y=3、水面在 y=3；优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点登记进 locations，每个地点必须绑定不同且唯一的 objectId；绑定对象必须符合地点语义，咖啡馆、住宅、公寓、商店等建筑地点必须绑定建筑资产或明确成型的建筑物体，不得绑定公告栏、长凳、树、路牌、栅栏等装饰/家具；objectId 可指向 ops 中 place-object 的 objectId，也可指向 assetPlacements 里 GLB 建筑的 placementId（S1 起支持）；主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；世界必须可行走——居民要能走到每个地点：任何供人通行的格子（门洞、走廊、桥、拱下）其上方必须留出至少 2 格空气，墙体/屋顶不要压在通道头顶，地面不要留缺口；每个地点绑定的物体旁边必须留有可站立的空地，且经平地/台阶与室外连通——不要把地点建筑孤立在水面中央、围栏闭环或高台之上；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
+可选地形仅在用户明确要求时加入，例如：{"terrain":{"seed":123,"elevation":{"amplitude":4,"scale":24},"river":{"enabled":true,"width":2},"lakes":{"enabled":true,"size":4},"vegetation":{"density":0.05,"trees":true,"flowers":true,"bushes":true}}}。省略 terrain 时用 groundBlock 在 y=0 铺平地，建筑 anchor.y=1；加入 terrain 时基准地面在 y=3、水面在 y=3。style 可选，省略时用默认氛围。世界尺寸 width/depth ≤ 64、height ≤ 32。每个坐标都必须满足 0 ≤ x < size.width、0 ≤ y < size.height、0 ≤ z < size.depth；放置物体或资产时，整个占地 footprint 和高度都必须在这些边界内，不能只检查 anchor。不要擅自增加随机高差、水体或森林；“开阔草地”表示用 grass groundBlock 做平坦草地，不表示随机坡地或森林。优先用 assetPlacements 摆放库内资产（rotation∈0/1/2/3，seed 可省），资产覆盖不了的自定义结构才用逐块 ops；关键地点登记进 locations，每个地点必须绑定不同且唯一的 objectId。建筑资产必须显式提供唯一 placementId，并在 locations.objectId 中逐字使用同一个值；place-object 建筑可用其 objectId 绑定。绑定对象必须符合地点语义，咖啡馆、住宅、公寓、商店等建筑地点必须绑定建筑资产或明确成型的建筑物体，不得绑定公告栏、长凳、树、路牌、栅栏等装饰/家具。主建筑加锁；所有物体与资产摆放置在 ground 上（anchor.y = 地面顶面），不得悬空、不得互相占地冲突；世界必须可行走——居民要能走到每个地点：任何供人通行的格子（门洞、走廊、桥、拱下）其上方必须留出至少 2 格空气，墙体/屋顶不要压在通道头顶，地面不要留缺口；每个地点绑定的物体旁边必须留有可站立的空地，且经平地/台阶与室外连通——不要把地点建筑孤立在水面中央、围栏闭环或高台之上；先想清楚布局（主建筑、庭院、水景、植被分区）再输出操作。`
 
 export function buildWorldGeneratorMessages(sceneDescription: string, theme: string, assets?: AssetManifest): ChatMessage[] {
   const catalog = assetCatalogSummary(assets)

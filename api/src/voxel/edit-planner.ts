@@ -65,7 +65,8 @@ export function parseEditOperations(content: string): EditOperation[] {
         // 弱模型常借用资产摆放的习惯:objectType 写成 assetId、rotation 用 0..3 四分之一圈
         // (契约 rotation 只收 90 的倍数,1/2/3 只能解读为四分之一圈,归一安全)
         const objectType = typeof op.objectType === 'string' && op.objectType ? op.objectType
-          : typeof op.assetId === 'string' && op.assetId ? op.assetId : null
+          : typeof op.assetId === 'string' && op.assetId ? op.assetId
+            : typeof op.object === 'string' && op.object ? op.object : null
         const rawRotation = op.rotation === undefined ? 0 : op.rotation
         const rotation = rawRotation === 1 || rawRotation === 2 || rawRotation === 3 ? rawRotation * 90 : rawRotation
         if (!objectType || !isCoord(op.anchor) || !isRotation(rotation)) return bad('place-object 需要 objectType/anchor/rotation')
