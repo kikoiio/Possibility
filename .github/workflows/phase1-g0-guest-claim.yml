@@ -22,6 +22,11 @@ on:
         type: string
         required: true
         default: official-example,custom-1,custom-3
+      visual_provider_run_id:
+        description: Optional completed provider run to render; no model calls in this mode
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -32,6 +37,7 @@ concurrency:
 
 jobs:
   voxel-validation:
+    if: inputs.visual_provider_run_id == ''
     name: Voxel generation and draft regression
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -48,7 +54,7 @@ jobs:
         run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
 
   guest-claim:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance)
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance && inputs.visual_provider_run_id == '')
     name: Isolated real API + browser guest claim slice
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -135,3 +141,64 @@ jobs:
           if-no-files-found: error
           path: ${{ runner.temp }}/phase1-g0-provider-${{ github.run_id }}.json
           retention-days: 14
+
+  generated-preview:
+    if: github.event_name == 'workflow_dispatch' && !inputs.run_provider_acceptance && inputs.visual_provider_run_id != ''
+    name: Render exact generated documents for semantic review
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    env:
+      PHASE1_PREVIEW_URL: http://127.0.0.1:15176
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source run identifier
+        env:
+          PROVIDER_RUN_ID: ${{ inputs.visual_provider_run_id }}
+        run: '[[ "$PROVIDER_RUN_ID" =~ ^[0-9]+$ ]]'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.visual_provider_run_id }}
+          name: phase1-g0-provider-acceptance-${{ inputs.visual_provider_run_id }}
+          path: ${{ runner.temp }}/provider-evidence
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm --workspace web run build
+      - run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Serve production preview
+        shell: bash
+        run: |
+          setsid npm --workspace web run preview -- --host 127.0.0.1 --port 15176 > "$RUNNER_TEMP/phase1-generated-preview-server.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/phase1-generated-preview.pgid"
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail "$PHASE1_PREVIEW_URL/worlds/new" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Render generated drafts without calling the provider
+        working-directory: web
+        env:
+          G0_EVIDENCE_FILE: ${{ runner.temp }}/provider-evidence/phase1-g0-provider-${{ inputs.visual_provider_run_id }}.json
+        run: npx tsx scripts/phase1-generated-preview.acceptance.ts
+      - name: Upload generated scene review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-generated-preview-${{ github.run_id }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/phase1-generated-preview.json
+            ${{ runner.temp }}/phase1-generated-*.png
+            ${{ runner.temp }}/phase1-generated-preview-server.log
+      - name: Stop production preview
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/phase1-generated-preview.pgid" ]]; then
+            kill -TERM -- "-$(cat "$RUNNER_TEMP/phase1-generated-preview.pgid")" 2>/dev/null || true
+          fi
