@@ -58,6 +58,21 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
     expect((error as WorldGeneratorError).normalizationFixes).toEqual(['size:16.2x16x16->16x16x16'])
   })
 
+  it('retry feedback gives exact world coordinate bounds for out-of-bounds edits', async () => {
+    const calls: ChatMessage[][] = []
+    const complete: CompleteFn = async (messages) => {
+      calls.push(messages)
+      return JSON.stringify({
+        size: { width: 16, height: 16, depth: 16 },
+        ops: [{ kind: 'set-block', at: { x: 16, y: 4, z: 8 }, block: 'stone' }],
+      })
+    }
+    await expect(generateWorld('测试世界', 'mist-manor', { complete, maxAttempts: 2 })).rejects.toBeInstanceOf(WorldGeneratorError)
+    expect(calls).toHaveLength(2)
+    const feedback = calls[1][calls[1].length - 1].content
+    expect(feedback).toContain('x=0..15, y=0..15, z=0..15')
+  })
+
   it('clearance-only failure is repaired before retry and passes in one provider call', async () => {
     const calls: ChatMessage[][] = []
     const complete: CompleteFn = async (messages) => {

@@ -22,11 +22,12 @@ export class WorldGeneratorError extends Error {
 
 /** 可行走性 issue → 给 LLM 的修复方向(坐标已在 detail 里) */
 const WALK_HINTS: Record<string, string> = {
-  'walk-clearance': '把门洞/走廊/通道正上方的方块挖掉或整体抬高,保证每个通行格上方连续 2 格是空气',
+  'walk-clearance': '把列出的通行格正上方方块挖掉或整体抬高,保证每个通行格上方连续 2 格是空气',
   'walk-connectivity': '检查被水/墙/围栏围死的区域,铺路或开门让室外能走到每个地点',
   'walk-stairs': '超过 1 格的高差处放台阶/楼梯,不要让人跳坎',
   'walk-gap': '把地面的坑洞/缺口填平或绕开,通行路径不能断',
   'walk-lighting': '室内/洞穴等封闭通行区域放发光方块(灯笼等)照明',
+  'out-of-bounds': '所有 block、物体和资产的完整占地必须位于世界范围内',
 }
 
 interface GeneratedWorldPayload {
@@ -370,7 +371,13 @@ export async function generateWorld(
     const detail = issues.slice(0, 6).map((i) => `${i.code}${i.at ? `@(${i.at.x},${i.at.y},${i.at.z})` : ''}: ${i.message}`).join('；')
     // 可行走性语义错误给弱模型可操作的修复方向(机械错误已被确定性归一拦截,到这里的都是布局问题)
     const hints = [...new Set(issues.map(i => WALK_HINTS[i.code]).filter((h): h is string => Boolean(h)))]
-    const hintText = hints.length > 0 ? `修复方向:${hints.join('；')}。` : ''
+    const clearanceCells = issues.filter(issue => issue.code === 'walk-clearance' && issue.at)
+      .slice(0, 6).map(issue => `(${issue.at!.x},${issue.at!.y},${issue.at!.z})`)
+    if (clearanceCells.length > 0) hints.push(`净空问题位于通行格 ${clearanceCells.join('、')};清除这些格子正上方 y+1 的方块`)
+    if (issues.some(issue => issue.code === 'out-of-bounds')) {
+      hints.push(`本世界坐标范围为 x=0..${doc.size.width - 1}, y=0..${doc.size.height - 1}, z=0..${doc.size.depth - 1};检查操作端点及物体/资产完整占地`)
+    }
+    const hintText = hints.length > 0 ? `修复方向:${[...new Set(hints)].join('；')}。` : ''
     messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界未通过契约校验：${detail}。${hintText}请修正后重新返回完整世界 JSON。` }]
   }
   throw new WorldGeneratorError(
