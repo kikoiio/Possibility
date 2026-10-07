@@ -114,7 +114,7 @@ jobs:
 
   phase1-g0-provider:
     needs: voxel-validation
-    if: github.event_name == 'workflow_dispatch' && inputs.visual_provider_run_id == '' && (inputs.run_provider_acceptance || inputs.replay_provider_run_id != '') && github.ref == 'refs/heads/phase3'
+    if: always() && (needs['voxel-validation'].result == 'success' || inputs.replay_provider_run_id != '') && github.event_name == 'workflow_dispatch' && inputs.visual_provider_run_id == '' && (inputs.run_provider_acceptance || inputs.replay_provider_run_id != '') && github.ref == 'refs/heads/phase3'
     name: Isolated Phase 1 provider acceptance or recorded replay
     runs-on: ubuntu-latest
     timeout-minutes: 45
