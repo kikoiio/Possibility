@@ -45,7 +45,7 @@ jobs:
       - name: Check API types including acceptance harness
         run: npm --workspace api run build
       - name: Verify generation and draft contracts without provider calls
-        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts
+        run: npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/voxel/normalize.test.ts src/voxel/normalize-limit.test.ts src/voxel/generate.test.ts src/scenes/voxel-draft.test.ts src/scenes/routes.test.ts src/db/scene-compatibility-migration.test.ts src/native2d/repository.test.ts src/native2d/routes.test.ts src/demo/clone-verification.test.ts src/scenes/compatibility/clone-semantics.test.ts
 
   guest-claim:
     if: github.event_name == 'push'
