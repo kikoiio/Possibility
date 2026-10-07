@@ -109,6 +109,7 @@ jobs:
             },
             recentTicks: ticks,
           }
+          process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
           appendFileSync(process.env.GITHUB_STEP_SUMMARY,
             `## Phase 2 isolated engine journey\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n`)
           NODE
