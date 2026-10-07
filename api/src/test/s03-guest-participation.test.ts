@@ -216,7 +216,7 @@ describe('S03 guest participation API', () => {
     expect(clonedEvent?.actorPersonId).not.toBe(sourceVisitor!.personId)
     expect(await fixture.db.select().from(personStates).where(and(
       eq(personStates.personId, visitor!.persons.id), eq(personStates.timelineId, clonedMain.id),
-    )).get()).toMatchObject({ location: '大厅' })
+    )).get()).toMatchObject({ location: '温室花房' })
     expect(await fixture.db.select().from(personStates).where(and(
       eq(personStates.personId, visitor!.persons.id), eq(personStates.timelineId, clonedFork.id),
     )).get()).toMatchObject({ location: '大厅' })
