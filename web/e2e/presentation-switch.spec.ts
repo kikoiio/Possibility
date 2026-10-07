@@ -19,3 +19,24 @@ test('single world switches 3D to native 2D and back without changing its timeli
   await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
   await expect(page).not.toHaveURL(/timeline=timeline-fork/)
 })
+
+test('browser preference restores on reload while explicit URL presentation takes precedence', async ({ page }) => {
+  await stubSplitApis(page)
+  await page.addInitScript(() => localStorage.setItem('possibility:presentation:preferred', JSON.stringify({
+    formatVersion: 1,
+    preferredPresentation: 'native2d',
+    savedAt: Date.now(),
+  })))
+
+  await page.goto('/worlds/world-1?timeline=timeline-main')
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('pane-facts-single')).toContainText('timeline-main')
+  await page.reload()
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible({ timeout: 30_000 })
+
+  await page.goto('/worlds/world-1?timeline=timeline-main&presentation=voxel3d')
+  await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
+  await page.reload()
+  await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('pane-facts-single')).toContainText('timeline-main')
+})

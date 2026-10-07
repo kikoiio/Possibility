@@ -62,17 +62,19 @@ test('same-world linked cameras follow together, then disable for mixed renderer
 
 test('narrow comparison panes remain stacked and usable without horizontal overflow', async ({ page }) => {
   await stubSplitApis(page)
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/worlds/world-1?timeline=timeline-main&presentation=native2d&rightWorld=world-1&right=timeline-fork&rightPresentation=native2d')
   await expect(page.locator('[data-presentation="native2d"] canvas')).toHaveCount(2, { timeout: 30_000 })
-  await expect(page.getByRole('group', { name: '左侧画面表现' })).toBeVisible()
-  await expect(page.getByRole('group', { name: '右侧画面表现' })).toBeVisible()
-  const layout = await page.evaluate(() => ({
-    width: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-    left: document.querySelector('[data-testid="comparison-pane-left"]')!.getBoundingClientRect().toJSON(),
-    right: document.querySelector('[data-testid="comparison-pane-right"]')!.getBoundingClientRect().toJSON(),
-  }))
-  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width)
-  expect(layout.right.y).toBeGreaterThan(layout.left.y)
+  for (const viewport of [{ width: 528, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await expect(page.getByRole('group', { name: '左侧画面表现' })).toBeVisible()
+    await expect(page.getByRole('group', { name: '右侧画面表现' })).toBeVisible()
+    const layout = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      left: document.querySelector('[data-testid="comparison-pane-left"]')!.getBoundingClientRect().toJSON(),
+      right: document.querySelector('[data-testid="comparison-pane-right"]')!.getBoundingClientRect().toJSON(),
+    }))
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width)
+    expect(layout.right.y).toBeGreaterThan(layout.left.y)
+  }
 })

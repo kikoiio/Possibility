@@ -86,3 +86,27 @@ test('one pane can fail and retry without reloading its working sibling', async 
   await expect.poll(() => leftBootstrapReads).toBe(leftReadsBeforeRetry)
   await expect(page.locator('[data-voxel-instance="left"] [data-testid="voxel-viewport-canvas"]')).toBeVisible()
 })
+
+test('left pane can fail and retry while the right pane stays ready', async ({ page }) => {
+  await stubSplitApis(page)
+  let leftBootstrapReads = 0
+  let failLeft = true
+  await page.route('**/api/worlds/world-1/map/bootstrap**', route => {
+    leftBootstrapReads += 1
+    if (failLeft) return route.fulfill({ status: 503, json: { error: 'temporary first-world outage' } })
+    return route.fallback()
+  })
+  const rightReads = await stubSecondWorld(page)
+  await page.goto('/worlds/world-1?timeline=timeline-main&presentation=native2d&rightWorld=world-2&right=timeline-fork&rightPresentation=voxel3d')
+  await expect(page.getByTestId('comparison-pane-left').getByRole('alert')).toContainText('temporary first-world outage')
+  await expect(page.locator('[data-voxel-instance="right"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
+
+  const rightReadsBeforeRetry = rightReads.reads()
+  failLeft = false
+  await page.getByTestId('comparison-pane-left').getByRole('button', { name: '重试此侧' }).click()
+  await expect(page.getByTestId('pane-facts-left')).toContainText('timeline-main')
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible({ timeout: 30_000 })
+  await expect.poll(() => leftBootstrapReads).toBeGreaterThanOrEqual(2)
+  await expect.poll(() => rightReads.reads()).toBe(rightReadsBeforeRetry)
+  await expect(page.locator('[data-voxel-instance="right"] [data-testid="voxel-viewport-canvas"]')).toBeVisible()
+})
