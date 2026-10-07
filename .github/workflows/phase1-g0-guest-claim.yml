@@ -33,8 +33,8 @@ jobs:
         run: |
           set -o pipefail
           {
-            echo "api_acceptance_files=src/test/s03-guest-participation.test.ts,src/map/bootstrap.test.ts,src/public/routes.test.ts,src/access/policy.test.ts"
-            npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/s03-guest-participation.test.ts src/map/bootstrap.test.ts src/public/routes.test.ts src/access/policy.test.ts
+            echo "api_acceptance_files=src/test/s03-guest-participation.test.ts,src/map/bootstrap.test.ts,src/public/routes.test.ts,src/access/policy.test.ts,src/worlds/create-voxel.test.ts,src/scenes/routes.test.ts"
+            npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/s03-guest-participation.test.ts src/map/bootstrap.test.ts src/public/routes.test.ts src/access/policy.test.ts src/worlds/create-voxel.test.ts src/scenes/routes.test.ts
           } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Run isolated guest fork and claim journey
         working-directory: web
@@ -47,11 +47,12 @@ jobs:
           set -o pipefail
           {
             echo "commit=${GITHUB_SHA}"
-            echo "journey_revision=15"
+            echo "journey_revision=16"
             echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation"
-            echo "excluded=real model generation, single-space creation, existing-world repair"
-            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts
+            echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation; deterministic single-space create and original-world repair UI/save recovery"
+            echo "e2e_files=e2e/guest-claim-journey.spec.ts,e2e/scene-create.spec.ts,e2e/scene-repair.spec.ts"
+            echo "excluded=real model generation; create/repair UI draft responses are route fixtures, API save contracts use valid fixed voxel documents"
+            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts e2e/scene-create.spec.ts e2e/scene-repair.spec.ts
           } 2>&1 | tee -a "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Upload browser trace and run log
         if: always()

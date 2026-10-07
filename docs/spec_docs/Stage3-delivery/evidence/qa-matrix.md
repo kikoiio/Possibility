@@ -126,6 +126,13 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 - **实际覆盖**：分屏入口、左右真实 timeline 标题及两个 `VoxelViewport` canvas；在分屏仍打开时刷新，断言两侧恢复；正常返回在场视图后验证多空间居民和对话记录。场景编辑修订也跨刷新保留。
 - **矩阵映射与边界**：这仅是 C2（同 world、不同 timeline、3D/3D）和 R1（单 pane→双 pane→单 pane / 回访）的旅程 smoke。未观察相机隔离或联动、单侧切换/失败重试、权限差异、renderer/context/订阅释放、资源峰值、热/冷性能；因此 C2、R1、H1/R2 状态保持**未验证**。C1、C3、C4、W1–W4、P1/P2、E1–E4、其他 PW 批次及真实触屏/慢网也仍未执行。
 
-## 后续非 provider API slice（待执行）
+## 非 provider API slice 执行结果
 
-扩展专用隔离 Actions workflow，串行增加 `api/src/map/bootstrap.test.ts`（Guest 当前 sandbox bootstrap、resume save/restore 和跨 world 拒绝）、`api/src/public/routes.test.ts`（匿名 demo 只读及禁止写入）和 `api/src/access/policy.test.ts`（owner/guest capabilities）作为 API-level smoke。其结果只证明路由/权限/数据契约，不替代 QA matrix 的浏览器双 pane identity、failure isolation 或 renderer 覆盖；账户型 readonly 未发现独立产品身份，保持未验证。
+- GitHub Actions [run 37571095445](https://github.com/kikoiio/Possibility/actions/runs/37571095445)，`phase3` commit `96e6e8d7a1f0e77f52dbc5f7537859204f1a44db`，job `112629670488`，workflow revision 15：4 个 API 文件 **10/10 tests passed**，浏览器 journey **1/1 passed**，provider calls 0。
+- `api/src/map/bootstrap.test.ts` 新增真实 Hono route + SQLite migration-backed fixture，验证 Guest 当前 sandbox bootstrap、resume save/restore 与跨 world bootstrap/resume 拒绝；同批复验 `api/src/public/routes.test.ts` 匿名 demo 只读/禁止写入、`api/src/access/policy.test.ts` owner/guest capabilities，以及历史 clone 回归。
+- 这只证明 API 路由/权限/数据契约，不替代双 pane UI identity、failure isolation 或 renderer 矩阵。账户型 readonly 未发现独立产品身份，仍未验证；上方 C/W/P/E/PW/H/R 固定矩阵未由本次完整覆盖，状态不升为通过。
+
+
+## 独立非 provider 创建与补建 smoke（待执行）
+
+专用 Actions workflow 下一 revision 将顺序追加 `api/src/worlds/create-voxel.test.ts`、`api/src/scenes/routes.test.ts` 与 `web/e2e/scene-create.spec.ts`、`web/e2e/scene-repair.spec.ts`。API 使用固定合法体素文档实测 world + 初版场景保存、原 worldId 补建 revision 幂等及居民/timeline 保持；浏览器的草稿生成由本地 Playwright route fixture 响应，用于验证创建/补建 UI、保存和重试流程。无 provider 调用；真实生成后成功创建/补建仍是独立 G0 gate，未核验。

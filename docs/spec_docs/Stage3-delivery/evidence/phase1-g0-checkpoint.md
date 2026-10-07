@@ -79,6 +79,13 @@
 - **artifact/日志**：Actions job `112627651680`；artifact `phase1-g0-guest-claim-37570453870`，ID `11459909535`，1,412 bytes，未过期；完整命令与 runner 输出可从 run 页面复查。成功 run 不生成失败 trace/screenshot。
 - **限制**：此旅程中的对话使用隔离环境确定性 fixture；owner 管理只测暂停/继续；编辑只测一类删除；split 只测同 world 两 timeline、3D/3D、桌面 1280×720 和此旅程中的 refresh continuation。真实生成及自建/原 world 补建保存仍失败，故 G0 仍未通过。
 
-## 非 provider 补充 API 验收（待 Actions）
+## 非 provider 补充 API 验收
 
-为补足访问审计中 guest map bootstrap/resume 尚无 route-level 结果的缺口，下一版同一隔离 workflow 将追加 `api/src/map/bootstrap.test.ts`、`api/src/public/routes.test.ts`、`api/src/access/policy.test.ts`，与已通过的历史 claim clone regression 串行运行。新增 bootstrap route case 检查 guest 只能读取当前 sandbox、保存并恢复有效 timeline/space/mode，跨 world bootstrap/resume 被拒；public API case 覆盖匿名 demo snapshot/scene 只读；policy case覆盖 owner/guest capabilities。尚未运行，结果待 Actions。`access-audit.md` 中账户型 readonly 是当前产品未定义/未发现的角色，不会为本次验收虚构接口或功能；将保留未核验状态。
+- Actions [run 37571095445](https://github.com/kikoiio/Possibility/actions/runs/37571095445)，commit `96e6e8d7a1f0e77f52dbc5f7537859204f1a44db`，workflow revision 15，job `112629670488`：4 个 API 测试文件共 **10/10 tests passed**；同一浏览器旅程 **1/1 passed**；总 job 3m37s。文件为 `s03-guest-participation.test.ts`、`map/bootstrap.test.ts`、`public/routes.test.ts`、`access/policy.test.ts`。
+- Guest `/map/bootstrap` 和 `/map/resume` route test 验证当前 sandbox 可读、有效 timeline/space/mode 可保存并恢复、跨 world bootstrap/resume 被拒；匿名 demo snapshot/scene 只读、public 写入被拒；owner/guest capabilities 测试通过。provider calls 0。
+- Artifact `phase1-g0-guest-claim-37571095445`（ID `11460489345`，1,519 bytes，未过期）；完整逐步日志可从 run 页面复查。此 run 重跑了 guest fork/claim/owner/edit/split/reload 浏览器旅程，结果维持通过。
+- `access-audit.md` 中 Guest bootstrap route 专项状态更新为已核验。账户型 readonly 未发现独立产品身份/授权契约，不虚构接口或功能，继续标未核验。
+
+## 独立非 provider 创建/补建契约 smoke（待 Actions）
+
+下一版专用 Actions workflow 将追加真实 SQLite migration-backed 的 `api/src/worlds/create-voxel.test.ts`（用固定合法 voxel document 验证新 world + 初版场景同事务保存/校验拒绝）和 `api/src/scenes/routes.test.ts`（用固定合法 repair document 验证原 worldId 补建、scene-repair revision 幂等、居民与 timeline 保持）。同时运行 `web/e2e/scene-create.spec.ts`、`web/e2e/scene-repair.spec.ts`，其 draft API 响应由 Playwright route fixture 提供，覆盖 UI 流程/保存失败恢复。全部不调用模型，只作为持久化/UI 子契约证据；不得折算为真实生成 G0 通过。
