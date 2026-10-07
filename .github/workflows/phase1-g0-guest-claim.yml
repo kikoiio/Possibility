@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   guest-claim:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/phase1-g0-timeout-fix')
     name: Isolated real API + browser guest claim slice
     runs-on: ubuntu-latest
     timeout-minutes: 30
