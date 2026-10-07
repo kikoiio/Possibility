@@ -1,0 +1,52 @@
+name: Phase 1 G0 guest claim journey (cloud)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-g0-guest-claim-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guest-claim:
+    name: Isolated real API + browser guest claim slice
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Chromium runtime
+        run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Run isolated guest fork and claim journey
+        working-directory: web
+        env:
+          PLAYWRIGHT_API_PORT: 28787
+          PLAYWRIGHT_WEB_PORT: 26173
+          CI: true
+        run: |
+          set -o pipefail
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "scope=guest interaction, fork, account claim, claimed-world continuity"
+            echo "excluded=dialogue, owner management, edit persistence, real split comparison, reload continuation, real model generation"
+            npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts
+          } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
+      - name: Upload browser trace and run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-g0-guest-claim-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/phase1-guest-claim.log
+            /tmp/s02-playwright-results/
+          retention-days: 14
