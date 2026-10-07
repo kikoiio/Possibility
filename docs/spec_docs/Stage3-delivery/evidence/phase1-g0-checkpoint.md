@@ -65,3 +65,9 @@
 - run [37568362759](https://github.com/kikoiio/Possibility/actions/runs/37568362759) 已通过 claim、克隆行数/source fact marker 和逐条克隆字段断言，包括非空 supersedes 重映射、subject remap、version/time/type/value/visibility 与 clone source command 关联；失败仅是新 source history 将主线投影从大厅推进到温室后，尾部旧 location 期望未更新。browser slice 因 API suite failure 被跳过；修正主线期望后重跑。
 - run [37568473326](https://github.com/kikoiio/Possibility/actions/runs/37568473326) 的 API regression 整体通过；browser 旅程通过 guest dialogue/fork/claim 与 owner pause/resume，进入编辑步骤时测试脚本 `page.evaluate` 回调引用了浏览器作用域不存在的 `candidate`（参数名为 `at`），报 ReferenceError。编辑保存、真实 split 和 reload 尚未执行。已修正为引用回调参数，待 Actions 复跑。
 - run [37568706180](https://github.com/kikoiio/Possibility/actions/runs/37568706180) 的 API regression 再次通过；修正 `page.evaluate` 后 browser 继续到分屏入口，但连续点击 4 分钟因 GuestWorldMap 的体验位置 nav `sm:top-4` 覆盖顶栏“对照宇宙”而超时，trace/error context 与截图已复查。已把该 nav 下移到顶栏/时间线说明带下方，待云端重跑；尚未证明分屏或 reload。
+
+## G0 补充复核：多空间分屏路由修复（待云端复验）
+
+- 最新 run [37569334903](https://github.com/kikoiio/Possibility/actions/runs/37569334903) 的 API regression 通过。浏览器通过认领、所有者暂停/继续及场景编辑保存；导航遮挡已消失，刷新后保存的移除编辑仍存在。随后重进地点时，可能性抽屉拦截“进入此地点”。轨迹显示分屏入口没有产生 `split-view`：多空间页面早退到 `GuestWorldMap`，未挂载既有双视口分屏组件。
+- 现在将既有 `SplitViewStage` 接入多空间页面，使用所选空间的场景文档、两条真实时间线快照、各自 overlay/事件及现有比较数据；比较面板分屏导航会关闭面板。分屏保留在 URL 状态，旅程会在分屏打开时刷新并断言两个画布和左右标题均恢复。
+- 刷新后测试通过“体验位置 → 在场”正常收起可能性抽屉，再验证地点居民和对话；没有 force-click。该修订待 GitHub Actions 执行。API clone regression 代码和非空 supersedes/source-command 映射断言未改动；provider 调用为 0。此项仍不改变阶段一 G0 未通过判定。

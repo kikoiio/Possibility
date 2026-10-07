@@ -210,11 +210,12 @@ export default function ComparePanel({
             <button
               data-testid="compare-split-entry"
               disabled={left === right}
-              onClick={() =>
+              onClick={() => {
+                onClose()
                 navigate(
                   `/worlds/${encodeURIComponent(worldId)}?mode=possibility&timeline=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`
                 )
-              }
+              }}
               className="rounded-full bg-sage-700 px-3.5 py-1 text-xs font-medium text-white shadow-xs transition hover:bg-sage-800 disabled:bg-ink-line disabled:text-ink-faint"
             >
               分屏查看

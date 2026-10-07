@@ -16,7 +16,7 @@ import { RequestScopeController } from '../world/requestScope'
 import VoxelViewport from '../voxel/VoxelViewport'
 import type { OrbitPose } from '../voxel/engine'
 import { parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
-import { serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
+import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
 import { planEditsViaApi, EditPlanRequestError } from '../voxel/plan-edits'
 import type { VoxelEngine } from '../voxel/engine'
 import { buildAlignedAxis, filterAt, type AxisMarker } from '../world/alignedTimeline'
@@ -365,7 +365,13 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const mapLocation = mapLocationName ? snapshot?.world.locations.find(item => item.name === mapLocationName) ?? null : null
   const mapPeople = mapLocationName ? snapshot?.locationBoard.find(row => row.location === mapLocationName)?.persons ?? [] : []
   // S1 分屏:轴模型(纯函数) + 拖档截断;拖档只过滤事件流,视口始终渲染当前状态
-  const splitActive = mode === 'possibility' && voxelDoc !== null
+  const splitActive = mode === 'possibility' && (voxelDoc !== null || voxelSpaces !== null)
+  const splitVoxelDoc = useMemo(() => {
+    if (voxelDoc) return voxelDoc
+    const space = voxelSpaces?.spaces.find(item => item.id === resumeSpaceId) ?? voxelSpaces?.spaces.find(item => item.id === voxelSpaces.defaultSpaceId)
+    if (!space) return null
+    try { return deserialize(JSON.stringify(space.document)) } catch { return null }
+  }, [voxelDoc, voxelSpaces, resumeSpaceId])
   const axis = useMemo(() => splitActive && comparison ? buildAlignedAxis(comparison) : null, [splitActive, comparison])
   const scrubbed = useMemo(() => axis && scrubAt ? filterAt(axis, scrubAt) : null, [axis, scrubAt])
   // 拖档对齐:带 simTime 重取对照(防抖),对齐 limitations(状态无历史表等)原文呈现
@@ -753,7 +759,45 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       snapshot={snapshot}
       overlay={overlay}
       initialSpaceId={resumeSpaceId}
-      initialMode={resumeMode}
+      initialMode={mode === 'possibility' ? 'possibility' : resumeMode}
+      splitActive={splitActive}
+      onCloseSplit={() => closeSplit('right')}
+      splitStage={snapshot && splitVoxelDoc ? <SplitViewStage
+        isSmall={isSmall}
+        snapshot={snapshot}
+        otherSnapshot={otherSnapshot}
+        voxelDoc={splitVoxelDoc}
+        overlay={overlay}
+        otherOverlay={otherOverlay}
+        personNames={personNames}
+        sharedPose={sharedPose}
+        setSharedPose={setSharedPose}
+        linkActive={linkActive}
+        cameraLinked={cameraLinked}
+        setCameraLinked={setCameraLinked}
+        splitWalk={splitWalk}
+        setSplitWalk={setSplitWalk}
+        rightTimelineId={rightTimelineId}
+        setRightTimelineId={setRightTimelineId}
+        rightSceneRead={rightSceneRead}
+        retryRightScene={retryRightScene}
+        swapSplit={swapSplit}
+        closeSplit={closeSplit}
+        scrubAt={scrubAt}
+        setScrubAt={setScrubAt}
+        axis={axis}
+        handleSelectMarker={handleSelectMarker}
+        compareSummary={compareSummary}
+        comparisonRead={comparisonRead}
+        retryComparison={retryComparison}
+        alignedComparison={alignedComparison}
+        comparison={comparison}
+        smallSide={smallSide}
+        setSmallSide={setSmallSide}
+        selectedSplitEvent={selectedSplitEvent}
+        splitEventEls={splitEventEls}
+        splitEvents={splitEvents}
+      /> : null}
       guest={guest}
       claimPending={claimPending}
       editable={canEditScene}

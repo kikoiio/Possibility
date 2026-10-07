@@ -148,13 +148,18 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   if (splitAvailable) {
     await expect(page.getByTestId('split-title-left')).toBeVisible()
     await expect(page.getByTestId('split-title-right')).toBeVisible()
-    await page.getByTestId('split-close-right').click()
+    await expect(page.getByTestId('split-view').getByTestId('voxel-viewport-canvas')).toHaveCount(2)
   }
 
   // 10. 刷新继续：认领世界、时间线、对话记录与已保存的场景编辑均保留
   await page.reload()
-  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('split-view')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId('split-view').getByTestId('voxel-viewport-canvas')).toHaveCount(2)
   await skipTour(page)
+  // 返回地图体验位置，正常关闭可能性抽屉后再选择地点。
+  await page.getByRole('navigation', { name: '体验位置' }).getByRole('button', { name: '在场', exact: true }).click()
+  await expect(page.getByTestId('split-view')).toHaveCount(0)
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible()
   await expect(page.getByTestId('timeline-switcher').locator('option')).toHaveCount(2)
   const persistedPlacements = await page.evaluate(() => (window.__voxelEngine as never as {
     world?: { doc?: { assetPlacements?: { id?: string }[] } }

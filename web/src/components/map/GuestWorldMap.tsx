@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
 import { deserialize, serialize, type SceneCandidate, type SceneEditPreflightResult, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
@@ -44,6 +44,9 @@ export interface GuestWorldMapProps {
   onArchive?: () => void
   onLlmConfig?: () => void
   onCompare?: () => void
+  splitActive?: boolean
+  splitStage?: ReactNode
+  onCloseSplit?: () => void
   running?: boolean
   canInteract?: boolean
 }
@@ -70,6 +73,9 @@ export function GuestWorldMap({
   onArchive,
   onLlmConfig,
   onCompare,
+  splitActive = false,
+  splitStage,
+  onCloseSplit,
   running,
   canInteract,
 }: GuestWorldMapProps) {
@@ -232,6 +238,7 @@ export function GuestWorldMap({
   }
   function setMapMode(next: 'observe' | 'life' | 'possibility') {
     setMode(next)
+    if (next !== 'possibility') onCloseSplit?.()
     void (guest ? guestMapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId, mode: next === 'observe' ? 'life' : next }) : mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId, mode: next === 'observe' ? 'life' : next }))
   }
   async function reset() {
@@ -287,7 +294,7 @@ export function GuestWorldMap({
 
   return <main className="relative h-screen overflow-hidden bg-sage-100" data-testid="guest-world-map">
     {guest && claimPending && <div role="status" className="absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-full border border-white/70 bg-sheet/95 px-4 py-2 text-xs text-sage-800 shadow-md">访客副本待保存 · <a href="/login?claimDemo=1" className="underline">继续认领</a></div>}
-    {voxelDoc
+    {splitActive ? null : voxelDoc
       ? <VoxelViewport
           document={editDoc ?? voxelDoc}
           spaceId={spaceId}
@@ -352,7 +359,7 @@ export function GuestWorldMap({
         onClose={() => { setSelected(null); setSelectedPersonId(null) }}
         onEnter={name => setSceneLocation(name)}
       />}
-      {mode === 'possibility' && <section className="pointer-events-auto absolute right-3 top-24 z-drawer w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-sheet/95 p-4 text-sage-800 shadow-xl backdrop-blur-md sm:right-5">
+      {mode === 'possibility' && !splitActive && <section className="pointer-events-auto absolute right-3 top-24 z-drawer w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/80 bg-sheet/95 p-4 text-sage-800 shadow-xl backdrop-blur-md sm:right-5">
         <p className="text-[10px] uppercase tracking-[.16em] text-ink-faint">改变一个条件</p><h2 className="mt-1 font-story text-lg">如果匿名信更早被发现</h2><p className="mt-2 text-xs leading-relaxed text-ink-soft">共同过去保持不变，从当前世界时刻创建另一条真实时间线。对照只说明两个宇宙记录到的差异。</p>
         {!forkId && !forkConfirmOpen && <button disabled={busy} onClick={() => { setActionError(''); setForkDraft(current => ({ ...current, startTime: liveSnapshot.simNow })); setForkConfirmOpen(true) }} className="mt-4 w-full rounded-full bg-sage-700 hover:bg-sage-800 px-4 py-2.5 text-xs text-white disabled:opacity-60 transition">创建并对照</button>}
         {!forkId && forkConfirmOpen && <div className="mt-3 max-h-[60vh] overflow-y-auto" role="dialog" aria-label="确认平行宇宙"><ScenarioCard scenario={forkDraft} timeZone={liveSnapshot.world.timeZone} onChange={setForkDraft} /><div className="mt-3 flex gap-2"><button disabled={busy} onClick={() => { setForkConfirmOpen(false); setActionError('') }} className="flex-1 rounded-lg border px-3 py-2 text-xs">取消</button><button data-testid="guest-fork-confirm" disabled={busy} onClick={() => void createPossibility()} className="flex-1 rounded-lg bg-sage-700 hover:bg-sage-800 px-3 py-2 text-xs text-white disabled:opacity-60 transition">{busy ? '正在建立平行宇宙…' : '确认创建'}</button></div></div>}
@@ -366,6 +373,7 @@ export function GuestWorldMap({
       </aside> : <button onClick={() => nextTourStep ? setTourOpen(true) : restartTour()} className="pointer-events-auto absolute bottom-4 left-3 rounded border border-white/80 bg-sheet/95 px-3 py-2 text-xs text-sage-700 shadow-lg sm:left-5">{nextTourStep ? '继续导览' : '重新开启导览'}</button>}
       <div className="absolute bottom-14 right-3 hidden rounded-full border border-white/80 bg-sheet/90 px-3 py-2 text-[10px] text-sage-600 shadow-sm sm:block">访客独立副本 · {liveSnapshot.locationBoard.reduce((total, row) => total + row.persons.length, 0)} 位居民</div>
     </div>
+    {splitActive && splitStage && <div className="absolute inset-x-3 top-28 bottom-16 z-0 flex min-h-0 rounded-xl bg-sage-50/95 p-2 shadow-lg sm:inset-x-5 sm:top-24 sm:bottom-20" data-testid="guest-split-stage">{splitStage}</div>}
     {saveError && <p role="status" className="pointer-events-auto absolute bottom-16 left-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 shadow sm:left-5">{saveError}</p>}
     {compareOpen && forkId && compareSourceId && <ComparePanel worldId={liveSnapshot.world.id} currentTimelineId={liveSnapshot.currentTimelineId} timelines={liveSnapshot.timelines} personNames={guestPersonNames} initialLeftTimelineId={compareSourceId} initialRightTimelineId={forkId} loadComparison={loadComparison} onClose={() => setCompareOpen(false)} />}
     {sceneLocation && <ScenePanel timeZone={liveSnapshot.world.timeZone} worldStatus={liveSnapshot.world.status} readOnly={liveSnapshot.evidence?.level !== 'complete'} worldId={liveSnapshot.world.id} timelineId={liveSnapshot.currentTimelineId} locations={liveSnapshot.world.locations} initialLocation={sceneLocation} onMilestone={handleSceneMilestone} onClose={() => {
