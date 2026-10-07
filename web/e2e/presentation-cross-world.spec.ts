@@ -5,9 +5,11 @@ test.describe.configure({ mode: 'serial', timeout: 240_000 })
 
 async function stubSecondWorld(page: Page, options: { failFirstBootstrap?: boolean } = {}) {
   let bootstrapReads = 0
-  await page.route('**/api/worlds/world-2/map/bootstrap**', route => {
+  await page.route('**/api/**', route => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== '/api/worlds/world-2/map/bootstrap') return route.fallback()
     bootstrapReads += 1
-    const timelineId = new URL(route.request().url()).searchParams.get('timelineId') ?? 'timeline-main'
+    const timelineId = url.searchParams.get('timelineId') ?? 'timeline-main'
     if (options.failFirstBootstrap && bootstrapReads === 1) {
       return route.fulfill({ status: 503, json: { error: 'temporary second-world outage' } })
     }

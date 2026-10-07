@@ -193,7 +193,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
   const presentationRoute = readPresentationRoute(worldId, search, presentationStore.getPreferred())
-  const comparisonWorkspaceActive = search.has('rightWorld') || presentationRoute.left.presentation === 'native2d'
+  const comparisonWorkspaceActive = search.has('presentation') || search.has('rightWorld') || presentationRoute.left.presentation === 'native2d'
+  const savedVoxelCamera = presentationStore.getCamera({ worldId, timelineId: activeTimelineId || 'main', presentation: 'voxel3d' })
+  const legacyVoxelPose = savedVoxelCamera?.kind === 'voxel3d' ? savedVoxelCamera.pose : null
   const presentationWorlds = useMemo(() => {
     const options = worldChoices.map(world => ({
       id: world.id,
@@ -218,9 +220,23 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     else navigate(`/worlds/${encodeURIComponent(target.worldId)}?${next.toString()}`)
   }, [navigate, presentationStore, search, setSearch, worldId])
   const selectSinglePresentation = useCallback((presentation: 'native2d' | 'voxel3d') => {
+    if (presentation !== 'voxel3d' && presentationRoute.left.presentation === 'voxel3d') {
+      const pose = (window as Window & { __voxelEngine?: { getOrbitPose(): OrbitPose | null } }).__voxelEngine?.getOrbitPose()
+      if (pose && activeTimelineId) presentationStore.setCamera({ worldId, timelineId: activeTimelineId, presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
+    }
     presentationStore.setPreferred(presentation)
     setSearch(updatePanePresentation(search, 'single', presentation), { replace: true })
+  }, [activeTimelineId, presentationRoute.left.presentation, presentationStore, search, setSearch, worldId])
+  const exitPresentationWorkspace = useCallback(() => {
+    const next = new URLSearchParams(search)
+    next.delete('presentation')
+    presentationStore.setPreferred('voxel3d')
+    setSearch(next, { replace: true })
   }, [presentationStore, search, setSearch])
+  const saveLegacyCameraPose = useCallback((pose: OrbitPose) => {
+    if (!activeTimelineId) return
+    presentationStore.setCamera({ worldId, timelineId: activeTimelineId, presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
+  }, [activeTimelineId, presentationStore, worldId])
   const otherSnapshot = rightSceneRead.status === 'ready' ? rightSceneRead.value : null
   const comparison = comparisonRead.status === 'ready' ? comparisonRead.value : null
   const compareSummary = comparison ? {
@@ -811,6 +827,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         store={presentationStore}
         worlds={presentationWorlds}
         onTargetChange={updatePresentationTarget}
+        onExit={exitPresentationWorkspace}
       /> : snapshot && splitVoxelDoc ? <SplitViewStage
         isSmall={isSmall}
         snapshot={snapshot}
@@ -906,7 +923,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       store={presentationStore}
       worlds={presentationWorlds}
       onTargetChange={updatePresentationTarget}
-    /> : <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} />}
+      onExit={exitPresentationWorkspace}
+    /> : <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} cameraPose={legacyVoxelPose} onCameraChange={saveLegacyCameraPose} />}
     <div className="pointer-events-none absolute inset-0 z-stage">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-sage-900/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
@@ -983,8 +1001,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         loadSession={presentationRuntime.loadSession}
         adapters={presentationRuntime.adapters}
         store={presentationStore}
-        worlds={presentationWorlds}
-        onTargetChange={updatePresentationTarget}
+      worlds={presentationWorlds}
+      onTargetChange={updatePresentationTarget}
+        onExit={exitPresentationWorkspace}
       /> : mode === 'possibility' ? (
         <SplitViewStage
           isSmall={isSmall}
@@ -1022,7 +1041,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
           splitEventEls={splitEventEls}
           splitEvents={splitEvents}
         />
-      ) : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} editable={canEditScene} planEdits={canEditScene ? planSceneEdits : undefined} preflightEdits={canEditScene ? preflightSceneCandidate : undefined} onEditBlocked={handleEditBlocked} onSave={saveVoxel}
+      ) : <div className="flex min-h-0 flex-1 flex-col [&>div]:min-h-0"><VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} cameraPose={legacyVoxelPose} onCameraChange={saveLegacyCameraPose} editable={canEditScene} planEdits={canEditScene ? planSceneEdits : undefined} preflightEdits={canEditScene ? preflightSceneCandidate : undefined} onEditBlocked={handleEditBlocked} onSave={saveVoxel}
           onSelectLocation={(_name, objectId) => { setMapSelected(objectId); setMapPersonId(null) }}
           onSelectPerson={(personId) => { setMapPersonId(personId); setMapSelected(null) }} /></div>}
       {mode !== 'possibility' && (mapVoxelObject || mapLocationName || mapPerson) && <MapSelectionCard

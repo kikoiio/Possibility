@@ -52,6 +52,7 @@
 .comparison-pane-message { display: grid; min-height: 20rem; place-content: center; gap: 0.75rem; padding: 1rem; text-align: center; }
 .comparison-pane-message button { justify-self: center; min-height: 2.75rem; border-radius: 9999px; padding: 0.5rem 1rem; }
 .comparison-open-split { align-self: start; }
+.comparison-exit { justify-self: start; min-height: 2.5rem; border-radius: 9999px; border: 1px solid rgb(148 163 153 / 60%); background: white; padding: 0.4rem 0.75rem; }
 .comparison-camera-link { position: absolute; z-index: 1; top: 3.5rem; left: 50%; transform: translateX(-50%); border-radius: 9999px; background: white; padding: 0.5rem 0.75rem; font-size: 0.75rem; }
 
 @media (max-width: 767px) {

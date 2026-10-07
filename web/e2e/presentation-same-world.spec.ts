@@ -18,9 +18,14 @@ test('same-world linked cameras follow together, then disable for mixed renderer
   await expect(link).toBeEnabled()
   await link.check()
 
-  const pose = { theta: 1.9, phi: 0.7, distance: 90, target: { x: 5, y: 3, z: 8 } }
-  await page.evaluate(value => (window as unknown as ProbeWindow).__voxelEngines!.left!.setOrbitPose(value), pose)
-  await expect.poll(async () => (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.right?.getOrbitPose()))?.theta, { timeout: 30_000 }).toBeCloseTo(1.9, 2)
+  const rightBefore = (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.right?.getOrbitPose()))?.theta
+  const bounds = await left.boundingBox()
+  expect(bounds).not.toBeNull()
+  await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bounds!.x + bounds!.width / 2 + 110, bounds!.y + bounds!.height / 2 + 24, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as ProbeWindow).__voxelEngines?.right?.getOrbitPose()))?.theta, { timeout: 30_000 }).not.toBeCloseTo(rightBefore!, 2)
 
   await page.getByRole('group', { name: '右侧画面表现' }).getByRole('button', { name: '2D' }).click()
   await expect(link).toBeDisabled()

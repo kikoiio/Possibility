@@ -21,6 +21,7 @@ export interface ComparisonHostProps {
   store: PresentationStateStore
   worlds: ComparisonWorldOption[]
   onTargetChange: (pane: 'single' | 'left' | 'right', target: PaneTarget | null) => void
+  onExit?: () => void
 }
 
 function Pane({
@@ -100,7 +101,7 @@ function Pane({
   )
 }
 
-export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange }: ComparisonHostProps) {
+export default function ComparisonHost({ left, right, loadSession, adapters, store, worlds, onTargetChange, onExit }: ComparisonHostProps) {
   const coordinator = useMemo(() => createCameraLinkCoordinator(), [])
   const [cameraLinkEnabled, setCameraLinkEnabled] = useState(false)
   const compatible = right !== null && canLinkCameras(left, right)
@@ -119,6 +120,7 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
           联动相机
         </label>
       )}
+      {!right && onExit && <button className="comparison-exit" type="button" onClick={onExit}>返回世界画布</button>}
     </div>
   )
 }
