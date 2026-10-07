@@ -25,7 +25,7 @@ export interface ComparisonHostProps {
 }
 
 function Pane({
-  paneId, target, loadSession, adapters, store, worlds, onTargetChange, coordinator, onMounted, onCameraChange,
+  paneId, target, loadSession, adapters, store, worlds, onTargetChange, onMounted, onCameraChange,
 }: {
   paneId: PaneId
   target: PaneTarget
@@ -34,7 +34,6 @@ function Pane({
   store: PresentationStateStore
   worlds: ComparisonWorldOption[]
   onTargetChange: ComparisonHostProps['onTargetChange']
-  coordinator: ReturnType<typeof createCameraLinkCoordinator>
   onMounted: (paneId: CameraLinkPaneId, entry: MountedPresentationForKind | null) => void
   onCameraChange: (paneId: PaneId, camera: CameraSnapshot) => void
 }) {
@@ -150,8 +149,8 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
 
   return (
     <div className={`comparison-workspace ${right ? 'comparison-workspace-split' : 'comparison-workspace-single'}`} data-testid="comparison-workspace">
-      <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} onMounted={bindPane} onCameraChange={reportCamera} />
-      {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} onMounted={bindPane} onCameraChange={reportCamera} /> : (
+      <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} onMounted={bindPane} onCameraChange={reportCamera} />
+      {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} onMounted={bindPane} onCameraChange={reportCamera} /> : (
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
       )}
       {right && (
