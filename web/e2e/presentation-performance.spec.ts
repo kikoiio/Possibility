@@ -29,6 +29,15 @@ test('records viewport readiness and renderer release observations', async ({ pa
   observations.single2dHeapBytes = await heapBytes(page)
 
   started = Date.now()
+  await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '3D' }).click()
+  await page.waitForFunction(() => !!(window as unknown as PerformanceWindow).__voxelEngines?.main?.world)
+  observations.warmSwitch3dReadyMs = Date.now() - started
+  started = Date.now()
+  await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '2D' }).click()
+  await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible()
+  observations.warmSwitch2dReadyMs = Date.now() - started
+
+  started = Date.now()
   await page.goto('/worlds/world-1?timeline=timeline-main&presentation=native2d&rightWorld=world-1&right=timeline-fork&rightPresentation=native2d')
   await expect(page.locator('[data-presentation="native2d"] canvas')).toHaveCount(2)
   observations.double2dReadyMs = Date.now() - started
@@ -68,6 +77,13 @@ test('records viewport readiness and renderer release observations', async ({ pa
   observations.mixed3d2dReadyMs = Date.now() - started
   observations.mixed3d2dRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
 
+  started = Date.now()
+  await page.goto('/worlds')
+  await expect(page.getByTestId('comparison-workspace')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)).toBe(0)
+  observations.leaveWorldReadyMs = Date.now() - started
+  observations.afterLeaveRendererCount = await page.evaluate(() => Object.values((window as unknown as PerformanceWindow).__voxelEngines ?? {}).filter(Boolean).length)
+
   console.info(`PHASE3_PERF_OBSERVATIONS ${JSON.stringify({
     commit: process.env.GITHUB_SHA ?? 'workflow checkout commit',
     browser: 'GitHub Actions desktop Chromium',
@@ -78,4 +94,5 @@ test('records viewport readiness and renderer release observations', async ({ pa
   expect(observations.afterCloseRendererCount).toBe(1)
   expect(observations.mixed2d3dRendererCount).toBe(1)
   expect(observations.mixed3d2dRendererCount).toBe(1)
+  expect(observations.afterLeaveRendererCount).toBe(0)
 })
