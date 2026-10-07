@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -649,6 +649,8 @@ export const worldCommands = sqliteTable('world_commands', {
   payloadJson: text('payload_json').notNull(),
   expectedVersion: integer('expected_version').notNull(),
   resultVersion: integer('result_version').notNull(),
+  /** Immutable source row marker for a graph-cloned command; authorizes faithful historical fact copies. */
+  cloneSourceCommandId: text('clone_source_command_id').references((): AnySQLiteColumn => worldCommands.id),
   // Non-null only for commands issued by the autonomous tick; DB trigger fences stale Workers.
   tickLeaseToken: text('tick_lease_token'),
   createdAt: text('created_at').notNull(),
@@ -666,6 +668,8 @@ export const worldFacts = sqliteTable('world_facts', {
   sourceCommandId: text('source_command_id').notNull().references(() => worldCommands.id),
   visibility: text('visibility').notNull().default('world'),
   supersedesId: text('supersedes_id'),
+  /** Source fact copied by cloneWorldGraph; null for ordinary committed facts. */
+  cloneSourceFactId: text('clone_source_fact_id').references((): AnySQLiteColumn => worldFacts.id),
 }, t => [uniqueIndex('world_facts_timeline_version').on(t.timelineId, t.version)])
 
 /** Last map context per account; it contains navigation state, never world facts. */

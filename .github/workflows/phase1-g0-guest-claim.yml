@@ -28,6 +28,14 @@ jobs:
         run: npm ci
       - name: Install Chromium runtime
         run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Run historical fact claim clone regression
+        working-directory: api
+        run: |
+          set -o pipefail
+          {
+            echo "historical_claim_regression=src/test/s03-guest-participation.test.ts"
+            npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/test/s03-guest-participation.test.ts
+          } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Run isolated guest fork and claim journey
         working-directory: web
         env:
@@ -39,12 +47,12 @@ jobs:
           set -o pipefail
           {
             echo "commit=${GITHUB_SHA}"
-            echo "journey_revision=4"
+            echo "journey_revision=5"
             echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "scope=guest dialogue, fork, account claim, owner pause/resume, scene edit persistence, real split comparison, reload continuation"
             echo "excluded=real model generation, single-space creation, existing-world repair"
             npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/guest-claim-journey.spec.ts
-          } 2>&1 | tee "$RUNNER_TEMP/phase1-guest-claim.log"
+          } 2>&1 | tee -a "$RUNNER_TEMP/phase1-guest-claim.log"
       - name: Upload browser trace and run log
         if: always()
         uses: actions/upload-artifact@v4

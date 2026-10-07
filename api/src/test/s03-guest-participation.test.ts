@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import app from '../index'
 import { createTestDb } from './db'
-import { demoSandboxes, events, forkSnapshots, guestSessions, persons, personStates, sessions, timelines, users, worldPersons, worlds } from '../db/schema'
+import { demoSandboxes, events, forkSnapshots, guestSessions, persons, personStates, sessions, timelines, users, worldFacts, worldPersons, worlds } from '../db/schema'
 import { seedDemoWorld } from '../dev/seed-demo'
 import { createGuestSession } from '../demo/session-service'
 import { cloneWorldGraph } from '../demo/world-graph-cloner'
@@ -56,6 +56,21 @@ describe('S03 guest participation API', () => {
       body: JSON.stringify({ timelineId: guest.timelineId, location: '温室花房', commandId: 'claim-api-move', expectedVersion: 0 }),
     }, fixture.env)
     expect(participation.status, await participation.clone().text()).toBe(200)
+
+    // Regression: clone a timeline with multiple immutable fact versions while
+    // its copied universe revision already points at the newest version.
+    const secondParticipation = await app.request(`/api/worlds/${guest.worldId}/scene/position`, {
+      method: 'POST',
+      headers: { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timelineId: guest.timelineId, location: '大厅', commandId: 'claim-api-move-again', expectedVersion: 1 }),
+    }, fixture.env)
+    expect(secondParticipation.status, await secondParticipation.clone().text()).toBe(200)
+    const returnParticipation = await app.request(`/api/worlds/${guest.worldId}/scene/position`, {
+      method: 'POST',
+      headers: { 'X-Possibility-Guest': guest.token!, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timelineId: guest.timelineId, location: '温室花房', commandId: 'claim-api-move-return', expectedVersion: 2 }),
+    }, fixture.env)
+    expect(returnParticipation.status, await returnParticipation.clone().text()).toBe(200)
 
     const forkResponse = await app.request(`/api/demo/worlds/${guest.worldId}/fork`, {
       method: 'POST',
@@ -116,11 +131,16 @@ describe('S03 guest participation API', () => {
 
     const clonedTimelines = await fixture.db.select().from(timelines).where(eq(timelines.worldId, result.worldId)).all()
     expect(clonedTimelines).toHaveLength(2)
+    const sourceFacts = await fixture.db.select().from(worldFacts).where(eq(worldFacts.timelineId, guest.timelineId)).all()
+    const clonedTimelineIds = clonedTimelines.map(row => row.id)
+    const clonedFacts = await fixture.db.select().from(worldFacts).where(inArray(worldFacts.timelineId, clonedTimelineIds)).all()
+    expect(clonedFacts).toHaveLength(sourceFacts.length)
+    expect(clonedFacts.map(row => row.cloneSourceFactId).sort()).toEqual(sourceFacts.map(row => row.id).sort())
     const clonedMain = clonedTimelines.find(row => row.parentTimelineId === null)!
     const clonedFork = clonedTimelines.find(row => row.id !== clonedMain.id)!
     expect(clonedFork).toMatchObject({ parentTimelineId: clonedMain.id, forkScenarioJson: expect.stringContaining('访客提前到达花房') })
     expect(clonedFork.forkSnapshotJson).toContain('fork_snapshots')
-    expect(await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()).toMatchObject({ timelineId: clonedFork.id, version: 1 })
+    expect(await fixture.db.select().from(forkSnapshots).where(eq(forkSnapshots.timelineId, clonedFork.id)).get()).toMatchObject({ timelineId: clonedFork.id, version: 3 })
 
     const clonedEvent = await fixture.db.select().from(events).where(and(
       eq(events.timelineId, clonedMain.id), eq(events.title, '访客抵达花房'),

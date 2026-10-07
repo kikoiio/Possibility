@@ -164,11 +164,13 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     ...row, id: commandIds.get(row.id)!, worldId, timelineId: timelineIds.get(row.timelineId)!,
     expectedVersion: evidenceVersionByTimeline.get(row.timelineId) ?? row.expectedVersion,
     actorId: row.actorId ? personIds.get(row.actorId) ?? row.actorId : null, tickLeaseToken: null,
+    cloneSourceCommandId: row.id,
   })), chunk => db.insert(worldCommands).values(chunk))
   pushInChunks(statements, factRows.map(row => ({
     ...row, id: factIds.get(row.id)!, timelineId: timelineIds.get(row.timelineId)!,
     subjectId: personIds.get(row.subjectId) ?? row.subjectId, sourceCommandId: commandIds.get(row.sourceCommandId)!,
     supersedesId: row.supersedesId ? factIds.get(row.supersedesId) ?? null : null,
+    cloneSourceFactId: row.id,
   })), chunk => db.insert(worldFacts).values(chunk))
   pushInChunks(statements, await Promise.all(turnRows.map(async row => ({
     ...row, id: await stableId(input.requestId, 'turn', row.id), dialogueId: dialogueIds.get(row.dialogueId)!, personId: personIds.get(row.personId)!,
