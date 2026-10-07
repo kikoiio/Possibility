@@ -79,7 +79,7 @@ function twoStoryHouse(): Array<{ offset: VoxelCoord; block: string }> {
       cells.push(cell(x, y, z, corner ? 'wood-log' : window ? 'paper-window' : 'plaster-wall'))
     }
   }
-  cells.push(cell(1, 1, 3, 'wood-plank'), cell(1, 2, 2, 'wood-plank'))
+  cells.push(cell(1, 1, 3, 'wood-plank'), cell(1, 1, 2, 'wood-plank'), cell(1, 2, 2, 'wood-plank'))
   for (let x = -1; x <= W; x++) for (let z = -1; z <= D; z++) cells.push(cell(x, 6, z, 'roof-tile'))
   for (let x = 1; x < W - 1; x++) for (let z = 1; z < D - 1; z++) cells.push(cell(x, 7, z, 'roof-tile'))
   return cells

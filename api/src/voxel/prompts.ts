@@ -51,8 +51,11 @@ export function blockCatalogSummary(theme: string): string {
 /** 物体仓库摘要 */
 export function objectCatalogSummary(): string {
   return listObjectTemplates().map((t) => {
-    const bounds = (axis: 'x' | 'y' | 'z') => `${Math.min(...t.cells.map(c => c.offset[axis]))}..${Math.max(...t.cells.map(c => c.offset[axis]))}`
-    return `${t.objectType}（${t.name}，占 ${t.cells.length} 格，未旋转时相对anchor的完整范围x=${bounds('x')},y=${bounds('y')},z=${bounds('z')}）`
+    const bounds = (axis: 'x' | 'y' | 'z') => {
+      const min = Math.min(...t.cells.map(c => c.offset[axis])), max = Math.max(...t.cells.map(c => c.offset[axis]))
+      return axis === 'y' ? `${min}..${max}` : `0..${max - min}`
+    }
+    return `${t.objectType}（${t.name}，占 ${t.cells.length} 格，rotation=0时引擎归一化后相对anchor的完整范围x=${bounds('x')},y=${bounds('y')},z=${bounds('z')}；90/270度时交换x/z范围）`
   }).join('、')
 }
 
