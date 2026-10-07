@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { DEFAULTS, waitForWorkerReadiness } from './phase2-cloudflare-readiness.mjs'
 
@@ -104,4 +105,10 @@ test('readiness rejects URLs that could redirect the probe away from the Worker 
     intervalMs: 0,
   }), /limits are invalid/)
   assert.equal(requests, 0)
+})
+
+test('workflow passes the API URL to readiness in the current step and preserves GITHUB_ENV', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/phase2-cloudflare-temporary-acceptance.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /echo "PHASE2_TEMP_API_URL=\$api_url" >> "\$GITHUB_ENV"/)
+  assert.match(workflow, /PHASE2_TEMP_API_URL="\$api_url" node scripts\/phase2-cloudflare-readiness\.mjs/)
 })

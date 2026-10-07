@@ -131,7 +131,7 @@ jobs:
           echo "PHASE2_TEMP_API_URL=$api_url" >> "$GITHUB_ENV"
           echo "PHASE2_TEMP_ENGINE_SECRET=$engine_secret" >> "$GITHUB_ENV"
           node scripts/phase2-cloudflare-worker-marker.mjs set
-          node scripts/phase2-cloudflare-readiness.mjs
+          PHASE2_TEMP_API_URL="$api_url" node scripts/phase2-cloudflare-readiness.mjs
 
       - name: Bootstrap one-off owner world and timeline
         run: node scripts/phase2-temporary-cloudflare-bootstrap.mjs
