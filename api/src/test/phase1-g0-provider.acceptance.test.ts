@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, unlinkSync, existsSync, writeFileSync } from 'node:fs'
+import { mkdirSync, unlinkSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
@@ -18,6 +18,7 @@ const PEAK_PRICE = { cacheHitInput: 0.006, cacheMissInput: 0.30, output: 1.20 }
 const MAX_REQUEST_COST_USD = ((MILLION - MAX_TOKENS) * PEAK_PRICE.cacheMissInput + MAX_TOKENS * PEAK_PRICE.output) / MILLION
 
 type Usage = { promptTokens: number; cacheHitTokens: number; cacheMissTokens: number; completionTokens: number; costUsd: number }
+type ReplayCall = { scenario: string; status: number | null; usage: Usage | null; generatedContent: string }
 type ProviderCall = {
   scenario: string; status: number | null; usage: Usage | null; maxTokens: number; thinkingDisabled: boolean
   generatedContent: string | null
@@ -42,6 +43,7 @@ type ScenarioResult = {
   carriersResolved: boolean
   carriersMatchWorld: boolean
   providerRequests: number
+  replayedRequests: number
   llmCallLogRows: number
   worldIdHash?: string
 }
@@ -107,6 +109,11 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const baseUrl = process.env.LLM_BASE_URL
     const apiKey = process.env.LLM_API_KEY
     const model = process.env.LLM_MODEL
+    const replayFile = process.env.G0_PROVIDER_REPLAY_FILE
+    const replayMode = Boolean(replayFile)
+    let replaySourceRun: string | null = null
+    let replayCalls: ReplayCall[] = []
+    const replayQueues = new Map<string, ReplayCall[]>()
     const runId = (process.env.GITHUB_RUN_ID || `local-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '-')
     const ownerId = `g0-${runId}-owner`
     const ownerName = `phase1-g0-${runId}-single`
@@ -127,6 +134,35 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     const providerCalls: ProviderCall[] = []
     const blockedAttempts: string[] = []
     const failures: string[] = []
+    if (replayFile) {
+      try {
+        const archived = JSON.parse(readFileSync(replayFile, 'utf8')) as {
+          workflowRunId?: unknown
+          requests?: { calls?: unknown }
+        }
+        const calls = archived.requests?.calls
+        if (typeof archived.workflowRunId !== 'string' || !Array.isArray(calls)
+          || !calls.every((call): call is ReplayCall => !!call && typeof call === 'object'
+            && 'scenario' in call && typeof call.scenario === 'string'
+            && 'generatedContent' in call && typeof call.generatedContent === 'string'
+            && 'status' in call && (call.status === null || typeof call.status === 'number')
+            && 'usage' in call && (call.usage === null || typeof call.usage === 'object'))) {
+          throw new Error('archive_schema_invalid')
+        }
+        replaySourceRun = archived.workflowRunId
+        replayCalls = calls
+        for (const call of replayCalls) {
+          const queue = replayQueues.get(call.scenario) ?? []
+          queue.push(call)
+          replayQueues.set(call.scenario, queue)
+        }
+      } catch (error) {
+        failures.push(`invalid_provider_replay_file:${error instanceof Error ? error.message : 'unknown'}`)
+      }
+    }
+    const providerBaseUrl = replayMode ? 'https://api.deepseek.com' : baseUrl
+    const providerApiKey = replayMode ? 'zero-provider-replay' : apiKey
+    const providerModel = replayMode ? 'deepseek-flash' : model
     if (!Number.isInteger(rawRequestCap) || rawRequestCap < 1 || rawRequestCap > MAX_AUTHORIZED_REQUEST_CAP) {
       failures.push('invalid_provider_request_cap')
     }
@@ -147,6 +183,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     let repairDraftNormalizationFixes: string[] = []
     let repairDraftIssueCodes: string[] = []
     let repairProviderRequests = 0
+    let repairReplayedRequests = 0
     let repairLedgerRowCount = -1
     let reconciled = false
     let cleanup: {
@@ -157,14 +194,15 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       error?: { name: string; message: string }
     } = { exactNameCounts: {}, remainingTableRows: -1, d1Deleted: false }
     let actualCostUsd = 0
+    let replayedHistoricalCostUsd = 0
     let usageUnavailable = 0
     let finalLedgerRows = -1
     let finalLedgerSummary: { purpose: string; status: string | null; errorCode: string | null }[] = []
     if (!dbPath) failures.push('missing_G0_D1_PATH')
     if (!reportPath) failures.push('missing_G0_EVIDENCE_FILE')
-    if (!apiKey) failures.push('missing_LLM_API_KEY')
-    if (baseUrl !== 'https://api.deepseek.com') failures.push('unexpected_LLM_BASE_URL')
-    if (model !== 'deepseek-flash') failures.push('unexpected_LLM_MODEL')
+    if (!replayMode && !apiKey) failures.push('missing_LLM_API_KEY')
+    if (providerBaseUrl !== 'https://api.deepseek.com') failures.push('unexpected_LLM_BASE_URL')
+    if (providerModel !== 'deepseek-flash') failures.push('unexpected_LLM_MODEL')
 
     const fetcher = {
       async fetch(request: Request): Promise<Response> {
@@ -174,10 +212,10 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           blockedAttempts.push(activeScenario)
           throw new Error('g0_provider_request_budget_exhausted')
         }
-        if (new URL(request.url).origin !== baseUrl) throw new Error('g0_unapproved_provider_origin')
+        if (new URL(request.url).origin !== providerBaseUrl) throw new Error('g0_unapproved_provider_origin')
         const requestBody = await request.clone().json().catch(() => null) as Record<string, unknown> | null
         const requestMaxTokens = numeric(requestBody?.max_tokens) ?? 0
-        if (requestBody?.model !== model || requestMaxTokens < 1 || requestMaxTokens > MAX_TOKENS) {
+        if (requestBody?.model !== providerModel || requestMaxTokens < 1 || requestMaxTokens > MAX_TOKENS) {
           throw new Error('g0_provider_request_contract_violation')
         }
         // Acceptance-only provider contract; product generation defaults are unchanged.
@@ -191,6 +229,11 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           redirect: request.redirect,
         })
         const thinkingDisabled = true
+        const replayCall = replayMode ? replayQueues.get(activeScenario)?.shift() : undefined
+        if (replayMode && !replayCall) {
+          blockedAttempts.push(activeScenario)
+          throw new Error(`g0_provider_replay_exhausted:${activeScenario}`)
+        }
 
         let responseStatus: number | null = null
         let usage: Usage | null = null
@@ -200,7 +243,17 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         }
         providerCalls.push(call)
         try {
-          const response = await fetch(outboundRequest)
+          const response = replayCall
+            ? new Response(JSON.stringify({
+              choices: [{ message: { content: replayCall.generatedContent } }],
+              usage: replayCall.usage ? {
+                prompt_tokens: replayCall.usage.promptTokens,
+                prompt_cache_hit_tokens: replayCall.usage.cacheHitTokens,
+                prompt_cache_miss_tokens: replayCall.usage.cacheMissTokens,
+                completion_tokens: replayCall.usage.completionTokens,
+              } : undefined,
+            }), { status: replayCall.status ?? 200, headers: { 'content-type': 'application/json' } })
+            : await fetch(outboundRequest)
           responseStatus = response.status
           call.status = responseStatus
           const payload = await response.clone().json().catch(() => null) as {
@@ -222,7 +275,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
               + completionTokens * PEAK_PRICE.output) / MILLION
             usage = { promptTokens, cacheHitTokens, cacheMissTokens, completionTokens, costUsd }
             call.usage = usage
-            actualCostUsd += costUsd
+            if (replayMode) replayedHistoricalCostUsd += costUsd
+            else actualCostUsd += costUsd
           } else usageUnavailable++
           return response
         } catch (error) {
@@ -283,7 +337,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         semanticGroups, locationCount: hasWorld ? world.locations.length : 0,
         objectCount: validDocument ? document.objects.length : 0,
         carrierCount: carrierIds.length, carriersUnique, carriersResolved, carriersMatchWorld,
-        providerRequests: providerCalls.length - providerBefore,
+        providerRequests: replayMode ? 0 : providerCalls.length - providerBefore,
+        replayedRequests: replayMode ? providerCalls.length - providerBefore : 0,
         llmCallLogRows: afterLedger.length - ledgerBefore,
       })
       const persistable = response.ok && worldReady && validDocument
@@ -292,14 +347,14 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     }
 
     try {
-      if (failures.length || !dbPath || !reportPath || !apiKey || !baseUrl || !model) {
+      if (failures.length || !dbPath || !reportPath || !providerApiKey || !providerBaseUrl || !providerModel) {
         throw new Error('harness_configuration_invalid')
       }
       mkdirSync(dirname(dbPath!), { recursive: true })
       fixture = createTestDb(dbPath!)
-      fixture.env.LLM_BASE_URL = baseUrl!
-      fixture.env.LLM_API_KEY = apiKey!
-      fixture.env.LLM_MODEL = model!
+      fixture.env.LLM_BASE_URL = providerBaseUrl!
+      fixture.env.LLM_API_KEY = providerApiKey!
+      fixture.env.LLM_MODEL = providerModel!
       fixture.env.LLM_PROVIDER = fetcher as unknown as NonNullable<typeof fixture.env.LLM_PROVIDER>
       fixture.env.PREWORLD_DAILY_CAP = String(rawRequestCap)
       fixture.sqlite.exec(await buildTestPolicyActivationSql(now))
@@ -403,7 +458,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           }
         } else failures.push('repair_draft_rejected')
 
-        repairProviderRequests = providerCalls.length - repairProviderBefore
+        repairProviderRequests = replayMode ? 0 : providerCalls.length - repairProviderBefore
+        repairReplayedRequests = replayMode ? providerCalls.length - repairProviderBefore : 0
         repairLedgerRowCount = (await ledgerRows()).length - repairLedgerBefore
       }
 
@@ -414,8 +470,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         .map(id => [id, providerCalls.filter(call => call.scenario === id).length]))
       reconciled = ledger.length === providerCalls.length && providerCalls.length <= rawRequestCap
         && Object.values(requestsByScenario).every(count => count <= PER_SCENARIO_CAP)
-        && scenarios.every(result => result.providerRequests === result.llmCallLogRows)
-        && (!requiresRepair || repairProviderRequests === repairLedgerRowCount)
+        && scenarios.every(result => result.providerRequests + result.replayedRequests === result.llmCallLogRows)
+        && (!requiresRepair || repairProviderRequests + repairReplayedRequests === repairLedgerRowCount)
       if (!reconciled) failures.push('llm_call_log_provider_request_reconciliation_failed')
       if (scenarios.some(result => !result.valid)) failures.push('one_or_more_prompt_scenarios_invalid')
       if (requiresSingleSave && !singleSaved && !failures.includes('official_example_single_space_save_not_verified')) failures.push('official_example_single_space_save_not_verified')
@@ -473,8 +529,14 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         schema: 'phase1-g0-provider-acceptance-v1',
         workflowRunId: runId,
         commit: process.env.GITHUB_SHA ?? 'local-uncommitted',
-        provider: { baseUrl, model, keyConfigured: !!apiKey },
-        scope: { selectedScenarioIds: requestedScenarioIds, fullSuite: selectedScenarioIds.size === knownScenarioIds.length },
+        provider: {
+          baseUrl: providerBaseUrl, model: providerModel,
+          keyConfigured: !replayMode && !!apiKey, mode: replayMode ? 'zero-model-replay' : 'real-provider',
+        },
+        scope: {
+          replay: replayMode, sourceRun: replaySourceRun, zeroProvider: replayMode,
+          selectedScenarioIds: requestedScenarioIds, fullSuite: selectedScenarioIds.size === knownScenarioIds.length,
+        },
         limits: { rawProviderRequests: rawRequestCap, perScenario: PER_SCENARIO_CAP, apiMaxTokens: MAX_TOKENS, thinking: 'disabled', costCapUsd: COST_CAP_USD },
         pricing: { source: 'https://api-docs.deepseek.com/quick_start/pricing/', peakUsdPerMillion: PEAK_PRICE,
           oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
@@ -484,17 +546,31 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         repair: { selected: requiresRepair, saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind,
           draftFailureStage: repairDraftFailureStage, draftNormalizationFixes: repairDraftNormalizationFixes,
           draftIssueCodes: repairDraftIssueCodes,
-          providerRequests: repairProviderRequests, llmCallLogRows: repairLedgerRowCount,
+          providerRequests: repairProviderRequests, replayedRequests: repairReplayedRequests,
+          llmCallLogRows: repairLedgerRowCount,
           originalWorldIdHash: sha(repairWorldId), originalWorldName: repairWorldName },
         requests: {
-          totalRawProviderRequests: providerCalls.length, blockedAttempts: blockedAttempts.length,
+          totalRawProviderRequests: replayMode ? 0 : providerCalls.length,
+          actualProviderRequests: replayMode ? 0 : providerCalls.length,
+          replayedRequests: replayMode ? providerCalls.length : 0,
+          blockedAttempts: blockedAttempts.length,
           byScenario: Object.fromEntries([...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
-            .map(id => [id, providerCalls.filter(call => call.scenario === id).length])),
+            .map(id => [id, replayMode ? 0 : providerCalls.filter(call => call.scenario === id).length])),
+          replayedByScenario: Object.fromEntries([...SCENARIOS.map(scenario => scenario.id), 'original-world-repair']
+            .map(id => [id, replayMode ? providerCalls.filter(call => call.scenario === id).length : 0])),
+          unusedReplayCalls: replayMode
+            ? [...replayQueues.values()].reduce((total, calls) => total + calls.length, 0)
+            : 0,
           llmCallLogRows: finalLedgerRows, llmCallLogSummary: finalLedgerSummary, reconciled,
-          calls: providerCalls.map(call => call),
+          calls: providerCalls.map(call => ({ ...call, source: replayMode ? 'archive-replay' : 'live-provider' })),
         },
-        usage: { actualCostUsd: Number(actualCostUsd.toFixed(6)), usageUnavailableRequests: usageUnavailable,
-          reservedWorstCaseUsd: Number((providerCalls.length * MAX_REQUEST_COST_USD).toFixed(6)) },
+        usage: {
+          actualCostUsd: Number(actualCostUsd.toFixed(6)),
+          replayedHistoricalCostUsd: Number(replayedHistoricalCostUsd.toFixed(6)),
+          usageUnavailableRequests: usageUnavailable,
+          reservedWorstCaseUsd: Number(((replayMode ? 0 : providerCalls.length) * MAX_REQUEST_COST_USD).toFixed(6)),
+          replayedHistoricalReservedWorstCaseUsd: Number(((replayMode ? providerCalls.length : 0) * MAX_REQUEST_COST_USD).toFixed(6)),
+        },
         cleanup,
         failures,
         passed: failures.length === 0 && scenarios.length === selectedScenarios.length && scenarios.every(result => result.valid)
