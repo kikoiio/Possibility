@@ -95,3 +95,12 @@
 - [生成画面run37586257398](https://github.com/kikoiio/Possibility/actions/runs/37586257398) success，仅说明37584984785的三个真实生成document在production预览可渲染，0provider、API draft回放；不能当实际保存或语义通过。主协调者已查看三个overview：多余起伏地形掩埋部分建筑，道路不连贯，custom2载体复用。阶段一生成质量仍未通过，已转交精准修复。
 - 访客/自建/repair确定性完整UI回归37585946929整体success at227b15b；真实生成语义单独补验，G0仍blocked。
 - 根据用户允许提前无门槛依赖开发，P11纯相机联动逻辑已派发：task95279ad1366b/dispatchctx17704fff00c5，worktreep3-independent-camera-link，禁止页面/API/renderer接入；真实adapter联动边界仍在G0后验证。
+
+
+## 2026-10-07：第二批追加预算结果与精准回放
+
+- run37587238422 at705e5e6：20次provider/$0.060572；官方示例真实生成及保存通过；custom3返回200但重复carrier且出现禁止对象，custom1重复carrier，custom2组装失败，repair4次后walk-gap失败未保存；日志对账一致，清理所有表0行并删除D1文件通过。未用满25请求，不算通过。完整报告phase1-provider-37587238422.json。
+- 累计 provider 88/200，剩112（未包括正在运行的零模型回放）；后续四批62次已对账费用$0.169570，旧26次费用未完整对账，仍保留总$10预算约束。
+- 接管429退出agent已保存改动，提交02be2cd/d849496，集成81fa1f6/abee391：重复地点carrier进入有限重试、草地非随机起伏、5–8地点可为活动区且不增添未要求建筑、terrain边缘footprint回归；G0_PROVIDER_REPLAY_FILE按场景响应顺序仅回放已有模型内容，严格报告sourceRun/replayedRequests/actualProviderRequests=0，不冒充新provider验收。
+- 已启动零模型回放37588240392：只选37584984785已有官方示例与成功repair，验证当前cleanup/生成链回归，不新增真实模型调用。新增真实生成画面37588154107已success，人工视觉复核待下载。
+- P11纯协调器初提交f6eb290已集成04deafe；独立实现有界回声修复追加task2719c014be2e/dispatchctxc3ee3252726e，复用同终端。实际adapter与页面不接入，G0仍blocked。
