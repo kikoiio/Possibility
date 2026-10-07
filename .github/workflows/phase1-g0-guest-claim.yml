@@ -32,7 +32,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: phase1-g0-guest-claim-${{ github.ref }}
+  group: phase1-g0-${{ inputs.visual_provider_run_id != '' && 'visual' || 'guest-claim' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
