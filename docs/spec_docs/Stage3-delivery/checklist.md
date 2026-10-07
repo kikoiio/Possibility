@@ -19,8 +19,8 @@
 | T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845)：桌面 Chromium 13/13、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
 | T24 | 测量完成，部分指标未验证 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845) 覆盖单/双及双向混合冷启动、单 pane 热切换、关闭 pane 和离场 renderer 清理；峰值资源和有效 JS heap 差值不可测，详见 [qa-matrix.md](evidence/qa-matrix.md)。 |
 | T25 | 通过（用户确认） | 用户于 2026-10-07 明确要求将该项按通过处理；项目文档未附测试者身份、成绩或回访明细。 |
-| T26 | 进行中 | QA 当前结果已记录；最终 AC1–AC8 清单需在人工 QA 和完整矩阵状态明确后冻结。 |
-| T27 | 收尾受限 | 实现/验证 Task 已 settle；Orca worker-list 有 8 个 retained 资源：7 个标记 `user_owned/user_takeover`（6 个成功完成、1 个 readiness-failed），1 个为 `external`；另有 1 个已 released。尝试 release 一个成功完成的 terminal 时 Orca 返回 `retained/user_takeover` 且未执行进程操作；没有清理 worktree。 |
+| T26 | 完成 | AC1–AC8 结果和验证限制已记录并推送到 `main`。 |
+| T27 | 收尾受限 | `phase3` 已快进合入并推送到 `main`；远端 `phase3` 已删除，8 个干净的阶段三子 worktree/本地分支通过 Orca 移除。当前 phase3 根 worktree 保留用户未提交的 `baseline.md` 改动及本地分支。Orca worker-list 仍有 8 个 retained resource：7 个标记 `user_owned/user_takeover`（含 1 个 readiness-failed）、1 个为 `external`；另有 1 个已 released。尝试 release 一个已完成 terminal 时 Orca 返回 `retained/user_takeover` 且没有执行进程操作。 |
 
 测试身份和两个 world/timeline 来自隔离 Playwright fixture；这不证明真实账号身份组合或部署环境。剩余范围见 `evidence/README.md` 的限制表。
 
