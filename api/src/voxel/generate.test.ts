@@ -83,7 +83,7 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
         size: { width: 16, height: 16, depth: 16 },
         ops: [
           { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
-          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'manor-main-house', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
           { kind: 'fill', from: { x: 7, y: 1, z: 7 }, to: { x: 7, y: 3, z: 9 }, block: 'stone' },
           { kind: 'fill', from: { x: 9, y: 1, z: 7 }, to: { x: 9, y: 3, z: 9 }, block: 'stone' },
           { kind: 'fill', from: { x: 8, y: 1, z: 7 }, to: { x: 8, y: 3, z: 7 }, block: 'stone' },
@@ -128,7 +128,7 @@ describe('generateWorld × 可行走性校验(S2b F5/AC6)', () => {
         size: { width: 16, height: 16, depth: 16 },
         ops: [
           { kind: 'fill', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 }, block: 'grass' },
-          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'stone-lantern', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
+          { kind: 'place-object', objectId: 'cafe-carrier', objectType: 'manor-main-house', anchor: { x: 8, y: 1, z: 8 }, rotation: 0 },
         ],
         ...(calls.length > 1 ? { locations: [{ name: '咖啡馆', objectId: 'cafe-carrier' }] } : {}),
       })
