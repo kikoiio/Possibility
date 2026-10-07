@@ -37,7 +37,7 @@ function Pane({
 }) {
   const cameraLinkPane = paneId === 'right' ? 'right' : 'left'
   return (
-    <section className="comparison-pane" data-testid={`comparison-pane-${paneId}`}>
+    <section className="comparison-pane" data-testid={`comparison-pane-${paneId}`} data-world-id={target.worldId} data-timeline-id={target.timelineId ?? ''}>
       <header className="comparison-pane-toolbar">
         <label>
           <span className="sr-only">{paneId}世界</span>
@@ -114,7 +114,7 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
       )}
       {right && (
-        <label className="comparison-camera-link">
+        <label className="comparison-camera-link" data-testid="comparison-camera-link">
           <input type="checkbox" checked={cameraLinkEnabled && compatible} disabled={!compatible} onChange={event => setCameraLinkEnabled(event.currentTarget.checked)} />
           联动相机
         </label>
