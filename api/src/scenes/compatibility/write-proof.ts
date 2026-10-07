@@ -150,8 +150,8 @@ export async function readSceneWriteBaseline(db: Db, worldId: string): Promise<S
 }
 
 /** Loads the authoritative facts a write proof is built from. Never reads request payloads. */
-export async function loadSceneWriteProofFacts(db: Db, worldId: string, scope?: TimelineSceneScope): Promise<SceneWriteProofFacts> {
-  const bindings = await loadWorldSceneBindings(db, worldId, scope)
+export async function loadSceneWriteProofFacts(db: Db, worldId: string, scope?: TimelineSceneScope, allowMissingScene = false): Promise<SceneWriteProofFacts> {
+  const bindings = await loadWorldSceneBindings(db, worldId, scope, undefined, allowMissingScene)
   const pointer = await db.select().from(worldScenes).where(eq(worldScenes.worldId, worldId)).get()
   let current: SceneWriteProofFacts['current'] = null
   if (scope) {
@@ -248,7 +248,8 @@ export interface BuildCommitWriteProofInput {
 
 /** Proof assembled for one real commit: 'initial' when the world has no scene yet, else 'valid'. */
 export async function buildCommitWriteProof(db: Db, input: BuildCommitWriteProofInput): Promise<SceneWriteProof> {
-  const facts = await loadSceneWriteProofFacts(db, input.worldId, input.scope)
+  const facts = await loadSceneWriteProofFacts(db, input.worldId, input.scope,
+    Boolean(input.scope && input.candidate.version === 1))
   if (facts.current) {
     const proof = buildValidWriteProof(facts, { worldId: input.worldId, candidate: input.candidate, request: input.compatibility ?? null, ...(input.issuedAt ? { issuedAt: input.issuedAt } : {}) })
     if (proof.mode === 'valid' && input.scope) proof.source = { ...proof.source,

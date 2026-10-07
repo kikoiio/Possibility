@@ -156,7 +156,7 @@ export function deriveSceneBindings(input: {
  * world's own residents/locations matched against scene carriers; locked and
  * semantically bound objects/placements become protected with explicit reasons.
  */
-export async function loadWorldSceneBindings(db: Db, worldId: string, scope?: TimelineSceneScope, _spaceId?: string): Promise<SceneBindingContext> {
+export async function loadWorldSceneBindings(db: Db, worldId: string, scope?: TimelineSceneScope, _spaceId?: string, allowMissingScene = false): Promise<SceneBindingContext> {
   if (scope && scope.worldId !== worldId) throw new Error('场景作用域不属于当前世界')
   const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
   const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
@@ -168,7 +168,7 @@ export async function loadWorldSceneBindings(db: Db, worldId: string, scope?: Ti
     // Other failures (including a missing current revision index) still abort context loading.
     if (!(error instanceof Error) || error.message !== '场景文档损坏：无法解析已保存版本') throw error
   }
-  if (scope && !scene) {
+  if (scope && !scene && !allowMissingScene) {
     const error = new Error('请求的时间线场景不存在') as Error & { code: string; status: number }
     error.code = 'scene-missing'
     error.status = 404
