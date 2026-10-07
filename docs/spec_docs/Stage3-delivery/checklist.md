@@ -8,11 +8,25 @@
 
 > 每项都记录实际结果与证据位置。状态只使用：未运行、通过、未通过、未验证、阻塞；没有执行记录的项目不得标为通过。
 
+## 执行状态汇总（2026-10-07）
+
+| 任务 | 结果 | 证据 |
+|---|---|---|
+| G0 | 通过；阶段一/二门槛已解除 | [baseline.md](evidence/baseline.md)；真实 provider 结果按 run 和 artifact 分批记录。 |
+| T22 | 当前 HEAD 验证通过 | [run 37615432126](https://github.com/kikoiio/Possibility/actions/runs/37615432126)：build/types、119 个定向 Vitest 和 2 个 fixture tests 通过；扩展测试集已加入专用 workflow，将随本次提交再执行。 |
+| T23 | 桌面 Chromium 自动化子集通过 | [run 37614807432](https://github.com/kikoiio/Possibility/actions/runs/37614807432)：6/6 passed；未完成完整身份、触屏、慢网/离线和生命周期矩阵。 |
+| T24 | 部分通过 | 单/双 2D/3D readiness、关闭 pane 与 renderer registry 观测见 [qa-matrix.md](evidence/qa-matrix.md)；缺少混合表现、真实设备和有效 JS heap 差值。 |
+| T25 | 未验证 | 没有内部测试者配对体验、任务成绩或回访记录。 |
+| T26 | 进行中 | QA 当前结果已记录；最终 AC1–AC8 清单需在人工 QA 和完整矩阵状态明确后冻结。 |
+| T27 | 未完成 | Orca Run 仍有 pending Tasks；worker records 有 stale/unverifiable terminal，保留相关 worktree，未执行清理。 |
+
+测试身份和两个 world/timeline 来自隔离 Playwright fixture；这不证明真实账号身份组合或部署环境。剩余范围见 `evidence/README.md` 的限制表。
+
 ## 阶段门槛与工作区
 
-- [ ] 阶段一完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和其引用的 checklist/运行证据，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
-- [ ] 阶段二完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和实际结果，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
-- [ ] 只有阶段一、二出口全部有正面证据时，Orca 才派发依赖性集成任务（验证：核对 G0 结论、Task/Dispatch 时间和证据；2026-10-07 用户授权的 T05/T06/T07/T10 独立实现可提前，G0 未通过时确认 renderer、会话和页面集成任务未派发，且 blocker 已记录）。
+- [x] 阶段一完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和其引用的 checklist/运行证据，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
+- [x] 阶段二完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和实际结果，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
+- [x] 只有阶段一、二出口全部有正面证据时，Orca 才派发依赖性集成任务（验证：核对 G0 结论、Task/Dispatch 时间和证据；2026-10-07 用户授权的 T05/T06/T07/T10 独立实现可提前，G0 未通过时确认 renderer、会话和页面集成任务未派发，且 blocker 已记录）。
 - [ ] 每个并行开发任务有独立的 `phase3` 子 worktree、负责人、依赖、文件边界和验证结果（验证：核对 Orca Run/Task/Dispatch 与 worktree 分支基线；确认已完成改动汇入 `phase3`，且 `main` 的未提交改动未被复制或覆盖）。
 
 ## 实现行为

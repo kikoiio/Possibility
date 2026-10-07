@@ -1,6 +1,6 @@
 # 阶段三交付 QA 矩阵与资源计划
 
-> 状态：T04 规划产物；下方固定覆盖和 pairwise 场景仍未完整执行。附录记录了 G0 访客旅程的有限 3D/3D smoke evidence，但不把部分覆盖折算为矩阵用例通过。
+> 状态：矩阵仍是完整验收目标；2026-10-07 的云端自动化执行子覆盖见下方“阶段三当前执行记录”。固定覆盖和 pairwise 场景尚未完整执行，fixture 测试不代表真实账号、真实触屏、慢网或真实生成质量通过。
 > 基线约定：执行时记录 `phase3` commit、应用/API 版本、浏览器/OS、视口、测试账号与隔离 world/timeline 标识；不记录密钥或原始私人对话。任何结果须附路径、观察、限制及 trace/screenshot/log 证据链接。
 > 依据：已批准的 `spec.md` AC1/AC4/AC5/AC7、`plan.md` 的组合/资源决策、`task.md` T04，以及 `/home/neo/Projects/Possibility/docs/DEVELOPMENT_ARRANGEMENT.md` 的阶段门槛、隔离数据和内存调度约定。
 
@@ -113,11 +113,24 @@ AC5 配对比较只有在同主题、人物、检查点、模型条件和核心�
 | AC5：内部 2D/3D 配对任务、公平比较和回访 | H2、模型与 API 边界 | 同一任务/模型条件、完成/错误/性能/回访；预算确认或明确未验证 |
 | AC7：重型操作前资源评估与有序调度 | 性能与资源顺序 1–8 | MemAvailable、vmstat 后续换页采样、memory PSI、cgroup 上限（若适用）、批次开始/结束记录 |
 
-## 本次未执行项
+## 阶段三当前执行记录（2026-10-07）
 
-- 未启动浏览器、应用服务、构建、单测、E2E、性能采样或资源压力任务。
-- 未调用模型；真实模型调用预算、模型配置与请求上限仍需执行前确认。
-- 所有场景的实际通过/失败状态、性能阈值、设备覆盖和释放读数均待后续验收 wave 填写；当前统一为未验证。
+| 项目 | 状态 / 结果 | 范围与证据 |
+|---|---|---|
+| G0 阶段门槛 | 通过 | `evidence/baseline.md` 记录阶段一/二正面出口及真实 provider 结果；新增真实请求 93 次，累计旧计数 205，新增可核实费用 `$1.011892`，早期 26 次费用未完整对账。 |
+| T22 构建与定向验证 | 通过 | [run 37615432126](https://github.com/kikoiio/Possibility/actions/runs/37615432126) 在当前 HEAD `ea6eeb03bae9427d2eb4d89b2813ec7bc361023b` 上 Web production build/types、5 个 Vitest 文件 119 tests、fixture 2 tests 通过。更早的 [run 37614066902](https://github.com/kikoiio/Possibility/actions/runs/37614066902) 在 `decab594` 也通过同范围。构建日志有 Vite 大 chunk 提示，不影响退出码。扩展纳入 ComparisonHost 与原生 2D 测试后的验证将在本次 workflow 更新提交后执行。 |
+| T23 桌面 Chromium 子覆盖 | 通过（仅列出的行为） | [run 37614807432](https://github.com/kikoiio/Possibility/actions/runs/37614807432)，commit `ea6eeb03bae9427d2eb4d89b2813ec7bc361023b`，GitHub Actions Ubuntu 24.04 / Chromium / 1280×720 / 1 worker，6/6 passed。覆盖同 world 四种 renderer 组合与 3D/3D 联动、跨 world 四种组合、跨 world 相机禁用、右 pane 失败后单侧重试且左 pane bootstrap 请求数不增加、390×844 桌面浏览器窄视口无水平溢出、单 world 3D↔2D 保持 timeline。 |
+| T24 性能与资源释放观测 | 部分通过 | 同一浏览器 session 顺序记录 ready 时间：单 3D 1780 ms、单 2D 1521 ms、双 2D 1503 ms、双 3D 2234 ms；关闭右 pane 用时 874 ms。关闭前后 renderer registry 从 2 降至 1。记录值是测试 fixture 的一次冷导航测量，不是统计基线或性能阈值；未测混合表现/真实设备峰值。`performance.memory.usedJSHeapSize` 每次都回报 60,300,000 bytes，无法反映差值，故不把它当作有效堆变化结论。 |
+| Actions runner 资源快照 | 通过 | 验收前 MemAvailable 14 GiB；5 个 `vmstat` 后续样本 `si/so=0`；memory PSI `avg10/60/300=0`；swap 使用 0。runner cgroup `memory.max` 命令未产生可记录值。 |
+| T25 内部配对 QA | 未验证 | 需要内部测试者实际完成同条件 2D/3D 任务和回访；本轮没有人类测试记录。没有开展公开评估或投票。 |
+| Orca T27 收尾 | 未完成 | 当前 Run 尚有 pending Tasks；`worker-list` 的 9 个记录中 8 个 retained，多个终端 liveness 为 stale/unverifiable。按“不清理未 settled worktree”的约定保留；见最终报告限制。 |
+
+本次浏览器 trace/log 由 Actions 上传为 artifact `phase3-presentation-37614807432`，保留 14 天，入口为上方 run。E2E 的身份来自隔离 API fixture，不能替代不同真实 owner/guest/readonly 账号的授权验证；单侧故障只实际执行了右侧失败，非镜像的左侧拒绝/超时、慢网/离线、触控输入、刷新后的相机恢复和其他完整生命周期循环仍未验证。
+
+## T04 规划阶段未执行项（历史记录）
+
+- 上述“未执行”内容仅反映 T04 矩阵编制时的状态；当前执行结果以本文件“阶段三当前执行记录”为准。
+- 完整固定矩阵与 pairwise 项仍需逐项核验；历史真实生成证据与本次 fixture E2E 分别记录，不互相替代。
 
 
 ## 执行补充：Phase 1 G0 旅程中的分屏 smoke
