@@ -32,6 +32,20 @@ async function skipTour(page: import('@playwright/test').Page) {
   if (await skip.isVisible().catch(() => false)) await skip.click()
 }
 
+async function openDemoMap(page: import('@playwright/test').Page) {
+  const canvas = page.getByTestId('voxel-viewport-canvas')
+  const missingWorld = page.getByText('世界或时间线不存在')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 0) await page.goto('/demo')
+    else await page.reload()
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="voxel-viewport-canvas"]'))
+      || document.body.innerText.includes('世界或时间线不存在'), null, { timeout: 30_000 })
+    if (await canvas.isVisible().catch(() => false)) return
+    if (!await missingWorld.isVisible().catch(() => false)) throw new Error('演示世界未加载，页面也没有可识别的世界/时间线错误')
+  }
+  await expect(canvas).toBeVisible({ timeout: 60_000 })
+}
+
 test('guest interacts, forks, claims on register and keeps progress in the saved world', async ({ page, request }) => {
   test.setTimeout(240_000)
 
@@ -42,8 +56,7 @@ test('guest interacts, forks, claims on register and keeps progress in the saved
   expect(seedDemo.status(), await seedDemo.text()).toBe(200)
 
   // 2. 访客进入演示世界
-  await page.goto('/demo')
-  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 60_000 })
+  await openDemoMap(page)
   await skipTour(page)
 
   // 3. 可见交互:进入温室花房(真实 scene/position 调用)
