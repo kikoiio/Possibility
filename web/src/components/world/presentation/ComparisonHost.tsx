@@ -108,7 +108,7 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
   useEffect(() => () => coordinator.dispose(), [coordinator])
 
   return (
-    <main className={`comparison-workspace ${right ? 'comparison-workspace-split' : 'comparison-workspace-single'}`} data-testid="comparison-workspace">
+    <div className={`comparison-workspace ${right ? 'comparison-workspace-split' : 'comparison-workspace-single'}`} data-testid="comparison-workspace">
       <Pane paneId={right ? 'left' : 'single'} target={left} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} />
       {right ? <Pane paneId="right" target={right} loadSession={loadSession} adapters={adapters} store={store} worlds={worlds} onTargetChange={onTargetChange} coordinator={coordinator} /> : (
         <button className="comparison-open-split" type="button" onClick={() => onTargetChange('right', { ...left, presentation: left.presentation })}>添加比较视口</button>
@@ -119,6 +119,6 @@ export default function ComparisonHost({ left, right, loadSession, adapters, sto
           联动相机
         </label>
       )}
-    </main>
+    </div>
   )
 }
