@@ -1,4 +1,4 @@
-import { guestMapApi, mapApi, publicApi } from '../../../api/client'
+import { authApi, guestMapApi, mapApi, publicApi } from '../../../api/client'
 import type { MapBootstrap } from '../../../api/map'
 import type { WorldSnapshot } from '../../../api/types'
 import { createInitialLayout } from '../../../native2d/layout-validation'
@@ -43,14 +43,16 @@ async function readPaneWorld(
     return { snapshot, document: scene.document, access: { observe: true }, identity: 'readonly' }
   }
 
-  const bootstrap = mode === 'guest'
-    ? await guestMapApi.bootstrap(target.worldId, target.timelineId, signal)
-    : await mapApi.bootstrap(target.worldId, target.timelineId, signal)
+  const [bootstrap, account] = mode === 'guest'
+    ? [await guestMapApi.bootstrap(target.worldId, target.timelineId, signal), null] as const
+    : await Promise.all([
+      mapApi.bootstrap(target.worldId, target.timelineId, signal),
+      authApi.me({ redirectOnUnauthorized: false }),
+    ])
   if (bootstrap.scene.status !== 'ready') throw new Error('这个世界还没有可呈现的 3D 场景。')
   const access = { ...bootstrap.access }
-  const identity: WorldPresentationContext['identity'] = mode === 'guest'
-    ? 'guest'
-    : access.editScene || access.persist ? 'owner' : 'readonly'
+  const identity: WorldPresentationContext['identity'] = mode === 'guest' ? 'guest'
+    : account?.user?.id && (access.editScene || access.persist) ? 'owner' : 'readonly'
   return { snapshot: bootstrap.world, bootstrap, document: bootstrap.scene.document, access, identity }
 }
 
