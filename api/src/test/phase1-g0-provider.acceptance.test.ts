@@ -79,7 +79,7 @@ const SCENARIOS = [
     id: 'official-example',
     prompt: '海边旧车站旁的小街，路边有咖啡馆、花园和安静的住宅。',
     groups: {
-      coast: /海边|海岸|海滨|海景/u,
+      coast: /海边|海岸|海滨|海景|沿海/u,
       oldStation: /旧车站|车站/u,
       street: /小街|街道|街巷/u,
       cafe: /咖啡/u,
@@ -149,7 +149,13 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     let repairProviderRequests = 0
     let repairLedgerRowCount = -1
     let reconciled = false
-    let cleanup = { exactNameCounts: {} as Record<string, number>, remainingTableRows: -1, d1Deleted: false }
+    let cleanup: {
+      exactNameCounts: Record<string, number>
+      remainingTableRows: number
+      d1Deleted: boolean
+      failureStage?: string
+      error?: { name: string; message: string }
+    } = { exactNameCounts: {}, remainingTableRows: -1, d1Deleted: false }
     let actualCostUsd = 0
     let usageUnavailable = 0
     let finalLedgerRows = -1
@@ -418,10 +424,19 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       failures.push(`harness_error:${error instanceof Error ? error.name : 'unknown'}`)
     } finally {
       if (fixture) {
+        let cleanupStage = 'disable_foreign_keys'
         try {
           fixture.sqlite.exec('PRAGMA foreign_keys = OFF')
+          cleanupStage = 'remove_immutable_delete_guards'
+          for (const trigger of [
+            'world_commands_immutable_delete',
+            'world_facts_immutable_delete',
+            'world_model_versions_immutable_delete',
+          ]) fixture.sqlite.exec(`DROP TRIGGER IF EXISTS "${trigger}"`)
+          cleanupStage = 'delete_isolated_database_rows'
           const tableNames = fixture.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]
           for (const { name } of tableNames) fixture.sqlite.exec(`DELETE FROM "${name.replaceAll('"', '""')}"`)
+          cleanupStage = 'verify_isolated_database_rows'
           for (const name of [ownerName, repairWorldName]) {
             const row = fixture.sqlite.prepare('SELECT count(*) AS n FROM worlds WHERE name = ?').get(name) as { n: number }
             cleanup.exactNameCounts[name] = Number(row.n)
@@ -431,7 +446,12 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
             return total + Number(row.n)
           }, 0)
           cleanup.d1Deleted = Object.values(cleanup.exactNameCounts).every(count => count === 0) && cleanup.remainingTableRows === 0
-        } catch {
+        } catch (error) {
+          cleanup.failureStage = cleanupStage
+          cleanup.error = {
+            name: error instanceof Error ? error.name : 'unknown',
+            message: error instanceof Error ? error.message : String(error),
+          }
           failures.push('isolated_d1_cleanup_or_zero_row_assertion_failed')
         }
         fixture.close()
