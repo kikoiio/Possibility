@@ -14,6 +14,7 @@ export class WorldGeneratorError extends Error {
     message: string,
     public readonly issues: Array<{ code: string; message: string }> = [],
     public readonly normalizationFixes: string[] = [],
+    public readonly failureStage: 'payload' | 'assembly' | 'validation' | 'binding' | 'serialization' = 'assembly',
   ) {
     super(message)
     this.name = 'WorldGeneratorError'
@@ -23,6 +24,7 @@ export class WorldGeneratorError extends Error {
 /** 可行走性 issue → 给 LLM 的修复方向(坐标已在 detail 里) */
 const WALK_HINTS: Record<string, string> = {
   'walk-clearance': '把列出的通行格正上方方块挖掉或整体抬高,保证每个通行格上方连续 2 格是空气',
+  'location-unbound': '为列出的每个世界地点增加独立的 place-object 或 assetPlacements 承载物，并在 locations 中逐字绑定地点名',
   'walk-connectivity': '检查被水/墙/围栏围死的区域,铺路或开门让室外能走到每个地点',
   'walk-stairs': '超过 1 格的高差处放台阶/楼梯,不要让人跳坎',
   'walk-gap': '把地面的坑洞/缺口填平或绕开,通行路径不能断',
@@ -73,11 +75,11 @@ function extractPayload(content: string): GeneratedWorldPayload {
   const cleaned = content.replace(/```(?:json)?/gi, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
-  if (start < 0 || end <= start) throw new WorldGeneratorError('输出中没有 JSON 对象')
+  if (start < 0 || end <= start) throw new WorldGeneratorError('输出中没有 JSON 对象', [], [], 'payload')
   try {
     return JSON.parse(cleaned.slice(start, end + 1)) as GeneratedWorldPayload
   } catch {
-    throw new WorldGeneratorError('JSON 解析失败')
+    throw new WorldGeneratorError('JSON 解析失败', [], [], 'payload')
   }
 }
 
@@ -332,7 +334,7 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
 export async function generateWorld(
   sceneDescription: string,
   theme: string,
-  deps: { complete: CompleteFn; maxAttempts?: number; id?: string; buildMessages?: (desc: string, theme: string) => ChatMessage[]; assets?: AssetManifest },
+  deps: { complete: CompleteFn; maxAttempts?: number; id?: string; buildMessages?: (desc: string, theme: string) => ChatMessage[]; assets?: AssetManifest; requiredLocationNames?: string[] },
 ): Promise<VoxelDocument> {
   const maxAttempts = deps.maxAttempts ?? 3
   const buildMessages = deps.buildMessages ?? buildWorldGeneratorMessages
@@ -341,6 +343,7 @@ export async function generateWorld(
   let lastIssues: Array<{ code: string; message: string }> = []
   let lastError = '未知错误'
   let lastNormalizationFixes: string[] = []
+  let lastFailureStage: WorldGeneratorError['failureStage'] = 'payload'
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const content = await deps.complete(messages)
@@ -355,6 +358,7 @@ export async function generateWorld(
       lastNormalizationFixes = [...lastNormalizationFixes, ...normalizedWorld.fixes]
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
+      lastFailureStage = error instanceof WorldGeneratorError ? error.failureStage : 'assembly'
       lastIssues = []
       messages = [...messages, { role: 'assistant', content }, { role: 'user', content: `上一次的世界无法组装（${lastError}）。请修正后重新返回完整世界 JSON。` }]
       continue
@@ -362,18 +366,40 @@ export async function generateWorld(
     const issues = validateDocument(doc, undefined, deps.assets)
     // 结构校验过了才跑可行走性(世界可行走性是 S2b F5 的生成契约;结构坏了先修结构)
     if (issues.length === 0) issues.push(...validateWalkability(doc))
+    const boundNames = new Set(doc.locations.map(location => location.name))
+    for (const name of new Set(deps.requiredLocationNames ?? [])) {
+      if (!boundNames.has(name)) issues.push({ code: 'location-unbound', message: `必需地点「${name}」尚未绑定到场景物体` })
+    }
     if (issues.length === 0) {
       // 序列化 round-trip 自检（契约闭环：AI 输出即权威格式）
-      deserialize(serialize(doc))
+      try {
+        deserialize(serialize(doc))
+      } catch {
+        throw new WorldGeneratorError('生成场景无法序列化', [], lastNormalizationFixes, 'serialization')
+      }
       return doc
     }
     lastIssues = issues
+    lastFailureStage = 'validation'
     const detail = issues.slice(0, 6).map((i) => `${i.code}${i.at ? `@(${i.at.x},${i.at.y},${i.at.z})` : ''}: ${i.message}`).join('；')
     // 可行走性语义错误给弱模型可操作的修复方向(机械错误已被确定性归一拦截,到这里的都是布局问题)
     const hints = [...new Set(issues.map(i => WALK_HINTS[i.code]).filter((h): h is string => Boolean(h)))]
     const clearanceCells = issues.filter(issue => issue.code === 'walk-clearance' && issue.at)
       .slice(0, 6).map(issue => `(${issue.at!.x},${issue.at!.y},${issue.at!.z})`)
-    if (clearanceCells.length > 0) hints.push(`净空问题位于通行格 ${clearanceCells.join('、')};清除这些格子正上方 y+1 的方块`)
+    if (clearanceCells.length > 0) hints.push(`净空问题位于通行格 ${clearanceCells.join('、')};清除这些格子正上方 y+1 的普通方块；若该格属于地点承载物或资产，不要破坏它，改为另开净高至少 2 格的通路`)
+    const connectivityTargets = issues.filter(issue => issue.code === 'walk-connectivity' && issue.at)
+      .slice(0, 6).map(issue => {
+        const object = doc.objects.find(candidate => candidate.anchor.x === issue.at!.x
+          && candidate.anchor.y === issue.at!.y && candidate.anchor.z === issue.at!.z)
+        const locations = object
+          ? doc.locations.filter(binding => binding.objectId === object.id).map(binding => binding.name)
+          : []
+        const label = [object?.id, object?.objectType, ...locations].filter(Boolean).join('/') || '地点承载物'
+        return `${label}@(${issue.at!.x},${issue.at!.y},${issue.at!.z})`
+      })
+    if (connectivityTargets.length > 0) {
+      hints.push(`以下地点承载物不可从室外到达：${connectivityTargets.join('、')};保持物体及地点绑定不变，在每个物体一侧留出可站立位置，并清开墙体/围栏形成与室外连续、净高至少 2 格的路线`)
+    }
     if (issues.some(issue => issue.code === 'out-of-bounds')) {
       hints.push(`本世界坐标范围为 x=0..${doc.size.width - 1}, y=0..${doc.size.height - 1}, z=0..${doc.size.depth - 1};检查操作端点及物体/资产完整占地`)
     }
@@ -386,6 +412,7 @@ export async function generateWorld(
       : `世界生成 ${maxAttempts} 次仍无法组装：${lastError}`,
     lastIssues,
     lastNormalizationFixes,
+    lastFailureStage,
   )
 }
 

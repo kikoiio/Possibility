@@ -24,6 +24,8 @@ type ScenarioResult = {
   id: string
   apiStatus: number
   valid: boolean
+  failureStage?: string
+  normalizationFixes?: string[]
   worldReady: boolean
   validDocument: boolean
   forbiddenAbsent: boolean
@@ -122,6 +124,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     let repairSaved = false
     let repairDraftStatus: number | null = null
     let repairDraftKind: string | null = null
+    let repairDraftFailureStage: string | null = null
+    let repairDraftNormalizationFixes: string[] = []
     let repairDraftIssueCodes: string[] = []
     let repairProviderRequests = 0
     let repairLedgerRowCount = -1
@@ -235,6 +239,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       const afterLedger = await ledgerRows()
       scenarios.push({
         id: scenario.id, apiStatus: response.status, valid,
+        ...(typeof payload.failureStage === 'string' ? { failureStage: payload.failureStage } : {}),
+        ...(Array.isArray(payload.normalizationFixes) ? { normalizationFixes: payload.normalizationFixes.filter((value): value is string => typeof value === 'string') } : {}),
         worldReady, validDocument, forbiddenAbsent,
         ...(typeof payload.kind === 'string' ? { errorKind: payload.kind } : {}),
         issueCodes: Array.isArray(payload.issues) ? payload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : []) : [],
@@ -328,6 +334,10 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       repairDraftStatus = repairDraftResponse.status
       const repairPayload = await repairDraftResponse.clone().json().catch(() => ({})) as Record<string, unknown>
       repairDraftKind = typeof repairPayload.kind === 'string' ? repairPayload.kind : null
+      repairDraftFailureStage = typeof repairPayload.failureStage === 'string' ? repairPayload.failureStage : null
+      repairDraftNormalizationFixes = Array.isArray(repairPayload.normalizationFixes)
+        ? repairPayload.normalizationFixes.filter((value): value is string => typeof value === 'string')
+        : []
       repairDraftIssueCodes = Array.isArray(repairPayload.issues)
         ? repairPayload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : [])
         : []
@@ -414,7 +424,9 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
         scenarios: scenarios.map(result => ({ ...result, ...(result.id === 'official-example' && singleWorldId ? { savedWorldIdHash: sha(singleWorldId) } : {}) })),
         singleSpace: { saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
-        repair: { saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind, draftIssueCodes: repairDraftIssueCodes,
+        repair: { saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind,
+          draftFailureStage: repairDraftFailureStage, draftNormalizationFixes: repairDraftNormalizationFixes,
+          draftIssueCodes: repairDraftIssueCodes,
           providerRequests: repairProviderRequests, llmCallLogRows: repairLedgerRowCount,
           originalWorldIdHash: sha(repairWorldId), originalWorldName: repairWorldName },
         requests: {

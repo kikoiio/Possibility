@@ -87,6 +87,7 @@ export async function createFixedWorldVoxelSceneDraft(
         }),
         assets,
         maxAttempts: 4,
+        requiredLocationNames: request.world.locations.map(location => location.name),
         buildMessages: assets ? (description, theme) => buildWorldGeneratorMessages(description, theme, assets) : undefined,
       },
     )
@@ -94,7 +95,7 @@ export async function createFixedWorldVoxelSceneDraft(
     const actual = doc.locations.map(location => location.name)
     if (actual.length !== expected.length || new Set(actual).size !== actual.length
       || expected.some(location => !actual.includes(location))) {
-      throw new WorldGeneratorError('生成场景的地点与原世界不匹配')
+      throw new WorldGeneratorError('生成场景的地点与原世界不匹配', [], [], 'binding')
     }
     return {
       worldId: request.world.id,
@@ -147,11 +148,12 @@ export async function createVoxelSceneDraft(
       assets,
       // 弱模型修可行走性(净空/连通)偏慢,多给一次机会;确定性归一已兜住机械错误,这里只兜语义错误
       maxAttempts: 4,
+      requiredLocationNames: world.locations.map(location => location.name),
       buildMessages: assets ? (desc, theme) => buildWorldGeneratorMessages(desc, theme, assets) : undefined,
     })
     const bound = new Set(doc.locations.map(l => l.name))
     const missing = world.locations.filter(l => !bound.has(l.name))
-    if (missing.length > 0) throw new WorldGeneratorError(`有地点没有绑定到场景物体:${missing.map(l => l.name).join('、')}`)
+    if (missing.length > 0) throw new WorldGeneratorError(`有地点没有绑定到场景物体:${missing.map(l => l.name).join('、')}`, [], [], 'binding')
     return {
       world,
       document: JSON.parse(serialize(doc)) as SerializedVoxelDocument,

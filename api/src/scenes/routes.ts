@@ -76,7 +76,8 @@ scenesRoutes.post('/scene-drafts/voxel', async c => {
         code: issue.code,
         ...(CONTENT_ISSUE_COPY[issue.code as keyof typeof CONTENT_ISSUE_COPY] ?? CONTENT_ISSUE_FALLBACK),
       }))
-      return c.json({ error: '场景暂时没有生成成功,请按建议调整描述后重试。', kind: 'content', issues, callsUsed, requestId }, 502)
+      return c.json({ error: '场景暂时没有生成成功,请按建议调整描述后重试。', kind: 'content', failureStage: error.failureStage,
+        normalizationFixes: error.normalizationFixes, issues, callsUsed, requestId }, 502)
     }
     if (error instanceof LlmContractError && error.code === 'provider_http_error' && /(?:401|403)/.test(error.message)) {
       const hint = byokFailureHint('user')
@@ -110,7 +111,8 @@ scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
         code: issue.code,
         ...(CONTENT_ISSUE_COPY[issue.code as keyof typeof CONTENT_ISSUE_COPY] ?? CONTENT_ISSUE_FALLBACK),
       }))
-      return c.json({ error: '场景暂时没有生成成功，请调整描述后重试。', errorCode: 'content', issues }, 502)
+      return c.json({ error: '场景暂时没有生成成功，请调整描述后重试。', errorCode: 'content', failureStage: error.failureStage,
+        normalizationFixes: error.normalizationFixes, issues }, 502)
     }
     if (error instanceof LlmContractError && error.code === 'provider_http_error' && /(?:401|403)/.test(error.message)) {
       return c.json({ error: byokFailureHint('user') ?? '模型配置无法使用，请检查 API Key 和服务地址。', errorCode: 'config' }, 502)
