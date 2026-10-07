@@ -18,6 +18,16 @@ describe('parseEditOperations model aliases', () => {
     ])
   })
 
+  it('normalizes block range operations mislabeled as place-object or place-block', () => {
+    expect(parseEditOperations(JSON.stringify({ ops: [
+      { type: 'place-object', objectId: 'road-area', block: 'cobble', from: { x: 0, y: 0, z: 1 }, to: { x: 9, y: 0, z: 1 } },
+      { type: 'place-block', block: 'cobble', anchor: { x: 2, y: 1, z: 3 }, size: { width: 2, height: 1, depth: 4 } },
+    ] }))).toEqual([
+      { kind: 'fill', block: 'cobble', from: { x: 0, y: 0, z: 1 }, to: { x: 9, y: 0, z: 1 } },
+      { kind: 'fill', block: 'cobble', from: { x: 2, y: 1, z: 3 }, to: { x: 3, y: 1, z: 6 } },
+    ])
+  })
+
   it('expands straight place-line aliases and rejects diagonal or unbounded operations', () => {
     expect(parseEditOperations(JSON.stringify({ ops: [
       { op: 'place-line', block: 'cobble', from: { x: 0, y: 0, z: 2 }, to: { x: 2, y: 0, z: 2 } },

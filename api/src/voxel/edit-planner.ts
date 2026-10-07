@@ -52,6 +52,39 @@ export function parseEditOperations(content: string): EditOperation[] {
       if (typeof op.type === 'string') op.kind = op.type
       else if (typeof op.op === 'string') op.kind = op.op
     }
+    // Alternate block-placement shorthand emitted by several compatible models.
+    if (op && op.kind === 'place-block' && typeof op.block === 'string' && isCoord(op.anchor)
+      && !!op.size && typeof op.size === 'object') {
+      const size = op.size as Record<string, unknown>
+      if (Number.isInteger(size.width) && Number.isInteger(size.height) && Number.isInteger(size.depth)
+        && Number(size.width) > 0 && Number(size.height) > 0 && Number(size.depth) > 0) {
+        op.kind = 'fill'
+        op.from = op.anchor
+        op.to = {
+          x: op.anchor.x + Number(size.width) - 1,
+          y: op.anchor.y + Number(size.height) - 1,
+          z: op.anchor.z + Number(size.depth) - 1,
+        }
+      }
+    }
+    // Region operations are block fills, even when the model incorrectly labels
+    // them as place-object and attaches an objectId that cannot exist in the document.
+    if (op && op.kind === 'place-object' && typeof op.block === 'string'
+      && (isCoord(op.from) && isCoord(op.to) || isCoord(op.anchor) && !!op.size)) {
+      op.kind = 'fill'
+      if (!op.from && isCoord(op.anchor) && op.size && typeof op.size === 'object') {
+        const size = op.size as Record<string, unknown>
+        if (Number.isInteger(size.width) && Number.isInteger(size.height) && Number.isInteger(size.depth)
+          && Number(size.width) > 0 && Number(size.height) > 0 && Number(size.depth) > 0) {
+          op.from = op.anchor
+          op.to = {
+            x: op.anchor.x + Number(size.width) - 1,
+            y: op.anchor.y + Number(size.height) - 1,
+            z: op.anchor.z + Number(size.depth) - 1,
+          }
+        }
+      }
+    }
     // 弱模型操作名变种:place-block = set-block
     if (op && op.kind === 'place-block') op.kind = 'set-block'
     const bad = (why: string): never => { throw new EditPlannerError(`ops[${i}] 不合法：${why}`) }
