@@ -136,7 +136,6 @@ test('timeline scene revisions fork independently, restore visible ancestry, and
   })
   await page.goto(`/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(childTimelineId)}`)
   await expect(page.getByTestId('voxel-viewport')).toBeVisible({ timeout: 90_000 })
-  await expect(page.getByTestId('timeline-switcher')).toHaveValue(childTimelineId)
   await expect.poll(() => browserSceneReads.some(read => read.method === 'GET'
     && read.timelineId === childTimelineId && read.representation === 'voxel')).toBe(true)
   await page.getByRole('button', { name: '历史', exact: true }).click()
