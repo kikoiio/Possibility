@@ -63,7 +63,11 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
     if (typeof p.placementId === 'string' && typeof p.id === 'string' && p.placementId !== p.id) {
       return bad('id 与 placementId 不一致')
     }
-    if (p.rotation !== undefined && p.rotation !== 0 && p.rotation !== 1 && p.rotation !== 2 && p.rotation !== 3) {
+    const rawRotation = p.rotation ?? 0
+    const normalizedRotation = rawRotation === 90 || rawRotation === 180 || rawRotation === 270
+      ? rawRotation / 90
+      : rawRotation
+    if (normalizedRotation !== 0 && normalizedRotation !== 1 && normalizedRotation !== 2 && normalizedRotation !== 3) {
       return bad('rotation 需要 0..3(四分之一圈)')
     }
     if (p.seed !== undefined && (typeof p.seed !== 'number' || !Number.isFinite(p.seed))) return bad('seed 需要有限数')
@@ -74,13 +78,13 @@ function assetPlacementOps(raw: unknown[]): EditOperation[] {
       const objectId = p.placementId ?? p.id
       return {
         kind: 'place-object', objectType: p.assetId, anchor: p.anchor,
-        rotation: ((p.rotation ?? 0) * 90) as 0 | 90 | 180 | 270,
+        rotation: (normalizedRotation * 90) as 0 | 90 | 180 | 270,
         ...(typeof objectId === 'string' ? { objectId } : {}),
       }
     }
     return {
       kind: 'place-asset', assetId: p.assetId, anchor: p.anchor,
-      rotation: (p.rotation ?? 0) as 0 | 1 | 2 | 3,
+      rotation: normalizedRotation as 0 | 1 | 2 | 3,
       ...((p.placementId ?? p.id) ? { placementId: (p.placementId ?? p.id) as string } : {}),
       ...(typeof p.seed === 'number' ? { seed: p.seed } : {}),
     }

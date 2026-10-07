@@ -40,6 +40,7 @@ const isRotation = (v: unknown): v is 0 | 90 | 180 | 270 => v === 0 || v === 90 
 
 function normalizedAnchor(op: Record<string, unknown>): VoxelCoord | null {
   if (isCoord(op.anchor)) return op.anchor
+  if (isCoord(op.at)) return op.at
   const xyz = { x: op.x, y: op.y, z: op.z }
   return isCoord(xyz) ? xyz : null
 }
@@ -173,6 +174,15 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
         ? { x: x as number, y: y as number, z: z as number }
         : null
     }
+    if (op?.kind === 'fill' && (!op.from || !op.to) && op.region && typeof op.region === 'object') {
+      const region = op.region as Record<string, unknown>
+      const y1 = region.y1 ?? region.y
+      const y2 = region.y2 ?? region.y ?? y1
+      if ([region.x1, y1, region.z1, region.x2, y2, region.z2].every(Number.isInteger)) {
+        op.from = { x: region.x1, y: y1, z: region.z1 }
+        op.to = { x: region.x2, y: y2, z: region.z2 }
+      }
+    }
     const expand = (operations: EditOperation[]): EditOperation[] => {
       expandedCount += operations.length
       if (expandedCount > 2048) return bad('展开后 ops 过多（>2048）')
@@ -231,9 +241,11 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
         const anchor = normalizedAnchor(op)
         if (!objectType || !anchor || !isRotation(rotation)) return bad('place-object 需要目录 objectType/assetId、整数 anchor 坐标与合法 rotation')
         validateOptionalSize(op.size, expectedPlacementSize(objectType, rotation, assets), bad)
+        const objectId = typeof op.objectId === 'string' && op.objectId ? op.objectId
+          : typeof op.id === 'string' && op.id ? op.id : undefined
         return expand([{
           kind: 'place-object', objectType, anchor, rotation,
-          ...(typeof op.objectId === 'string' && op.objectId ? { objectId: op.objectId } : {}),
+          ...(objectId ? { objectId } : {}),
           ...(typeof op.label === 'string' && op.label ? { label: op.label } : {}),
         }])
       }

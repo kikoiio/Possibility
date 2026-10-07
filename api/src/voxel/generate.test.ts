@@ -488,13 +488,17 @@ describe('generateWorld semantic building carriers', () => {
       { op: 'add', block: 'cobble', x: 2, y: 0, z: 4 },
       { type: 'set', block: 'stone', x: 3, y: 1, z: 4 },
       { op: 'place-object', objectId: 'single-cell-road', block: 'cobble', x: 4, y: 0, z: 6 },
+      { kind: 'fill', block: 'cobble', region: { x1: 0, y: 0, z1: 8, x2: 3, z2: 8 } },
       { kind: 'place-object', objectId: 'road', block: 'cobble', x: 5, y: 0, z: 6, xLength: 8, zLength: 1 },
+      { kind: 'place-object', id: 'legacy-station', objectType: 'manor-main-house', at: { x: 2, y: 1, z: 10 }, rotation: 0 },
       { kind: 'place-object', objectId: 'cafe-building', block: 'stone', anchor: { x: 8, y: 1, z: 8 }, geometry: { type: 'cube', sx: 3, sy: 2, sz: 3 } },
     ] }))).toEqual([
       { kind: 'set-block', at: { x: 2, y: 0, z: 4 }, block: 'cobble' },
       { kind: 'set-block', at: { x: 3, y: 1, z: 4 }, block: 'stone' },
       { kind: 'set-block', at: { x: 4, y: 0, z: 6 }, block: 'cobble' },
+      { kind: 'fill', from: { x: 0, y: 0, z: 8 }, to: { x: 3, y: 0, z: 8 }, block: 'cobble' },
       { kind: 'fill', from: { x: 5, y: 0, z: 6 }, to: { x: 12, y: 0, z: 6 }, block: 'cobble' },
+      { kind: 'place-object', objectType: 'manor-main-house', objectId: 'legacy-station', anchor: { x: 2, y: 1, z: 10 }, rotation: 0 },
       { kind: 'fill', from: { x: 8, y: 1, z: 8 }, to: { x: 10, y: 2, z: 10 }, block: 'stone' },
     ])
     expect(() => parseEditOperations(JSON.stringify({ ops: [
@@ -503,17 +507,27 @@ describe('generateWorld semantic building carriers', () => {
   })
 
   it('converts known object templates mistakenly returned as asset placements', () => {
+    const manifest = {
+      version: 2 as const,
+      assets: {
+        'bld-hut-a': { id: 'bld-hut-a', category: 'building' as const, url: '/x.glb', footprint: [2, 3] as [number, number], height: 2, thumbnail: '/x.png', sway: 0 },
+      },
+    }
     const doc = assembleWorld({
       size: { width: 16, height: 16, depth: 16 },
-      assetPlacements: [{ assetId: 'manor-main-house', placementId: 'main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 1 }],
+      assetPlacements: [
+        { assetId: 'manor-main-house', placementId: 'main-house', anchor: { x: 4, y: 1, z: 4 }, rotation: 1 },
+        { assetId: 'bld-hut-a', placementId: 'legacy-glb', anchor: { x: 10, y: 1, z: 10 }, rotation: 180 },
+      ],
       locations: [{ name: '主楼', objectId: 'main-house' }],
       lockedObjectIds: ['main-house'],
-    }, 'mist-manor', 'legacy-template-placement')
+    }, 'mist-manor', 'legacy-template-placement', manifest)
     expect(doc.objects).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'main-house', objectType: 'manor-main-house', rotation: 90 }),
     ]))
     expect(doc.locations).toEqual([{ name: '主楼', objectId: 'main-house' }])
     expect(doc.lockedObjectIds).toContain('main-house')
+    expect(doc.assetPlacements?.find(placement => placement.id === 'legacy-glb')?.rotation).toBe(2)
   })
 
   it('accepts a building template or building asset for a required semantic location', async () => {
