@@ -5,6 +5,7 @@ import { createInitialLayout } from '../../../native2d/layout-validation'
 import { buildPresentation } from '../../../native2d/presentation'
 import { createWorldSource } from '../../../native2d/world-source'
 import { MIST_MANOR_SCENE } from '../../../native2d/scene'
+import type { WorldReadModel } from '../../../native2d/types'
 import type { VoxelViewportProps } from '../../../voxel/VoxelViewport'
 import { parseVoxelDocument, parseVoxelSpaces } from '../../../voxel/flags'
 import { buildSceneOverlay } from '../../../scene/life/overlay'
@@ -67,6 +68,30 @@ function selectVoxelDocument(data: PaneWorldData, worldId: string) {
   return { document, spaceId: 'exterior' }
 }
 
+function guestWorldReadModel(snapshot: WorldSnapshot): WorldReadModel {
+  const timelineId = snapshot.currentTimelineId
+  return {
+    scope: {
+      source: 'account',
+      worldId: snapshot.world.id,
+      timelineId,
+      sceneId: MIST_MANOR_SCENE.id,
+      sceneVersion: MIST_MANOR_SCENE.version,
+    },
+    worldName: snapshot.world.name,
+    simNow: snapshot.simNow,
+    timeZone: snapshot.timeZone ?? snapshot.world.timeZone ?? 'UTC',
+    stateVersion: snapshot.stateVersion,
+    locations: snapshot.world.locations.map(location => ({ name: location.name, description: location.description })),
+    residents: snapshot.locationBoard.flatMap(location => location.persons.map(person => ({
+      personId: person.id,
+      name: person.name,
+      locationName: location.location,
+      activity: person.activity || null,
+    }))),
+  }
+}
+
 /** Creates the per-pane API/session and renderer factories for the approved workspace. */
 export function createPresentationRuntime(mode: PresentationAccessMode): {
   loadSession: PaneSessionLoader
@@ -105,6 +130,15 @@ export function createPresentationRuntime(mode: PresentationAccessMode): {
       }
     }),
     native2d: createNative2dPresentationAdapter(async (context, signal) => {
+      if (mode === 'guest') {
+        const { snapshot } = await readPaneWorld(mode, context, signal)
+        const world = guestWorldReadModel(snapshot)
+        const layout = createInitialLayout(MIST_MANOR_SCENE, world.scope)
+        return {
+          scene: MIST_MANOR_SCENE,
+          presentation: buildPresentation(world, MIST_MANOR_SCENE, layout, MIST_MANOR_SCENE.defaultSpaceId),
+        }
+      }
       const source = createWorldSource({
         kind: mode === 'account' ? 'account' : 'public',
         worldId: context.worldId,
