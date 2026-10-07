@@ -14,7 +14,7 @@ jobs:
     env:
       PHASE2_API_TARGET: http://127.0.0.1:18891
       PHASE2_PREVIEW_URL: http://127.0.0.1:15175
-      PHASE2_D1_PERSIST: ${{ runner.temp }}/phase2-release-d1
+      PHASE2_D1_PERSIST: /tmp/phase2-release-d1-${{ github.run_id }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
