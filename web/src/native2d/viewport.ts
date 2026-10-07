@@ -55,6 +55,8 @@ function includeRect(bounds: ProjectedBounds, x: number, y: number, width: numbe
 export interface Native2dViewportOptions {
   readonly signal?: AbortSignal
   readonly onEvent: (event: ViewportEvent) => void
+  readonly initialCamera?: Camera
+  readonly onCameraChange?: (camera: Camera) => void
   readonly onDiagnostics?: (value: Native2dViewportDiagnostics) => void
 }
 
@@ -519,6 +521,7 @@ export async function createNative2dViewport(
     onEvent: options.onEvent,
     onPan: (delta) => {
       state.camera = clampCamera({ zoom: state.camera.zoom, pan: { x: state.camera.pan.x + delta.x, y: state.camera.pan.y + delta.y } })
+      options.onCameraChange?.(state.camera)
       requestRender()
     },
     onZoom: (factor, center) => {
@@ -526,11 +529,12 @@ export async function createNative2dViewport(
       const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * factor))
       const worldPoint = { x: (center.x - state.camera.pan.x) / oldZoom, y: (center.y - state.camera.pan.y) / oldZoom }
       state.camera = clampCamera({ zoom, pan: { x: center.x - worldPoint.x * zoom, y: center.y - worldPoint.y * zoom } })
+      options.onCameraChange?.(state.camera)
       requestRender()
     },
   })
   input.attach()
-  state.camera = fitOverview()
+  state.camera = options.initialCamera ? clampCamera(options.initialCamera) : fitOverview()
   applyFollowCamera()
   applyCameraState()
   requestRender()
@@ -549,6 +553,13 @@ export async function createNative2dViewport(
   }
 
   return {
+    getCamera(): Camera { return { pan: { ...state.camera.pan }, zoom: state.camera.zoom } },
+    setCamera(value: Camera): void {
+      state.camera = clampCamera(value)
+      applyCameraState()
+      requestRender()
+      options.onCameraChange?.(state.camera)
+    },
     setPresentation(value: ScenePresentation): void {
       state.presentation = value
       state.camera = fitOverview()

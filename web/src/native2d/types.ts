@@ -350,6 +350,8 @@ export interface LayoutRepository {
 }
 
 export interface Native2dViewport {
+  getCamera(): Camera
+  setCamera(value: Camera): void
   setPresentation(value: ScenePresentation): void
   setSelection(value: Selection | null): void
   setFollow(personId: string | null): void
