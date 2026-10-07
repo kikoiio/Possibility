@@ -24,6 +24,9 @@ type ScenarioResult = {
   id: string
   apiStatus: number
   valid: boolean
+  worldReady: boolean
+  validDocument: boolean
+  forbiddenAbsent: boolean
   errorKind?: string
   issueCodes: string[]
   semanticGroups: Record<string, boolean>
@@ -117,6 +120,9 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
     let officialDraft: Draft | undefined
     let singleSaved = false
     let repairSaved = false
+    let repairDraftStatus: number | null = null
+    let repairDraftKind: string | null = null
+    let repairDraftIssueCodes: string[] = []
     let repairProviderRequests = 0
     let repairLedgerRowCount = -1
     let reconciled = false
@@ -229,6 +235,7 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
       const afterLedger = await ledgerRows()
       scenarios.push({
         id: scenario.id, apiStatus: response.status, valid,
+        worldReady, validDocument, forbiddenAbsent,
         ...(typeof payload.kind === 'string' ? { errorKind: payload.kind } : {}),
         issueCodes: Array.isArray(payload.issues) ? payload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : []) : [],
         semanticGroups, locationCount: hasWorld ? world.locations.length : 0,
@@ -318,8 +325,14 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
         requestId: `${runId}-original-world-repair`,
         prompt: '沿用原来的主楼、温室、庭院、书房和湖畔，补齐入口之间可步行的石板路。',
       })
+      repairDraftStatus = repairDraftResponse.status
+      const repairPayload = await repairDraftResponse.clone().json().catch(() => ({})) as Record<string, unknown>
+      repairDraftKind = typeof repairPayload.kind === 'string' ? repairPayload.kind : null
+      repairDraftIssueCodes = Array.isArray(repairPayload.issues)
+        ? repairPayload.issues.flatMap(issue => issue && typeof issue === 'object' && 'code' in issue && typeof issue.code === 'string' ? [issue.code] : [])
+        : []
       if (repairDraftResponse.ok) {
-        const repairDraft = await repairDraftResponse.json() as { document?: unknown; worldId?: string }
+        const repairDraft = repairPayload as { document?: unknown; worldId?: string }
         if (repairDraft.worldId !== repairWorldId || !isSerializedVoxelDocument(repairDraft.document)) {
           failures.push('repair_draft_world_or_document_mismatch')
         } else {
@@ -401,7 +414,8 @@ describe('Phase 1 G0 real-provider API acceptance (manual cloud workflow only)',
           oneMillionContextWorstCaseFor25RequestsUsd: Number((25 * MAX_REQUEST_COST_USD).toFixed(6)) },
         scenarios: scenarios.map(result => ({ ...result, ...(result.id === 'official-example' && singleWorldId ? { savedWorldIdHash: sha(singleWorldId) } : {}) })),
         singleSpace: { saved: singleSaved, worldIdHash: singleWorldId ? sha(singleWorldId) : null, timelineIdHash: singleTimelineId ? sha(singleTimelineId) : null, source: 'official-example' },
-        repair: { saved: repairSaved, providerRequests: repairProviderRequests, llmCallLogRows: repairLedgerRowCount,
+        repair: { saved: repairSaved, draftStatus: repairDraftStatus, draftKind: repairDraftKind, draftIssueCodes: repairDraftIssueCodes,
+          providerRequests: repairProviderRequests, llmCallLogRows: repairLedgerRowCount,
           originalWorldIdHash: sha(repairWorldId), originalWorldName: repairWorldName },
         requests: {
           totalRawProviderRequests: providerCalls.length, blockedAttempts: blockedAttempts.length,
