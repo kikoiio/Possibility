@@ -149,9 +149,14 @@ jobs:
           chmod 600 "$RUNNER_TEMP/phase2-engine-secret"
           (
             while true; do
-              curl --silent --show-error --max-time 15 --request POST \
+              curl_exit=0
+              http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+                --max-time 15 --request POST \
                 --header "x-engine-secret: $(cat "$RUNNER_TEMP/phase2-engine-secret")" \
-                "$DEPLOYMENT_API_URL/api/engine/tick" >> "$RUNNER_TEMP/phase2-cloudflare-ticks.jsonl" 2>&1 || true
+                "$DEPLOYMENT_API_URL/api/engine/tick" 2>> "$RUNNER_TEMP/phase2-cloudflare-tick-errors.log")" || curl_exit=$?
+              printf '{"at":"%s","curlExit":%s,"httpStatus":"%s"}\n' \
+                "$(date -u +%FT%TZ)" "$curl_exit" "$http_status" \
+                >> "$RUNNER_TEMP/phase2-cloudflare-ticks.jsonl"
               sleep 5
             done
           ) &
@@ -276,6 +281,8 @@ jobs:
           name: phase2-cloudflare-temporary-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/phase2-cloudflare-deployment-journey.json
+            ${{ runner.temp }}/phase2-cloudflare-ticks.jsonl
+            ${{ runner.temp }}/phase2-cloudflare-tick-errors.log
             ${{ runner.temp }}/phase2-cloudflare-archive-readonly.json
             ${{ runner.temp }}/phase2-cloudflare-cleanup.json
             ${{ runner.temp }}/phase2-cloudflare-post-delete.json
