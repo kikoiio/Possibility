@@ -108,6 +108,8 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
     // Older generation responses use add/set as single-cell block edits.
     // Normalize only these unambiguous aliases; object operations stay strict.
     if (op && (op.kind === 'add' || op.kind === 'set')) op.kind = 'set-block'
+    // Some older generators express a cuboid under set-block/from/to.
+    if (op?.kind === 'set-block' && isCoord(op.from) && isCoord(op.to)) op.kind = 'fill'
     // Alternate block-placement shorthand emitted by several compatible models.
     if (op && op.kind === 'place-block' && typeof op.block === 'string' && isCoord(op.anchor)
       && !!op.size && typeof op.size === 'object') {
@@ -181,6 +183,19 @@ export function parseEditOperations(content: string, assets?: AssetManifest): Ed
       if ([region.x1, y1, region.z1, region.x2, y2, region.z2].every(Number.isInteger)) {
         op.from = { x: region.x1, y: y1, z: region.z1 }
         op.to = { x: region.x2, y: y2, z: region.z2 }
+      }
+    }
+    if (op?.kind === 'fill' && (!op.from || !op.to) && op.box && typeof op.box === 'object') {
+      const box = op.box as Record<string, unknown>
+      const { x, y, z } = box
+      const width = box.w ?? box.width
+      const height = box.h ?? box.height ?? 1
+      const depth = box.d ?? box.depth
+      if ([x, y, z].every(Number.isInteger)
+        && [width, height, depth].every(n => Number.isInteger(n) && Number(n) > 0 && Number(n) <= 256)
+        && Number(width) * Number(height) * Number(depth) <= 4096) {
+        op.from = { x, y, z }
+        op.to = { x: Number(x) + Number(width) - 1, y: Number(y) + Number(height) - 1, z: Number(z) + Number(depth) - 1 }
       }
     }
     const expand = (operations: EditOperation[]): EditOperation[] => {

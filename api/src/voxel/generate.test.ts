@@ -489,6 +489,8 @@ describe('generateWorld semantic building carriers', () => {
       { type: 'set', block: 'stone', x: 3, y: 1, z: 4 },
       { op: 'place-object', objectId: 'single-cell-road', block: 'cobble', x: 4, y: 0, z: 6 },
       { kind: 'fill', block: 'cobble', region: { x1: 0, y: 0, z1: 8, x2: 3, z2: 8 } },
+      { kind: 'fill', block: 'grass', box: { x: 4, y: 0, z: 8, w: 2, h: 1, d: 3 } },
+      { kind: 'set-block', block: 'wood-log', from: { x: 4, y: 2, z: 6 }, to: { x: 4, y: 5, z: 6 } },
       { kind: 'place-object', objectId: 'road', block: 'cobble', x: 5, y: 0, z: 6, xLength: 8, zLength: 1 },
       { kind: 'place-object', id: 'legacy-station', objectType: 'manor-main-house', at: { x: 2, y: 1, z: 10 }, rotation: 0 },
       { kind: 'place-object', objectId: 'cafe-building', block: 'stone', anchor: { x: 8, y: 1, z: 8 }, geometry: { type: 'cube', sx: 3, sy: 2, sz: 3 } },
@@ -497,6 +499,8 @@ describe('generateWorld semantic building carriers', () => {
       { kind: 'set-block', at: { x: 3, y: 1, z: 4 }, block: 'stone' },
       { kind: 'set-block', at: { x: 4, y: 0, z: 6 }, block: 'cobble' },
       { kind: 'fill', from: { x: 0, y: 0, z: 8 }, to: { x: 3, y: 0, z: 8 }, block: 'cobble' },
+      { kind: 'fill', from: { x: 4, y: 0, z: 8 }, to: { x: 5, y: 0, z: 10 }, block: 'grass' },
+      { kind: 'fill', from: { x: 4, y: 2, z: 6 }, to: { x: 4, y: 5, z: 6 }, block: 'wood-log' },
       { kind: 'fill', from: { x: 5, y: 0, z: 6 }, to: { x: 12, y: 0, z: 6 }, block: 'cobble' },
       { kind: 'place-object', objectType: 'manor-main-house', objectId: 'legacy-station', anchor: { x: 2, y: 1, z: 10 }, rotation: 0 },
       { kind: 'fill', from: { x: 8, y: 1, z: 8 }, to: { x: 10, y: 2, z: 10 }, block: 'stone' },
@@ -504,6 +508,9 @@ describe('generateWorld semantic building carriers', () => {
     expect(() => parseEditOperations(JSON.stringify({ ops: [
       { kind: 'place-object', block: 'stone', anchor: { x: 0, y: 1, z: 0 }, geometry: { sx: 64, sy: 64, sz: 64 } },
     ] }))).toThrow('place-object 需要目录 objectType/assetId')
+    expect(() => parseEditOperations(JSON.stringify({ ops: [
+      { kind: 'fill', block: 'stone', box: { x: 0, y: 0, z: 0, w: 64, h: 64, d: 64 } },
+    ] }))).toThrow('fill 需要 from/to 与 block')
   })
 
   it('converts known object templates mistakenly returned as asset placements', () => {
