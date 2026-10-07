@@ -29,4 +29,9 @@ describe('parseEditOperations model aliases', () => {
       { op: 'fill', block: 'stone', from: { x: 0, y: 0, z: 0 }, to: { x: 255, y: 63, z: 255 } },
     ] }))).toThrow('范围过大')
   })
+
+  it('bounds total voxel work across multiple individually valid fills', () => {
+    const fill = { kind: 'fill', block: 'stone', from: { x: 0, y: 0, z: 0 }, to: { x: 15, y: 0, z: 15 } }
+    expect(() => parseEditOperations(JSON.stringify({ ops: Array(257).fill(fill) }))).toThrow('编辑展开范围过大')
+  })
 })
