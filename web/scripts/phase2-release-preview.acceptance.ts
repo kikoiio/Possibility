@@ -149,9 +149,13 @@ async function main(): Promise<void> {
       })
       return
     }
-    const response = await route.fetch({ url: `${apiTarget}${url.pathname}${url.search}` })
-    records.push({ method: request.method(), path: url.pathname, status: response.status(), source: 'worker' })
-    await route.fulfill({ response })
+    try {
+      const response = await route.fetch({ url: `${apiTarget}${url.pathname}${url.search}` })
+      records.push({ method: request.method(), path: url.pathname, status: response.status(), source: 'worker' })
+      await route.fulfill({ response })
+    } catch (error) {
+      if (!page.isClosed()) throw error
+    }
   })
 
   try {
@@ -244,6 +248,7 @@ async function main(): Promise<void> {
       appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Phase 2 production preview acceptance\n\n\`\`\`json\n${report}\`\`\`\n`)
     }
   } finally {
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
     await context.close()
     await browser.close()
   }
