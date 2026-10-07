@@ -1,5 +1,7 @@
 # Possibility 阶段三交付 Plan
 
+> 2026-10-07 调度更新（用户已授权）：T05 公共契约可先实现；T06 存储、T07 URL 编解码、T10 隔离 fixture 在契约提交后可提前并行开发。上述独立模块不得接入页面、调用真实世界 API 或挂载 renderer。T08/T09、会话和工作区集成仍受 G0 约束；重型验证优先使用已授权 GitHub Actions 的独立 runner。
+
 ## 架构概览
 
 阶段三在 React/Vite 世界工作区中建立按 pane 隔离的比较模型。单视口只装载一个 pane；分屏时左右各自持有 `worldId`、`timelineId`、实际访问身份、capabilities、世界时间、表现类型和加载状态。两侧可独立选择 2D 或 3D，支持 2D/2D、3D/3D、2D/3D 和 3D/2D，也允许同一世界的两条时间线或当前身份可访问的两个不同世界。

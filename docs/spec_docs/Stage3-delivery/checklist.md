@@ -6,7 +6,7 @@
 
 - [ ] 阶段一完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和其引用的 checklist/运行证据，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
 - [ ] 阶段二完整旅程的每个出口都有对应验收记录，且逐项标为通过、未通过或未核验（验证：对照 `DEVELOPMENT_ARRANGEMENT.md` 和实际结果，在 `evidence/baseline.md` 记录来源；未核验项不得计作通过）。
-- [ ] 只有阶段一、二出口全部有正面证据时，Orca 才派发依赖性集成任务（验证：核对 G0 结论、Task/Dispatch 时间和证据；若未通过或未核验，确认 T05 及后续集成任务未派发，且 blocker 已记录）。
+- [ ] 只有阶段一、二出口全部有正面证据时，Orca 才派发依赖性集成任务（验证：核对 G0 结论、Task/Dispatch 时间和证据；2026-10-07 用户授权的 T05/T06/T07/T10 独立实现可提前，G0 未通过时确认 renderer、会话和页面集成任务未派发，且 blocker 已记录）。
 - [ ] 每个并行开发任务有独立的 `phase3` 子 worktree、负责人、依赖、文件边界和验证结果（验证：核对 Orca Run/Task/Dispatch 与 worktree 分支基线；确认已完成改动汇入 `phase3`，且 `main` 的未提交改动未被复制或覆盖）。
 
 ## 实现行为

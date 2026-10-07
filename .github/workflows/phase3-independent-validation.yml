@@ -1,0 +1,51 @@
+name: Phase 3 independent modules
+
+on:
+  push:
+    branches: [phase3]
+    paths:
+      - .github/workflows/phase3-independent-validation.yml
+      - web/src/components/world/presentation/**
+      - web/src/lib/presentation-state*
+      - web/e2e/presentation.fixtures.ts
+      - web/e2e/presentation-fixtures.spec.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase3-independent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  independent-modules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build web application and check types
+        run: npm --workspace web run build
+      - name: Verify available independent modules
+        shell: bash
+        run: |
+          tests=()
+          for candidate in src/lib/presentation-state.test.ts src/components/world/presentation/presentation-route.test.ts; do
+            if [[ -f "web/$candidate" ]]; then tests+=("$candidate"); fi
+          done
+          if (( ${#tests[@]} > 0 )); then
+            npm --workspace web test -- --maxWorkers=1 "${tests[@]}"
+          fi
+      - name: Discover isolated comparison fixtures
+        shell: bash
+        working-directory: web
+        run: |
+          if [[ -f e2e/presentation-fixtures.spec.ts ]]; then
+            npx playwright test --list e2e/presentation-fixtures.spec.ts
+          fi
