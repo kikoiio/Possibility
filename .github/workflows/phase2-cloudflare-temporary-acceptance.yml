@@ -88,6 +88,9 @@ jobs:
 
           [vars]
           ENVIRONMENT = "phase2-acceptance"
+          LLM_BASE_URL = "https://phase2-provider-disabled.invalid/v1"
+          LLM_API_KEY = "phase2-acceptance-no-provider"
+          LLM_MODEL = "phase2-acceptance-no-provider"
           DIRECTOR_LLM = "0"
           PHASE2_ACCEPTANCE_RUN_ID = "$GITHUB_RUN_ID"
           PHASE2_ACCEPTANCE_RUN_ATTEMPT = "$GITHUB_RUN_ATTEMPT"
