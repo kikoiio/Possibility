@@ -340,7 +340,7 @@ export function GuestWorldMap({
         {switchTarget && actionError && <p role="status" className="w-full rounded-lg bg-white/95 p-2 text-xs text-red-700">{actionError}<button onClick={() => void switchTimeline(switchTarget)} className="ml-1 underline">重试切换</button></p>}
         {liveSnapshot.timelines.length > 1 && <p className="w-full rounded-lg bg-sheet/85 p-2 text-[10px] text-sage-600">当前为{timelineDisplayName(liveSnapshot.timelines.find(t => t.id === liveSnapshot.currentTimelineId) ?? { parentTimelineId: null })}；时间和居民数量属于各自时间线，切换后可能变化，未必处于同一时刻。场景几何和历史属于整个世界；切换时间线或恢复场景历史不会回滚各自时间线的生活记录。</p>}
       </div>
-      <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-20 flex -translate-x-1/2 rounded-full border border-white/40 bg-sheet-dark p-1 text-[11px] text-white shadow-md backdrop-blur-md sm:top-4">
+      <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-52 flex -translate-x-1/2 rounded-full border border-white/40 bg-sheet-dark p-1 text-[11px] text-white shadow-md backdrop-blur-md sm:top-48">
         {([['observe', '观察'], ['life', '在场'], ['possibility', '可能']] as const).map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => setMapMode(value)} className={`rounded-full px-3 py-1.5 ${mode === value ? 'bg-white text-sage-800' : 'text-white/80'}`}>{label}</button>)}
       </nav>
       {(voxelObject || locationName || person) && <MapSelectionCard
