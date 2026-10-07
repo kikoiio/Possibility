@@ -9,7 +9,7 @@
 | AC1 | 部分通过 | [run 37616697664](https://github.com/kikoiio/Possibility/actions/runs/37616697664) 覆盖单世界切换、同世界四种组合与联动、跨世界四种组合与相机禁用、左右 pane 独立失败重试。身份来自 fixtures；未覆盖真实账号授权及所有实际身份/时间断言。 |
 | AC2 | 未验证 | E2E 验证 3D↔2D 切换保留 timeline；没有完成刷新后的浏览器偏好与按 world/timeline/presentation 相机恢复，以及损坏存储/adapter 失败退路的全旅程验证。 |
 | AC3 | 通过 | 上游阶段一和阶段二出口已分别有正面证据；G0 结果与 gate 放行记录见 [baseline.md](baseline.md)。 |
-| AC4 | 部分通过 | 桌面 Chromium 8/8 通过；390×844 与 528×720 使用桌面 Chromium 视口模拟。真实触屏、慢网/离线、owner/guest/readonly 方向组合和完整释放循环未验证。 |
+| AC4 | 部分通过 | 桌面 Chromium 8/8、Pixel 7 mobile-chromium 设备仿真触控 1/1 通过；包括 390×844/528×720、左右 pane 重试、身份/时间标签与 renderer 清理。慢网/离线、真实账号的 owner/guest/readonly 镜像组合和完整生命周期循环未验证。 |
 | AC5 | 未验证 | 没有内部人员配对任务、错误/耗时/回访的实际记录。没有开展公开投票或评估。 |
 | AC6 | 未验证 | 集成提交已在 `phase3`，但 Orca 当前 Run 仍有 pending Tasks；worker 记录存在 stale/unverifiable terminal。未能证实所有 task/worker 均 settled，故不标通过。 |
 | AC7 | 部分通过 | Browser Actions 在重型操作前记录 MemAvailable 14 GiB、无 swap 使用、后续 `vmstat si/so=0` 和 memory PSI 0；每批单 worker。cgroup `memory.max` 没有有效输出，且不能由该单次快照推断其他时段。 |
@@ -26,13 +26,13 @@
 | [phase1-g0-checkpoint.md](phase1-g0-checkpoint.md) | G0 阶段一旅程门槛证据。 |
 | [phase2-acceptance-2026-10-07.md](phase2-acceptance-2026-10-07.md) | 阶段二连续旅程与远端部署证据边界。 |
 | [GitHub Actions 37614066902](https://github.com/kikoiio/Possibility/actions/runs/37614066902) | 较早集成提交的 Web build/types、119 个定向 Vitest、2 个 fixture tests。 |
-| [GitHub Actions 37616697664](https://github.com/kikoiio/Possibility/actions/runs/37616697664) | 当前实现提交的浏览器验收 8/8 与性能/renderer registry 观测；artifact `phase3-presentation-37616697664` 保留 14 天。 |
-| [GitHub Actions 37615859235](https://github.com/kikoiio/Possibility/actions/runs/37615859235) | 当前集成提交 `19a953b` 的 build/types、7 个 Vitest 文件 150 tests、2 个 fixture tests 均通过。 |
+| [GitHub Actions 37618353908](https://github.com/kikoiio/Possibility/actions/runs/37618353908) | 当前实现提交的浏览器验收：桌面 8/8、Pixel 7 mobile-chromium 1/1，以及性能/renderer registry 观测；artifact `phase3-presentation-37618353908` 保留 14 天。 |
+| [GitHub Actions 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850) | 当前提交 `0bdb13a` 的 build/types、7 个 Vitest 文件 150 tests、2 个 fixture tests 均通过。 |
 
 ## 仍需完成
 
 - 无待补的 T22 build/types 或定向 Vitest 结果；run 37615859235 已验证本次扩展集。
-- 完整 AC4 矩阵：左右权限身份镜像、刷新后的相机恢复、慢网/离线、真实触屏、完整生命周期循环和混合表现性能。
+- 完整 AC4 矩阵：真实账号权限镜像、刷新后的相机恢复、慢网/离线、实体硬件触控、完整生命周期循环和混合表现性能。
 - AC5 内部测试者配对 QA 与回访记录。
 - T27 Orca Run/worker settled 状态核实。保留的 worker/worktree 未被本次清理。
 - 历史真实 provider 的最早 26 次费用尚未完整对账；不能宣称累计总费用已全部核实。
