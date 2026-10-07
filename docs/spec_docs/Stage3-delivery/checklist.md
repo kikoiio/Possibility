@@ -16,8 +16,8 @@
 | T17 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：单 pane 2D/3D 往返、query 保留、timeline/identity/simNow 不变、偏好/URL 优先和 3D 相机刷新恢复。 |
 | T20 | 通过 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：左右 pane 503、左右 403 和左右超时隔离/重试；URL 指向无权 world 仍返回 403。 |
 | T22 | 当前提交验证通过 | [run 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850)：build/types、7 个文件 150 个定向 Vitest 和 2 个 fixture tests 通过。 |
-| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443)：桌面 Chromium 13/13、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
-| T24 | 部分通过 | 单/双 2D/3D 与双向混合表现 cold readiness、关闭 pane 与 renderer registry 观测见 [qa-matrix.md](evidence/qa-matrix.md)；缺少热加载、峰值资源及有效 JS heap 差值。 |
+| T23 | 自动化子覆盖通过，完整矩阵未完成 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845)：桌面 Chromium 13/13、Pixel 7 设备仿真触控 1/1；慢网/离线、真实账号权限组合、实体设备和完整生命周期矩阵未完成。 |
+| T24 | 测量完成，部分指标未验证 | [run 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845) 覆盖单/双及双向混合冷启动、单 pane 热切换、关闭 pane 和离场 renderer 清理；峰值资源和有效 JS heap 差值不可测，详见 [qa-matrix.md](evidence/qa-matrix.md)。 |
 | T25 | 通过（用户确认） | 用户于 2026-10-07 明确要求将该项按通过处理；项目文档未附测试者身份、成绩或回访明细。 |
 | T26 | 进行中 | QA 当前结果已记录；最终 AC1–AC8 清单需在人工 QA 和完整矩阵状态明确后冻结。 |
 | T27 | 未完成 | Orca Run 仍有 pending Tasks；worker records 有 stale/unverifiable terminal，保留相关 worktree，未执行清理。 |

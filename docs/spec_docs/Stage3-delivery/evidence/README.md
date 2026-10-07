@@ -30,6 +30,7 @@
 | [GitHub Actions 37618353850](https://github.com/kikoiio/Possibility/actions/runs/37618353850) | 当前提交 `0bdb13a` 的 build/types、7 个 Vitest 文件 150 tests、2 个 fixture tests 均通过。 |
 | [GitHub Actions 37619241531](https://github.com/kikoiio/Possibility/actions/runs/37619241531) | 提交 `81d4c77` 的桌面 11/11、Pixel 7 仿真触控 1/1；包括刷新恢复、失败分类/单侧重试、双向混合 renderer 性能与 registry 观测。 |
 | [GitHub Actions 37620806443](https://github.com/kikoiio/Possibility/actions/runs/37620806443) | 提交 `50ebac8` 的最新桌面 13/13、Pixel 7 仿真触控 1/1。覆盖左右 403/超时和单侧重试、query/identity/simNow 保持、偏好/URL 优先及 3D 相机刷新恢复；Artifact `phase3-presentation-37620806443` 保留 14 天。 |
+| [GitHub Actions 37622734845](https://github.com/kikoiio/Possibility/actions/runs/37622734845) | 提交 `409eccf` 的桌面 13/13、Pixel 7 仿真触控 1/1；记录冷启动、热切换、pane 关闭与离场 renderer 释放。Artifact `phase3-presentation-37622734845` 保留 14 天。 |
 
 ## 仍需完成
 
