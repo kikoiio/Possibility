@@ -189,15 +189,20 @@ function materializeAssetEdit(
   const target = envelope.spaces.find((space) => space.spaceId === spaceId)
   if (!target) return null
   try {
-    const result = applyEdits(clone(target.document), [operation])
+    const source = operation.kind === 'move-asset' || operation.kind === 'remove-asset'
+      ? target.document
+      : clone(target.document)
+    const result = applyEdits(source, [operation])
     return {
-      original: clone(envelope.original) as StoredSceneDocument,
+      // Candidate validation is read-only; preserve the large untouched envelope
+      // instead of deep-cloning it for every nearby repair position.
+      original: envelope.original,
       spaces: envelope.spaces.map((space) => ({
         spaceId: space.spaceId,
-        document: space.spaceId === spaceId ? result.document : clone(space.document),
+        document: space.spaceId === spaceId ? result.document : space.document,
       })),
       format: envelope.format,
-      compatibilityChanges: clone(envelope.compatibilityChanges),
+      compatibilityChanges: envelope.compatibilityChanges,
     }
   } catch {
     return null
