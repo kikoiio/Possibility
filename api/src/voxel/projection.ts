@@ -129,7 +129,7 @@ export async function projectVoxelEvents(
   },
 ): Promise<VoxelProjectionRun | null> {
   const world = opts.world
-  const stored = await readCurrentScene(db, world.id).catch(() => null)
+  const stored = await readCurrentScene(db, world.id, { worldId: world.id, timelineId: opts.timeline.id, representation: 'voxel' }).catch(() => null)
   const doc: unknown = stored?.document
   if (!isVoxelDoc(doc)) return null
 

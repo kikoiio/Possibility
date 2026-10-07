@@ -10,7 +10,7 @@ export type StoredSceneDocument = SceneDocument
 /** The scene being inspected. World identity is supplied by service-layer inputs. */
 export type SceneTarget =
   | { kind: 'current' }
-  | { kind: 'history'; version: number }
+  | { kind: 'history'; version: number; targetRevisionId?: string }
 
 export type CompatibilityPurpose = 'repair-current' | 'restore-history'
 
@@ -38,6 +38,13 @@ export interface SceneSourceRef {
   worldId: string
   version: number
   contentHash: string
+  /** X1 scene identity. Absent only for legacy world-scoped A1 records. */
+  timelineId?: string
+  representation?: string
+  /** Optional selected space identity for space-specific inspection/repair. */
+  spaceId?: string
+  /** Stable revision identity, including when the visible source is an ancestor. */
+  targetRevisionId?: string
 }
 
 export interface SceneValidationBasis {

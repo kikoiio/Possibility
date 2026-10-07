@@ -2,7 +2,8 @@ import { and, eq, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { SceneBindingContext, SceneSourceRef } from '@possibility/voxel-contract'
 import type { Db } from '../../db/client'
-import { demoBaselines, sceneValidationPolicy, worldSceneRevisions, worldScenes } from '../../db/schema'
+import { demoBaselines, sceneValidationPolicy, timelineSceneRevisions, worldSceneRevisions, worldScenes } from '../../db/schema'
+import { readCurrentTimelineScene, type TimelineSceneScope } from '../repository'
 import { libraryManifest } from '../../voxel/library-manifest'
 import { loadWorldSceneBindings } from './context'
 import { stableJson } from './stable-json'
@@ -149,11 +150,14 @@ export async function readSceneWriteBaseline(db: Db, worldId: string): Promise<S
 }
 
 /** Loads the authoritative facts a write proof is built from. Never reads request payloads. */
-export async function loadSceneWriteProofFacts(db: Db, worldId: string): Promise<SceneWriteProofFacts> {
-  const bindings = await loadWorldSceneBindings(db, worldId)
+export async function loadSceneWriteProofFacts(db: Db, worldId: string, scope?: TimelineSceneScope): Promise<SceneWriteProofFacts> {
+  const bindings = await loadWorldSceneBindings(db, worldId, scope)
   const pointer = await db.select().from(worldScenes).where(eq(worldScenes.worldId, worldId)).get()
   let current: SceneWriteProofFacts['current'] = null
-  if (pointer) {
+  if (scope) {
+    const revision = await readCurrentTimelineScene(db, scope)
+    current = revision ? { version: revision.version, contentHash: revision.contentHash } : null
+  } else if (pointer) {
     const revision = await db.select().from(worldSceneRevisions).where(and(
       eq(worldSceneRevisions.worldId, worldId), eq(worldSceneRevisions.version, pointer.currentVersion),
     )).get()
@@ -236,6 +240,7 @@ export function buildCloneCopyWriteProof(
 
 export interface BuildCommitWriteProofInput {
   worldId: string
+  scope?: TimelineSceneScope
   candidate: { version: number; contentHash: string }
   compatibility?: SceneWriteProofRequest
   issuedAt?: string
@@ -243,9 +248,12 @@ export interface BuildCommitWriteProofInput {
 
 /** Proof assembled for one real commit: 'initial' when the world has no scene yet, else 'valid'. */
 export async function buildCommitWriteProof(db: Db, input: BuildCommitWriteProofInput): Promise<SceneWriteProof> {
-  const facts = await loadSceneWriteProofFacts(db, input.worldId)
+  const facts = await loadSceneWriteProofFacts(db, input.worldId, input.scope)
   if (facts.current) {
-    return buildValidWriteProof(facts, { worldId: input.worldId, candidate: input.candidate, request: input.compatibility ?? null, ...(input.issuedAt ? { issuedAt: input.issuedAt } : {}) })
+    const proof = buildValidWriteProof(facts, { worldId: input.worldId, candidate: input.candidate, request: input.compatibility ?? null, ...(input.issuedAt ? { issuedAt: input.issuedAt } : {}) })
+    if (proof.mode === 'valid' && input.scope) proof.source = { ...proof.source,
+      timelineId: input.scope.timelineId, representation: input.scope.representation }
+    return proof
   }
   return buildInitialWriteProof(facts, { candidate: input.candidate, request: input.compatibility ?? null, ...(input.issuedAt ? { issuedAt: input.issuedAt } : {}) })
 }
@@ -320,4 +328,41 @@ export function buildCommitGuardStatement(db: Db, input: CommitGuardInput) {
   return db.update(worldSceneRevisions).set({
     commitGuard: sql`CASE WHEN ${condition} THEN 1 ELSE 0 END`,
   }).where(and(eq(worldSceneRevisions.id, input.revisionId), eq(worldSceneRevisions.version, input.version)))
+}
+
+/** A scoped postcondition aborts the entire D1 batch when authority or its
+ * validation basis changes. json() rejects the invalid branch deliberately;
+ * no mutable world-level pointer participates in a timeline commit. */
+export function buildTimelineCommitGuardStatement(db: Db, input: {
+  scope: TimelineSceneScope
+  revisionId: string
+  version: number
+  requestId: string
+  proof: SceneWriteProof
+  authority?: SceneWriteAuthority
+  compatibility?: SceneWriteProofRequest
+  compatibilityCompletion?: { actorKey: string }
+}) {
+  const { scope, proof } = input
+  const conditions: SQL[] = [
+    sql`EXISTS (SELECT 1 FROM timelines WHERE id = ${scope.timelineId} AND world_id = ${scope.worldId} AND status = 'active')`,
+    sql`EXISTS (SELECT 1 FROM timeline_scene_heads WHERE world_id = ${scope.worldId} AND timeline_id = ${scope.timelineId} AND representation = ${scope.representation} AND current_revision_id = ${input.revisionId} AND current_version = ${input.version})`,
+    sql`NOT EXISTS (SELECT 1 FROM scene_validation_policy WHERE id = 'active' AND (rules_version <> ${proof.policy.rulesVersion} OR asset_manifest_hash <> ${proof.policy.assetManifestHash} OR template_catalog_hash <> ${proof.policy.templateCatalogHash}))`,
+    sql`(SELECT COUNT(*) FROM world_persons WHERE world_id = ${scope.worldId}) = ${proof.bindings.personIds.length}`,
+    sql`NOT EXISTS (SELECT 1 FROM json_each(${JSON.stringify(proof.bindings.personIds)}) AS p WHERE NOT EXISTS (SELECT 1 FROM world_persons WHERE world_id = ${scope.worldId} AND person_id = p.value))`,
+    sql`(SELECT COUNT(*) FROM json_each((SELECT locations_json FROM worlds WHERE id = ${scope.worldId}))) = ${proof.bindings.locations.length}`,
+    sql`NOT EXISTS (SELECT 1 FROM json_each((SELECT locations_json FROM worlds WHERE id = ${scope.worldId})) AS l WHERE NOT EXISTS (SELECT 1 FROM json_each(${JSON.stringify(proof.bindings.locations)}) AS p WHERE p.value = json_extract(l.value, '$.name')))`,
+  ]
+  if (proof.baseline) conditions.push(sql`EXISTS (SELECT 1 FROM demo_baselines WHERE id = ${proof.baseline.id} AND world_id = ${scope.worldId} AND status = ${proof.baseline.status} AND scene_version = ${proof.baseline.sceneVersion} AND content_hash = ${proof.baseline.contentHash})`)
+  else conditions.push(sql`NOT EXISTS (SELECT 1 FROM demo_baselines WHERE world_id = ${scope.worldId})`)
+  if (input.authority?.ownerUserId) conditions.push(sql`EXISTS (SELECT 1 FROM worlds WHERE id = ${scope.worldId} AND user_id = ${input.authority.ownerUserId})`)
+  if (input.authority?.sessionToken) conditions.push(sql`EXISTS (SELECT 1 FROM sessions WHERE token = ${input.authority.sessionToken} AND julianday(expires_at) > julianday('now') ${input.authority.ownerUserId ? sql`AND user_id = ${input.authority.ownerUserId}` : sql``})`)
+  if (input.authority?.adminUserId) conditions.push(sql`EXISTS (SELECT 1 FROM users WHERE id = ${input.authority.adminUserId} AND role = 'admin')`)
+  if (input.compatibility && input.compatibilityCompletion) {
+    const request = input.compatibility
+    conditions.push(sql`EXISTS (SELECT 1 FROM scene_compatibility_requests WHERE world_id = ${scope.worldId} AND request_id = ${input.requestId} AND draft_id = ${request.draftId} AND actor_key = ${input.compatibilityCompletion.actorKey} AND state = 'submitting' AND attempt = ${request.attempt} AND lease_token = ${request.leaseToken} AND julianday(lease_until) > julianday('now'))`)
+    conditions.push(sql`EXISTS (SELECT 1 FROM scene_compatibility_drafts WHERE id = ${request.draftId} AND world_id = ${scope.worldId} AND actor_key = ${input.compatibilityCompletion.actorKey} AND status = 'ready')`)
+  }
+  return db.update(timelineSceneRevisions).set({ validationJson: sql`CASE WHEN ${sql.join(conditions.map(condition => sql`(${condition})`), sql` AND `)} THEN validation_json ELSE json('timeline-scene-commit-guard-failed') END` })
+    .where(and(eq(timelineSceneRevisions.id, input.revisionId), eq(timelineSceneRevisions.worldId, scope.worldId), eq(timelineSceneRevisions.timelineId, scope.timelineId), eq(timelineSceneRevisions.representation, scope.representation)))
 }

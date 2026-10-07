@@ -42,7 +42,10 @@ import {
   SceneCompatibilityLeaseLost,
   type CreateSceneCompatibilityDraftRecord,
 } from './repository'
-import { commitScene, readCurrentScene, readSceneVersion } from '../repository'
+import {
+  commitScene, readCurrentScene, readCurrentTimelineScene, readSceneVersion, readTimelineSceneVersion,
+  listTimelineSceneHistory,
+} from '../repository'
 import { loadSceneValidationContext, type SceneValidationAccess } from './context'
 import { stableJson } from './stable-json'
 import type { SceneWriteAuthority } from './write-proof'
@@ -98,13 +101,40 @@ function controlWithDefaults(control: Partial<SceneWorkControl> | undefined): Sc
   }
 }
 
-function sourceFor(worldId: string, stored: { version: number; contentHash: string }): SceneSourceRef {
-  return { worldId, version: stored.version, contentHash: stored.contentHash }
+function sourceFor(
+  worldId: string,
+  stored: { version: number; contentHash: string; id?: string },
+  access: SceneValidationAccess,
+  spaceId = access.spaceId,
+): SceneSourceRef {
+  return {
+    worldId, version: stored.version, contentHash: stored.contentHash,
+    ...(access.scope ? { timelineId: access.scope.timelineId, representation: access.scope.representation } : {}),
+    ...(spaceId ? { spaceId } : {}),
+    ...(('id' in stored && stored.id) ? { targetRevisionId: stored.id } : {}),
+  }
+}
+
+function assertAccessScope(worldId: string, access: SceneValidationAccess): void {
+  if (access.scope && access.scope.worldId !== worldId) {
+    throw new SceneCompatibilityServiceError('场景作用域不属于当前世界', 'world-unavailable', 404)
+  }
+}
+
+async function readCurrent(db: Db, worldId: string, access: SceneValidationAccess) {
+  assertAccessScope(worldId, access)
+  return access.scope ? readCurrentTimelineScene(db, access.scope) : readCurrentScene(db, worldId)
 }
 
 function failure(status: 'missing' | 'corrupt' | 'unsupported', message: string): SceneInspectionResult {
   const code = status === 'missing' ? 'scene-missing' : status === 'unsupported' ? 'format-unsupported' : 'scene-corrupt'
   return { status, error: { code, message, action: 'recheck' } }
+}
+
+function containsSelectedSpace(document: Parameters<typeof decodeSceneCompatibility>[0], spaceId: string | undefined): boolean {
+  if (!spaceId) return true
+  const decoded = decodeSceneCompatibility(document)
+  return decoded.status === 'ready' && decoded.envelope.spaces.some(space => space.spaceId === spaceId)
 }
 
 function storedSceneCorruption(error: unknown): boolean {
@@ -138,7 +168,7 @@ async function validateRetryBasis(
     if (!draft || draft.status !== 'ready' || !draft.candidate) {
       return deny('draft-unavailable', '原修复草稿已失效，请重新检查并预览。')
     }
-    const current = await readCurrentScene(db, input.worldId)
+    const current = await readCurrent(db, input.worldId, input.access)
     if (!current || current.version !== draft.basis.expectedCurrentVersion
       || (input.expectedCurrentVersion !== undefined && current.version !== input.expectedCurrentVersion)
       || current.contentHash !== draft.basis.currentContentHash) {
@@ -178,8 +208,27 @@ function basisFor(source: SceneSourceRef, currentVersion: number, context: Scene
   }
 }
 
-async function readTarget(db: Db, worldId: string, target: SceneTarget) {
-  return target.kind === 'history' ? readSceneVersion(db, worldId, target.version) : readCurrentScene(db, worldId)
+async function readTarget(db: Db, worldId: string, target: SceneTarget, access: SceneValidationAccess) {
+  assertAccessScope(worldId, access)
+  if (!access.scope) {
+    if (target.kind === 'history' && target.targetRevisionId) return null
+    if (target.kind === 'history' && target.version === undefined) return null
+    return target.kind === 'history' ? readSceneVersion(db, worldId, target.version!) : readCurrentScene(db, worldId)
+  }
+  if (target.kind === 'current') return readCurrentTimelineScene(db, access.scope)
+  if (target.targetRevisionId) {
+    let cursor: string | null = null
+    while (true) {
+      const page = await listTimelineSceneHistory(db, access.scope, { limit: 100, cursor })
+      if (!page) return null
+      const revision = page.revisions.find(item => item.id === target.targetRevisionId)
+      if (revision) return revision.version === target.version ? revision : null
+      if (!page.hasMore || !page.nextCursor) return null
+      cursor = page.nextCursor
+    }
+  }
+  if (target.version === undefined) return null
+  return readTimelineSceneVersion(db, access.scope, target.version)
 }
 
 async function candidateHash(candidate: SceneCandidate): Promise<string> {
@@ -205,7 +254,7 @@ async function inspectSceneCompatibilityInner(
   let stored
   try {
     checkDeadline?.()
-    stored = await readTarget(db, input.worldId, target)
+    stored = await readTarget(db, input.worldId, target, input.access)
     checkDeadline?.()
   } catch (error) {
     if (storedSceneCorruption(error)) return failure('corrupt', error instanceof Error ? error.message : '场景损坏')
@@ -216,11 +265,12 @@ async function inspectSceneCompatibilityInner(
   if (decoded.status !== 'ready') {
     return failure(decoded.status, decoded.issues[0]?.summary ?? '场景无法解码')
   }
-  const source = sourceFor(input.worldId, stored)
+  if (!containsSelectedSpace(stored.document, input.access.spaceId)) return failure('missing', '请求的场景空间不存在')
+  const source = sourceFor(input.worldId, stored, input.access)
   let current
   try {
     checkDeadline?.()
-    current = await readCurrentScene(db, input.worldId)
+    current = await readCurrent(db, input.worldId, input.access)
     checkDeadline?.()
   } catch (error) {
     if (storedSceneCorruption(error)) return failure('corrupt', error instanceof Error ? error.message : '场景损坏')
@@ -242,12 +292,15 @@ async function inspectSceneCompatibilityInner(
 }
 
 export async function preflightSceneEdit(db: Db, input: ScenePreflightInput): Promise<SceneEditPreflightResult> {
-  const current = await readCurrentScene(db, input.worldId)
+  const current = await readCurrent(db, input.worldId, input.access)
   if (!current) return { status: 'incomplete', report: emptyReport('context-unavailable') }
   const materialized = materializeSceneCandidate(current.document, input.candidate)
   if (materialized.status !== 'ready') return { status: 'incomplete', report: emptyReport('context-unavailable') }
+  if (input.access.spaceId && !materialized.envelope.spaces.some(space => space.spaceId === input.access.spaceId)) {
+    return { status: 'incomplete', report: emptyReport('context-unavailable') }
+  }
   try {
-    const source = sourceFor(input.worldId, current)
+    const source = sourceFor(input.worldId, current, input.access)
     const context = await loadSceneValidationContext(db, input.worldId, source, input.access)
     const budget = sceneBudget(input.budget)
     let report = await validateSceneEnvelope(materialized.envelope, context, budget, controlWithDefaults(input.control), 'edit')
@@ -284,10 +337,13 @@ export async function validateStoredSceneCandidate(
 ): Promise<StoredCandidateValidation> {
   const decoded = decodeSceneCompatibility(input.document)
   if (decoded.status !== 'ready') return { status: 'invalid', report: emptyReport('context-unavailable') }
-  const current = await readCurrentScene(db, input.worldId)
+  if (input.access.spaceId && !decoded.envelope.spaces.some(space => space.spaceId === input.access.spaceId)) {
+    return { status: 'invalid', report: emptyReport('context-unavailable') }
+  }
+  const current = await readCurrent(db, input.worldId, input.access)
   const source: SceneSourceRef = current
-    ? sourceFor(input.worldId, current)
-    : { worldId: input.worldId, version: 0, contentHash: '' }
+    ? sourceFor(input.worldId, current, input.access)
+    : { worldId: input.worldId, version: 0, contentHash: '', ...(input.access.scope ? { timelineId: input.access.scope.timelineId, representation: input.access.scope.representation } : {}), ...(input.access.spaceId ? { spaceId: input.access.spaceId } : {}) }
   const context = await loadSceneValidationContext(db, input.worldId, source, input.access)
   const report = await validateSceneEnvelope(decoded.envelope, context, sceneBudget(input.budget), controlWithDefaults(input.control), 'edit')
   if (report.status !== 'valid') return { status: report.status, report }
@@ -324,10 +380,16 @@ function attributeExistingIssues(report: SceneCompatibilityReport, existing: Set
 }
 
 function fallbackBasis(input: CreateDraftInput): SceneValidationBasis {
+  const targetRevisionId = input.target.kind === 'history' ? input.target.targetRevisionId : undefined
   return {
     expectedCurrentVersion: input.expectedCurrentVersion,
     currentContentHash: '',
-    source: { worldId: input.worldId, version: input.expectedCurrentVersion, contentHash: '' },
+    source: {
+      worldId: input.worldId, version: input.expectedCurrentVersion, contentHash: '',
+      ...(input.access.scope ? { timelineId: input.access.scope.timelineId, representation: input.access.scope.representation } : {}),
+      ...(input.access.spaceId ? { spaceId: input.access.spaceId } : {}),
+      ...(targetRevisionId ? { targetRevisionId } : {}),
+    },
     candidateHash: null, rulesVersion: '', assetManifestHash: '', templateCatalogHash: '', bindingHash: '', contextFingerprint: '', baseline: null,
   }
 }
@@ -527,7 +589,7 @@ async function createCompatibilityDraftInner(db: Db, input: CreateDraftInput): P
     finalReport = report
     if (inspected.status === 'ready' && inspected.report.status !== 'incomplete') {
       deadline.check()
-      const stored = await readTarget(db, input.worldId, input.target)
+      const stored = await readTarget(db, input.worldId, input.target, input.access)
       deadline.check()
       if (inspected.report.status === 'valid' && input.purpose === 'restore-history' && stored) {
         // 有效历史恢复:候选逐字采用目标历史文档,零变化。
@@ -640,7 +702,7 @@ async function confirmCompatibilityInner(db: Db, input: ConfirmInput): Promise<S
     return failWith('draft-blocked', '草稿尚未通过完整校验', draft?.report ?? undefined)
   }
   // 确认前完整复验:当前版本、上下文依据、基线引用与候选本身都必须与草稿依据一致。
-  const current = await readCurrentScene(db, input.worldId)
+  const current = await readCurrent(db, input.worldId, input.access)
   if (!current) return failWith('storage-failure', '当前场景版本索引不存在')
   if (current.version !== input.expectedCurrentVersion || current.contentHash !== draft.basis.currentContentHash) {
     return failWith('scene-changed', '场景已更新，请重新检查并预览')
@@ -671,7 +733,7 @@ async function confirmCompatibilityInner(db: Db, input: ConfirmInput): Promise<S
   const audit = auditFor(draft, input.requestId)
   try {
     const committed = await commitScene(db, {
-      worldId: input.worldId, expectedVersion: input.expectedCurrentVersion, requestId: input.requestId,
+      worldId: input.worldId, ...(input.access.scope ? { scope: input.access.scope } : {}), expectedVersion: input.expectedCurrentVersion, requestId: input.requestId,
       document: draft.candidate, summary: input.targetSummary ?? `兼容场景确认 ${input.draftId}`,
       kind: draft.purpose === 'restore-history' ? 'restore' : 'compatibility-repair', allowBaseline: input.allowBaseline,
       ...(input.baselineUpdate ? { baselineUpdate: input.baselineUpdate } : {}),

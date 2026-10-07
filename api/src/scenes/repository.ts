@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import {
   decodeSceneCompatibility,
   isSerializedVoxelDocument, isSerializedVoxelSpaces,
@@ -18,6 +18,7 @@ import {
 import {
   buildCloneCopyWriteProof,
   buildCommitGuardStatement,
+  buildTimelineCommitGuardStatement,
   buildCommitWriteProof,
   buildInitialWriteProof,
   buildPendingSceneBindings,
@@ -128,7 +129,7 @@ async function hashText(text: string): Promise<string> {
 }
 
 /** 文档哈希：体素系负载对（文档 + 目标修订版本）整体哈希（version 是格式版本，恒 1） */
-async function hashStoredDocument(document: StoredSceneDocument, version: number): Promise<string> {
+export async function hashStoredDocument(document: StoredSceneDocument, version: number): Promise<string> {
   return hashText(JSON.stringify({ document, version }))
 }
 
@@ -378,9 +379,45 @@ export async function listTimelineSceneHistory(
     line = parent
   }
 
+  if (requested.cursor !== undefined && requested.cursor !== null && (typeof requested.cursor !== 'string' || !requested.cursor.trim())) {
+    throw historyError('invalid-cursor', 'scene-history-cursor-invalid')
+  }
+  if (requested.cutoffRevisionId !== undefined && !requested.cutoffRevisionId.trim()) {
+    throw historyError('invalid-cursor', 'scene-cutoff-revision-invalid')
+  }
+  if (requested.cutoffVersion !== undefined && (!Number.isSafeInteger(requested.cutoffVersion) || requested.cutoffVersion < 1)) {
+    throw historyError('invalid-cursor', 'scene-cutoff-version-invalid', { cutoffVersion: requested.cutoffVersion })
+  }
+
   const head = await readTimelineSceneHead(db, scope)
-  if (!head) return { revisions: [], items: [], nextCursor: null, hasMore: false, boundaries: [] }
-  const headRow = await db.select().from(timelineSceneRevisions).where(and(
+  if (!head) {
+    if (requested.cursor) throw historyError('invalid-cursor', 'scene-history-cursor-unknown', { cursor: requested.cursor })
+    if (requested.cutoffRevisionId) throw historyError('invalid-cursor', 'scene-cutoff-not-on-current-line', { cutoffRevisionId: requested.cutoffRevisionId })
+    if (requested.cutoffVersion !== undefined) throw historyError('invalid-cursor', 'scene-cutoff-version-not-found', { cutoffVersion: requested.cutoffVersion })
+    return { revisions: [], items: [], nextCursor: null, hasMore: false, boundaries: [] }
+  }
+  type RevisionMeta = Pick<typeof timelineSceneRevisions.$inferSelect,
+    'id' | 'worldId' | 'timelineId' | 'representation' | 'version' | 'historyParentRevisionId'>
+  const readMeta = (revisionId: string) => db.select({
+    id: timelineSceneRevisions.id,
+    worldId: timelineSceneRevisions.worldId,
+    timelineId: timelineSceneRevisions.timelineId,
+    representation: timelineSceneRevisions.representation,
+    version: timelineSceneRevisions.version,
+    historyParentRevisionId: timelineSceneRevisions.historyParentRevisionId,
+  }).from(timelineSceneRevisions).where(and(
+    eq(timelineSceneRevisions.id, revisionId),
+    eq(timelineSceneRevisions.worldId, scope.worldId),
+    eq(timelineSceneRevisions.representation, scope.representation),
+  )).get()
+  const headRow = await db.select({
+    id: timelineSceneRevisions.id,
+    worldId: timelineSceneRevisions.worldId,
+    timelineId: timelineSceneRevisions.timelineId,
+    representation: timelineSceneRevisions.representation,
+    version: timelineSceneRevisions.version,
+    historyParentRevisionId: timelineSceneRevisions.historyParentRevisionId,
+  }).from(timelineSceneRevisions).where(and(
     eq(timelineSceneRevisions.id, head.currentRevisionId),
     eq(timelineSceneRevisions.worldId, scope.worldId),
     eq(timelineSceneRevisions.timelineId, scope.timelineId),
@@ -389,11 +426,15 @@ export async function listTimelineSceneHistory(
   )).get()
   if (!headRow) throw new TimelineSceneIntegrityError('missing-head-revision', 'missing-head-revision')
 
-  const path: TimelineSceneHistoryRevision[] = []
-  const boundaries: TimelineSceneHistoryBoundary[] = []
+  // Walk only immutable parent pointers needed to seek and fill this page. The
+  // metadata query omits snapshot_json; at most limit+1 snapshots are decoded.
+  const selected: Array<{ revision: TimelineSceneRevisionRead; sourceTimelineId: string; source: 'current' | 'ancestor';
+    isForkBoundary: boolean; boundary?: TimelineSceneHistoryBoundary }> = []
   const seenRevisions = new Set<string>()
   let row = headRow
   let previousTimelineId: string | null = null
+  let foundCutoff = requested.cutoffRevisionId === undefined && requested.cutoffVersion === undefined
+  let foundCursor = requested.cursor === undefined || requested.cursor === null
   while (true) {
     if (seenRevisions.has(row.id)) {
       throw historyError('unreconstructable-history', 'scene-parent-cycle', { revisionId: row.id })
@@ -402,17 +443,43 @@ export async function listTimelineSceneHistory(
     if (row.worldId !== scope.worldId || row.representation !== scope.representation || !timelineById.has(row.timelineId)) {
       throw historyError('invalid-parent-chain', 'scene-parent-out-of-scope', { revisionId: row.id, timelineId: row.timelineId })
     }
-    const revision = await readTimelineRevisionRow(row, {
-      worldId: scope.worldId,
-      timelineId: row.timelineId,
-      representation: scope.representation,
-    })
-    path.push({
-      ...revision,
-      source: row.timelineId === scope.timelineId ? 'current' : 'ancestor',
-      sourceTimelineId: row.timelineId,
-      isForkBoundary: previousTimelineId !== null && previousTimelineId !== row.timelineId,
-    })
+    const crossedBoundary = previousTimelineId !== null && previousTimelineId !== row.timelineId
+    if (crossedBoundary) {
+      const owner = timelineById.get(previousTimelineId!)
+      if (!owner || owner.parentTimelineId !== row.timelineId) {
+        throw historyError('invalid-parent-chain', 'scene-parent-not-immediate-ancestor', {
+          revisionId: row.id, timelineId: previousTimelineId, parentTimelineId: row.timelineId,
+        })
+      }
+    }
+
+    const isCutoff = row.timelineId === scope.timelineId
+      && (requested.cutoffRevisionId !== undefined ? row.id === requested.cutoffRevisionId
+        : requested.cutoffVersion !== undefined ? row.version === requested.cutoffVersion : false)
+    if (isCutoff) foundCutoff = true
+    const isCursor = requested.cursor != null && row.id === requested.cursor
+    if (isCursor) {
+      if (!foundCutoff) throw historyError('invalid-cursor', 'scene-history-cursor-before-cutoff', { cursor: requested.cursor })
+      foundCursor = true
+    }
+    if (foundCutoff && foundCursor && !isCursor) {
+      const source = row.timelineId === scope.timelineId ? 'current' : 'ancestor'
+      const fullRow = await db.select().from(timelineSceneRevisions).where(and(
+        eq(timelineSceneRevisions.id, row.id),
+        eq(timelineSceneRevisions.worldId, scope.worldId),
+        eq(timelineSceneRevisions.timelineId, row.timelineId),
+        eq(timelineSceneRevisions.representation, scope.representation),
+      )).get()
+      if (!fullRow) throw new TimelineSceneIntegrityError('missing-head-revision', 'missing-head-revision')
+      // Decoding validates only snapshots returned by this page plus its one
+      // lookahead row, rather than every older immutable revision.
+      const revision = await readTimelineRevisionRow(fullRow, { worldId: scope.worldId, timelineId: row.timelineId, representation: scope.representation })
+      selected.push({ revision, sourceTimelineId: row.timelineId, source, isForkBoundary: crossedBoundary,
+        ...(crossedBoundary ? { boundary: { fromTimelineId: previousTimelineId!, toTimelineId: row.timelineId, revisionId: row.id } } : {}) })
+      if (selected.length > limit) {
+        break
+      }
+    }
     previousTimelineId = row.timelineId
 
     const parentRevisionId = row.historyParentRevisionId
@@ -428,11 +495,7 @@ export async function listTimelineSceneHistory(
       break
     }
 
-    const parent = await db.select().from(timelineSceneRevisions).where(and(
-      eq(timelineSceneRevisions.id, parentRevisionId),
-      eq(timelineSceneRevisions.worldId, scope.worldId),
-      eq(timelineSceneRevisions.representation, scope.representation),
-    )).get()
+    const parent = await readMeta(parentRevisionId)
     if (!parent) {
       throw historyError('unreconstructable-history', 'scene-parent-revision-missing', {
         revisionId: row.id,
@@ -465,36 +528,21 @@ export async function listTimelineSceneHistory(
           parentTimelineId: parent.timelineId,
         })
       }
-      boundaries.push({ fromTimelineId: row.timelineId, toTimelineId: parent.timelineId, revisionId: parent.id })
     }
     row = parent
   }
 
-  let start = 0
-  if (requested.cutoffRevisionId) {
-    start = path.findIndex(item => item.id === requested.cutoffRevisionId && item.sourceTimelineId === scope.timelineId)
-    if (start < 0) throw historyError('invalid-cursor', 'scene-cutoff-not-on-current-line', { cutoffRevisionId: requested.cutoffRevisionId })
-  } else if (requested.cutoffVersion !== undefined) {
-    if (!Number.isSafeInteger(requested.cutoffVersion) || requested.cutoffVersion < 1) {
-      throw historyError('invalid-cursor', 'scene-cutoff-version-invalid', { cutoffVersion: requested.cutoffVersion })
-    }
-    start = path.findIndex(item => item.sourceTimelineId === scope.timelineId && item.version === requested.cutoffVersion)
-    if (start < 0) throw historyError('invalid-cursor', 'scene-cutoff-version-not-found', { cutoffVersion: requested.cutoffVersion })
+  if (!foundCutoff) {
+    if (requested.cutoffRevisionId !== undefined) throw historyError('invalid-cursor', 'scene-cutoff-not-on-current-line', { cutoffRevisionId: requested.cutoffRevisionId })
+    throw historyError('invalid-cursor', 'scene-cutoff-version-not-found', { cutoffVersion: requested.cutoffVersion })
   }
-
-  const cursor = requested.cursor ?? null
-  if (cursor !== null && typeof cursor !== 'string') {
-    throw historyError('invalid-cursor', 'scene-history-cursor-invalid')
-  }
-  if (cursor) {
-    const cursorIndex = path.findIndex(item => item.id === cursor)
-    if (cursorIndex < 0) throw historyError('invalid-cursor', 'scene-history-cursor-unknown', { cursor })
-    if (cursorIndex < start) throw historyError('invalid-cursor', 'scene-history-cursor-before-cutoff', { cursor })
-    start = cursorIndex + 1
-  }
-
-  const visible = path.slice(start, start + limit)
-  const hasMore = start + visible.length < path.length
+  if (!foundCursor) throw historyError('invalid-cursor', 'scene-history-cursor-unknown', { cursor: requested.cursor })
+  const pageRows = selected.slice(0, limit)
+  const visible: TimelineSceneHistoryRevision[] = pageRows.map(item => ({
+    ...item.revision, source: item.source, sourceTimelineId: item.sourceTimelineId, isForkBoundary: item.isForkBoundary,
+  }))
+  const hasMore = selected.length > limit
+  const boundaries = pageRows.flatMap(item => item.boundary ? [item.boundary] : [])
   return {
     revisions: visible,
     items: visible,
@@ -518,6 +566,11 @@ export type TimelineSceneCommitInput = {
   kind: string
   /** Explicit fork boundary. When omitted for a child first commit, the parent head is used. */
   parentRevisionId?: string | null
+  authority?: SceneWriteAuthority
+  compatibility?: SceneWriteProofRequest
+  compatibilityCompletion?: { actorKey: string }
+  compatibilityJson?: string | null
+  allowBaseline?: boolean
 } & ({ scope: TimelineSceneScope } | { worldId: string; timelineId: string; representation?: string })
 
 function commitScope(input: TimelineSceneCommitInput): TimelineSceneScope {
@@ -587,6 +640,17 @@ async function readTimelineForkSnapshot(
 export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInput): Promise<TimelineSceneRevisionRead> {
   assertCommitInput(input)
   const scope = commitScope(input)
+  if ('worldId' in input && input.worldId !== scope.worldId) throw new SceneConflict('场景作用域不一致')
+  const timeline = await db.select().from(timelines).where(and(
+    eq(timelines.id, scope.timelineId), eq(timelines.worldId, scope.worldId),
+  )).get()
+  if (!timeline) throw new SceneConflict('时间线不存在，请刷新后重试')
+  if (timeline.status !== 'active') throw new SceneConflict('归档时间线只支持查看历史，不能编辑或恢复')
+  const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
+    .where(and(eq(demoBaselines.worldId, scope.worldId), eq(demoBaselines.status, 'active'))).get()
+  if (baseline && !input.allowBaseline) throw new SceneConflict('公共演示基线只读，请先进入访客体验副本')
+  const decoded = decodeSceneCompatibility(input.document)
+  if (decoded.status !== 'ready') throw new TimelineSceneIntegrityError('invalid-snapshot', decoded.issues[0]?.code ?? 'invalid-snapshot')
   const requestedHash = await hashStoredDocument(input.document, input.expectedVersion + 1)
   // Idempotency is about the request payload, not the caller's stale version.
   // A conflict refresh may legitimately retry the same request with a newer
@@ -599,6 +663,8 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
     eq(timelineSceneRevisions.requestId, input.requestId),
   )).get()
   if (prior) {
+    const storedAudit = prior.validationJson ? JSON.parse(prior.validationJson).audit : null
+    if (commitRowNamespace({ kind: prior.kind, compatibilityJson: storedAudit ? JSON.stringify(storedAudit) : null, validationJson: prior.validationJson }) !== commitInputNamespace(input)) throw new SceneConflict('同一 request ID 已用于其他场景用途')
     const priorDocument = JSON.parse(prior.snapshotJson) as StoredSceneDocument
     const priorPayloadHash = await hashText(JSON.stringify(priorDocument))
     if (priorPayloadHash !== requestedPayloadHash) {
@@ -607,17 +673,14 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
     return readTimelineRevisionRow(prior, scope)
   }
 
-  const timeline = await db.select().from(timelines).where(and(
-    eq(timelines.id, scope.timelineId),
-    eq(timelines.worldId, scope.worldId),
-  )).get()
-  if (!timeline) throw new SceneConflict('时间线不存在，请刷新后重试')
   const head = await readTimelineSceneHead(db, scope)
   const actual = head?.currentVersion ?? 0
   if (actual !== input.expectedVersion) throw await readTimelineHeadConflict(db, scope, input.expectedVersion)
   const version = actual + 1
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
+  const proof = await buildCommitWriteProof(db, { worldId: scope.worldId, scope,
+    candidate: { version, contentHash: requestedHash }, ...(input.compatibility ? { compatibility: input.compatibility } : {}) })
   // Ordinary edits always extend the selected line's current head. Only a
   // first child revision may explicitly choose its fork boundary parent.
   let parentRevisionId = head ? head.currentRevisionId : (input.parentRevisionId ?? null)
@@ -654,11 +717,25 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
     snapshotJson: JSON.stringify(structuredClone(input.document)),
     summary: input.summary,
     kind: input.kind,
-    validationJson: null,
+    validationJson: JSON.stringify({ ...proof, scope, ...(input.compatibilityJson ? { audit: JSON.parse(input.compatibilityJson) } : {}) }),
     createdAt: now,
   } satisfies typeof timelineSceneRevisions.$inferInsert
 
+  // Main-line compatibility reads share the same transaction. Child timelines
+  // never write the world-level pointer, preserving branch isolation.
+  const legacyWrites = timeline.parentTimelineId === null
+    ? await scopedMainLegacyStatements(db, { scope, input, createdAt: now }) : []
   try {
+    const guard = buildTimelineCommitGuardStatement(db, { scope, revisionId: id, version,
+      requestId: input.requestId, proof, authority: input.authority, compatibility: input.compatibility,
+      compatibilityCompletion: input.compatibilityCompletion })
+    const complete = input.compatibility && input.compatibilityCompletion
+      ? db.update(sceneCompatibilityRequests).set({ state: 'completed', resultVersion: version,
+        leaseToken: null, leaseUntil: null, updatedAt: now }).where(and(
+        eq(sceneCompatibilityRequests.worldId, scope.worldId), eq(sceneCompatibilityRequests.requestId, input.requestId),
+        eq(sceneCompatibilityRequests.actorKey, input.compatibilityCompletion.actorKey),
+        eq(sceneCompatibilityRequests.attempt, input.compatibility.attempt),
+        eq(sceneCompatibilityRequests.leaseToken, input.compatibility.leaseToken))) : null
     if (head) {
       // The old revision id remains a valid FK while this transaction reserves
       // the version; the following insert and pointer update are atomic.
@@ -677,6 +754,9 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
           eq(timelineSceneHeads.representation, scope.representation),
           eq(timelineSceneHeads.currentVersion, version),
         )),
+        ...legacyWrites,
+        guard,
+        ...(complete ? [complete] : []),
       ])
     } else {
       await db.batch([
@@ -685,6 +765,9 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
           worldId: scope.worldId, timelineId: scope.timelineId, representation: scope.representation,
           currentRevisionId: id, currentVersion: version, updatedAt: now,
         }),
+        ...legacyWrites,
+        guard,
+        ...(complete ? [complete] : []),
       ])
     }
   } catch (error) {
@@ -807,7 +890,36 @@ export async function timelineSceneForkStatements(
   ]
 }
 
-export async function readCurrentScene(db: Db, worldId: string): Promise<StoredScene | null> {
+async function scopedMainLegacyStatements(db: Db, options: {
+  scope: TimelineSceneScope; input: TimelineSceneCommitInput; createdAt: string
+}): Promise<BatchItem<'sqlite'>[]> {
+  const { scope, input, createdAt } = options
+  const current = await db.select().from(worldScenes).where(eq(worldScenes.worldId, scope.worldId)).get()
+  const actual = current?.currentVersion ?? 0
+  const version = actual + 1
+  const contentHash = await hashStoredDocument(input.document, version)
+  const proof = await buildCommitWriteProof(db, { worldId: scope.worldId, candidate: { version, contentHash } })
+  const id = crypto.randomUUID()
+  return [
+    db.insert(worldSceneRevisions).values({ id, worldId: scope.worldId, version, parentVersion: actual || null,
+      requestId: input.requestId, contentHash, documentJson: JSON.stringify(input.document), summary: input.summary,
+      kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof),
+      commitGuard: true, createdAt }),
+    current
+      ? db.update(worldScenes).set({ currentVersion: version, themeId: voxelThemeId(input.document), updatedAt: createdAt })
+        .where(and(eq(worldScenes.worldId, scope.worldId), eq(worldScenes.currentVersion, actual)))
+      : db.insert(worldScenes).values({ worldId: scope.worldId, currentVersion: version,
+        themeId: voxelThemeId(input.document), updatedAt: createdAt }),
+    buildCommitGuardStatement(db, { revisionId: id, worldId: scope.worldId, version,
+      requestId: input.requestId, baseline: proof.baseline, authority: input.authority }),
+  ]
+}
+
+export async function readCurrentScene(db: Db, worldId: string, scope?: TimelineSceneScope): Promise<StoredScene | null> {
+  if (scope) {
+    if (scope.worldId !== worldId) throw new SceneConflict('场景作用域不一致')
+    return readCurrentTimelineScene(db, scope)
+  }
   const current = await db.select().from(worldScenes).where(eq(worldScenes.worldId, worldId)).get()
   if (!current) return null
   const row = await db.select().from(worldSceneRevisions).where(and(eq(worldSceneRevisions.worldId, worldId), eq(worldSceneRevisions.version, current.currentVersion))).get()
@@ -815,7 +927,11 @@ export async function readCurrentScene(db: Db, worldId: string): Promise<StoredS
   try { return { document: JSON.parse(row.documentJson) as StoredSceneDocument, version: row.version, contentHash: row.contentHash, createdAt: row.createdAt } }
   catch { throw new Error('场景文档损坏：无法解析已保存版本') }
 }
-export async function readSceneVersion(db: Db, worldId: string, version: number): Promise<StoredScene | null> {
+export async function readSceneVersion(db: Db, worldId: string, version: number, scope?: TimelineSceneScope): Promise<StoredScene | null> {
+  if (scope) {
+    if (scope.worldId !== worldId) throw new SceneConflict('场景作用域不一致')
+    return readTimelineSceneVersion(db, scope, version)
+  }
   const row = await db.select().from(worldSceneRevisions).where(and(eq(worldSceneRevisions.worldId, worldId), eq(worldSceneRevisions.version, version))).get()
   if (!row) return null
   try { return { document: JSON.parse(row.documentJson) as StoredSceneDocument, version: row.version, contentHash: row.contentHash, createdAt: row.createdAt } }
@@ -834,6 +950,7 @@ export async function listSceneVersions(db: Db, worldId: string, limit = 30) {
 }
 export async function commitScene(db: Db, input: {
   worldId: string
+  scope?: TimelineSceneScope
   expectedVersion: number
   requestId: string
   document: StoredSceneDocument
@@ -850,6 +967,10 @@ export async function commitScene(db: Db, input: {
   /** A1 B28：演示基线重指向与修订同批写入；批内 guard 断言新基线引用。 */
   baselineUpdate?: { baselineId: string }
 }): Promise<StoredScene> {
+  if (input.scope) {
+    if (input.worldId !== input.scope.worldId) throw new SceneConflict('场景作用域不一致')
+    return commitTimelineScene(db, { ...input, scope: input.scope })
+  }
   const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
     .where(and(eq(demoBaselines.worldId, input.worldId), eq(demoBaselines.status, 'active'))).get()
   if (baseline && !input.allowBaseline) throw new SceneConflict('公共演示基线只读，请先进入访客体验副本')
@@ -901,6 +1022,11 @@ export async function commitScene(db: Db, input: {
       eq(sceneCompatibilityRequests.state, 'submitting'),
     ))
     : null
+  const timelineWrites = await legacyMainSceneStatements(db, {
+    worldId: input.worldId, version, expectedVersion: actual, document,
+    requestId: input.requestId, summary: input.summary, kind: input.kind,
+    validationJson: JSON.stringify(proof), createdAt: now,
+  })
   try {
     if (current) await db.batch([
       db.insert(worldSceneRevisions).values({ id, worldId: input.worldId, version, parentVersion: actual, requestId: input.requestId, contentHash, documentJson: serialized, summary: input.summary, kind: input.kind, compatibilityJson: input.compatibilityJson ?? null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
@@ -908,6 +1034,7 @@ export async function commitScene(db: Db, input: {
       ...(baselineStatement ? [baselineStatement] : []),
       ...(requestCompletionStatement ? [requestCompletionStatement] : []),
       guard,
+      ...timelineWrites,
     ])
     else await db.batch([
       // 首版同样先插入有依据的新修订、后创建当前指针，避免误用普通旧版本闸门
@@ -916,11 +1043,12 @@ export async function commitScene(db: Db, input: {
       ...(baselineStatement ? [baselineStatement] : []),
       ...(requestCompletionStatement ? [requestCompletionStatement] : []),
       guard,
+      ...timelineWrites,
     ])
   } catch (error) { throw new SceneConflict(error instanceof Error ? error.message : undefined) }
   return { document, version, contentHash, createdAt: now }
 }
-export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string, pendingBindings?: PendingSceneBindings): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>, BatchItem<'sqlite'>]> {
+export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string, pendingBindings?: PendingSceneBindings, timelineId?: string): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>, BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]> {
   const now = new Date().toISOString()
   const doc = structuredClone(document)
   const themeId = voxelThemeId(doc)
@@ -937,6 +1065,33 @@ export async function initialSceneStatements(db: Db, worldId: string, document: 
     db.insert(worldScenes).values({ worldId, currentVersion: 1, themeId, updatedAt: now }),
     // B30 步骤2 最终断言：批内核对外层世界/成员/地点与依据快照一致，不符则 guard=0 整批回滚
     buildCommitGuardStatement(db, { revisionId, worldId, version: 1, requestId, baseline: proof.baseline, expectedBindings: facts.bindings }),
+    ...await legacyMainSceneStatements(db, { worldId, timelineId, document: doc, version: 1, expectedVersion: 0,
+      requestId, summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), createdAt: now }),
+  ]
+}
+
+/** Legacy main-line clients and new timeline clients share one atomic scene
+ * result. Explicit timeline operations never enter this compatibility seam. */
+async function legacyMainSceneStatements(db: Db, input: {
+  worldId: string; timelineId?: string; document: StoredSceneDocument; version: number; expectedVersion: number
+  requestId: string; summary: string; kind: string; validationJson: string; createdAt: string
+}): Promise<BatchItem<'sqlite'>[]> {
+  const timelineId = input.timelineId ?? (await db.select({ id: timelines.id }).from(timelines)
+    .where(and(eq(timelines.worldId, input.worldId), isNull(timelines.parentTimelineId))).get())?.id
+  if (!timelineId) return []
+  const scope = { worldId: input.worldId, timelineId, representation: 'voxel' }
+  const head = await readTimelineSceneHead(db, scope)
+  const version = (head?.currentVersion ?? 0) + 1
+  const id = crypto.randomUUID()
+  return [
+    db.insert(timelineSceneRevisions).values({ id, ...scope, version,
+      historyParentRevisionId: head?.currentRevisionId ?? null, requestId: input.requestId,
+      contentHash: await hashStoredDocument(input.document, version), snapshotJson: JSON.stringify(input.document),
+      summary: input.summary, kind: input.kind, validationJson: input.validationJson, createdAt: input.createdAt }),
+    head ? db.update(timelineSceneHeads).set({ currentRevisionId: id, currentVersion: version, updatedAt: input.createdAt })
+      .where(and(eq(timelineSceneHeads.worldId, scope.worldId), eq(timelineSceneHeads.timelineId, timelineId),
+        eq(timelineSceneHeads.representation, 'voxel'), eq(timelineSceneHeads.currentVersion, head.currentVersion)))
+      : db.insert(timelineSceneHeads).values({ ...scope, currentRevisionId: id, currentVersion: version, updatedAt: input.createdAt }),
   ]
 }
 

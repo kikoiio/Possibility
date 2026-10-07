@@ -54,15 +54,13 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
   if (!snapshot) return null
   let scene: MapBootstrap['scene']
   try {
-    // X1 scene geometry is scoped to the selected timeline. Keep the legacy
-    // world pointer only as a compatibility fallback for worlds not migrated
-    // to timeline scene heads yet.
+    // Explicit timeline reads never borrow another line's current geometry.
     const timelineStored = await readCurrentTimelineScene(db, {
       worldId,
       timelineId: snapshot.currentTimelineId,
       representation: 'voxel',
     })
-    const stored = timelineStored ?? await readCurrentScene(db, worldId)
+    const stored = timelineStored ?? (!timelineId ? await readCurrentScene(db, worldId) : null)
     // S2 起存储层只剩体素系负载,格式由客户端按信封识别
     scene = !stored ? { status: 'missing' } : { status: 'ready', document: stored.document }
   } catch {

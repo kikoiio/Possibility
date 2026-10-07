@@ -51,8 +51,14 @@ publicRoutes.get('/worlds/:id/scene', async c => {
   const world = await loadDemoWorld(db, c.req.param('id'))
   if (!world) return c.json({ error: '世界不存在' }, 404)
   try {
-    const scene = await readCurrentScene(db, world.id)
-    return scene ? c.json({ status: 'ready', ...scene }) : c.json({ status: 'missing' })
+    const timelineId = c.req.query('timelineId')
+    const representation = c.req.query('representation') ?? 'voxel'
+    if (representation !== 'voxel') return c.json({ error: '目标表现不支持此场景接口', errorCode: 'unsupported-representation' }, 422)
+    if (timelineId && !await db.select({ id: timelines.id }).from(timelines)
+      .where(and(eq(timelines.id, timelineId), eq(timelines.worldId, world.id))).get()) return c.json({ error: '时间线不存在' }, 404)
+    const scope = timelineId ? { worldId: world.id, timelineId, representation } : undefined
+    const scene = await readCurrentScene(db, world.id, scope)
+    return scene ? c.json({ status: 'ready', ...scene, ...(scope ? { scope, revisionId: 'id' in scene ? scene.id : undefined } : {}) }) : c.json({ status: 'missing', ...(scope ? { scope } : {}) })
   } catch {
     return c.json({ error: '场景读取失败' }, 500)
   }

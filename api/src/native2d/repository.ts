@@ -1,5 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
+import type { BatchItem } from 'drizzle-orm/batch'
 import { native2dLayoutHeads, native2dLayoutRevisions } from '../db/schema'
 import { scopeKey, type Native2dLayout, type Native2dLayoutHead, type Native2dLayoutRequest, type Native2dLayoutRevision, type Native2dSaveInput, type Native2dSaveResult, type Native2dScope } from './schema'
 import { validateNative2dLayout } from './validation'
@@ -26,6 +27,34 @@ export function native2dContentHash(layout: Native2dLayout): string {
     hash = Math.imul(hash, 16777619)
   }
   return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/** Fork only each saved current layout; the surrounding fork batch owns all
+ * writes, so an invalid layout or failed insert cannot leave a partial child. */
+export async function native2dLayoutForkStatements(db: Db, input: {
+  worldId: string; sourceTimelineId: string; targetTimelineId: string; requestId: string; createdAt: string
+}): Promise<BatchItem<'sqlite'>[]> {
+  const heads = await db.select().from(native2dLayoutHeads).where(and(
+    eq(native2dLayoutHeads.worldId, input.worldId), eq(native2dLayoutHeads.timelineId, input.sourceTimelineId)))
+  const statements: BatchItem<'sqlite'>[] = []
+  for (const head of heads) {
+    const revision = await db.select().from(native2dLayoutRevisions).where(and(
+      eq(native2dLayoutRevisions.id, head.currentRevisionId), eq(native2dLayoutRevisions.worldId, input.worldId),
+      eq(native2dLayoutRevisions.timelineId, input.sourceTimelineId), eq(native2dLayoutRevisions.sceneId, head.sceneId),
+      eq(native2dLayoutRevisions.version, head.currentVersion))).get()
+    if (!revision) throw new Error('native2d fork source revision is missing')
+    const layout = JSON.parse(revision.layoutJson) as Native2dLayout
+    if (!validateNative2dLayout(layout).valid || native2dContentHash(layout) !== revision.contentHash) throw new Error('native2d fork source layout is corrupt')
+    const copied: Native2dLayout = { ...layout, metadata: { ...layout.metadata, timelineId: input.targetTimelineId, sceneVersion: 1 } }
+    const id = `native2d-fork:${input.targetTimelineId}:${head.sceneId}:v1`
+    statements.push(db.insert(native2dLayoutRevisions).values({ id, worldId: input.worldId,
+      timelineId: input.targetTimelineId, sceneId: head.sceneId, version: 1, parentVersion: null,
+      requestId: `${input.requestId}:native2d:${head.sceneId}`, contentHash: native2dContentHash(copied),
+      layoutJson: JSON.stringify(copied), createdAt: input.createdAt }))
+    statements.push(db.insert(native2dLayoutHeads).values({ worldId: input.worldId, timelineId: input.targetTimelineId,
+      sceneId: head.sceneId, currentRevisionId: id, currentVersion: 1, updatedAt: input.createdAt }))
+  }
+  return statements
 }
 
 export interface Native2dRepository {

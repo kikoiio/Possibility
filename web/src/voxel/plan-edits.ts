@@ -1,6 +1,7 @@
 import { serialize, type EditOperation, type SceneValidationBasis } from '@possibility/voxel-contract'
 import type { SceneValidationReportView } from '@possibility/voxel-contract'
 import { getToken } from '../api/client'
+import type { SceneScope } from '../api/types'
 import type { VoxelEngine } from './engine'
 
 export type EditPlanFailureKind = 'permission' | 'input' | 'budget' | 'config' | 'planning' | 'service' | 'compatibility' | 'conflict'
@@ -32,7 +33,12 @@ export class EditPlanRequestError extends Error {
  * A1(W21):服务端模型前闸门的兼容阻断(422 compatibility-required / validation-incomplete)
  * 与依据冲突(409 conflict)按结构化 kind/errorCode 透出,不吞成通用错误。
  */
-export async function planEditsViaApi(engine: VoxelEngine, worldId: string, intent: string): Promise<EditPlan> {
+export async function planEditsViaApi(
+  engine: VoxelEngine,
+  worldId: string,
+  intent: string,
+  scope: SceneScope & { spaceId: string },
+): Promise<EditPlan> {
   const doc = engine.world?.doc
   if (!doc) throw new Error('世界尚未加载')
   const token = getToken()
@@ -42,7 +48,7 @@ export async function planEditsViaApi(engine: VoxelEngine, worldId: string, inte
       'content-type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ worldId, requestId: `plan-${crypto.randomUUID()}`, intent, document: serialize(doc) }),
+    body: JSON.stringify({ worldId, ...scope, requestId: `plan-${crypto.randomUUID()}`, intent, document: serialize(doc) }),
   })
   const body = await res.json().catch(() => ({})) as {
     ops?: EditOperation[]

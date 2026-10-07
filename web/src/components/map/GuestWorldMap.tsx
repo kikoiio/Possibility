@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from 'react-router-dom'
 import { type SceneLifeOverlay } from '@possibility/scene-contract'
 import { deserialize, serialize, type SceneCandidate, type SceneEditPreflightResult, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
-import type { ForkResult, ForkScenario, PersonListItem, WorldSnapshot } from '../../api/types'
+import type { ForkResult, ForkScenario, PersonListItem, SceneScope, WorldSnapshot } from '../../api/types'
 import { ApiError, apiFetch, clearToken, demoApi, guestMapApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
 import ScenarioCard from '../ScenarioCard'
@@ -29,7 +29,7 @@ export interface GuestWorldMapProps {
   guest?: boolean
   claimPending?: boolean
   editable?: boolean
-  planEdits?: (engine: VoxelEngine, intent: string) => Promise<EditPlan>
+  planEdits?: (engine: VoxelEngine, intent: string, scope: SceneScope & { spaceId: string }) => Promise<EditPlan>
   preflightEdits?: (candidate: SceneCandidate) => Promise<SceneEditPreflightResult>
   /** A1(W18):多空间与单空间共用同一兼容入口;当前空间只作为编辑目标,预检/诊断覆盖整个包 */
   onCompatibilityRequired?: () => void
@@ -81,6 +81,8 @@ export function GuestWorldMap({
 }: GuestWorldMapProps) {
   const navigate = useNavigate()
   const [liveSnapshot, setLiveSnapshot] = useState(snapshot)
+  const currentTimelineIdRef = useRef(snapshot.currentTimelineId)
+  currentTimelineIdRef.current = liveSnapshot.currentTimelineId
   const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
   const [sceneLocation, setSceneLocation] = useState<string | null>(null)
   useEffect(() => setLiveSnapshot(snapshot), [snapshot])
@@ -116,38 +118,50 @@ export function GuestWorldMap({
     if (!editable || !liveSnapshot.world.isDemo || regenerating || !window.confirm('重新生成所有演示空间？当前场景将保留在历史版本中。')) return
     setRegenerating(true); setSaveError('')
     try {
-      const current = await worldSceneApi.get(liveSnapshot.world.id)
+      const timelineId = liveSnapshot.currentTimelineId
+      const scope = { timelineId, representation: 'voxel' as const }
+      const current = await worldSceneApi.get(liveSnapshot.world.id, scope)
+      if (currentTimelineIdRef.current !== timelineId) return
       const version = current.status === 'ready' ? current.version : 0
-      await worldSceneApi.regenerateDemo(liveSnapshot.world.id, version)
+      await worldSceneApi.regenerateDemo(liveSnapshot.world.id, scope, version)
       window.location.reload()
     } catch (error) { setSaveError(error instanceof Error ? error.message : '重新生成失败') }
     finally { setRegenerating(false) }
   }
   const saveSpace = useCallback(async (next: import('@possibility/voxel-contract').VoxelDocument) => {
     if (!editable || saveBusyRef.current) return
+    const timelineId = liveSnapshot.currentTimelineId
+    const scope = { timelineId, representation: 'voxel' as const }
     saveBusyRef.current = true
     setSaveError('')
     try {
-      const current = await worldSceneApi.get(liveSnapshot.world.id)
+      const current = await worldSceneApi.get(liveSnapshot.world.id, scope)
+      if (currentTimelineIdRef.current !== timelineId) return
       const version = editVersion ?? (current.status === 'ready' ? current.version : 0)
       const bundle = current.status === 'ready' && 'spaces' in current.document ? current.document : voxelSpaces
       const nextBundle = { ...bundle, spaces: bundle.spaces.map(space => space.id === spaceId ? { ...space, document: JSON.parse(serialize(next)) as SerializedVoxelDocument } : space) }
-      const saved = await worldSceneApi.commitVoxel(liveSnapshot.world.id, version, crypto.randomUUID(), nextBundle, spaceId)
+      const saved = await worldSceneApi.commitVoxel(liveSnapshot.world.id, scope, version, crypto.randomUUID(), nextBundle, spaceId)
+      if (currentTimelineIdRef.current !== timelineId) return
       setEditVersion(saved.version)
       setEditDoc(null)
     } catch (error) {
+      if (currentTimelineIdRef.current !== timelineId) return
       // A1(W18):整包兼容阻断 → 打开与单空间相同的修复旅程;当前场景保持不变
       if (error instanceof ApiError && error.status === 422 && error.errorCode === 'compatibility-required') onCompatibilityRequiredRef.current?.()
       setSaveError(error instanceof Error ? error.message : '空间保存失败')
     }
     finally { saveBusyRef.current = false }
-  }, [editable, liveSnapshot.world.id, editVersion, voxelSpaces, spaceId])
+  }, [editable, liveSnapshot.world.id, liveSnapshot.currentTimelineId, editVersion, voxelSpaces, spaceId])
   async function switchTimeline(nextId: string) {
     if (nextId === liveSnapshot.currentTimelineId || timelinePending.current) return
     timelinePending.current = true
     setSwitchTarget(nextId); setTimelineBusy(true); setActionError('')
     try {
       const data = guest ? await guestMapApi.bootstrap(liveSnapshot.world.id, nextId) : await mapApi.bootstrap(liveSnapshot.world.id, nextId)
+      currentTimelineIdRef.current = nextId
+      setEditDoc(null)
+      setEditVersion(null)
+      setSaveError('')
       setLiveSnapshot(data.world)
       setForkId(forkResult && data.world.timelines.some(item => item.id === forkResult.id)
         ? forkResult.id : data.world.timelines.find(item => item.id === nextId && item.parentTimelineId)?.id ?? data.world.timelines.find(item => item.parentTimelineId)?.id ?? null)
@@ -300,7 +314,9 @@ export function GuestWorldMap({
           spaceId={spaceId}
           overlay={currentOverlay}
           editable={editable}
-          planEdits={planEdits}
+          planEdits={planEdits ? (engine, intent) => planEdits(engine, intent, {
+            timelineId: liveSnapshot.currentTimelineId, representation: 'voxel', spaceId,
+          }) : undefined}
           preflightEdits={editable ? preflightEdits : undefined}
           onEditBlocked={handleEditBlocked}
           timeZone={liveSnapshot.world.timeZone}
@@ -338,14 +354,14 @@ export function GuestWorldMap({
           {onArchive && <button onClick={onArchive} className="rounded-full border border-white/35 bg-sheet-dark px-3 py-2 text-xs text-white/70 backdrop-blur-md">归档</button>}
         </div>}
       </header>
-      <div className="pointer-events-auto absolute left-3 top-32 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5 sm:top-24">
+      <div className="pointer-events-none absolute left-3 top-32 flex max-w-[calc(100vw-1.5rem)] flex-wrap gap-2 sm:left-5 sm:top-24">
         {voxelSpaces.spaces.filter(space => space.id !== spaceId).map(space => (
-          <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-white/70 bg-sheet/92 px-4 py-2 text-xs font-medium text-sage-800 shadow-md backdrop-blur-md">{space.name} →</button>
+          <button key={space.id} data-testid={`voxel-space-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="pointer-events-auto rounded-full border border-white/70 bg-sheet/92 px-4 py-2 text-xs font-medium text-sage-800 shadow-md backdrop-blur-md">{space.name} →</button>
         ))}
         <span className="rounded-full border border-white/70 bg-sheet/85 px-3 py-2 text-[10px] text-sage-600 shadow-sm">{formatWorldTime(liveSnapshot.simNow, liveSnapshot.world.timeZone)}</span>
-        {liveSnapshot.timelines.length > 1 && <label className="flex min-w-0 max-w-full items-center gap-1 rounded-full border border-white/70 bg-sheet/85 px-3 py-1 text-[10px] text-sage-600 shadow-sm">宇宙<select aria-label="切换时间线" data-testid="timeline-switcher" disabled={timelineBusy} value={switchTarget ?? liveSnapshot.currentTimelineId} onChange={event => void switchTimeline(event.target.value)} className="min-w-0 max-w-[45vw] bg-transparent text-sage-800 outline-none">{liveSnapshot.timelines.map(timeline => <option key={timeline.id} value={timeline.id}>{timelineOptionLabel(timeline)}{timeline.id === forkId ? ' · 新' : ''}</option>)}</select>{timelineBusy && <span>切换中…</span>}</label>}
-        {switchTarget && actionError && <p role="status" className="w-full rounded-lg bg-white/95 p-2 text-xs text-red-700">{actionError}<button onClick={() => void switchTimeline(switchTarget)} className="ml-1 underline">重试切换</button></p>}
-        {liveSnapshot.timelines.length > 1 && <p className="w-full rounded-lg bg-sheet/85 p-2 text-[10px] text-sage-600">当前为{timelineDisplayName(liveSnapshot.timelines.find(t => t.id === liveSnapshot.currentTimelineId) ?? { parentTimelineId: null })}；时间和居民数量属于各自时间线，切换后可能变化，未必处于同一时刻。场景几何和历史属于整个世界；切换时间线或恢复场景历史不会回滚各自时间线的生活记录。</p>}
+        {liveSnapshot.timelines.length > 1 && <label className="pointer-events-auto flex min-w-0 max-w-full items-center gap-1 rounded-full border border-white/70 bg-sheet/85 px-3 py-1 text-[10px] text-sage-600 shadow-sm">宇宙<select aria-label="切换时间线" data-testid="timeline-switcher" disabled={timelineBusy} value={switchTarget ?? liveSnapshot.currentTimelineId} onChange={event => void switchTimeline(event.target.value)} className="min-w-0 max-w-[45vw] bg-transparent text-sage-800 outline-none">{liveSnapshot.timelines.map(timeline => <option key={timeline.id} value={timeline.id}>{timelineOptionLabel(timeline)}{timeline.id === forkId ? ' · 新' : ''}</option>)}</select>{timelineBusy && <span>切换中…</span>}</label>}
+        {switchTarget && actionError && <p role="status" className="pointer-events-none w-full rounded-lg bg-white/95 p-2 text-xs text-red-700">{actionError}<button onClick={() => void switchTimeline(switchTarget)} className="pointer-events-auto ml-1 underline">重试切换</button></p>}
+        {liveSnapshot.timelines.length > 1 && <p className="pointer-events-none w-full rounded-lg bg-sheet/85 p-2 text-[10px] text-sage-600">当前为{timelineDisplayName(liveSnapshot.timelines.find(t => t.id === liveSnapshot.currentTimelineId) ?? { parentTimelineId: null })}；时间和居民数量属于各自时间线，切换后可能变化，未必处于同一时刻。场景几何和历史属于整个世界；切换时间线或恢复场景历史不会回滚各自时间线的生活记录。</p>}
       </div>
       <nav aria-label="体验位置" className="pointer-events-auto absolute left-1/2 top-52 flex -translate-x-1/2 rounded-full border border-white/40 bg-sheet-dark p-1 text-[11px] text-white shadow-md backdrop-blur-md sm:top-48">
         {([['observe', '观察'], ['life', '在场'], ['possibility', '可能']] as const).map(([value, label]) => <button key={value} aria-pressed={mode === value} onClick={() => setMapMode(value)} className={`rounded-full px-3 py-1.5 ${mode === value ? 'bg-white text-sage-800' : 'text-white/80'}`}>{label}</button>)}

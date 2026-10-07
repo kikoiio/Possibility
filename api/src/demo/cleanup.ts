@@ -4,7 +4,8 @@ import type { Db } from '../db/client'
 import {
   chatRequests, chapters, commitments, conversations, demoSandboxes, dialogueTurns, dialogues,
   events, guestSessions, llmCallLog, memories, messages, personaMessages, personStates, persons,
-  schedules, sceneIntentProposals, sceneRequests, sessions, timelines, universeEvidence,
+  schedules, sceneIntentProposals, sceneRequests, sessions, timelines, timelineSceneHeads, timelineSceneRevisions,
+  native2dLayoutHeads, native2dLayoutRevisions, universeEvidence,
   universeRevisions, userWorldPreferences, worldCommands, worldFacts, worldModelVersions,
   users, worldPersons, worldSceneRevisions, worldScenes, worldVisits, worlds,
 } from '../db/schema'
@@ -44,6 +45,10 @@ async function purgeSandbox(db: Db, sandboxId: string, worldId: string, ownerId:
   statements.push(db.delete(universeEvidence).where(timelineIds.length ? inArray(universeEvidence.timelineId, timelineIds) : eq(universeEvidence.timelineId, '')))
   statements.push(db.delete(universeRevisions).where(timelineIds.length ? inArray(universeRevisions.timelineId, timelineIds) : eq(universeRevisions.timelineId, '')))
   statements.push(db.delete(worldSceneRevisions).where(eq(worldSceneRevisions.worldId, worldId)))
+  statements.push(db.delete(timelineSceneHeads).where(eq(timelineSceneHeads.worldId, worldId)))
+  statements.push(db.delete(timelineSceneRevisions).where(eq(timelineSceneRevisions.worldId, worldId)))
+  statements.push(db.delete(native2dLayoutHeads).where(eq(native2dLayoutHeads.worldId, worldId)))
+  statements.push(db.delete(native2dLayoutRevisions).where(eq(native2dLayoutRevisions.worldId, worldId)))
   statements.push(db.delete(worldScenes).where(eq(worldScenes.worldId, worldId)))
   statements.push(db.delete(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)))
   statements.push(db.delete(worldPersons).where(eq(worldPersons.worldId, worldId)))

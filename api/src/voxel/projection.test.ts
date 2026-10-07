@@ -1,21 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
+import { applyEdits, createEmptyWorld, serialize } from '@possibility/voxel-contract'
+import { commitTimelineScene, hashStoredDocument } from '../scenes/repository'
 import { projectVoxelEvents, type VoxelProjectionPayload } from './projection'
 import { createTestDb } from '../test/db'
 import { budgetFromEnv, type BudgetConfig } from '../engine/budget'
 import type { TickBudget } from '../engine/guard'
-import { dialogues, events, llmCallLog, memories, persons, personStates, timelines, universeEvidence, universeRevisions, users, voxelEventProjections, worldSceneRevisions, worldScenes, worlds } from '../db/schema'
+import { dialogues, events, llmCallLog, memories, persons, personStates, timelines, universeEvidence, universeRevisions, users, voxelEventProjections, timelineSceneRevisions, timelineSceneHeads, worlds } from '../db/schema'
 
 const SIM_NOW = '2026-10-15T17:00:00.000Z'
 const CFG: BudgetConfig = budgetFromEnv({})
 const LLM = { baseUrl: 'https://llm.invalid', apiKey: 'test', model: 'test', source: 'env' as const,
   apiKeySource: 'platform_fallback' as const, apiKeyVerified: false }
 
-const VOXEL_DOC = {
-  size: { width: 48, height: 24, depth: 48 },
-  objects: [{ id: 'house', anchor: { x: 20, y: 1, z: 18 } }],
-  locations: [{ name: '主楼', objectId: 'house' }],
+const sceneDocument = applyEdits(createEmptyWorld({ width: 48, height: 24, depth: 48 }, 'mist-manor', 'projection'), [
+  { kind: 'place-object', objectId: 'house', objectType: 'stone-lantern', anchor: { x: 20, y: 1, z: 18 }, rotation: 0 },
+]).document
+sceneDocument.locations = [{ name: '主楼', objectId: 'house' }]
+const VOXEL_DOC = JSON.parse(serialize(sceneDocument))
+
+function projectionSceneAt(x: number) {
+  const doc = applyEdits(createEmptyWorld({ width: 48, height: 24, depth: 48 }, 'mist-manor', `projection-${x}`), [
+    { kind: 'place-object', objectId: 'house', objectType: 'stone-lantern', anchor: { x, y: 1, z: 18 }, rotation: 0 },
+  ]).document
+  doc.locations = [{ name: '主楼', objectId: 'house' }]
+  return JSON.parse(serialize(doc))
 }
+
 
 async function seed() {
   const { db, env } = createTestDb()
@@ -33,9 +44,11 @@ async function seed() {
     { personId: 'p-a', timelineId: 'tl1', simTime: now, location: '主楼', activity: '打扫', mood: '平静', goal: '', updatedRealAt: now },
     { personId: 'p-b', timelineId: 'tl1', simTime: now, location: '主楼', activity: '看书', mood: '平静', goal: '', updatedRealAt: now },
   ])
-  await db.insert(worldScenes).values({ worldId: 'w1', currentVersion: 1, themeId: 'mist-manor', updatedAt: now })
-  await db.insert(worldSceneRevisions).values({ id: 'sr1', worldId: 'w1', version: 1, requestId: 'req1',
-    contentHash: 'h', documentJson: JSON.stringify(VOXEL_DOC), summary: '', kind: 'voxel', createdAt: now })
+  await db.insert(timelineSceneRevisions).values({ id: 'sr1', worldId: 'w1', timelineId: 'tl1', representation: 'voxel',
+    version: 1, historyParentRevisionId: null, requestId: 'req1', contentHash: await hashStoredDocument(VOXEL_DOC, 1),
+    snapshotJson: JSON.stringify(VOXEL_DOC), summary: '', kind: 'voxel', createdAt: now })
+  await db.insert(timelineSceneHeads).values({ worldId: 'w1', timelineId: 'tl1', representation: 'voxel',
+    currentRevisionId: 'sr1', currentVersion: 1, updatedAt: now })
   const world = (await db.select().from(worlds).where(eq(worlds.id, 'w1')).get())!
   const timeline = (await db.select().from(timelines).where(eq(timelines.id, 'tl1')).get())!
   return { db, env, world, timeline }
@@ -136,7 +149,7 @@ describe('projectVoxelEvents 门控(AC2)', () => {
 
   it('无体素文档的世界 → null(2D 场景世界管线不适用)', async () => {
     const { db, env, world, timeline } = await seed()
-    await db.update(worldSceneRevisions).set({ documentJson: JSON.stringify({ schemaVersion: 1 }) }).where(eq(worldSceneRevisions.worldId, 'w1'))
+    await db.update(timelineSceneRevisions).set({ snapshotJson: JSON.stringify({ schemaVersion: 1 }) }).where(eq(timelineSceneRevisions.timelineId, 'tl1'))
     await db.insert(events).values({ id: 'e1', timelineId: 'tl1', simTime: '2026-10-15T10:00:00.000Z',
       title: '打扫', description: '', kind: 'action', actorPersonId: 'p-a', dialogueId: null })
     const run = await projectVoxelEvents(db, env, { world, timeline, cfg: CFG, tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: true })
@@ -162,5 +175,39 @@ describe('projectVoxelEvents 门控(AC2)', () => {
       title: '别线事件', description: '', kind: 'action', actorPersonId: 'p-a', dialogueId: null })
     const run = await projectVoxelEvents(db, env, { world, timeline, cfg: CFG, tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: false })
     expect(run).toMatchObject({ projected: 0 })
+  })
+
+  it('uses the selected child line geometry anchor and refuses legacy main fallback when that line has no scene', async () => {
+    const { db, env, world } = await seed()
+    const rootV1 = (await db.select().from(timelineSceneRevisions).where(eq(timelineSceneRevisions.timelineId, 'tl1')).get())!
+    await db.update(timelineSceneRevisions).set({ createdAt: '2026-10-15T10:00:00.000Z' }).where(eq(timelineSceneRevisions.id, rootV1.id))
+    await db.insert(timelines).values([
+      { id: 'tl-child', worldId: 'w1', parentTimelineId: 'tl1', simNow: SIM_NOW, createdAt: '2026-10-15T11:00:00.000Z', status: 'active' },
+      { id: 'tl-empty-child', worldId: 'w1', parentTimelineId: 'tl1', simNow: SIM_NOW, createdAt: '2026-10-15T11:00:00.000Z', status: 'active' },
+    ])
+    await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl-child', expectedVersion: 0,
+      requestId: 'projection-child-v1', document: VOXEL_DOC, summary: 'fork anchor', kind: 'fork-restore' })
+    await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl1', expectedVersion: 1,
+      requestId: 'projection-main-v2', document: projectionSceneAt(25), summary: 'later main edit', kind: 'voxel-edit' })
+    await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl-child', expectedVersion: 1,
+      requestId: 'projection-child-v2', document: projectionSceneAt(30), summary: 'child edit', kind: 'voxel-edit' })
+    await db.insert(personStates).values({ personId: 'p-a', timelineId: 'tl-child', simTime: SIM_NOW, location: '主楼',
+      activity: '打扫', mood: '平静', goal: '', updatedRealAt: SIM_NOW })
+    await db.insert(events).values({ id: 'e-child', timelineId: 'tl-child', simTime: '2026-10-15T16:00:00.000Z',
+      title: '在主楼打扫', description: '', kind: 'action', actorPersonId: 'p-a', dialogueId: null })
+    const childTimeline = (await db.select().from(timelines).where(eq(timelines.id, 'tl-child')).get())!
+    const run = await projectVoxelEvents(db, env, { world, timeline: childTimeline, cfg: CFG,
+      tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: false })
+    expect(run).toMatchObject({ projected: 1 })
+    const childPayload = await db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, 'tl-child')).get()
+    expect(JSON.parse(childPayload!.payloadJson).event.at).toEqual({ x: 30, y: 2, z: 18 })
+
+    await db.insert(events).values({ id: 'e-empty-child', timelineId: 'tl-empty-child', simTime: '2026-10-15T16:00:00.000Z',
+      title: '本线无场景', description: '', kind: 'action', actorPersonId: 'p-a', dialogueId: null })
+    const emptyTimeline = (await db.select().from(timelines).where(eq(timelines.id, 'tl-empty-child')).get())!
+    const noFallback = await projectVoxelEvents(db, env, { world, timeline: emptyTimeline, cfg: CFG,
+      tickBudget: { used: 0, limit: 8 }, llm: LLM, allowCopyLlm: false })
+    expect(noFallback).toBeNull()
+    expect(await db.select().from(voxelEventProjections).where(eq(voxelEventProjections.timelineId, 'tl-empty-child'))).toHaveLength(0)
   })
 })

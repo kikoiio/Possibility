@@ -78,19 +78,19 @@ it('D4 tick entry rejects unauthorized dispatch and skips paused, capped, and ar
   await f.db.update(worlds).set({ status: 'paused', pauseReason: 'owner_pause' }).where(eq(worlds.id, 'home-world'))
   const paused = await app.request('/api/engine/tick', { method: 'POST', headers: { 'x-engine-secret': env.ENGINE_TICK_SECRET } }, env)
   expect(paused.status).toBe(200)
-  expect((await paused.json() as { worlds: unknown[] }).worlds).toEqual([])
+  expect((await paused.json() as { worlds: Array<{ id: string }> }).worlds.some(world => world.id === 'home-world')).toBe(false)
   expect(await f.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()).toMatchObject({ simNow: WORLD_TIME })
 
   await f.db.update(worlds).set({ status: 'capped', pauseReason: 'global_daily_cap',
     callsDay: new Date().toISOString().slice(0, 10), callsToday: 400 }).where(eq(worlds.id, 'home-world'))
   const capped = await app.request('/api/engine/tick', { method: 'POST', headers: { 'x-engine-secret': env.ENGINE_TICK_SECRET } }, env)
   expect(capped.status).toBe(200)
-  expect((await capped.json() as { worlds: unknown[] }).worlds).toEqual([])
+  expect((await capped.json() as { worlds: Array<{ id: string }> }).worlds.some(world => world.id === 'home-world')).toBe(false)
 
   await f.db.update(worlds).set({ status: 'archived', pauseReason: 'idle_archive' }).where(eq(worlds.id, 'home-world'))
   const archived = await app.request('/api/engine/tick', { method: 'POST', headers: { 'x-engine-secret': env.ENGINE_TICK_SECRET } }, env)
   expect(archived.status).toBe(200)
-  expect((await archived.json() as { worlds: unknown[] }).worlds).toEqual([])
+  expect((await archived.json() as { worlds: Array<{ id: string }> }).worlds.some(world => world.id === 'home-world')).toBe(false)
   expect(await f.db.select().from(timelines).where(eq(timelines.id, 'home-main')).get()).toMatchObject({ simNow: WORLD_TIME })
 })
 

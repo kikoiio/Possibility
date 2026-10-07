@@ -1,4 +1,6 @@
 import { Hono, type Context } from 'hono'
+import { and, eq, isNull } from 'drizzle-orm'
+import { timelines } from '../db/schema'
 import { applyEdits, deserialize, ensureAssetPlacementIds, isSerializedVoxelSpaces, serialize, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { resolveWorldScope } from '../access/world-scope'
@@ -45,7 +47,7 @@ export const voxelRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>
 voxelRoutes.use('/voxel/*', authMiddleware)
 
 voxelRoutes.post('/voxel/edit-plan', async (c) => {
-  const body = await c.req.json<{ worldId?: string; requestId?: string; intent?: string; document?: string }>().catch(() => null)
+  const body = await c.req.json<{ worldId?: string; timelineId?: string; representation?: string; spaceId?: string; requestId?: string; intent?: string; document?: string }>().catch(() => null)
   if (typeof body?.worldId !== 'string' || !body.worldId.trim()
     || typeof body.requestId !== 'string' || !body.requestId.trim()
     || typeof body.intent !== 'string' || !body.intent.trim()
@@ -79,9 +81,17 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
   }
   // A1(B52):模型配置/预算之前先核对权威场景——客户端文档必须对应真实当前基底,
   // 且既有场景必须通过完整检查;无效旧场景直接返回兼容诊断,模型调用为 0。
-  const bindings = await loadWorldSceneBindings(db, body.worldId)
-  const access = { bindings }
-  const current = await readCurrentScene(db, body.worldId)
+  if (body.representation !== undefined && body.representation !== 'voxel') {
+    return editPlanFailure(c, 422, 'input', '该表现不支持体素编辑。', false)
+  }
+  const timeline = await db.select().from(timelines).where(and(eq(timelines.worldId, body.worldId),
+    body.timelineId !== undefined ? eq(timelines.id, body.timelineId) : isNull(timelines.parentTimelineId))).get()
+  if (!timeline || timeline.status !== 'active') return editPlanFailure(c, 409, 'permission', '目标时间线不存在或只读。', false)
+  const sceneScope = body.timelineId !== undefined ? { worldId: body.worldId, timelineId: timeline.id, representation: 'voxel' } : undefined
+  const spaceId = body.spaceId === 'exterior' ? 'single' : body.spaceId
+  const bindings = await loadWorldSceneBindings(db, body.worldId, sceneScope, spaceId)
+  const access = { bindings, ...(sceneScope ? { scope: sceneScope } : {}), ...(spaceId ? { spaceId } : {}) }
+  const current = await readCurrentScene(db, body.worldId, sceneScope)
   if (!current) {
     return editPlanFailure(c, 409, 'conflict', '世界还没有已保存的场景。', false,
       '请先为这个世界创建场景。')
@@ -102,8 +112,8 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
   const spaces = isSerializedVoxelSpaces(current.document) ? current.document.spaces : null
   const clientHash = stableText(JSON.parse(body.document))
   const matched = spaces
-    ? spaces.find(space => stableText(space.document) === clientHash)
-    : (stableText(current.document) === clientHash ? { id: 'single', document: current.document } : null)
+    ? spaces.find(space => (!spaceId || space.id === spaceId) && stableText(space.document) === clientHash)
+    : ((!spaceId || spaceId === 'single') && stableText(current.document) === clientHash ? { id: 'single', document: current.document } : null)
   if (!matched) {
     return editPlanFailure(c, 409, 'conflict', '当前文档与已保存场景不一致，请重新加载后再试。', false,
       '刷新场景后再发起改造。')

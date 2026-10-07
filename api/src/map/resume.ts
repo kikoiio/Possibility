@@ -35,7 +35,7 @@ export async function saveMapResume(db: Db, input: { userId: string; worldId: st
     db.select({ id: timelines.id }).from(timelines).where(and(eq(timelines.id, input.timelineId), eq(timelines.worldId, input.worldId))).get(),
   ])
   if (!ownedWorld || !timeline) return false
-  const stored = await readCurrentScene(db, input.worldId)
+  const stored = await readCurrentScene(db, input.worldId, { worldId: input.worldId, timelineId: input.timelineId, representation: 'voxel' })
   const index = sceneSpaceIndex(stored?.document)
   if (index ? !index.spaceIds.includes(input.spaceId) : input.spaceId !== 'exterior') return false
   const updatedAt = new Date().toISOString()
@@ -53,7 +53,7 @@ export async function readGuestMapResume(db: Db, sessionId: string) {
   const fallback = timeline ?? await db.select({ id: timelines.id }).from(timelines)
     .where(and(eq(timelines.worldId, session.currentSandboxWorldId), isNull(timelines.parentTimelineId))).get()
   if (!fallback) return null
-  const stored = await readCurrentScene(db, session.currentSandboxWorldId)
+  const stored = await readCurrentScene(db, session.currentSandboxWorldId, { worldId: session.currentSandboxWorldId, timelineId: fallback.id, representation: 'voxel' })
   const index = sceneSpaceIndex(stored?.document)
   const defaultSpaceId = index?.defaultSpaceId ?? 'exterior'
   const spaceId = index?.spaceIds.includes(session.resumeSpaceId ?? '') ? session.resumeSpaceId! : defaultSpaceId
@@ -67,7 +67,7 @@ export async function saveGuestMapResume(db: Db, input: { sessionId: string; wor
   const timeline = await db.select({ id: timelines.id }).from(timelines)
     .where(and(eq(timelines.id, input.timelineId), eq(timelines.worldId, input.worldId))).get()
   if (!timeline) return false
-  const stored = await readCurrentScene(db, input.worldId)
+  const stored = await readCurrentScene(db, input.worldId, { worldId: input.worldId, timelineId: input.timelineId, representation: 'voxel' })
   const index = sceneSpaceIndex(stored?.document)
   if (index ? !index.spaceIds.includes(input.spaceId) : input.spaceId !== 'exterior') return false
   await db.update(guestSessions).set({

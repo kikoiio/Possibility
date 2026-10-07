@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, authApi, getGuestToken, getToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeAuthIdentityChange, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, TimelineComparison, WorldSnapshot,
+  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, SceneHistoryRevision, TimelineComparison, WorldSnapshot,
 } from '../api/types'
 import type { SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
 import { SceneCompatibilityPanel } from '../components/scene/SceneCompatibilityPanel'
@@ -51,8 +51,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const presentationRuntime = useMemo(() => createPresentationRuntime(guest ? 'guest' : readonly ? 'public' : 'account'), [guest, readonly])
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
+  const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
+  const archived = snapshot?.world.status === 'archived' || snapshot?.timelines.find(item => item.id === activeTimelineId)?.status === 'archived'
+  const sceneTimelineRef = useRef(activeTimelineId); sceneTimelineRef.current = activeTimelineId
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
   const [sceneMissing, setSceneMissing] = useState(false)
+  const [sceneUnsupported, setSceneUnsupported] = useState(false)
   const [canEditScene, setCanEditScene] = useState(false)
   const [resumeSpaceId, setResumeSpaceId] = useState('exterior')
   const [resumeMode, setResumeMode] = useState<'life' | 'possibility'>('life')
@@ -84,10 +88,17 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [restoringRevision, setRestoringRevision] = useState(false)
   const [restoreError, setRestoreError] = useState('')
   const restoreRequestId = useRef(0)
-  useEffect(() => () => { sceneHistoryRequestId.current += 1; restoreRequestId.current += 1 }, [worldId])
+  useEffect(() => {
+    sceneHistoryRequestId.current += 1
+    sceneHistoryLoading.current = false
+    restoreRequestId.current += 1
+    setSceneHistoryState({ status: 'closed' })
+    setRestoringRevision(false)
+    setRestoreError('')
+  }, [worldId, activeTimelineId])
   // A1 场景兼容:诊断/修复草稿/确认/结果恢复全部经会话状态机驱动,面板只读展示 continuation。
   const [compatContinuation, setCompatContinuation] = useState<CompatibilityContinuation | null>(null)
-  const [compatReadyScope, setCompatReadyScope] = useState<{ worldId: string; authIdentityEpoch: number } | null>(null)
+  const [compatReadyScope, setCompatReadyScope] = useState<{ worldId: string; timelineId: string; authIdentityEpoch: number } | null>(null)
   const [authIdentityEpoch, setAuthIdentityEpoch] = useState(0)
   const authIdentityEpochRef = useRef(0)
   const compatSessionRef = useRef<CompatibilitySession | null>(null)
@@ -101,24 +112,28 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     let session: CompatibilitySession | null = null
     const identityEpoch = authIdentityEpoch
     const identityToken = guest ? getGuestToken() : getToken()
+    if (!activeTimelineId) return
     setCompatReadyScope(null)
     setCompatContinuation(null)
     const client: CompatibilitySessionClient = {
-      inspect: input => sceneCompatibilityApi.inspection(worldId, input.target.kind === 'history' ? { version: input.target.version } : {}),
-      createDraft: input => sceneCompatibilityApi.createDraft(worldId, {
+      inspect: input => sceneCompatibilityApi.inspection(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.target.kind === 'history' ? {
+        version: input.target.version,
+        targetRevisionId: input.target.targetRevisionId,
+      } : {}),
+      createDraft: input => sceneCompatibilityApi.createDraft(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, {
         draftRequestId: input.draftRequestId,
         purpose: input.purpose,
         target: input.target,
         expectedCurrentVersion: input.expectedCurrentVersion,
       }),
-      submit: input => sceneCompatibilityApi.confirm(worldId, {
+      submit: input => sceneCompatibilityApi.confirm(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, {
         draftId: input.draftId,
         requestId: input.requestId,
         expectedCurrentVersion: input.expectedCurrentVersion,
         expectedAttempt: input.expectedAttempt,
       }),
-      query: input => sceneCompatibilityApi.readRequest(worldId, input.requestId),
-      recover: input => sceneCompatibilityApi.recoverRequest(worldId, input.requestId, {
+      query: input => sceneCompatibilityApi.readRequest(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.requestId),
+      recover: input => sceneCompatibilityApi.recoverRequest(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.requestId, {
         draftId: input.draftId,
         expectedCurrentVersion: input.expectedCurrentVersion,
         expectedAttempt: input.expectedAttempt,
@@ -130,13 +145,13 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
         // Do not load locally cached draft metadata until the server confirms this
         // identity can read the requested world's current scene.
-        await worldSceneApi.get(worldId, { redirectOnUnauthorized: false })
+        await worldSceneApi.get(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, { redirectOnUnauthorized: false })
         if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
-        session = createCompatibilitySession({ scope: { actorKey, worldId }, client })
+        session = createCompatibilitySession({ scope: { actorKey: `${actorKey}\u001f${activeTimelineId}\u001fvoxel`, worldId }, client })
         compatSessionRef.current = session
         unsubscribe = session.subscribe(setCompatContinuation)
         setCompatContinuation(session.snapshot())
-        setCompatReadyScope({ worldId, authIdentityEpoch: identityEpoch })
+        setCompatReadyScope({ worldId, timelineId: activeTimelineId, authIdentityEpoch: identityEpoch })
       } catch {
         if (active) {
           setCompatContinuation(null)
@@ -151,9 +166,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       session?.dispose()
       if (compatSessionRef.current === session) compatSessionRef.current = null
     }
-  }, [worldId, guest, authIdentityEpoch])
+  }, [worldId, guest, authIdentityEpoch, activeTimelineId])
   useEffect(() => {
-    const continuation = compatReadyScope?.worldId === worldId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
+    const continuation = compatReadyScope?.worldId === worldId && compatReadyScope.timelineId === activeTimelineId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
       ? compatContinuation : null
     const session = compatSessionRef.current
     if (!session || continuation?.state !== 'submitting' || !continuation.requestId) return
@@ -165,7 +180,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         return () => document.removeEventListener('visibilitychange', listener)
       },
     })
-  }, [worldId, compatReadyScope, authIdentityEpoch, compatContinuation?.state, compatContinuation?.requestId])
+  }, [worldId, activeTimelineId, compatReadyScope, authIdentityEpoch, compatContinuation?.state, compatContinuation?.requestId])
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [forkPrefill, setForkPrefill] = useState<{ key: string; whatIf: string; simTime: string } | null>(null)
@@ -191,7 +206,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   if (!requestScope.current) requestScope.current = new RequestScopeController({ worldId, timelineId: timelineId ?? '', spaceId: 'exterior' })
   const snapshotVersion = useRef(0); snapshotVersion.current = snapshot?.stateVersion ?? 0
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
-  const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
   const presentationRoute = readPresentationRoute(worldId, search, presentationStore.getPreferred())
   const comparisonWorkspaceActive = search.has('presentation') || search.has('rightWorld') || presentationRoute.left.presentation === 'native2d'
   const savedVoxelCamera = presentationStore.getCamera({ worldId, timelineId: activeTimelineId || 'main', presentation: 'voxel3d' })
@@ -246,14 +260,21 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   } : null
 
   const read = useCallback(async () => {
-    setError(''); setSceneMissing(false)
+    setError(''); setSceneMissing(false); setSceneUnsupported(false)
     const scopes = requestScope.current!
     scopes.update({ worldId, timelineId: timelineId ?? '', spaceId: 'exterior' })
     const request = scopes.create()
+    let scopedRequest = request
     try {
       if (readonly && !guest) {
-        const [world, current] = await Promise.all([publicApi.snapshot(worldId, timelineId ?? undefined, request.controller.signal), publicApi.scene(worldId, request.controller.signal)])
+        const world = await publicApi.snapshot(worldId, timelineId ?? undefined, request.controller.signal)
         if (!scopes.accepts(request.scope)) return
+        const selectedTimelineId = timelineId ?? world.currentTimelineId
+        setSnapshot(world)
+        scopes.update({ worldId, timelineId: selectedTimelineId, spaceId: 'exterior' })
+        scopedRequest = scopes.create()
+        const current = await publicApi.scene(worldId, { timelineId: selectedTimelineId, representation: 'voxel' }, scopedRequest.controller.signal)
+        if (!scopes.accepts(scopedRequest.scope)) return
         setSnapshot(world)
         if (current.status === 'ready') setSceneDoc(current.document)
         else { setSceneDoc(null); setSceneMissing(true) }
@@ -270,8 +291,15 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         else if (bootstrap.scene.status === 'unavailable') { setSceneDoc(null); setSceneMissing(true) }
         else setSceneDoc(null)
       }
-    } catch (e) { if (scopes.accepts(request.scope)) setError(e instanceof Error ? e.message : '画布加载失败') }
-    finally { request.controller.abort() }
+    } catch (e) {
+      if (scopes.accepts(request.scope)) {
+        if (e instanceof ApiError && e.errorCode === 'format-unsupported') {
+          setSceneDoc(null); setSceneMissing(true); setSceneUnsupported(true)
+          setError('此场景表现尚未接入，当前无法浏览或编辑。')
+        } else setError(e instanceof Error ? e.message : '画布加载失败')
+      }
+    }
+    finally { request.controller.abort(); if (scopedRequest !== request) scopedRequest.controller.abort() }
   }, [worldId, timelineId, readonly, guest])
   useEffect(() => { void read() }, [read])
 
@@ -601,16 +629,19 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }
   async function loadRevisionList() {
     if (sceneHistoryLoading.current || sceneHistoryState.status === 'loading') return
+    if (!activeTimelineId) return
+    const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
     const requestId = ++sceneHistoryRequestId.current
     sceneHistoryLoading.current = true
     setRestoreError('')
     setSceneHistoryState({ status: 'loading' })
     try {
-      const [current, history] = await Promise.all([worldSceneApi.get(worldId), worldSceneApi.history(worldId)])
-      if (requestId !== sceneHistoryRequestId.current) return
+      const [current, history] = await Promise.all([worldSceneApi.get(worldId, scope), worldSceneApi.history(worldId, scope)])
+      if (requestId !== sceneHistoryRequestId.current || sceneTimelineRef.current !== scope.timelineId) return
       const currentVersion = current.status === 'ready' ? current.version : 0
       setRevisionCurrent(currentVersion)
-      setSceneHistoryState({ status: 'ready', currentVersion, revisions: history.revisions })
+      const currentRevisionId = current.status === 'ready' ? current.revisionId : null
+      setSceneHistoryState({ status: 'ready', currentVersion, currentRevisionId, revisions: history.revisions })
     } catch {
       if (requestId === sceneHistoryRequestId.current) setSceneHistoryState({ status: 'error', message: '场景历史暂时无法读取，请重试。' })
     } finally {
@@ -621,9 +652,11 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   async function openCompatibility(purpose: CompatibilityPurpose, target: SceneTarget) {
     closeSceneHistory()
     const session = compatSessionRef.current
-    if (!session) return
+    if (!session || !activeTimelineId || archived) return
     try {
-      const current = await worldSceneApi.get(worldId)
+      const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
+      const current = await worldSceneApi.get(worldId, scope)
+      if (sceneTimelineRef.current !== scope.timelineId || session !== compatSessionRef.current) return
       const expectedCurrentVersion = current.status === 'ready' ? current.version : 0
       await session.check({ purpose, target, expectedCurrentVersion })
     } catch {
@@ -638,75 +671,86 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (state === 'submitting' || state === 'unknown') setCompatContinuation(null)
     else session.reset()
   }
-  async function restoreVersion(version: number) {
+  async function restoreVersion(revision: SceneHistoryRevision) {
     if (sceneHistoryState.status !== 'ready' || restoringRevision) return
+    const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
+    if (!scope.timelineId || archived || !canEditScene) return
     const requestId = ++restoreRequestId.current
     setRestoringRevision(true)
     setRestoreError('')
     try {
       // A1:恢复前先检查目标历史版本——有效走原快速通道,无效进入完整 A1 修复旅程。
-      const inspection = await sceneCompatibilityApi.inspection(worldId, { version })
-      if (requestId !== restoreRequestId.current) return
+      const inspection = await sceneCompatibilityApi.inspection(worldId, scope, { version: revision.version, targetRevisionId: revision.revisionId })
+      if (requestId !== restoreRequestId.current || sceneTimelineRef.current !== scope.timelineId) return
       if (inspection.report.status === 'valid' && !inspection.canCreateRepairDraft) {
-        await worldSceneApi.restore(worldId, sceneHistoryState.currentVersion, version)
+        await worldSceneApi.restore(worldId, scope, sceneHistoryState.currentVersion, revision.revisionId)
         closeSceneHistory()
         voxelVersionRef.current = null
         void read()
       } else if (inspection.report.status === 'invalid' && inspection.canCreateRepairDraft) {
-        void openCompatibility('restore-history', { kind: 'history', version })
+        void openCompatibility('restore-history', { kind: 'history', version: revision.version, targetRevisionId: revision.revisionId })
       } else {
         setRestoreError('所选版本检查未完成，暂时不能恢复，请稍后重试。')
       }
     } catch (e) {
-      if (requestId === restoreRequestId.current) {
+      if (requestId === restoreRequestId.current && sceneTimelineRef.current === scope.timelineId) {
         if (e instanceof ApiError && e.status === 422 && e.errorCode === 'compatibility-required') {
-          void openCompatibility('restore-history', { kind: 'history', version })
+          void openCompatibility('restore-history', { kind: 'history', version: revision.version, targetRevisionId: revision.revisionId })
         } else if (e instanceof ApiError && e.status === 422 && e.errorCode === 'validation-incomplete') {
           setRestoreError('所选版本检查未完成，暂时不能恢复，请稍后重试。')
         } else {
           setRestoreError('无法恢复到所选版本，请重试。')
         }
       }
-      if (e instanceof ApiError && e.status === 409) void read()
-    } finally { if (requestId === restoreRequestId.current) setRestoringRevision(false) }
+      if (e instanceof ApiError && e.status === 409 && sceneTimelineRef.current === scope.timelineId) void read()
+    } finally { if (requestId === restoreRequestId.current && sceneTimelineRef.current === scope.timelineId) setRestoringRevision(false) }
   }
 
   // S2b 体素保存通道:EditController 防抖回调须身份稳定(VoxelViewport 以 onSave 为装配依赖)。
   // voxel 信封的 version 是格式字面量而非修订版本,首次保存前经 GET scene 取真实版本,成功后用返回值推进;
   // 保存成功不 setSceneDoc——引擎内文档已是最新,换 voxelDoc 身份会导致整个视口重挂载。
   const voxelVersionRef = useRef<number | null>(null)
+  useEffect(() => { voxelVersionRef.current = null }, [worldId, activeTimelineId])
   const saveVoxel = useCallback(async (doc: VoxelDocument) => {
+    const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
+    if (!scope.timelineId || archived || !canEditScene) throw new Error('此时间线只读，无法保存场景修改')
     try {
       if (voxelVersionRef.current == null) {
-        const current = await worldSceneApi.get(worldId)
+        const current = await worldSceneApi.get(worldId, scope)
+        if (sceneTimelineRef.current !== scope.timelineId) return
         voxelVersionRef.current = current.status === 'ready' ? current.version : 0
       }
-      const saved = await worldSceneApi.commitVoxel(worldId, voxelVersionRef.current, crypto.randomUUID(), JSON.parse(serialize(doc)) as SerializedVoxelDocument)
+      const saved = await worldSceneApi.commitVoxel(worldId, scope, voxelVersionRef.current, crypto.randomUUID(), JSON.parse(serialize(doc)) as SerializedVoxelDocument, 'exterior')
+      if (sceneTimelineRef.current !== scope.timelineId) return
       voxelVersionRef.current = saved.version
     } catch (e) {
+      if (sceneTimelineRef.current !== scope.timelineId) return
       if (e instanceof ApiError && e.status === 409) { voxelVersionRef.current = null; setError('场景有新版本，请重新加载后再继续。'); void read() }
       else if (e instanceof ApiError && e.status === 422 && e.errorCode === 'compatibility-required') void openCompatibility('repair-current', { kind: 'current' })
       else if (e instanceof ApiError && e.status === 422) setError(`体素场景未通过校验：${e.issues?.[0]?.message ?? e.message}`)
       else setError(e instanceof Error ? e.message : '体素保存失败')
     }
-  }, [worldId, read])
+  }, [worldId, activeTimelineId, read, archived, canEditScene])
 
   // A1(W20):编辑候选统一走服务端完整预检;回调身份须稳定(VoxelViewport 以 preflightEdits 为装配依赖)。
-  const preflightSceneCandidate = useCallback((candidate: SceneCandidate) => sceneCompatibilityApi.preflight(worldId, candidate), [worldId])
+  const preflightSceneCandidate = useCallback((candidate: SceneCandidate) => sceneCompatibilityApi.preflight(worldId, {
+    timelineId: activeTimelineId, representation: 'voxel',
+  }, candidate), [worldId, activeTimelineId])
   // A1(W31):手动编辑被既存问题(origin=existing)阻断时,直接打开修复旅程;本次编辑问题只留在编辑器反馈里。
   const handleEditBlocked = useCallback((blocked: import('../voxel/bridge/edit-controller').PreflightBlocked) => {
     if (blocked.kind !== 'invalid' || !blocked.report) return
     const issues = Array.isArray(blocked.report.issues) ? blocked.report.issues : []
     if (issues.some(issue => issue.origin === 'existing')) void openCompatibility('repair-current', { kind: 'current' })
-  }, [worldId])
+  }, [worldId, activeTimelineId])
   // A1(W21):AI 规划命中服务端模型前闸门(422 compatibility-required)时,直接打开修复旅程,原输入保留在面板里。
-  const planSceneEdits = useCallback((engine: VoxelEngine, intent: string) =>
-    planEditsViaApi(engine, worldId, intent).catch(error => {
+  const planSceneEdits = useCallback((engine: VoxelEngine, intent: string, scope = {
+    timelineId: activeTimelineId, representation: 'voxel' as const, spaceId: 'exterior',
+  }) => planEditsViaApi(engine, worldId, intent, scope).catch(error => {
       if (error instanceof EditPlanRequestError && error.errorCode === 'compatibility-required') {
         void openCompatibility('repair-current', { kind: 'current' })
       }
       throw error
-    }), [worldId])
+    }), [worldId, activeTimelineId])
 
   if (error && !snapshot && comparisonWorkspaceActive) return (
     <div className="min-h-full bg-sage-50 p-4">
@@ -733,7 +777,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-ink-faint">正在准备这方天地…</div>
 
   // A1 兼容面板:单空间/多空间(GuestWorldMap)共用同一会话与同一面板,只读预览按草稿惰性加载。
-  const currentCompatContinuation = compatReadyScope?.worldId === worldId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
+  const currentCompatContinuation = compatReadyScope?.worldId === worldId && compatReadyScope.timelineId === activeTimelineId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
     ? compatContinuation : null
   const compatDraft = currentCompatContinuation?.draft ?? null
   const compatSourceVersion = currentCompatContinuation?.source?.version ?? null
@@ -741,8 +785,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     ? <SceneRepairPreview
         key={compatDraft.id}
         spaces={compatDraft.previewSpaces}
-        loadSourceSpace={(sid, signal) => sceneCompatibilityApi.readSourceSpace(worldId, compatSourceVersion, sid, signal).then(res => res.document)}
-        loadCandidateSpace={(sid, signal) => sceneCompatibilityApi.readDraftSpace(worldId, compatDraft.id, sid, signal).then(res => res.document)}
+        loadSourceSpace={(sid, signal) => sceneCompatibilityApi.readSourceSpace(worldId,
+          { timelineId: activeTimelineId, representation: 'voxel' }, compatSourceVersion, sid, signal,
+          currentCompatContinuation?.target?.kind === 'history'
+            ? { targetRevisionId: currentCompatContinuation.target.targetRevisionId } : undefined).then(res => res.document)}
+        loadCandidateSpace={(sid, signal) => sceneCompatibilityApi.readDraftSpace(worldId,
+          { timelineId: activeTimelineId, representation: 'voxel' }, compatDraft.id, sid, signal).then(res => res.document)}
         changes={compatDraft.changes.items}
         ruleNotes={compatDraft.report?.ruleNotes.items ?? []}
         timeZone={snapshot.world.timeZone}
@@ -766,7 +814,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const worldStatus = snapshot.world.status
   const running = worldStatus === 'running'
   const capped = worldStatus === 'capped'
-  const archived = worldStatus === 'archived'
   const evidenceReadonly = snapshot.evidence.level !== 'complete'
   const canInteract = !readonly && !guest && !evidenceReadonly
 
@@ -780,8 +827,9 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       guest={guest}
       sceneHistoryState={sceneHistoryState}
       restoringRevision={restoringRevision}
+      sceneHistoryReadOnly={archived || !canEditScene || readonly || guest}
       restoreError={restoreError}
-      onRestoreRevision={version => restoreVersion(version)}
+      onRestoreRevision={revision => restoreVersion(revision)}
       onRetryRevisionList={() => loadRevisionList()}
       onCloseSceneHistory={closeSceneHistory}
       compatPanel={compatPanel}
@@ -901,14 +949,14 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   if (!voxelDoc) {
     const personId = snapshot.locationBoard.flatMap(row => row.persons.map(person => person.id))[0]
     const rebuildHref = personId
-      ? `/worlds/${encodeURIComponent(worldId)}/scene/repair`
+      ? `/worlds/${encodeURIComponent(worldId)}/scene/repair?timeline=${encodeURIComponent(activeTimelineId)}`
       : null
     return (
       <div className="grid min-h-[calc(100vh-7rem)] bg-sage-50 p-4">
         <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-sheet p-6 text-center shadow-sm" data-testid="world-canvas-missing">
-          <p className="text-sm text-ink-soft">{sceneMissing ? '场景暂时不可用，请重试。' : '待创建场景'}</p>
-          {!sceneMissing && <p className="mt-2 text-sm text-ink-faint">为这个世界创建场景后，即可继续进入。</p>}
-          {rebuildHref && !sceneMissing && !readonly && !guest
+          <p className="text-sm text-ink-soft">{sceneUnsupported ? '此场景表现尚未接入，当前无法浏览或编辑。' : sceneMissing ? '场景暂时不可用，请重试。' : '待创建场景'}</p>
+          {!sceneMissing && !sceneUnsupported && <p className="mt-2 text-sm text-ink-faint">为这个世界创建场景后，即可继续进入。</p>}
+          {rebuildHref && !sceneMissing && !sceneUnsupported && !readonly && !guest && !archived
             ? <Link to={rebuildHref} className="mt-4 inline-flex rounded-lg bg-sage-700 hover:bg-sage-800 px-4 py-2 text-sm text-white transition">补建场景</Link>
             : !sceneMissing && <p className="mt-3 text-xs text-ink-faint">当前没有可用于补建场景的居民，或此世界为只读。</p>}
           <button onClick={() => void read()} className="mt-4 rounded-full border border-ink-line/80 bg-sheet px-4 py-2 text-sm text-ink-soft hover:bg-paper-deep transition">重试</button>
@@ -921,7 +969,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (!snapshot || regeneratingDemo || !window.confirm('重新生成所有演示空间？当前场景将保留在历史版本中。')) return
     setRegeneratingDemo(true); setRegenerateError('')
     try {
-      await worldSceneApi.regenerateDemo(worldId, revisionCurrent)
+      await worldSceneApi.regenerateDemo(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, revisionCurrent)
       await read()
       await loadRevisionList()
     } catch (e) { setRegenerateError(e instanceof Error ? e.message : '重新生成失败') }

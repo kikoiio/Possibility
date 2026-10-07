@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { ForkResult, WorldSnapshot } from '../../../api/types'
-import { SceneHistoryPanel, type SceneHistoryViewState } from '../../scene/SceneHistoryPanel'
+import { SceneHistoryPanel, type SceneHistoryViewState, type SceneRevisionItem } from '../../scene/SceneHistoryPanel'
 import WorldLlmConfigPanel from '../../WorldLlmConfigPanel'
 import ComparePanel from '../ComparePanel'
 import ForkCompareHint from '../ForkCompareHint'
@@ -18,8 +18,9 @@ export interface WorldModalsContainerProps {
   // Scene history
   sceneHistoryState: { status: 'closed' } | SceneHistoryViewState
   restoringRevision: boolean
+  sceneHistoryReadOnly: boolean
   restoreError: string
-  onRestoreRevision: (version: number) => Promise<void>
+  onRestoreRevision: (revision: SceneRevisionItem) => Promise<void>
   onRetryRevisionList: () => Promise<void>
   onCloseSceneHistory: () => void
   // Compatibility
@@ -59,6 +60,7 @@ export default function WorldModalsContainer({
   guest,
   sceneHistoryState,
   restoringRevision,
+  sceneHistoryReadOnly,
   restoreError,
   onRestoreRevision,
   onRetryRevisionList,
@@ -89,8 +91,9 @@ export default function WorldModalsContainer({
         <SceneHistoryPanel
           state={sceneHistoryState}
           restoring={restoringRevision}
+          readOnly={sceneHistoryReadOnly}
           restoreError={restoreError}
-          onRestore={(version: number) => void onRestoreRevision(version)}
+          onRestore={(revision: SceneRevisionItem) => void onRestoreRevision(revision)}
           onRetry={() => void onRetryRevisionList()}
           onClose={onCloseSceneHistory}
         />

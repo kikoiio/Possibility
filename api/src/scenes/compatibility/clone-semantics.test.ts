@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { applyEdits, createEmptyWorld, serialize, setBlockMut, type SerializedVoxelDocument } from '@possibility/voxel-contract'
-import { persons, worldPersons, worldSceneRevisions, worlds } from '../../db/schema'
+import {
+  native2dLayoutHeads, native2dLayoutRevisions, persons, timelineSceneHeads, timelineSceneRevisions,
+  worldPersons, worldSceneRevisions, worlds,
+} from '../../db/schema'
 import { createWorldFixture } from '../../test/world-fixture'
 import { scenesRoutes } from '../routes'
 import { cloneSceneStatements, commitScene } from '../repository'
@@ -10,6 +13,10 @@ import { loadWorldSceneBindings } from './context'
 import { inspectSceneCompatibility } from './service'
 import type { SceneWriteProof } from './write-proof'
 import { buildTestPolicyActivationSql } from '../../../scripts/prepare-scene-compatibility-fixture'
+import { cloneWorldGraph } from '../../demo/world-graph-cloner'
+import { verifyClonedWorld } from '../../demo/clone-verification'
+import { native2dContentHash } from '../../native2d/repository'
+import type { Native2dLayout } from '../../native2d/schema'
 
 function validSceneDocument(personId = 'person-source') {
   const base = createEmptyWorld({ width: 4, height: 3, depth: 4 }, 'mist-manor', 'clone-valid')
@@ -35,6 +42,19 @@ function invalidScene(): SerializedVoxelDocument {
   return JSON.parse(serialize(document)) as SerializedVoxelDocument
 }
 
+function native2dLayout(worldId: string, timelineId: string): Native2dLayout {
+  const cells = Array.from({ length: 16 }, (_, index) => ({ x: index % 4, z: Math.floor(index / 4) }))
+  return {
+    metadata: {
+      schema: 'native2d-layout', schemaVersion: 1, layoutVersion: 1, sceneVersion: 1,
+      worldId, timelineId, sceneId: 'clone-map',
+      spaces: [{ spaceId: 'exterior', kind: 'exterior', width: 4, depth: 4, walkable: cells, connectivityRoot: { x: 0, z: 0 } }],
+      buildings: [{ buildingId: 'house', spaceId: 'exterior', footprint: [{ x: 0, z: 0 }], entry: { x: 0, z: 0 } }],
+    },
+    placements: [{ buildingId: 'house', spaceId: 'exterior', origin: { x: 1, z: 1 } }],
+  }
+}
+
 async function hashDocument(documentJson: string, version: number): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ document: JSON.parse(documentJson), version })))
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
@@ -46,6 +66,67 @@ const locationsJson = JSON.stringify([{ name: 'Cafe', description: '' }, { name:
 describe('I09 clone scene semantics', () => {
   const fixtures: Array<Awaited<ReturnType<typeof createWorldFixture>>> = []
   afterEach(() => fixtures.splice(0).forEach(fixture => fixture.close()))
+
+  it('clones timeline scene identities and native2d revision lineage into the target scope', async () => {
+    const fixture = await createWorldFixture(); fixtures.push(fixture)
+    await fixture.db.insert(persons).values({ id: 'person-source', userId: 'owner', name: '来源居民', modelJson: '{}', createdAt: NOW })
+    await fixture.db.insert(worldPersons).values({ worldId: 'home-world', personId: 'person-source', joinedAt: NOW })
+    fixture.sqlite.exec(await buildTestPolicyActivationSql())
+    const document = validScene()
+    const sourceScope = { worldId: 'home-world', timelineId: 'home-main', representation: 'voxel' }
+    await commitScene(fixture.db, { worldId: 'home-world', scope: sourceScope, expectedVersion: 0,
+      requestId: 'source-timeline-init', document, summary: 'timeline init', kind: 'initial' })
+    const followup = applyEdits(document, [
+      { kind: 'place-object', objectId: 'clone-person-followup', objectType: 'stone-lantern', anchor: { x: 2, y: 1, z: 2 }, rotation: 0 },
+    ]).document
+    await commitScene(fixture.db, { worldId: 'home-world', scope: sourceScope, expectedVersion: 1,
+      requestId: 'source-timeline-followup', document: followup, summary: 'timeline follow-up', kind: 'voxel-edit' })
+    await commitScene(fixture.db, { worldId: 'home-world', expectedVersion: 0, requestId: 'source-legacy-init',
+      document, summary: 'legacy init', kind: 'initial' })
+
+    const layoutOne = native2dLayout('home-world', 'home-main')
+    const layoutTwo: Native2dLayout = { ...layoutOne, placements: [{ ...layoutOne.placements[0]!, origin: { x: 2, z: 2 } }] }
+    await fixture.db.insert(native2dLayoutRevisions).values([
+      { id: 'source-native-v1', worldId: 'home-world', timelineId: 'home-main', sceneId: 'clone-map', version: 1, parentVersion: null,
+        requestId: 'source-native-init', contentHash: native2dContentHash(layoutOne), layoutJson: JSON.stringify(layoutOne), createdAt: NOW },
+      { id: 'source-native-v2', worldId: 'home-world', timelineId: 'home-main', sceneId: 'clone-map', version: 2, parentVersion: 1,
+        requestId: 'source-native-edit', contentHash: native2dContentHash(layoutTwo), layoutJson: JSON.stringify(layoutTwo), createdAt: NOW },
+    ])
+    await fixture.db.insert(native2dLayoutHeads).values({ worldId: 'home-world', timelineId: 'home-main', sceneId: 'clone-map',
+      currentRevisionId: 'source-native-v2', currentVersion: 2, updatedAt: NOW })
+
+    const clone = await cloneWorldGraph(fixture.db, { sourceWorldId: 'home-world', targetOwnerId: 'other', requestId: 'timeline-clone' })
+    const cloneTimelineId = clone.timelineIds.get('home-main')!
+    const clonePersonId = clone.personIds.get('person-source')!
+    const sceneRows = await fixture.db.select().from(timelineSceneRevisions).where(eq(timelineSceneRevisions.worldId, clone.worldId)).all()
+    expect(sceneRows).toHaveLength(2)
+    const initialCloneScene = sceneRows.find(row => row.version === 1)!
+    const followupCloneScene = sceneRows.find(row => row.version === 2)!
+    expect(initialCloneScene.timelineId).toBe(cloneTimelineId)
+    expect(initialCloneScene.snapshotJson).toContain(clonePersonId)
+    expect(initialCloneScene.snapshotJson).not.toContain('person-source')
+    for (const row of sceneRows) {
+      expect(row.contentHash).toBe(await hashDocument(row.snapshotJson, row.version))
+      expect(JSON.parse(row.validationJson!).scope).toEqual({ worldId: clone.worldId, timelineId: cloneTimelineId, representation: 'voxel' })
+    }
+    expect(followupCloneScene.historyParentRevisionId).toBe(initialCloneScene.id)
+    const sceneHead = await fixture.db.select().from(timelineSceneHeads).where(eq(timelineSceneHeads.worldId, clone.worldId)).get()
+    expect(sceneRows.find(row => row.id === sceneHead?.currentRevisionId)).toMatchObject({ timelineId: cloneTimelineId, version: sceneHead?.currentVersion })
+
+    const nativeRows = await fixture.db.select().from(native2dLayoutRevisions).where(eq(native2dLayoutRevisions.worldId, clone.worldId)).all()
+    expect(nativeRows.map(row => row.parentVersion)).toEqual(expect.arrayContaining([null, 1]))
+    for (const row of nativeRows) {
+      const layout = JSON.parse(row.layoutJson) as Native2dLayout
+      expect(layout.metadata).toMatchObject({ worldId: clone.worldId, timelineId: cloneTimelineId })
+      expect(row.contentHash).toBe(native2dContentHash(layout))
+    }
+    const nativeHead = await fixture.db.select().from(native2dLayoutHeads).where(eq(native2dLayoutHeads.worldId, clone.worldId)).get()
+    expect(nativeRows.find(row => row.id === nativeHead?.currentRevisionId)).toMatchObject({ version: nativeHead?.currentVersion, timelineId: cloneTimelineId })
+    const verification = await verifyClonedWorld(fixture.db, { sourceWorldId: 'home-world', targetOwnerId: 'other',
+      worldId: clone.worldId, mainTimelineId: clone.mainTimelineId, personIds: clone.personIds,
+      timelineIds: clone.timelineIds, commandIds: clone.commandIds })
+    expect(verification.issues).toEqual([])
+  })
 
   it('remaps clone identities, rebuilds clone-copy proof/hash, diagnoses invalid clones, and rejects HTTP bypass fields', async () => {
     const fixture = await createWorldFixture(); fixtures.push(fixture)

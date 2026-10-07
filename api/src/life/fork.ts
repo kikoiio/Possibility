@@ -5,6 +5,7 @@ import { commitments, dialogueTurns, dialogues, events, memories, personaMessage
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents, selectVisibleMemories, type ForkSnapshot } from '../agent/visibility'
 import { hydrateTimelines, SNAPSHOT_REF_JSON, writeForkSnapshot } from './snapshot-store'
 import { timelineSceneForkStatements } from '../scenes/repository'
+import { native2dLayoutForkStatements } from '../native2d/repository'
 import type { ForkScenario } from '../agent/types'
 import { ensureUniverseRevision, PROJECTION_DOMAINS, type ProjectionDomain } from '../world-state/model'
 import { reconstructAt, type Reconstruction } from '../world-state/reconstruct'
@@ -288,10 +289,14 @@ export async function forkTimeline(
     requestId: requestId ?? forkId,
     createdAt: now,
   })
+  const native2dForkWrites = await native2dLayoutForkStatements(db, {
+    worldId, sourceTimelineId: source.id, targetTimelineId: forkId, requestId: requestId ?? forkId, createdAt: now,
+  })
   const forkWrites: BatchItem<'sqlite'>[] = [
     ...(pauseForInitialization ? [pauseForInitialization] : []),
     insertTimeline,
     ...sceneForkWrites,
+    ...native2dForkWrites,
     writeForkSnapshot(db, forkId, snapshot, now),
     childRevision,
     db.insert(universeEvidence).values({ timelineId: forkId, level: 'complete', assessedVersion: 0,

@@ -147,7 +147,7 @@ describe('generateWorld（mock LLM 三态）', () => {
     expect(() => assembleWorld({
       size: { width: 16, height: 16, depth: 16 },
       locations: [{ name: '主楼', objectId: 'ghost' }],
-    }, 'mist-manor', 'x')).toThrow(/不存在的物体/)
+    }, 'mist-manor', 'x')).toThrow(/不存在的承载物/)
   })
 })
 

@@ -35,10 +35,8 @@ async function readPaneWorld(
   signal: AbortSignal,
 ): Promise<PaneWorldData> {
   if (mode === 'public') {
-    const [snapshot, scene] = await Promise.all([
-      publicApi.snapshot(target.worldId, target.timelineId, signal),
-      publicApi.scene(target.worldId, signal),
-    ])
+    const snapshot = await publicApi.snapshot(target.worldId, target.timelineId, signal)
+    const scene = await publicApi.scene(target.worldId, { timelineId: requestedTimeline(snapshot, target), representation: 'voxel' }, signal)
     if (scene.status !== 'ready') throw new Error('这个世界还没有可呈现的 3D 场景。')
     return { snapshot, document: scene.document, access: { observe: true }, identity: 'readonly' }
   }

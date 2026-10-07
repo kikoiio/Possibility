@@ -6,7 +6,7 @@ import { events, personStates, persons, timelines, timelineSceneHeads, timelineS
 import { forkTimeline } from '../life/fork'
 import {
   commitTimelineScene, listTimelineSceneHistory, readCurrentTimelineScene,
-  restoreTimelineSceneFromAncestor, TimelineSceneConflict,
+  restoreTimelineSceneFromAncestor, SceneConflict, TimelineSceneConflict, TimelineSceneIntegrityError,
 } from './repository'
 
 let fixture: Awaited<ReturnType<typeof createWorldFixture>> | null = null
@@ -71,7 +71,7 @@ it('forks complete scene snapshots, bounds history to the selected lineage, and 
     .toHaveLength(2)
   await expect(commitTimelineScene(db, { scope: scope(child.id), expectedVersion: 2,
     requestId: 'scene-child-v2', document: scene('grass'), summary: 'changed replay', kind: 'voxel-edit' }))
-    .rejects.toBeInstanceOf(TimelineSceneConflict)
+    .rejects.toBeInstanceOf(SceneConflict)
 
   const restored = await restoreTimelineSceneFromAncestor(db, { scope: scope(child.id), expectedVersion: 2,
     requestId: 'scene-child-restore-root', ancestorScope: scope('home-main') })
@@ -102,6 +102,30 @@ it('refuses a timeline scene history whose immutable parent revision is missing'
     name: 'TimelineSceneIntegrityError', code: 'unreconstructable-history',
   })
   expect(await db.select().from(timelines).where(eq(timelines.id, child.id)).get()).toBeDefined()
+})
+
+it('refuses a current scene whose immutable snapshot is corrupt', async () => {
+  fixture = await createWorldFixture()
+  const { db } = fixture
+  const revision = await commitTimelineScene(db, { scope: scope('home-main'), expectedVersion: 0,
+    requestId: 'scene-integrity-json', document: scene(), summary: 'root', kind: 'initial' })
+  await db.update(timelineSceneRevisions).set({ snapshotJson: '{broken-json' }).where(eq(timelineSceneRevisions.id, revision.id))
+  await expect(readCurrentTimelineScene(db, scope('home-main'))).rejects.toBeInstanceOf(TimelineSceneIntegrityError)
+  await expect(readCurrentTimelineScene(db, scope('home-main'))).rejects.toMatchObject({ code: 'invalid-json' })
+})
+
+it('rolls back the child timeline and forked scene rows when an atomic fork batch fails', async () => {
+  fixture = await createWorldFixture()
+  const { db, sqlite } = fixture
+  await commitTimelineScene(db, { scope: scope('home-main'), expectedVersion: 0,
+    requestId: 'scene-fork-rollback-root', document: scene(), summary: 'root', kind: 'initial' })
+  sqlite.exec(`CREATE TRIGGER fail_timeline_scene_fork BEFORE INSERT ON timeline_scene_revisions
+    WHEN NEW.timeline_id = 'scene-fork-rollback' BEGIN SELECT RAISE(ABORT, 'forced scene fork failure'); END`)
+  await expect(forkTimeline(db, 'home-world', 'home-main', null, 'scene-fork-rollback')).rejects.toThrow('forced scene fork failure')
+  expect(await db.select().from(timelines).where(eq(timelines.id, 'scene-fork-rollback'))).toHaveLength(0)
+  expect(await db.select().from(timelineSceneHeads).where(eq(timelineSceneHeads.timelineId, 'scene-fork-rollback'))).toHaveLength(0)
+  expect(await db.select().from(timelineSceneRevisions).where(eq(timelineSceneRevisions.timelineId, 'scene-fork-rollback'))).toHaveLength(0)
+  expect(await readCurrentTimelineScene(db, scope('home-main'))).toMatchObject({ version: 1 })
 })
 
 it('keeps voxel geometry revisions separate from simulation time and life ledgers', async () => {

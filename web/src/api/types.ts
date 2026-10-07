@@ -336,7 +336,28 @@ export interface SceneRepairDraftResponse {
   warnings: string[]
   callsUsed: number
 }
-export type SceneReadResponse = { status: 'missing' } | { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }
+export type SceneRepresentation = 'voxel' | 'native2d'
+
+/** Identity of one persisted scene representation on one world timeline. */
+export interface SceneScope {
+  timelineId: string
+  representation: SceneRepresentation
+}
+
+export interface SceneHistoryRevision {
+  revisionId: string
+  version: number
+  parentRevisionId: string | null
+  origin: 'current' | 'ancestor'
+  originTimelineId: string
+  summary: string
+  kind: string
+  createdAt: string
+}
+
+export type SceneReadResponse =
+  | { status: 'missing'; scope: { worldId: string } & SceneScope }
+  | { status: 'ready'; scope: { worldId: string } & SceneScope; revisionId: string; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }
 
 export interface PublicUniverseEvidence {
   level: 'unassessed' | 'complete' | 'upgradeable' | 'incomplete'

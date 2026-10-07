@@ -6,8 +6,11 @@ import {
   persons, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts,
   worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits,
   timelineSceneHeads, timelineSceneRevisions,
+  native2dLayoutHeads, native2dLayoutRevisions,
 } from '../db/schema'
 import { cloneSceneStatements } from '../scenes/repository'
+import { native2dContentHash } from '../native2d/repository'
+import type { Native2dLayout } from '../native2d/schema'
 
 export interface CloneWorldGraphInput {
   sourceWorldId: string
@@ -49,6 +52,23 @@ function remapSceneJson(json: string, people: Map<string, string>): string {
   return JSON.stringify(visit(JSON.parse(json)))
 }
 
+async function hashTimelineSceneDocument(document: unknown, version: number): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ document, version })))
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
+}
+
+function remapTimelineValidationJson(
+  json: string | null,
+  identityMap: Map<string, string>,
+  worldId: string,
+  timelineId: string,
+  representation: string,
+): string {
+  const value = (json === null ? {} : JSON.parse(remapSceneJson(json, identityMap))) as Record<string, unknown>
+  value.scope = { worldId, timelineId, representation }
+  return JSON.stringify(value)
+}
+
 /**
  * Copies one complete world graph with deterministic IDs. A repeated requestId targets the same IDs,
  * so callers can safely return an already-created destination rather than duplicating it.
@@ -83,7 +103,8 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   const sourceTimelineIds = sourceTimelines.map(row => row.id)
   const [dialogueRows, stateRows, scheduleRows, evidenceRows, revisionRows, commandRows, factRows, eventRows,
     memoryRows, conversationRows, chapterRows, personaMessageRows, commitmentRows, visitRows, modelRows, universeRows, sceneRows, sceneRevisionRows,
-    projectionRows, forkSnapshotRows, timelineSceneRevisionRows, timelineSceneHeadRows] = await Promise.all([
+    projectionRows, forkSnapshotRows, timelineSceneRevisionRows, timelineSceneHeadRows,
+    native2dRevisionRows, native2dHeadRows] = await Promise.all([
     sourceTimelineIds.length ? db.select().from(dialogues).where(inArray(dialogues.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(personStates).where(inArray(personStates.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(schedules).where(inArray(schedules.timelineId, sourceTimelineIds)).all() : [],
@@ -107,6 +128,8 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     sourceTimelineIds.length ? db.select().from(forkSnapshots).where(inArray(forkSnapshots.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, sourceTimelineIds)).all() : [],
     sourceTimelineIds.length ? db.select().from(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, sourceTimelineIds)).all() : [],
+    db.select().from(native2dLayoutRevisions).where(eq(native2dLayoutRevisions.worldId, source.id)).all(),
+    db.select().from(native2dLayoutHeads).where(eq(native2dLayoutHeads.worldId, source.id)).all(),
   ])
 
   const dialogueIds = new Map<string, string>()
@@ -115,12 +138,14 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   const conversationIds = new Map<string, string>()
   const eventIds = new Map<string, string>()
   const timelineSceneRevisionIds = new Map<string, string>()
+  const native2dRevisionIds = new Map<string, string>()
   for (const row of dialogueRows) dialogueIds.set(row.id, await stableId(input.requestId, 'dialogue', row.id))
   for (const row of commandRows) commandIds.set(row.id, await stableId(input.requestId, 'command', row.id))
   for (const row of factRows) factIds.set(row.id, await stableId(input.requestId, 'fact', row.id))
   for (const row of conversationRows) conversationIds.set(row.id, await stableId(input.requestId, 'conversation', row.id))
   for (const row of eventRows) eventIds.set(row.id, await stableId(input.requestId, 'event', row.id))
   for (const row of timelineSceneRevisionRows) timelineSceneRevisionIds.set(row.id, await stableId(input.requestId, 'timeline-scene-revision', row.id))
+  for (const row of native2dRevisionRows) native2dRevisionIds.set(row.id, await stableId(input.requestId, 'native2d-layout-revision', row.id))
 
   // 世界已克隆过(同 requestId 重放):直接返回全量映射,调用方据此做幂等/核验
   if (existing) return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds, eventIds, commandIds }
@@ -205,20 +230,52 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
   pushInChunks(statements, visitRows.map(row => ({ ...row, userId: input.targetOwnerId, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(worldVisits).values(chunk))
   // X1: clone timeline-scoped scene history and remap parent revision IDs so
   // the clone never points back into the source world.
-  pushInChunks(statements, await Promise.all(timelineSceneRevisionRows.map(async row => ({
-    ...row,
-    id: timelineSceneRevisionIds.get(row.id)!,
-    worldId,
-    timelineId: timelineIds.get(row.timelineId)!,
-    historyParentRevisionId: row.historyParentRevisionId ? timelineSceneRevisionIds.get(row.historyParentRevisionId) ?? null : null,
-    requestId: await stableId(input.requestId, 'timeline-scene-request', row.requestId),
-  }))), chunk => db.insert(timelineSceneRevisions).values(chunk))
+  const sceneIdentityMap = new Map<string, string>([...personIds, ...timelineIds])
+  const scopeIdentityMap = new Map<string, string>([...sceneIdentityMap, ...timelineSceneRevisionIds])
+  pushInChunks(statements, await Promise.all(timelineSceneRevisionRows.map(async row => {
+    const snapshotJson = remapSceneJson(row.snapshotJson, scopeIdentityMap)
+    const document = JSON.parse(snapshotJson) as unknown
+    const contentHash = await hashTimelineSceneDocument(document, row.version)
+    return {
+      ...row,
+      id: timelineSceneRevisionIds.get(row.id)!,
+      worldId,
+      timelineId: timelineIds.get(row.timelineId)!,
+      historyParentRevisionId: row.historyParentRevisionId ? timelineSceneRevisionIds.get(row.historyParentRevisionId) ?? null : null,
+      requestId: await stableId(input.requestId, 'timeline-scene-request', row.requestId),
+      snapshotJson,
+      contentHash,
+      validationJson: remapTimelineValidationJson(row.validationJson, scopeIdentityMap, worldId, timelineIds.get(row.timelineId)!, row.representation),
+    }
+  })), chunk => db.insert(timelineSceneRevisions).values(chunk))
   pushInChunks(statements, timelineSceneHeadRows.map(row => ({
     ...row,
     worldId,
     timelineId: timelineIds.get(row.timelineId)!,
     currentRevisionId: timelineSceneRevisionIds.get(row.currentRevisionId)!,
   })), chunk => db.insert(timelineSceneHeads).values(chunk))
+  pushInChunks(statements, await Promise.all(native2dRevisionRows.map(async row => {
+    const layout = JSON.parse(row.layoutJson) as Native2dLayout
+    const clonedLayout: Native2dLayout = {
+      ...layout,
+      metadata: { ...layout.metadata, worldId, timelineId: timelineIds.get(row.timelineId)! },
+    }
+    return {
+      ...row,
+      id: native2dRevisionIds.get(row.id)!,
+      worldId,
+      timelineId: timelineIds.get(row.timelineId)!,
+      requestId: await stableId(input.requestId, 'native2d-layout-request', row.requestId),
+      contentHash: native2dContentHash(clonedLayout),
+      layoutJson: JSON.stringify(clonedLayout),
+    }
+  })), chunk => db.insert(native2dLayoutRevisions).values(chunk))
+  pushInChunks(statements, native2dHeadRows.map(row => ({
+    ...row,
+    worldId,
+    timelineId: timelineIds.get(row.timelineId)!,
+    currentRevisionId: native2dRevisionIds.get(row.currentRevisionId)!,
+  })), chunk => db.insert(native2dLayoutHeads).values(chunk))
   // A1 B32：场景修订/指针经批内工厂接入——新 clone-copy 依据（来源指向源世界）、
   // 按重映射文档重算哈希、批内后置断言；不再裸 insert 携带源行旧证明与旧哈希。
   const sourceLocations = (() => {
@@ -239,7 +296,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     revisions: sceneRevisionRows,
     revisionIdFor: row => stableId(input.requestId, 'scene-revision', row.id),
     requestIdFor: row => stableId(input.requestId, 'scene-request', row.requestId),
-    remapDocument: json => remapSceneJson(json, personIds),
+    remapDocument: json => remapSceneJson(json, sceneIdentityMap),
   }))
   // S2/F5：体素事件投影(ID 重键 vep:{新时间线}:{clusterKey})与分叉快照,载荷内人物/时间线/事件引用统一重映射
   const refIds = new Map<string, string>([...personIds, ...timelineIds, ...eventIds])
@@ -294,6 +351,8 @@ export async function deleteClonedWorldGraph(db: Db, cloned: CloneWorldGraphResu
   del(timelineIdList.length > 0, db.delete(voxelEventProjections).where(inArray(voxelEventProjections.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(timelineSceneHeads).where(inArray(timelineSceneHeads.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(timelineSceneRevisions).where(inArray(timelineSceneRevisions.timelineId, timelineIdList)))
+  del(true, db.delete(native2dLayoutHeads).where(eq(native2dLayoutHeads.worldId, worldId)))
+  del(true, db.delete(native2dLayoutRevisions).where(eq(native2dLayoutRevisions.worldId, worldId)))
   del(true, db.delete(worldCommands).where(eq(worldCommands.worldId, worldId)))
   del(true, db.delete(chapters).where(eq(chapters.worldId, worldId)))
   del(true, db.delete(worldModelVersions).where(eq(worldModelVersions.worldId, worldId)))

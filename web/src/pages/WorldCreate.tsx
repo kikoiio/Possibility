@@ -232,6 +232,11 @@ export default function WorldCreate() {
           <p className="mt-2 text-[10px] leading-relaxed text-[#849184]">右下角可以挖方块、摆建筑，修改会自动记下。AI 改造需先保存并进入有编辑权限的世界。{edited ? '已记下你的调整。' : ''}</p>
           {draft.warnings.length > 0 && <p className="mt-2 text-[10px] text-[#8a7a4a]">{draft.warnings.join(';')}</p>}
         </div>
+        <section aria-label="选择初始居民" className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md">
+          <div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold text-[#354a3e]">谁会在这里生活?</p><span className="text-[10px] text-[#839083]">{selected.length}/6</span></div>
+          <p className="mt-1 text-[10px] text-[#829083]">创建失败后仍可调整初始居民；调整不会清除已生成的场景。</p>
+          <div className="mt-2 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} type="button" disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => { setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id]); setError(null) }} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-3 py-1.5 text-xs ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}</div>
+        </section>
         <div className="flex items-center justify-end gap-2 rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-3 shadow-xl backdrop-blur-md">
           <button data-testid="start-life" onClick={startLife} disabled={busy} className="rounded-full bg-[#274739] px-5 py-2.5 text-xs font-semibold text-white shadow disabled:opacity-45">{busy ? '保存中…' : '让这里开始生活'}</button>
         </div>

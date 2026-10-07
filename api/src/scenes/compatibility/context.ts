@@ -10,12 +10,16 @@ import {
 import { libraryManifest } from '../../voxel/library-manifest'
 import type { Db } from '../../db/client'
 import { sceneValidationPolicy, worlds, worldPersons } from '../../db/schema'
-import { readCurrentScene, type StoredSceneDocument } from '../repository'
+import { readCurrentScene, readCurrentTimelineScene, type StoredSceneDocument, type TimelineSceneScope } from '../repository'
 import { stableJson } from './stable-json'
 
 export interface SceneValidationAccess {
   /** Authoritative bindings resolved by the caller after access checks. */
   bindings: SceneBindingContext
+  /** Authoritative timeline scene identity; omitted only by legacy A1 callers. */
+  scope?: TimelineSceneScope
+  /** Space selected by the caller when an operation is space-specific. */
+  spaceId?: string
   /** Optional manifest/published fingerprints supplied by a trusted caller. */
   assets?: AssetManifest
   rulesVersion?: string
@@ -47,6 +51,16 @@ export async function loadSceneValidationContext(
   access: SceneValidationAccess,
 ): Promise<SceneValidationContext> {
   if (source.worldId !== worldId) throw new Error('场景来源不属于当前世界')
+  if (access.scope && access.scope.worldId !== worldId) throw new Error('场景作用域不属于当前世界')
+  if (access.scope && (source as SceneSourceRef & { timelineId?: string; representation?: string }).timelineId !== access.scope.timelineId) {
+    throw new Error('场景来源不属于当前时间线')
+  }
+  if (access.scope && (source as SceneSourceRef & { representation?: string }).representation !== access.scope.representation) {
+    throw new Error('场景来源表现与当前作用域不匹配')
+  }
+  if (access.spaceId && (source as SceneSourceRef & { spaceId?: string }).spaceId !== access.spaceId) {
+    throw new Error('场景来源空间与当前作用域不匹配')
+  }
   const policy = await db.select().from(sceneValidationPolicy)
     .where(eq(sceneValidationPolicy.id, 'active')).get()
   const assets = access.assets ?? libraryManifest()
@@ -58,6 +72,8 @@ export async function loadSceneValidationContext(
   const rulesVersion = access.rulesVersion ?? policy?.rulesVersion ?? 'voxel-scene-validation-v1'
   const contextFingerprint = access.contextFingerprint ?? await hash({
     rulesVersion, assetManifestHash, templateCatalogHash, bindingHash,
+    ...(access.scope ? { scope: access.scope } : {}),
+    ...(access.spaceId ? { spaceId: access.spaceId } : {}),
   })
 
   return {
@@ -140,16 +156,23 @@ export function deriveSceneBindings(input: {
  * world's own residents/locations matched against scene carriers; locked and
  * semantically bound objects/placements become protected with explicit reasons.
  */
-export async function loadWorldSceneBindings(db: Db, worldId: string): Promise<SceneBindingContext> {
+export async function loadWorldSceneBindings(db: Db, worldId: string, scope?: TimelineSceneScope, _spaceId?: string): Promise<SceneBindingContext> {
+  if (scope && scope.worldId !== worldId) throw new Error('场景作用域不属于当前世界')
   const world = await db.select({ locationsJson: worlds.locationsJson }).from(worlds).where(eq(worlds.id, worldId)).get()
   const people = await db.select({ personId: worldPersons.personId }).from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()
   let scene: Awaited<ReturnType<typeof readCurrentScene>> = null
   try {
-    scene = await readCurrentScene(db, worldId)
+    scene = scope ? await readCurrentTimelineScene(db, scope) : await readCurrentScene(db, worldId)
   } catch (error) {
     // Let the compatibility decoder classify an unparsable stored document as corrupt.
     // Other failures (including a missing current revision index) still abort context loading.
     if (!(error instanceof Error) || error.message !== '场景文档损坏：无法解析已保存版本') throw error
+  }
+  if (scope && !scene) {
+    const error = new Error('请求的时间线场景不存在') as Error & { code: string; status: number }
+    error.code = 'scene-missing'
+    error.status = 404
+    throw error
   }
   const locations = jsonArray(world?.locationsJson).flatMap(item => {
     if (!item || typeof item !== 'object') return []

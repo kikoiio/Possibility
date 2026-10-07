@@ -239,7 +239,7 @@ import type {
   ReturnBrief,
   TimelineComparison,
 } from './types'
-import type { SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, VoxelSceneDraftResponse } from './types'
+import type { SceneHistoryRevision, SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, SceneScope, VoxelSceneDraftResponse } from './types'
 import type {
   ConfirmSceneCompatibilityParams,
   CreateSceneCompatibilityDraftParams,
@@ -397,22 +397,22 @@ export const demoApi = {
 export const worldSceneApi = {
   // S1 体素创建:提示词 → 世界骨架 + 体素草稿信封(S2 起唯一创建通道)
   draftVoxel: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<VoxelSceneDraftResponse>('/api/scene-drafts/voxel', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
-  repairContext: (worldId: string) => apiFetch<SceneRepairContext>(`/api/worlds/${encodeURIComponent(worldId)}/scene/repair-context`),
-  repairDraft: (worldId: string, prompt: string, requestId = crypto.randomUUID()) => apiFetch<SceneRepairDraftResponse>(
+  repairContext: (worldId: string, scope: SceneScope) => apiFetch<SceneRepairContext>(`/api/worlds/${encodeURIComponent(worldId)}/scene/repair-context?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`),
+  repairDraft: (worldId: string, scope: SceneScope, prompt: string, requestId = crypto.randomUUID()) => apiFetch<SceneRepairDraftResponse>(
     `/api/worlds/${encodeURIComponent(worldId)}/scene/repair-draft`,
-    { method: 'POST', body: JSON.stringify({ prompt, requestId }) },
+    { method: 'POST', body: JSON.stringify({ ...scope, prompt, requestId }) },
   ),
-  commitRepairVoxel: (worldId: string, requestId: string, document: SerializedVoxelDocument) => apiFetch<{ document: SerializedVoxelDocument; version: number; contentHash: string; createdAt: string }>(
+  commitRepairVoxel: (worldId: string, scope: SceneScope, requestId: string, document: SerializedVoxelDocument) => apiFetch<{ document: SerializedVoxelDocument; version: number; contentHash: string; createdAt: string }>(
     `/api/worlds/${encodeURIComponent(worldId)}/scene/voxel-revision`,
-    { method: 'POST', body: JSON.stringify({ expectedVersion: 0, requestId, document, repair: true }) },
+    { method: 'POST', body: JSON.stringify({ ...scope, expectedVersion: 0, requestId, document, repair: true }) },
   ),
-  get: (worldId: string, options?: { redirectOnUnauthorized?: boolean }) =>
-    apiFetch<SceneReadResponse>(`/api/worlds/${worldId}/scene`, {}, options),
+  get: (worldId: string, scope: SceneScope, options?: { redirectOnUnauthorized?: boolean; signal?: AbortSignal }) =>
+    apiFetch<SceneReadResponse>(`/api/worlds/${encodeURIComponent(worldId)}/scene?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`, { signal: options?.signal }, options),
   // S2b:体素整文档保存通道（T10 服务端 voxel-revision 端点）
-  commitVoxel: (worldId: string, expectedVersion: number, requestId: string, document: SerializedVoxelDocument | SerializedVoxelSpaces, spaceId?: string) => apiFetch<{ document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${worldId}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId, document, ...(spaceId ? { spaceId } : {}) }) }),
-  regenerateDemo: (worldId: string, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number; document: SerializedVoxelSpaces }>(`/api/worlds/${worldId}/scene/voxel-regenerate`, { method: 'POST', body: JSON.stringify({ expectedVersion, requestId }) }),
-  history: (worldId: string) => apiFetch<{ revisions: { version: number; parentVersion: number | null; summary: string; kind: string; createdAt: string }[] }>(`/api/worlds/${worldId}/scene/revisions`),
-  restore: (worldId: string, expectedVersion: number, targetVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number }>(`/api/worlds/${worldId}/scene/restore`, { method: 'POST', body: JSON.stringify({ expectedVersion, targetVersion, requestId }) }),
+  commitVoxel: (worldId: string, scope: SceneScope, expectedVersion: number, requestId: string, document: SerializedVoxelDocument | SerializedVoxelSpaces, spaceId: string) => apiFetch<{ document: SerializedVoxelDocument | SerializedVoxelSpaces; revisionId: string; version: number; contentHash: string; createdAt: string }>(`/api/worlds/${encodeURIComponent(worldId)}/scene/voxel-revision`, { method: 'POST', body: JSON.stringify({ ...scope, expectedVersion, requestId, document, spaceId }) }),
+  regenerateDemo: (worldId: string, scope: SceneScope, expectedVersion: number, requestId = crypto.randomUUID()) => apiFetch<{ version: number; document: SerializedVoxelSpaces }>(`/api/worlds/${encodeURIComponent(worldId)}/scene/voxel-regenerate`, { method: 'POST', body: JSON.stringify({ ...scope, expectedVersion, requestId }) }),
+  history: (worldId: string, scope: SceneScope) => apiFetch<{ revisions: SceneHistoryRevision[] }>(`/api/worlds/${encodeURIComponent(worldId)}/scene/revisions?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`),
+  restore: (worldId: string, scope: SceneScope, expectedVersion: number, targetRevisionId: string, requestId = crypto.randomUUID()) => apiFetch<{ revisionId: string; version: number }>(`/api/worlds/${encodeURIComponent(worldId)}/scene/restore`, { method: 'POST', body: JSON.stringify({ ...scope, expectedVersion, targetRevisionId, requestId }) }),
 }
 
 /**
@@ -422,26 +422,28 @@ export const worldSceneApi = {
  */
 export const sceneCompatibilityApi = {
   /** 当前或历史版本的兼容检查;非 ready 结果由服务端以 404/422 结构化错误返回。 */
-  inspection: (worldId: string, options: { version?: number; signal?: AbortSignal } = {}) =>
+  inspection: (worldId: string, scope: SceneScope, options: { version?: number; targetRevisionId?: string; signal?: AbortSignal } = {}) =>
     apiFetch<SceneInspectionResultReady>(
-      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/inspection${options.version ? `?version=${options.version}` : ''}`,
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/inspection?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}${options.version !== undefined ? `&version=${options.version}` : ''}${options.targetRevisionId ? `&targetRevisionId=${encodeURIComponent(options.targetRevisionId)}` : ''}`,
       { signal: options.signal },
     ),
   /** 完整候选(operations 或 document)编辑前预检。 */
-  preflight: (worldId: string, candidate: SceneCandidate, signal?: AbortSignal) =>
+  preflight: (worldId: string, scope: SceneScope, candidate: SceneCandidate, signal?: AbortSignal) =>
     apiFetch<SceneEditPreflightResult>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/preflight`,
-      { method: 'POST', body: JSON.stringify({ candidate }), signal },
+      { method: 'POST', body: JSON.stringify({ ...scope, candidate }), signal },
       { redirectOnUnauthorized: false },
     ),
-  createDraft: (worldId: string, params: CreateSceneCompatibilityDraftParams, signal?: AbortSignal) =>
+  createDraft: (worldId: string, scope: SceneScope, params: CreateSceneCompatibilityDraftParams, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityDraftView>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts`,
-      { method: 'POST', body: JSON.stringify(params), signal },
+      { method: 'POST', body: JSON.stringify({ ...scope, ...params }), signal },
     ),
   /** 读取草稿预览;问题与修复变化使用独立服务端分页游标。 */
-  readDraft: (worldId: string, draftId: string, options: { page?: SceneCompatibilityPageQuery; signal?: AbortSignal } = {}) => {
+  readDraft: (worldId: string, scope: SceneScope, draftId: string, options: { page?: SceneCompatibilityPageQuery; signal?: AbortSignal } = {}) => {
     const query = new URLSearchParams()
+    query.set('timelineId', scope.timelineId)
+    query.set('representation', scope.representation)
     if (options.page?.limit !== undefined) query.set('limit', String(options.page.limit))
     if (options.page?.offset !== undefined) query.set('offset', String(options.page.offset))
     if (options.page?.issuesOffset !== undefined) query.set('issuesOffset', String(options.page.issuesOffset))
@@ -452,37 +454,37 @@ export const sceneCompatibilityApi = {
       { signal: options.signal },
     )
   },
-  cancelDraft: (worldId: string, draftId: string, signal?: AbortSignal) =>
+  cancelDraft: (worldId: string, scope: SceneScope, draftId: string, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityDraftView>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}/cancel`,
-      { method: 'POST', signal },
+      { method: 'POST', body: JSON.stringify(scope), signal },
     ),
-  confirm: (worldId: string, params: ConfirmSceneCompatibilityParams, signal?: AbortSignal) =>
+  confirm: (worldId: string, scope: SceneScope, params: ConfirmSceneCompatibilityParams, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityRequestResponse>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/confirm`,
-      { method: 'POST', body: JSON.stringify(params), signal },
+      { method: 'POST', body: JSON.stringify({ ...scope, ...params }), signal },
     ),
-  readRequest: (worldId: string, requestId: string, signal?: AbortSignal) =>
+  readRequest: (worldId: string, scope: SceneScope, requestId: string, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityRequestResponse>(
-      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/requests/${encodeURIComponent(requestId)}`,
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/requests/${encodeURIComponent(requestId)}?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`,
       { signal },
     ),
   /** 同请求恢复:仅在提交结果未知时用同一 requestId 重试,不产生新权威字段。 */
-  recoverRequest: (worldId: string, requestId: string, params: RecoverSceneCompatibilityParams, signal?: AbortSignal) =>
+  recoverRequest: (worldId: string, scope: SceneScope, requestId: string, params: RecoverSceneCompatibilityParams, signal?: AbortSignal) =>
     apiFetch<SceneCompatibilityRequestResponse>(
       `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/requests/${encodeURIComponent(requestId)}/recover`,
-      { method: 'POST', body: JSON.stringify(params), signal },
+      { method: 'POST', body: JSON.stringify({ ...scope, ...params }), signal },
     ),
   /** 按空间惰性读取草稿候选(修复后)文档,供只读预览。 */
-  readDraftSpace: (worldId: string, draftId: string, spaceId: string, signal?: AbortSignal) =>
+  readDraftSpace: (worldId: string, scope: SceneScope, draftId: string, spaceId: string, signal?: AbortSignal) =>
     apiFetch<{ spaceId: string; side: 'candidate'; document: unknown }>(
-      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}/spaces/${encodeURIComponent(spaceId)}`,
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/drafts/${encodeURIComponent(draftId)}/spaces/${encodeURIComponent(spaceId)}?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`,
       { signal },
     ),
   /** 按空间惰性读取来源(修复前)版本文档,供只读预览。 */
-  readSourceSpace: (worldId: string, version: number, spaceId: string, signal?: AbortSignal) =>
+  readSourceSpace: (worldId: string, scope: SceneScope, version: number, spaceId: string, signal?: AbortSignal, source?: { targetRevisionId?: string }) =>
     apiFetch<{ spaceId: string; side: 'source'; version: number; document: unknown }>(
-      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/source/${version}/spaces/${encodeURIComponent(spaceId)}`,
+      `/api/worlds/${encodeURIComponent(worldId)}/scene/compatibility/source/${version}/spaces/${encodeURIComponent(spaceId)}?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}${source?.targetRevisionId ? `&targetRevisionId=${encodeURIComponent(source.targetRevisionId)}` : ''}`,
       { signal },
     ),
 }
@@ -490,7 +492,7 @@ export const sceneCompatibilityApi = {
 /** 访客公共只读接口（不依赖登录态；若本地有 token 也无妨，服务端不做校验） */
 export const publicApi = {
   demo: () => apiFetch<DemoInfo>('/api/public/demo'),
-  scene: (worldId: string, signal?: AbortSignal) => apiFetch<SceneReadResponse>(`/api/public/worlds/${encodeURIComponent(worldId)}/scene`, { signal }),
+  scene: (worldId: string, scope: SceneScope, signal?: AbortSignal) => apiFetch<SceneReadResponse>(`/api/public/worlds/${encodeURIComponent(worldId)}/scene?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`, { signal }),
   snapshot: (worldId: string, timelineId?: string, signal?: AbortSignal) =>
     apiFetch<WorldSnapshot>(`/api/public/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`, { signal }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>

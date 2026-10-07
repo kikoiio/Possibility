@@ -138,21 +138,25 @@ export function errorBody(code: string, message: string, details?: Record<string
   return { errorCode: code, error: message, ...(details ? { details } : {}) }
 }
 
-export function parseTarget(value: unknown): { kind: 'current' } | { kind: 'history'; version: number } | null {
+export function parseTarget(value: unknown): { kind: 'current' } | { kind: 'history'; version: number; targetRevisionId?: string } | null {
   if (value === undefined || value === null) return { kind: 'current' }
   if (typeof value !== 'object' || Array.isArray(value)) return null
-  const target = value as { kind?: unknown; version?: unknown }
+  const target = value as { kind?: unknown; version?: unknown; targetRevisionId?: unknown }
   if (target.kind === 'current') return { kind: 'current' }
   if (target.kind === 'history' && Number.isSafeInteger(target.version) && (target.version as number) > 0) {
-    return { kind: 'history', version: target.version as number }
+    if (target.targetRevisionId !== undefined && (typeof target.targetRevisionId !== 'string' || target.targetRevisionId.length === 0 || target.targetRevisionId.length > 200)) return null
+    return { kind: 'history', version: target.version as number, ...(typeof target.targetRevisionId === 'string' ? { targetRevisionId: target.targetRevisionId } : {}) }
   }
   return null
 }
 
-export function parseQueryTarget(version: string | undefined) {
-  if (version === undefined || version === '') return { kind: 'current' as const }
+export function parseQueryTarget(version: string | undefined, targetRevisionId?: string) {
+  if (version === undefined || version === '') return targetRevisionId ? null : { kind: 'current' as const }
+  if (targetRevisionId && (targetRevisionId.length > 200 || targetRevisionId.length === 0)) return null
   const parsed = Number(version)
-  return Number.isSafeInteger(parsed) && parsed > 0 ? { kind: 'history' as const, version: parsed } : null
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? { kind: 'history' as const, version: parsed, ...(targetRevisionId ? { targetRevisionId } : {}) }
+    : null
 }
 
 export function isPurpose(value: unknown): value is 'repair-current' | 'restore-history' {

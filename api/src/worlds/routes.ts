@@ -245,7 +245,7 @@ worldsRoutes.post('/', async (c) => {
       baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
   // B30/B54：首版场景语句拼入同一批；绑定快照取本次待创建的成员/地点（此时尚未落库，不能读库）
-  if (body.scene && sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, sceneRequestId, { personIds, locations }))
+  if (body.scene && sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, sceneRequestId, { personIds, locations }, mainTimelineId))
   try {
     await db.batch(statements)
   } catch (error) {

@@ -5,7 +5,7 @@ import { commitScene } from '../repository'
 import { createWorldFixture, WORLD_TIME } from '../../test/world-fixture'
 import {
   conversations, events, memories, messages, personStates, persons, schedules,
-  universeEvidence, worldCommands, worldPersons,
+  timelines, universeEvidence, worldCommands, worldPersons,
 } from '../../db/schema'
 
 const ownerHeaders = { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }
@@ -176,5 +176,56 @@ describe('A1 compatibility scope', () => {
     const scopedQueries = routeQueries.filter(({ query }) => /\b(?:worlds|world_persons|world_scenes|world_scene_revisions|scene_compatibility_drafts|scene_compatibility_requests|person_states|schedules|memories|events|world_commands|world_facts|conversations|messages)\b/i.test(query))
     expect(scopedQueries.every(({ params }) => !params.includes('other-world'))).toBe(true)
     expect(routeQueries.some(({ query }) => /\b(?:person_states|schedules|memories|events|world_commands|world_facts|conversations|messages|chat_requests|dialogues|dialogue_turns)\b/i.test(query))).toBe(false)
+  })
+
+  it('binds A1 drafts and reads to the exact timeline, even when another scope has the same version and hash', async () => {
+    const f = await createWorldFixture(); fixtures.push(f)
+    await f.db.insert(timelines).values([
+      { id: 'scope-peer', worldId: 'home-world', simNow: WORLD_TIME, createdAt: WORLD_TIME, status: 'active', ancestorIdsJson: '[]' },
+      { id: 'scope-empty', worldId: 'home-world', simNow: WORLD_TIME, createdAt: WORLD_TIME, status: 'active', ancestorIdsJson: '[]' },
+    ])
+    const mainScope = { worldId: 'home-world', timelineId: 'home-main', representation: 'voxel' }
+    const peerScope = { worldId: 'home-world', timelineId: 'scope-peer', representation: 'voxel' }
+    const invalid = repairableDocument()
+    const mainScene = await commitScene(f.db, { worldId: 'home-world', scope: mainScope, expectedVersion: 0,
+      requestId: 'scope-main-initial', document: invalid, summary: 'main invalid scene', kind: 'initial' })
+    await commitScene(f.db, { worldId: 'home-world', scope: peerScope, expectedVersion: 0,
+      requestId: 'scope-peer-initial', document: invalid, summary: 'peer invalid scene', kind: 'initial' })
+    // A different legacy world head must never be used as a timeline fallback.
+    await commitScene(f.db, { worldId: 'home-world', expectedVersion: 0, requestId: 'scope-legacy-initial',
+      document: validDocument(), summary: 'legacy scene', kind: 'initial' })
+
+    const inspect = await call(f, `${compatibilityPath}/inspection?timelineId=home-main&representation=voxel`, { headers: ownerHeaders })
+    expect(inspect.status).toBe(200)
+    expect(await inspect.json()).toMatchObject({ status: 'ready', source: {
+      timelineId: 'home-main', representation: 'voxel', version: 1, contentHash: mainScene.contentHash,
+    }, report: { status: 'invalid' } })
+
+    const unknownSpace = await call(f, `${compatibilityPath}/inspection?timelineId=home-main&spaceId=not-in-the-scene`, { headers: ownerHeaders })
+    expect(unknownSpace.status).toBe(404)
+    expect(await unknownSpace.json()).toMatchObject({ errorCode: 'scene-missing' })
+
+    const missingHead = await call(f, `${compatibilityPath}/inspection?timelineId=scope-empty&representation=voxel`, { headers: ownerHeaders })
+    expect(missingHead.status).toBe(404)
+    expect(await missingHead.json()).toMatchObject({ errorCode: 'scene-missing' })
+
+    const draftResponse = await post(f, `${compatibilityPath}/drafts`, {
+      timelineId: 'home-main', representation: 'voxel', draftRequestId: 'scope-main-draft',
+      purpose: 'repair-current', target: { kind: 'current' }, expectedCurrentVersion: 1,
+    })
+    expect(draftResponse.status).toBe(200)
+    const draft = await draftResponse.json() as { id: string }
+    const crossTimelineRead = await call(f, `${compatibilityPath}/drafts/${draft.id}?timelineId=scope-peer&representation=voxel`, { headers: ownerHeaders })
+    expect(crossTimelineRead.status).toBe(404)
+    expect(await crossTimelineRead.json()).toMatchObject({ errorCode: 'draft-unavailable' })
+
+    await f.db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, 'home-main'))
+    const archivedInspection = await call(f, `${compatibilityPath}/inspection?timelineId=home-main`, { headers: ownerHeaders })
+    expect(archivedInspection.status).toBe(200)
+    const archivedPreflight = await post(f, `${compatibilityPath}/preflight`, {
+      timelineId: 'home-main', candidate: { kind: 'document', document: validDocument() },
+    })
+    expect(archivedPreflight.status).toBe(409)
+    expect(await archivedPreflight.json()).toMatchObject({ errorCode: 'edit-forbidden' })
   })
 })

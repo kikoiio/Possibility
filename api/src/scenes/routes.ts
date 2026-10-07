@@ -18,13 +18,33 @@ import { byokFailureHint } from '../llm/resolve'
 import { CONTENT_ISSUE_COPY, CONTENT_ISSUE_FALLBACK } from './error-copy'
 import { createVoxelSceneDraft } from './voxel-draft'
 import { createSceneRepairDraft, readSceneRepairContext, SceneRepairError } from './repair'
-import { commitScene, listSceneVersions, readCurrentScene, SceneConflict } from './repository'
+import {
+  commitScene,
+  listSceneVersions,
+  listTimelineSceneHistory,
+  readCurrentScene,
+  SceneConflict,
+  TimelineSceneIntegrityError,
+} from './repository'
 import { generateWorld, WorldGeneratorError } from '../voxel/generate'
 import { buildWorldGeneratorMessages } from '../voxel/prompts'
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { userReservation } from '../engine/guard'
-import { restoreSceneVersion } from './service'
+import {
+  assertTimelineSceneSpace,
+  assertTimelineSceneWritable,
+  findVisibleTimelineSceneRevision,
+  listImplicitMainLegacySceneHistory,
+  readImplicitMainLegacyRevision,
+  readImplicitMainLegacyScene,
+  readCurrentTimelineSceneInScope,
+  readTimelineSceneVersionInScope,
+  restoreTimelineSceneRevision,
+  resolveTimelineSceneScope,
+  timelineSceneCandidateBindings,
+  TimelineSceneRequestError,
+} from './service'
 import { loadWorldSceneBindings } from './compatibility/context'
 import { SceneCompatibilityServiceError, validateStoredSceneCandidate } from './compatibility/service'
 import { reportView } from './compatibility/http'
@@ -50,6 +70,8 @@ async function ownedWorld(db: ReturnType<typeof createDb>, worldId: string, user
 const err = (c: Context<{ Bindings: Env; Variables: AuthVariables }>, error: unknown) => {
   if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)
   if (error instanceof SceneConflict) return c.json({ error: error.message }, 409)
+  if (error instanceof TimelineSceneRequestError) return c.json({ error: error.message, errorCode: error.code }, error.status)
+  if (error instanceof TimelineSceneIntegrityError) return c.json({ error: error.message, errorCode: error.code }, 422)
   if (error instanceof SceneRepairError) {
     const status = error.code === 'world_missing' ? 404 : 409
     return c.json({ error: error.message, errorCode: error.code }, status)
@@ -58,6 +80,13 @@ const err = (c: Context<{ Bindings: Env; Variables: AuthVariables }>, error: unk
     return c.json({ error: error.message, errorCode: error.code, ...(error.report ? { report: reportView(error.report) ?? undefined } : {}) }, error.status as 409 | 422)
   }
   return c.json({ error: error instanceof Error ? error.message : '场景处理失败' }, 400)
+}
+
+function validationSpaceId(document: unknown, publicSpaceId: string | undefined): string | undefined {
+  if (!publicSpaceId) return undefined
+  // The public single-space identifier remains `exterior`; the validation
+  // envelope uses its stable one-space adapter identity `single`.
+  return isSerializedVoxelSpaces(document) ? publicSpaceId : 'single'
 }
 
 scenesRoutes.post('/scene-drafts/voxel', async c => {
@@ -90,20 +119,22 @@ scenesRoutes.post('/scene-drafts/voxel', async c => {
 scenesRoutes.get('/worlds/:worldId/scene/repair-context', async c => {
   const db = createDb(c.env.DB)
   try {
-    const context = await readSceneRepairContext(db, c.get('user').id, c.req.param('worldId'))
+    const context = await readSceneRepairContext(db, c.get('user').id, c.req.param('worldId'), {
+      timelineId: c.req.query('timelineId'), representation: c.req.query('representation'),
+    })
     if (context.sceneStatus === 'ready') return c.json({ error: '这个世界已经有场景，可以直接进入。', errorCode: 'scene_exists' }, 409)
     return c.json(context)
   } catch (error) { return err(c, error) }
 })
 
 scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
-  const body = await c.req.json<{ requestId?: string; prompt?: string }>().catch(() => null)
+  const body = await c.req.json<{ requestId?: string; prompt?: string; timelineId?: string; representation?: string }>().catch(() => null)
   if (!body?.requestId || !body.prompt?.trim()) return c.json({ error: '请提供场景描述和请求标识', errorCode: 'invalid_request' }, 400)
   const db = createDb(c.env.DB)
   try {
     return c.json(await createSceneRepairDraft(c.env, db, c.get('user').id, c.req.param('worldId'), {
       requestId: body.requestId, prompt: body.prompt.trim(),
-    }))
+    }, { timelineId: body.timelineId, representation: body.representation }))
   } catch (error) {
     if (error instanceof BudgetRefusal) return c.json({ error: error.message, errorCode: 'budget' }, error.status)
     if (error instanceof WorldGeneratorError) {
@@ -124,86 +155,166 @@ scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
 scenesRoutes.get('/worlds/:worldId/scene', async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  try { const scene = await readCurrentScene(db, world.id); return scene ? c.json({ status: 'ready', ...scene }) : c.json({ status: 'missing' }) }
-  catch (error) { return c.json({ error: error instanceof Error ? error.message : '场景读取失败' }, 500) }
+  try {
+    const { scope } = await resolveTimelineSceneScope(db, {
+      worldId: world.id, timelineId: c.req.query('timelineId'), representation: c.req.query('representation'),
+    })
+    const timelineScene = await readCurrentTimelineSceneInScope(db, scope)
+    const scene = timelineScene ?? (c.req.query('timelineId') === undefined ? await readImplicitMainLegacyScene(db, scope) : null)
+    if (!scene) return c.json(c.req.query('timelineId') === undefined ? { status: 'missing' } : { status: 'missing', scope })
+    assertTimelineSceneSpace(scene.document, c.req.query('spaceId'))
+    return c.json({ status: 'ready', ...scene, revisionId: scene.id, scope })
+  } catch (error) { return err(c, error) }
 })
 
 scenesRoutes.get('/worlds/:worldId/scene/revisions', async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  return c.json({ revisions: await listSceneVersions(db, world.id, Number(c.req.query('limit') ?? 30)) })
+  try {
+    const { scope } = await resolveTimelineSceneScope(db, {
+      worldId: world.id, timelineId: c.req.query('timelineId'), representation: c.req.query('representation'),
+    })
+    const limit = Number(c.req.query('limit') ?? 30)
+    const cursor = c.req.query('cursor') ?? null
+    const history = await listTimelineSceneHistory(db, scope, { limit, cursor })
+    if (!history) throw new TimelineSceneRequestError('时间线不存在', 'timeline-missing', 404)
+    if (c.req.query('timelineId') === undefined && cursor === null) {
+      const legacyHistory = await listImplicitMainLegacySceneHistory(db, scope, { limit, cursor })
+      if (history.revisions.length === 0) {
+        for (const revision of legacyHistory.revisions) {
+          const stored = await readImplicitMainLegacyRevision(db, scope, revision.revisionId)
+          if (stored) assertTimelineSceneSpace(stored.document, c.req.query('spaceId'))
+        }
+        return c.json({ revisions: legacyHistory.revisions.map(revision => ({ version: revision.version,
+          parentVersion: revision.version > 1 ? revision.version - 1 : null, summary: revision.summary,
+          kind: revision.kind, createdAt: revision.createdAt, contentHash: revision.contentHash })) })
+      }
+      return c.json({ revisions: history.revisions.map(revision => ({ version: revision.version,
+        parentVersion: revision.timelineId === scope.timelineId && revision.version > 1 ? revision.version - 1 : null,
+        summary: revision.summary, kind: revision.kind, createdAt: revision.createdAt, contentHash: revision.contentHash })) })
+    }
+    for (const revision of history.revisions) assertTimelineSceneSpace(revision.document, c.req.query('spaceId'))
+    return c.json({
+      scope,
+      revisions: history.revisions.map(revision => ({
+        revisionId: revision.id,
+        version: revision.version,
+        timelineId: revision.timelineId,
+        originTimelineId: revision.sourceTimelineId,
+        origin: revision.source,
+        parentRevisionId: revision.parentRevisionId,
+        contentHash: revision.contentHash,
+        summary: revision.summary,
+        kind: revision.kind,
+        createdAt: revision.createdAt,
+      })),
+      nextCursor: history.nextCursor,
+      hasMore: history.hasMore,
+      boundaries: history.boundaries,
+    })
+  } catch (error) { return err(c, error) }
+})
+
+scenesRoutes.get('/worlds/:worldId/scene/revisions/:revisionId', async c => {
+  const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
+  if (!world) return c.json({ error: '世界不存在' }, 404)
+  try {
+    const { scope } = await resolveTimelineSceneScope(db, {
+      worldId: world.id, timelineId: c.req.query('timelineId'), representation: c.req.query('representation'),
+    })
+    const revisionParam = c.req.param('revisionId')
+    let revision = /^\d+$/.test(revisionParam)
+      ? await readTimelineSceneVersionInScope(db, scope, Number(revisionParam))
+      : await findVisibleTimelineSceneRevision(db, scope, { revisionId: revisionParam })
+    if (!revision && c.req.query('timelineId') === undefined) revision = await readImplicitMainLegacyRevision(db, scope, revisionParam)
+    if (!revision) return c.json({ error: '请求的场景版本不存在', errorCode: 'scene-missing' }, 404)
+    assertTimelineSceneSpace(revision.document, c.req.query('spaceId'))
+    return c.json({ status: 'ready', ...revision, revisionId: revision.id, scope })
+  } catch (error) { return err(c, error) }
 })
 
 scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
   const db = createDb(c.env.DB); const user = c.get('user')
   const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; document?: unknown; spaceId?: string; repair?: boolean }>().catch(() => null)
+  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; document?: unknown; spaceId?: string; repair?: boolean; timelineId?: string; representation?: string }>().catch(() => null)
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !body.document) return c.json({ error: '体素场景提交参数不完整' }, 400)
   if (body.repair && body.expectedVersion !== 0) return c.json({ error: '原世界场景补建必须提交首版场景', errorCode: 'invalid_repair_version' }, 400)
   try {
-    // A ready scene is allowed through only so commitScene can replay the identical successful repair request.
-    const repairContext = body.repair
-      ? await readSceneRepairContext(db, user.id, world.id)
-      : null
-    if (body.repair && isSerializedVoxelSpaces(body.document)) {
-      return c.json({ error: '原世界补建首版仅接受单体素场景文档', errorCode: 'invalid_repair_scene' }, 422)
+    const { scope } = await resolveTimelineSceneScope(db, { worldId: world.id, timelineId: body.timelineId, representation: body.representation })
+    await assertTimelineSceneWritable(db, scope)
+    if (body.repair && scope.timelineId !== (await resolveTimelineSceneScope(db, { worldId: world.id })).scope.timelineId) {
+      return c.json({ error: '原世界场景补建仅支持主时间线', errorCode: 'invalid_repair_scope' }, 400)
     }
+    // A ready scene is allowed through only so commitScene can replay the identical successful repair request.
+    const repairContext = body.repair ? await readSceneRepairContext(db, user.id, world.id, {
+      timelineId: body.timelineId, representation: body.representation,
+    }) : null
+    if (body.repair && isSerializedVoxelSpaces(body.document)) return c.json({ error: '原世界补建首版仅接受单体素场景文档', errorCode: 'invalid_repair_scene' }, 422)
+
+    const current = await readCurrentTimelineSceneInScope(db, scope)
+    if (current) assertTimelineSceneSpace(current.document, body.spaceId)
     let document: SerializedVoxelDocument | SerializedVoxelSpaces
     if (isSerializedVoxelSpaces(body.document)) {
-      if (!body.spaceId) return c.json({ error: '多空间体素保存需要 spaceId' }, 400)
-      const current = await readCurrentScene(db, world.id)
-      if (!current || !isSerializedVoxelSpaces(current.document)) return c.json({ error: '当前场景不是多空间体素包' }, 409)
-      const currentBundle = current.document
-      const index = currentBundle.spaces.findIndex(space => space.id === body.spaceId)
-      if (index < 0) return c.json({ error: '空间不存在' }, 404)
-      const incomingBundle = body.document as SerializedVoxelSpaces
-      const incoming = incomingBundle.spaces.find(space => space.id === body.spaceId)
-      if (!incoming || incomingBundle.spaces.length !== currentBundle.spaces.length
-        || incomingBundle.spaces.some((space, i) => space.id !== currentBundle.spaces[i]?.id)) return c.json({ error: '体素包空间结构不匹配' }, 422)
-      const doc = ensureAssetPlacementIds(deserialize(JSON.stringify(incoming.document)))
-      const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
-      if (issues.length) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 422)
-      document = { ...currentBundle, spaces: currentBundle.spaces.map((space, i) => i === index
-        ? { ...space, document: JSON.parse(serialize(doc)) as SerializedVoxelDocument } : space) }
+      const incomingBundle = body.document
+      if (current && !isSerializedVoxelSpaces(current.document)) return c.json({ error: '当前场景不是多空间体素包', errorCode: 'scene-format-mismatch' }, 409)
+      if (current && !body.spaceId) return c.json({ error: '多空间体素保存需要 spaceId' }, 400)
+      if (current && body.spaceId) {
+        const currentBundle = current.document as SerializedVoxelSpaces
+        const index = currentBundle.spaces.findIndex(space => space.id === body.spaceId)
+        const incoming = incomingBundle.spaces.find(space => space.id === body.spaceId)
+        const sameSpaces = incomingBundle.spaces.length === currentBundle.spaces.length
+          && currentBundle.spaces.every(space => incomingBundle.spaces.some(candidate => candidate.id === space.id))
+        if (index < 0 || !incoming) return c.json({ error: '空间不存在', errorCode: 'space-missing' }, 404)
+        if (!sameSpaces) return c.json({ error: '体素包空间结构不匹配' }, 422)
+        const doc = ensureAssetPlacementIds(deserialize(JSON.stringify(incoming.document)))
+        const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
+        if (issues.length) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 422)
+        document = { ...currentBundle, spaces: currentBundle.spaces.map(space => space.id === body.spaceId
+          ? { ...space, document: JSON.parse(serialize(doc)) as SerializedVoxelDocument } : space) }
+      } else {
+        if (body.spaceId) assertTimelineSceneSpace(incomingBundle, body.spaceId)
+        document = incomingBundle
+      }
     } else if (isSerializedVoxelDocument(body.document)) {
+      if (current && isSerializedVoxelSpaces(current.document)) return c.json({ error: '当前场景是多空间体素包', errorCode: 'scene-format-mismatch' }, 409)
+      if (body.spaceId) assertTimelineSceneSpace(body.document, body.spaceId)
       const doc = ensureAssetPlacementIds(deserialize(JSON.stringify(body.document)))
       const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
       if (issues.length) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 422)
       if (repairContext) {
         const expected = repairContext.world.locations.map(location => location.name)
         const actual = doc.locations.map(location => location.name)
-        if (actual.length !== expected.length || new Set(actual).size !== actual.length
-          || expected.some(location => !actual.includes(location))) {
+        if (actual.length !== expected.length || new Set(actual).size !== actual.length || expected.some(location => !actual.includes(location))) {
           return c.json({ error: '体素场景地点必须与原世界完全一致', errorCode: 'repair_location_mismatch' }, 422)
         }
       }
       document = JSON.parse(serialize(doc)) as SerializedVoxelDocument
     } else return c.json({ error: '文档不是序列化体素信封或空间包' }, 422)
-    // A1:普通保存也必须通过完整信封校验——未编辑空间、绑定与连接一并检查。
-    const saveBindings = await loadWorldSceneBindings(db, world.id)
-    const validation = await validateStoredSceneCandidate(db, { worldId: world.id, document, access: { bindings: saveBindings } })
-    if (validation.status !== 'valid') {
-      return c.json({
-        error: validation.status === 'invalid' ? '场景未通过完整校验，请先处理兼容问题' : '场景检查未完成，不能保存',
-        errorCode: validation.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete',
-        report: reportView(validation.report) ?? undefined,
-      }, 422)
-    }
+
+    // A1: validate the complete timeline snapshot, including untouched spaces. For its first
+    // revision, derive candidate bindings directly instead of reading legacy world-scoped data.
+    const validationAccess = { scope, ...(body.spaceId ? { spaceId: validationSpaceId(document, body.spaceId) } : {}) }
+    const saveBindings = current
+      ? await loadWorldSceneBindings(db, world.id, scope, validationAccess.spaceId)
+      : await timelineSceneCandidateBindings(db, world.id, document)
+    const validation = await validateStoredSceneCandidate(db, { worldId: world.id, document,
+      access: { ...validationAccess, bindings: saveBindings } })
+    if (validation.status !== 'valid') return c.json({
+      error: validation.status === 'invalid' ? '场景未通过完整校验，请先处理兼容问题' : '场景检查未完成，不能保存',
+      errorCode: validation.status === 'invalid' ? 'compatibility-required' : 'validation-incomplete',
+      report: reportView(validation.report) ?? undefined,
+    }, 422)
     const baseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
       .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active'))).get()
     const allowBaseline = !!baseline && world.isDemo && user.role === 'admin'
     const isRepair = body.repair === true
     const result = await commitScene(db, {
-      worldId: world.id,
-      expectedVersion: body.expectedVersion!,
-      requestId: body.requestId,
-      document,
+      worldId: world.id, scope, expectedVersion: body.expectedVersion!, requestId: body.requestId, document,
       summary: isRepair ? '为原世界补建场景' : body.spaceId ? `编辑空间 ${body.spaceId}` : '体素编辑',
-      kind: isRepair ? 'scene-repair' : 'voxel-edit',
-      allowBaseline,
+      kind: isRepair ? 'scene-repair' : 'voxel-edit', allowBaseline, authority: { ownerUserId: user.id, sessionToken: c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') },
     })
-    return c.json(result)
+    return c.json({ ...result, ...('id' in result ? { revisionId: result.id } : {}) })
   } catch (error) { return err(c, error) }
 })
 
@@ -211,9 +322,15 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
   const db = createDb(c.env.DB); const user = c.get('user')
   const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world || !world.isDemo || user.role !== 'admin') return c.json({ error: '仅演示世界管理员可重新生成' }, 404)
-  const body = await c.req.json<{ expectedVersion?: number; requestId?: string }>().catch(() => null)
+  const body = await c.req.json<{ expectedVersion?: number; requestId?: string; timelineId?: string; representation?: string }>().catch(() => null)
   if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion)) return c.json({ error: '重新生成参数不完整' }, 400)
   try {
+    const selected = await resolveTimelineSceneScope(db, { worldId: world.id, timelineId: body.timelineId, representation: body.representation })
+    const main = await resolveTimelineSceneScope(db, { worldId: world.id })
+    if (selected.scope.timelineId !== main.scope.timelineId) return c.json({ error: '演示基线维护仅支持主时间线', errorCode: 'invalid-scope' }, 422)
+    await assertTimelineSceneWritable(db, selected.scope)
+    const selectedScene = await readCurrentTimelineSceneInScope(db, selected.scope)
+    if (body.timelineId && selectedScene?.version !== body.expectedVersion) throw new SceneConflict()
     const activeScene = await readCurrentScene(db, world.id)
     const source = activeScene?.document
     if (!source || !isSerializedVoxelSpaces(source)) return c.json({ error: '当前演示世界没有可重新生成的多空间场景' }, 409)
@@ -240,10 +357,14 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
     const activeBaseline = await db.select({ id: demoBaselines.id }).from(demoBaselines)
       .where(and(eq(demoBaselines.worldId, world.id), eq(demoBaselines.status, 'active'))).get()
     const result = await commitScene(db, {
-      worldId: world.id, expectedVersion: body.expectedVersion!, requestId: body.requestId,
+      worldId: world.id, expectedVersion: body.timelineId ? (activeScene?.version ?? 0) : body.expectedVersion!, requestId: body.requestId,
       document: regenerated, summary: '管理员重新生成演示体素世界', kind: 'voxel-regenerate', allowBaseline: true,
       ...(activeBaseline ? { baselineUpdate: { baselineId: activeBaseline.id } } : {}),
     })
+    if (body.timelineId) {
+      const saved = await readCurrentTimelineSceneInScope(db, selected.scope)
+      return c.json({ ...saved, revisionId: saved?.id, scope: selected.scope })
+    }
     return c.json(result)
   } catch (error) {
     if (error instanceof BudgetRefusal) return c.json({ error: error.message }, error.status)
@@ -253,10 +374,31 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
 })
 
 scenesRoutes.post('/worlds/:worldId/scene/restore', async c => {
-  const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
+  const db = createDb(c.env.DB); const user = c.get('user'); const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
-  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; targetVersion?: number }>().catch(() => null)
-  if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || !Number.isSafeInteger(body.targetVersion)) return c.json({ error: '恢复参数不完整' }, 400)
-  try { return c.json(await restoreSceneVersion(db, { worldId: world.id, requestId: body.requestId, expectedVersion: body.expectedVersion!, targetVersion: body.targetVersion!, access: { bindings: await loadWorldSceneBindings(db, world.id) } })) }
+  const body = await c.req.json<{ requestId?: string; expectedVersion?: number; targetVersion?: number; targetRevisionId?: string; timelineId?: string; representation?: string; spaceId?: string }>().catch(() => null)
+  const hasRevision = typeof body?.targetRevisionId === 'string' && !!body.targetRevisionId
+  const hasVersion = Number.isSafeInteger(body?.targetVersion)
+  if (!body?.requestId || !Number.isSafeInteger(body.expectedVersion) || hasRevision === hasVersion) return c.json({ error: '恢复参数不完整', errorCode: 'invalid-request' }, 400)
+  try {
+    const { scope } = await resolveTimelineSceneScope(db, { worldId: world.id, timelineId: body.timelineId, representation: body.representation })
+    await assertTimelineSceneWritable(db, scope)
+    const current = await readCurrentTimelineSceneInScope(db, scope)
+    if (!current) return c.json({ error: '当前时间线没有场景', errorCode: 'scene-missing' }, 404)
+    const target = hasRevision
+      ? await findVisibleTimelineSceneRevision(db, scope, { revisionId: body.targetRevisionId! })
+      : await findVisibleTimelineSceneRevision(db, scope, { version: body.targetVersion! })
+    if (!target) return c.json({ error: '请求的场景版本不存在', errorCode: 'scene-missing' }, 404)
+    assertTimelineSceneSpace(target.document, body.spaceId)
+    const normalizedSpaceId = validationSpaceId(target.document, body.spaceId)
+    const bindings = await loadWorldSceneBindings(db, world.id, scope, normalizedSpaceId)
+    const result = await restoreTimelineSceneRevision(db, {
+      worldId: world.id, scope, requestId: body.requestId, expectedVersion: body.expectedVersion!,
+      target: hasRevision ? { revisionId: body.targetRevisionId! } : { version: body.targetVersion! },
+      access: { scope, bindings, ...(normalizedSpaceId ? { spaceId: normalizedSpaceId } : {}) },
+      authority: { ownerUserId: user.id, sessionToken: c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') },
+    })
+    return c.json({ ...result, ...('id' in result ? { revisionId: result.id } : {}), scope })
+  }
   catch (error) { return err(c, error) }
 })

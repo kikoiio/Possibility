@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ApiError, worldSceneApi } from '../api/client'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ApiError, worldSceneApi, worldsApi } from '../api/client'
 import type { SceneRepairContext, SceneRepairDraftResponse } from '../api/types'
 import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
 import VoxelViewport from '../voxel/VoxelViewport'
@@ -8,8 +8,11 @@ import { planEditsViaApi } from '../voxel/plan-edits'
 
 export default function WorldSceneRepair() {
   const { worldId = '' } = useParams()
+  const [search] = useSearchParams()
+  const requestedTimelineId = search.get('timeline')
   const navigate = useNavigate()
   const [context, setContext] = useState<SceneRepairContext | null>(null)
+  const [repairTimelineId, setRepairTimelineId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [draft, setDraft] = useState<SceneRepairDraftResponse | null>(null)
   const [doc, setDoc] = useState<VoxelDocument | null>(null)
@@ -25,6 +28,7 @@ export default function WorldSceneRepair() {
     let active = true
     setLoading(true)
     setContext(null)
+    setRepairTimelineId('')
     setDraft(null)
     setDoc(null)
     latestDoc.current = null
@@ -32,33 +36,40 @@ export default function WorldSceneRepair() {
     setError('')
     setCanCreateIndependentWorld(false)
     setConfirmIndependentWorld(false)
-    void worldSceneApi.repairContext(worldId).then(value => {
-      if (!active) return
-      setContext(value)
-      setLoading(false)
-    }).catch(async (cause) => {
-      if (!active) return
-      if (cause instanceof ApiError && cause.status === 409) {
-        const scene = await worldSceneApi.get(worldId).catch(() => null)
-        if (active && scene?.status === 'ready') {
-          navigate(`/worlds/${encodeURIComponent(worldId)}`, { replace: true })
-          return
+    let resolvedTimelineId = requestedTimelineId ?? ''
+    void (async () => {
+      try {
+        if (!resolvedTimelineId) resolvedTimelineId = (await worldsApi.snapshot(worldId)).currentTimelineId
+        if (!resolvedTimelineId || !active) return
+        const scope = { timelineId: resolvedTimelineId, representation: 'voxel' as const }
+        setRepairTimelineId(resolvedTimelineId)
+        setContext(await worldSceneApi.repairContext(worldId, scope))
+        if (active) setLoading(false)
+      } catch (cause) {
+        if (!active) return
+        if (cause instanceof ApiError && cause.status === 409) {
+          const timeline = resolvedTimelineId
+          const scene = timeline ? await worldSceneApi.get(worldId, { timelineId: timeline, representation: 'voxel' }).catch(() => null) : null
+          if (active && scene?.status === 'ready') {
+            navigate(`/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(timeline)}`, { replace: true })
+            return
+          }
+        }
+        if (active) {
+          setError(cause instanceof Error ? cause.message : '暂时无法读取原世界。')
+          setCanCreateIndependentWorld(cause instanceof ApiError && cause.errorCode === 'world_structure_invalid')
+          setLoading(false)
         }
       }
-      if (active) {
-        setError(cause instanceof Error ? cause.message : '暂时无法读取原世界。')
-        setCanCreateIndependentWorld(cause instanceof ApiError && cause.errorCode === 'world_structure_invalid')
-        setLoading(false)
-      }
-    })
+    })()
     return () => { active = false }
-  }, [worldId, navigate])
+  }, [worldId, navigate, requestedTimelineId])
 
   async function generate() {
-    if (!prompt.trim() || busy) return
+    if (!repairTimelineId || !prompt.trim() || busy) return
     setBusy(true); setError('')
     try {
-      const result = await worldSceneApi.repairDraft(worldId, prompt.trim())
+      const result = await worldSceneApi.repairDraft(worldId, { timelineId: repairTimelineId, representation: 'voxel' }, prompt.trim())
       if (result.worldId !== worldId) throw new Error('生成结果与当前原世界不匹配。')
       const parsed = deserialize(JSON.stringify(result.document))
       latestDoc.current = parsed
@@ -71,19 +82,19 @@ export default function WorldSceneRepair() {
   }
 
   async function save() {
-    if (!draft || !latestDoc.current || busy) return
+    if (!repairTimelineId || !draft || !latestDoc.current || busy) return
     setBusy(true); setError('')
     const requestId = saveRequestId.current ?? crypto.randomUUID()
     saveRequestId.current = requestId
     try {
       const document = JSON.parse(serialize(latestDoc.current)) as SerializedVoxelDocument
-      await worldSceneApi.commitRepairVoxel(worldId, requestId, document)
-      navigate(`/worlds/${encodeURIComponent(worldId)}`, { replace: true })
+      await worldSceneApi.commitRepairVoxel(worldId, { timelineId: repairTimelineId, representation: 'voxel' }, requestId, document)
+      navigate(`/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(repairTimelineId)}`, { replace: true })
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        const scene = await worldSceneApi.get(worldId).catch(() => null)
+        const scene = await worldSceneApi.get(worldId, { timelineId: repairTimelineId, representation: 'voxel' }).catch(() => null)
         if (scene?.status === 'ready') {
-          navigate(`/worlds/${encodeURIComponent(worldId)}`, { replace: true })
+          navigate(`/worlds/${encodeURIComponent(worldId)}?timeline=${encodeURIComponent(repairTimelineId)}`, { replace: true })
         } else {
           setError(cause instanceof Error ? cause.message : '保存冲突；当前草稿仍在本页。')
         }
@@ -92,8 +103,9 @@ export default function WorldSceneRepair() {
   }
 
   const worldName = context?.world.name ?? '原世界'
+  const worldHref = `/worlds/${encodeURIComponent(worldId)}${repairTimelineId ? `?timeline=${encodeURIComponent(repairTimelineId)}` : ''}`
   return <main className="relative h-screen overflow-hidden bg-[#e7eee7]" data-testid="scene-repair-shell">
-    {doc && <VoxelViewport document={doc} editable={!busy} planEdits={(engine, intent) => planEditsViaApi(engine, worldId, intent)}
+    {doc && <VoxelViewport document={doc} editable={!busy} planEdits={(engine, intent) => planEditsViaApi(engine, worldId, intent, { timelineId: repairTimelineId, representation: 'voxel', spaceId: 'exterior' })}
       onSave={next => { latestDoc.current = next; saveRequestId.current = null; setDoc(next) }} />}
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
@@ -101,13 +113,13 @@ export default function WorldSceneRepair() {
           <p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p>
           <p className="mt-0.5 text-[10px] tracking-[.18em] text-white/75">{worldName} · 补建原世界场景</p>
         </div>
-        <Link to={`/worlds/${encodeURIComponent(worldId)}`} className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:text-sm">返回原世界</Link>
+        <Link to={worldHref} className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:text-sm">返回原世界</Link>
       </header>
 
       {loading && <p role="status" aria-live="polite" className="pointer-events-auto absolute left-1/2 top-24 -translate-x-1/2 rounded-xl bg-white/95 px-5 py-3 text-sm text-[#405246] shadow-lg">正在读取原世界…</p>}
       {!loading && !context && <section className="pointer-events-auto absolute left-1/2 top-24 w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-2xl bg-white/95 p-5 text-sm text-[#526558] shadow-lg">
         <p role="alert">{error || '暂时无法读取原世界。'}</p>
-        <Link to={`/worlds/${encodeURIComponent(worldId)}`} className="mt-3 inline-block underline underline-offset-2">返回原世界</Link>
+        <Link to={worldHref} className="mt-3 inline-block underline underline-offset-2">返回原世界</Link>
         {canCreateIndependentWorld && <button type="button" onClick={() => setConfirmIndependentWorld(true)}
           className="ml-4 mt-3 rounded-full border border-[#8a9a8d] px-4 py-2 text-xs font-medium text-[#405246] hover:bg-[#eef2ec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536b5a]">
           创建独立新世界

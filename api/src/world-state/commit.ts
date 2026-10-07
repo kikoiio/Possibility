@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, or } from 'drizzle-orm'
+import { and, eq, exists, isNull, or, sql } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { commitments, dialogueTurns, dialogues, events, memories, persons, personStates, schedules, timelines, universeEvidence, universeRevisions, worldCommands, worldFacts, worldPersons, worlds } from '../db/schema'
@@ -123,7 +123,13 @@ export async function commitWorldCommand(db: Db, input: WorldCommandInput, atomi
     eq(universeEvidence.timelineId, timeline.id), eq(universeEvidence.level, 'complete'),
     eq(universeEvidence.assessedVersion, input.expectedVersion),
   ))
-  const finalAtomicWrites = [...atomicWrites, evidenceAdvance]
+  // Recheck the clock after every projection write in the same transaction.
+  // A clock change between validation and insertion must roll back the
+  // command, fact, event and all derived state together.
+  const clockGuard = db.update(universeRevisions).set({
+    simTime: sql`CASE WHEN EXISTS (SELECT 1 FROM timelines WHERE id = ${timeline.id} AND world_id = ${world.id} AND status = 'active' AND sim_now = ${commitSimTime}) THEN ${commitSimTime} ELSE json('world-clock-commit-guard-failed') END`,
+  }).where(and(eq(universeRevisions.timelineId, timeline.id), eq(universeRevisions.version, resultVersion)))
+  const finalAtomicWrites = [...atomicWrites, evidenceAdvance, clockGuard]
   try {
     if (plan.clockAdvance) {
       await db.batch([
