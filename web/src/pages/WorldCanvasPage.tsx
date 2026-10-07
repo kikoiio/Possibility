@@ -708,6 +708,20 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       throw error
     }), [worldId])
 
+  if (error && !snapshot && comparisonWorkspaceActive) return (
+    <div className="min-h-full bg-sage-50 p-4">
+      <ComparisonHost
+        left={presentationRoute.left}
+        right={presentationRoute.right}
+        loadSession={presentationRuntime.loadSession}
+        adapters={presentationRuntime.adapters}
+        store={presentationStore}
+        worlds={presentationWorlds}
+        onTargetChange={updatePresentationTarget}
+        onExit={exitPresentationWorkspace}
+      />
+    </div>
+  )
   if (error && !snapshot) return (
     <div className="flex min-h-full items-center bg-sage-50 p-4">
       <div className="m-auto w-full max-w-md rounded-2xl border border-ink-faint bg-sheet p-6 text-center shadow-sm" data-testid="world-canvas-error">

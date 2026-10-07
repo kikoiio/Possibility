@@ -14,7 +14,7 @@ test('single world switches 3D to native 2D and back without changing its timeli
   await expect(page.getByTestId('comparison-workspace')).toBeVisible()
   await expect(page.getByTestId('pane-facts-single')).toContainText('timeline-main')
   await expect(page.getByTestId('pane-facts-single')).toContainText('owner')
-  await expect(page.getByTestId('pane-facts-single')).toContainText('2026-10-01T08:00:00.000Z')
+  await expect(page.getByTestId('pane-facts-single')).toContainText('2026-09-19T12:00:00.000Z')
   await expect(page.locator('[data-presentation="native2d"] canvas')).toBeVisible({ timeout: 30_000 })
 
   await page.getByRole('group', { name: '世界画面表现' }).getByRole('button', { name: '3D' }).click()
@@ -23,7 +23,7 @@ test('single world switches 3D to native 2D and back without changing its timeli
   await expect(page.locator('[data-voxel-instance="single"] [data-testid="voxel-viewport-canvas"]')).toBeVisible({ timeout: 30_000 })
   await expect(page).not.toHaveURL(/timeline=timeline-fork/)
   await expect(page.getByTestId('pane-facts-single')).toContainText('owner')
-  await expect(page.getByTestId('pane-facts-single')).toContainText('2026-10-01T08:00:00.000Z')
+  await expect(page.getByTestId('pane-facts-single')).toContainText('2026-09-19T12:00:00.000Z')
 })
 
 test('browser preference restores on reload while explicit URL presentation takes precedence', async ({ page }) => {
