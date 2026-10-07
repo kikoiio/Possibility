@@ -238,6 +238,36 @@ describe('pure camera link coordinator', () => {
     expect(left.applyLinkedCamera).toHaveBeenCalledExactlyOnceWith(native(4))
   })
 
+  it('retains only the latest 64 different poses after thousands of unacknowledged applies', () => {
+    const { coordinator, left, right } = setupNative()
+    coordinator.setEnabled(true)
+    for (let x = 1; x <= 4096; x++) coordinator.notifyCameraChange('left', native(x))
+    expect(right.applyLinkedCamera).toHaveBeenCalledTimes(4096)
+
+    // Probe the entire applied history through public events. Only the retained
+    // window is suppressed; every evicted pose can be a new user move again.
+    for (let x = 1; x <= 4096; x++) right.emit(native(x))
+    expect(left.applyLinkedCamera).toHaveBeenCalledTimes(4096 - 64)
+    expect(left.applyLinkedCamera).toHaveBeenLastCalledWith(native(4096 - 64))
+    right.emit(native(5000))
+    expect(left.applyLinkedCamera).toHaveBeenLastCalledWith(native(5000))
+  })
+
+  it('refreshes a repeated pose before evicting the least recently applied pose', () => {
+    const { coordinator, left, right } = setupNative()
+    coordinator.setEnabled(true)
+    for (let x = 1; x <= 64; x++) left.emit(native(x))
+    left.emit(native(1))
+    left.emit(native(65))
+    right.emit(native(2))
+    expect(left.applyLinkedCamera).toHaveBeenCalledExactlyOnceWith(native(2))
+    // Both applications of the refreshed pose are still represented.
+    right.emit(native(1))
+    right.emit(native(1))
+    right.emit(native(65))
+    expect(left.applyLinkedCamera).toHaveBeenCalledTimes(1)
+  })
+
   it('compares contract values, independent of property order or receiver mutations', () => {
     const { coordinator, left, right } = setupNative()
     coordinator.setEnabled(true)
@@ -439,17 +469,24 @@ describe('pure camera link coordinator', () => {
     expect(left.applyLinkedCamera).toHaveBeenCalledExactlyOnceWith(native(4))
   })
 
-  it('ignores late echoes across disable/re-enable while passing different new user poses', () => {
+  it('clears both echo histories on disable so old poses propagate after re-enabling', () => {
     const { coordinator, left, right } = setupNative()
-    right.echo = 'async'
     coordinator.setEnabled(true)
     left.emit(native(3))
-    coordinator.setEnabled(false)
-    coordinator.setEnabled(true)
-    right.emit(right.deferred.shift()!)
-    expect(left.applyLinkedCamera).not.toHaveBeenCalled()
     right.emit(native(4))
-    expect(left.applyLinkedCamera).toHaveBeenCalledExactlyOnceWith(native(4))
+    coordinator.setEnabled(false)
+    expect(coordinator.isLinkActive()).toBe(false)
+    left.emit(native(5))
+    right.emit(native(6))
+    expect(left.applyLinkedCamera).toHaveBeenCalledTimes(1)
+    expect(right.applyLinkedCamera).toHaveBeenCalledTimes(1)
+    coordinator.setEnabled(true)
+    right.emit(native(3))
+    expect(left.applyLinkedCamera).toHaveBeenLastCalledWith(native(3))
+    left.emit(native(4))
+    expect(right.applyLinkedCamera).toHaveBeenLastCalledWith(native(4))
+    expect(left.applyLinkedCamera).toHaveBeenCalledTimes(2)
+    expect(right.applyLinkedCamera).toHaveBeenCalledTimes(2)
   })
 
   it('disposes idempotently, cancels both listeners despite errors, and never owns viewport disposal', () => {
