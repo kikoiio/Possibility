@@ -64,6 +64,7 @@ async function prepareOwnerWorld(): Promise<{ username: string; password: string
   ], { cwd: apiRoot, encoding: 'utf8' })
   assert(migration.status === 0, `local owner fixture preparation failed (${migration.status ?? 'signal'})`)
   if (process.env.GITHUB_ENV) {
+    process.stdout.write(`::add-mask::${owner.password}\n`)
     appendFileSync(process.env.GITHUB_ENV,
       `DEPLOYMENT_USERNAME=${owner.username}\nDEPLOYMENT_PASSWORD=${owner.password}\nDEPLOYMENT_WORLD_ID=${demo.body.worldId}\nDEPLOYMENT_WAIT_MS=30000\nDEPLOYMENT_EVIDENCE_PATH=${process.env.RUNNER_TEMP}/phase2-deployment-journey.json\n`)
   }

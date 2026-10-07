@@ -69,36 +69,50 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "::add-mask::$DEPLOYMENT_PASSWORD"
           npx wrangler d1 execute DB --local --config api/wrangler.s02-e2e.toml \
             --persist-to "$PHASE2_D1_PERSIST" \
             --command "DELETE FROM world_persons WHERE world_id = '$DEPLOYMENT_WORLD_ID';"
           (
             while true; do
-              curl --silent --show-error --output /dev/null --request POST \
+              response="$(curl --silent --show-error --request POST \
                 --header 'x-engine-secret: phase2-isolated-engine-tick' \
-                "$PHASE2_API_TARGET/api/engine/tick" || true
+                "$PHASE2_API_TARGET/api/engine/tick" || true)"
+              printf '%s\n' "$response" >> "$RUNNER_TEMP/phase2-tick-responses.jsonl"
               sleep 5
             done
           ) &
           tick_pinger_pid=$!
           trap 'kill "$tick_pinger_pid" 2>/dev/null || true; wait "$tick_pinger_pid" 2>/dev/null || true' EXIT
-          DEPLOYMENT_API_URL="$PHASE2_API_TARGET" npx tsx scripts/verify-deployment-journey.ts
+          journey_status=0
+          DEPLOYMENT_API_URL="$PHASE2_API_TARGET" npx tsx scripts/verify-deployment-journey.ts || journey_status=$?
           node --input-type=module <<'NODE'
           import { appendFileSync, readFileSync } from 'node:fs'
           const evidence = JSON.parse(readFileSync(process.env.DEPLOYMENT_EVIDENCE_PATH, 'utf8'))
+          const ticks = readFileSync(`${process.env.RUNNER_TEMP}/phase2-tick-responses.jsonl`, 'utf8')
+            .trim().split('\n').filter(Boolean).slice(-8).map(line => {
+              try { return JSON.parse(line) } catch { return line }
+            })
           const summary = {
             result: evidence.ok ? 'PASS' : 'FAIL',
             environment: 'GitHub-hosted runner; isolated local Worker and D1; no remote deployment',
             waitMs: evidence.waitMs,
             worldId: evidence.worldId,
             timelineId: evidence.timelineId,
+            error: evidence.error,
             assertions: evidence.assertions,
             httpStatuses: Object.fromEntries(Object.entries(evidence.steps).map(([name, step]) => [name, step.status])),
+            observedSimTime: {
+              before: evidence.steps.stateBeforeLeave?.body?.simNow,
+              afterLeave: evidence.steps.stateAfterLeave?.body?.simNow,
+              atPause: evidence.steps.stateAtPause?.body?.simNow,
+              whilePaused: evidence.steps.stateWhilePaused?.body?.simNow,
+            },
+            recentTicks: ticks,
           }
           appendFileSync(process.env.GITHUB_STEP_SUMMARY,
             `## Phase 2 isolated engine journey\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n`)
           NODE
+          exit "$journey_status"
 
       - name: Stop test services
         if: always()
