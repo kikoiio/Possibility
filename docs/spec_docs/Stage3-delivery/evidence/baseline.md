@@ -86,3 +86,12 @@
 - 阶段二实际2D环境渲染接线 b137d9d 与连续旅程脚本 1bb542d 已集成；生成文档独立生产预览脚本 d756a44/227b15b 支持失败artifact的合法草稿，每例独立BrowserContext，无provider调用。
 - 已在 phase3 227b15b 云端并行启动阶段二 production验收 37585977801 与阶段一真实生成稿预览 37585985131。两项均待结果，不能视为通过。
 - 两个已有子agent分别负责阶段一失败精准定位和阶段二连续性修复；根负责统一CI/预算/集成；未启动本机重型任务。G0仍blocked，独立T05/T06/T07/T10通过记录保持，集成DAG待正面证据解锁。
+
+
+## 2026-10-07：阶段二门槛补验完成与阶段一画面失败
+
+- [phase2 production run37586411002](https://github.com/kikoiio/Possibility/actions/runs/37586411002) at5e99f23整体success。新增连续旅程6居民7地点，10/10断言通过，32真实Worker请求、0意外失败、0provider：child雾效/关闭地点真实绘制，关闭进入409，重开进入200；命令/事实/事件/版本直接evidence关联通过，parent没有child条件污染。发布构建、定向投影/规则回归、原owner旅程、离页暂停恢复和mobile均在同run通过。截图已人工查看，封闭红色marker切换为开放绿色marker，雾效存在。报告及两张PNG见同目录phase2-37586411002-*。
+- 该run在GitHub-hosted runner上的localWorker/D1，不是远端部署；报告api旧字符串temporaryWorker不精确，脚本已修正a5e027e但原证据不篡改。真实远端部署离页证据仍为37582832140。聊天SSE、public demo live-read范围限制保持：本次未验证真实模型聊天，公共demo URL未配置，后者不属于原文G0的独立门槛。
+- [生成画面run37586257398](https://github.com/kikoiio/Possibility/actions/runs/37586257398) success，仅说明37584984785的三个真实生成document在production预览可渲染，0provider、API draft回放；不能当实际保存或语义通过。主协调者已查看三个overview：多余起伏地形掩埋部分建筑，道路不连贯，custom2载体复用。阶段一生成质量仍未通过，已转交精准修复。
+- 访客/自建/repair确定性完整UI回归37585946929整体success at227b15b；真实生成语义单独补验，G0仍blocked。
+- 根据用户允许提前无门槛依赖开发，P11纯相机联动逻辑已派发：task95279ad1366b/dispatchctx17704fff00c5，worktreep3-independent-camera-link，禁止页面/API/renderer接入；真实adapter联动边界仍在G0后验证。

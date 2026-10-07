@@ -1,0 +1,179 @@
+{
+  "result": "PASS",
+  "api": "phase2 temporary Worker and D1; browser API calls use the real Worker",
+  "browser": "production preview account 2D page; Pixi environment visuals checked after render",
+  "providerCalls": 0,
+  "seed": {
+    "residentCount": 6,
+    "locationCount": 7
+  },
+  "timeline": {
+    "branched": true,
+    "parentIdSha256": "f8199cda5fee4832428bfdc33eb95852c75d68330825f2467ac8b88ad1461595",
+    "childIdSha256": "5435a73bfbd0343ae4c6fd31125514e592d7df806fcd57b9063284348eaf52f9"
+  },
+  "assertions": {
+    "phase2SeedHasSixResidentsAndSevenLocations": true,
+    "seedContainsHallLocation": true,
+    "closedLocationBlocksVisitorEntry": true,
+    "closedChildTimelineRendersFogAndClosedPath": true,
+    "reopenAllowsNewVisitorEntryCommand": true,
+    "reopenedChildTimelineRendersFogAndOpenPath": true,
+    "versionedFactEventAndSourceCommandEvidenceVerified": true,
+    "parentTimelineHasNoChildCommandsOrFacts": true,
+    "childTimelineContainsExpectedEnvironmentFacts": true,
+    "noUnexpectedWorkerFailures": true
+  },
+  "renderer": {
+    "closed": {
+      "environment": {
+        "weather": "fog",
+        "lighting": null,
+        "access": {
+          "后山散步道": "closed"
+        }
+      },
+      "visuals": [
+        {
+          "kind": "access",
+          "locationName": "后山散步道",
+          "value": "closed"
+        },
+        {
+          "kind": "weather",
+          "value": "fog"
+        }
+      ]
+    },
+    "reopened": {
+      "environment": {
+        "weather": "fog",
+        "lighting": null,
+        "access": {
+          "后山散步道": "open"
+        }
+      },
+      "visuals": [
+        {
+          "kind": "access",
+          "locationName": "后山散步道",
+          "value": "open"
+        },
+        {
+          "kind": "weather",
+          "value": "fog"
+        }
+      ]
+    },
+    "screenshots": [
+      "/home/runner/work/_temp/phase2-environment-closed.png",
+      "/home/runner/work/_temp/phase2-environment-reopened.png"
+    ]
+  },
+  "evidence": {
+    "fog": {
+      "event": {
+        "id": "command:phase2-fog-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "title": "世界的weather发生变化",
+        "description": "整个世界的weather变为：fog。",
+        "kind": "action",
+        "actorPersonId": "1aa4248d-4ec8-4916-8b4b-ba789e412393",
+        "actorName": null,
+        "location": null
+      },
+      "command": {
+        "id": "phase2-fog-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "type": "environment",
+        "version": 1,
+        "actorName": null
+      },
+      "fact": {
+        "id": "2b7b6f13-d7c3-4f43-a66d-da34a34807f2",
+        "factType": "environment",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "version": 1,
+        "visibility": "world",
+        "subjectId": "world:weather",
+        "value": {
+          "location": null,
+          "condition": "weather",
+          "value": "fog"
+        },
+        "sourceCommandId": "phase2-fog-5103a1cf-286c-4f93-af36-1c9c07eb031c"
+      }
+    },
+    "closed": {
+      "event": {
+        "id": "command:phase2-close-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "title": "后山散步道的access发生变化",
+        "description": "后山散步道的access变为：closed。",
+        "kind": "action",
+        "actorPersonId": "1aa4248d-4ec8-4916-8b4b-ba789e412393",
+        "actorName": null,
+        "location": "后山散步道"
+      },
+      "command": {
+        "id": "phase2-close-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "type": "environment",
+        "version": 2,
+        "actorName": null
+      },
+      "fact": {
+        "id": "86cc4808-810a-42f6-a59c-557718781e06",
+        "factType": "environment",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "version": 2,
+        "visibility": "world",
+        "subjectId": "后山散步道:access",
+        "value": {
+          "location": "后山散步道",
+          "condition": "access",
+          "value": "closed"
+        },
+        "sourceCommandId": "phase2-close-5103a1cf-286c-4f93-af36-1c9c07eb031c"
+      }
+    },
+    "reopened": {
+      "event": {
+        "id": "command:phase2-open-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "title": "后山散步道的access发生变化",
+        "description": "后山散步道的access变为：open。",
+        "kind": "action",
+        "actorPersonId": "1aa4248d-4ec8-4916-8b4b-ba789e412393",
+        "actorName": null,
+        "location": "后山散步道"
+      },
+      "command": {
+        "id": "phase2-open-5103a1cf-286c-4f93-af36-1c9c07eb031c",
+        "type": "environment",
+        "version": 3,
+        "actorName": null
+      },
+      "fact": {
+        "id": "302fd789-524d-4421-8f3d-f1de1b3ef03f",
+        "factType": "environment",
+        "simTime": "2026-10-07T07:18:51.580Z",
+        "version": 3,
+        "visibility": "world",
+        "subjectId": "后山散步道:access",
+        "value": {
+          "location": "后山散步道",
+          "condition": "access",
+          "value": "open"
+        },
+        "sourceCommandId": "phase2-open-5103a1cf-286c-4f93-af36-1c9c07eb031c"
+      }
+    }
+  },
+  "blockedEntry": {
+    "status": 409
+  },
+  "retryEntry": {
+    "status": 200
+  },
+  "workerRequests": 32,
+  "workerFailures": 0
+}
