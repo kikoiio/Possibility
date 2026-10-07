@@ -61,13 +61,21 @@ test('timeline scene revisions fork independently, restore visible ancestry, and
   const person = await page.request.post('/api/persons', { headers, data: { name: 'Ada', model: personModel } })
   expect(person.status()).toBe(200)
   const { id: personId } = await person.json() as { id: string }
-  const locationNames = sceneFixture.locations.map(location => location.name) as string[]
+  const worldScene = {
+    ...sceneFixture,
+    locations: [
+      ...sceneFixture.locations,
+      { name: '井台', objectId: 'well' },
+      { name: '花圃', objectId: 'flowers' },
+    ],
+  }
+  const locationNames = worldScene.locations.map(location => location.name) as string[]
   const created = await page.request.post('/api/worlds', { headers, data: {
     name: `X1 场景历史 ${suffix}`,
     description: 'Isolated world for the timeline scene geometry browser journey.',
     locations: locationNames.map(name => ({ name, description: `${name} for X1 verification` })),
     personIds: [personId],
-    scene: sceneFixture,
+    scene: worldScene,
     sceneRequestId: `x1-scene-create-${suffix}`,
   } })
   const createdBody = await created.json() as { id?: string; timelineId?: string; error?: string }

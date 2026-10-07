@@ -684,7 +684,7 @@ export async function commitTimelineScene(db: Db, input: TimelineSceneCommitInpu
     candidate: { version, contentHash: requestedHash }, ...(input.compatibility ? { compatibility: input.compatibility } : {}) })
   // Ordinary edits always extend the selected line's current head. Only a
   // first child revision may explicitly choose its fork boundary parent.
-  let parentRevisionId = head ? head.currentRevisionId : (input.parentRevisionId ?? null)
+  let parentRevisionId = input.parentRevisionId ?? head?.currentRevisionId ?? null
   if (!head && parentRevisionId === null && timeline.parentTimelineId) {
     const parentScope: TimelineSceneScope = {
       worldId: scope.worldId,

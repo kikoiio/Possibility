@@ -1,12 +1,20 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
+
+async function mockRepairSnapshot(page: Page) {
+  await page.route('**/api/worlds/world-1', route => route.fulfill({ json: {
+    world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。' },
+    timelines: [{ id: 'timeline-1', parentTimelineId: null }], currentTimelineId: 'timeline-1',
+  } }))
+}
 
 test('repairs the original world and keeps the draft available after a failed save', async ({ page }) => {
   const saves: Array<{ url: string; body: Record<string, unknown> }> = []
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({ json: {
+  await mockRepairSnapshot(page)
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', locations: [{ name: '主楼', description: '旧宅' }, { name: '庭院', description: '石灯庭院' }] },
     residents: [{ id: 'person-1', name: 'Ada' }], sceneStatus: 'missing',
   } }))
@@ -45,13 +53,14 @@ test('repairs the original world and keeps the draft available after a failed sa
 
 test('world list opens repair for the selected world id', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
+  await mockRepairSnapshot(page)
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{
     id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', status: 'paused', pauseReason: null,
     isDemo: false, hasScene: false, personIds: ['person-1'], personCount: 1, callsToday: 0,
     simNow: '2026-10-01T00:00:00.000Z', timeZone: 'UTC', createdAt: '2026-09-20T10:00:00.000Z',
   }] } }))
   await page.route('**/api/persons', route => route.fulfill({ json: { persons: [{ id: 'person-1', name: 'Ada', createdAt: '2026-09-01T10:00:00Z' }] } }))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({ json: {
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', locations: [{ name: '主楼', description: '旧宅' }] },
     residents: [{ id: 'person-1', name: 'Ada' }], sceneStatus: 'missing',
   } }))
@@ -81,7 +90,7 @@ test('map missing-scene entry opens repair for the same original world', async (
   await page.route('**/api/worlds/world-1/map/resume', route => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/worlds/world-1/stream**', route => route.fulfill({ contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [] } }))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({ json: {
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', locations: [{ name: '主楼', description: '旧宅' }] },
     residents: [{ id: 'person-1', name: 'Ada' }], sceneStatus: 'missing',
   } }))
@@ -103,7 +112,8 @@ test('a competing successful repair sends the user into the original world', asy
     locationBoard: [{ location: '主楼', persons: [{ id: 'person-1', name: 'Ada', activity: '正在安顿' }] }], events: [],
   }
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({ json: {
+  await mockRepairSnapshot(page)
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', locations: [{ name: '主楼', description: '旧宅' }, { name: '温室', description: '玻璃温室' }, { name: '庭院', description: '石灯庭院' }] },
     residents: [{ id: 'person-1', name: 'Ada' }], sceneStatus: 'missing',
   } }))
@@ -143,7 +153,8 @@ test('a competing successful repair sends the user into the original world', asy
 test('generation errors keep the original context and description available for retry', async ({ page }) => {
   let draftCalls = 0
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({ json: {
+  await mockRepairSnapshot(page)
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({ json: {
     world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', locations: [{ name: '主楼', description: '旧宅' }, { name: '温室', description: '玻璃温室' }, { name: '庭院', description: '石灯庭院' }] },
     residents: [{ id: 'person-1', name: 'Ada' }], sceneStatus: 'missing',
   } }))
@@ -168,7 +179,8 @@ test('generation errors keep the original context and description available for 
 
 test('an unrepairable original world stays intact and offers a route back', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
-  await page.route('**/api/worlds/world-1/scene/repair-context', route => route.fulfill({
+  await mockRepairSnapshot(page)
+  await page.route('**/api/worlds/world-1/scene/repair-context*', route => route.fulfill({
     status: 409, json: { error: '这个世界没有可用于补建场景的居民。', errorCode: 'world_structure_invalid' },
   }))
   await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'missing' } }))

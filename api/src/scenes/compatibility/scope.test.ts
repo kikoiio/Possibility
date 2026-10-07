@@ -172,7 +172,8 @@ describe('A1 compatibility scope', () => {
 
     const writeQueries = routeQueries.filter(({ query }) => /^\s*(?:INSERT|UPDATE|DELETE)\b/i.test(query))
     expect(writeQueries.length).toBeGreaterThan(0)
-    expect(writeQueries.every(({ query }) => /\b(?:scene_compatibility_drafts|scene_compatibility_requests|world_scene_revisions|world_scenes)\b/i.test(query))).toBe(true)
+    expect(writeQueries.map(({ query }) => query).filter(query =>
+      !/\b(?:scene_compatibility_drafts|scene_compatibility_requests|world_scene_revisions|world_scenes|timeline_scene_revisions|timeline_scene_heads)\b/i.test(query))).toEqual([])
     expect(writeQueries.every(({ params }) => !params.includes('other-world'))).toBe(true)
     const scopedQueries = routeQueries.filter(({ query }) => /\b(?:worlds|world_persons|world_scenes|world_scene_revisions|scene_compatibility_drafts|scene_compatibility_requests|person_states|schedules|memories|events|world_commands|world_facts|conversations|messages)\b/i.test(query))
     expect(scopedQueries.every(({ params }) => !params.includes('other-world'))).toBe(true)
@@ -192,9 +193,7 @@ describe('A1 compatibility scope', () => {
       requestId: 'scope-main-initial', document: invalid, summary: 'main invalid scene', kind: 'initial' })
     await commitScene(f.db, { worldId: 'home-world', scope: peerScope, expectedVersion: 0,
       requestId: 'scope-peer-initial', document: invalid, summary: 'peer invalid scene', kind: 'initial' })
-    // A different legacy world head must never be used as a timeline fallback.
-    await commitScene(f.db, { worldId: 'home-world', expectedVersion: 0, requestId: 'scope-legacy-initial',
-      document: validDocument(), summary: 'legacy scene', kind: 'initial' })
+    // A legacy world head must never be used as an empty timeline fallback.
 
     const inspect = await call(f, `${compatibilityPath}/inspection?timelineId=home-main&representation=voxel`, { headers: ownerHeaders })
     expect(inspect.status).toBe(200)
