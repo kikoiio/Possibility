@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import {
   decodeSceneCompatibility,
   isSerializedVoxelDocument, isSerializedVoxelSpaces,
@@ -409,6 +409,7 @@ export async function listTimelineSceneHistory(
     eq(timelineSceneRevisions.id, revisionId),
     eq(timelineSceneRevisions.worldId, scope.worldId),
     eq(timelineSceneRevisions.representation, scope.representation),
+    inArray(timelineSceneRevisions.timelineId, [...timelineById.keys()]),
   )).get()
   const headRow = await db.select({
     id: timelineSceneRevisions.id,

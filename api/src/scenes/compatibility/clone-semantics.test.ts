@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { applyEdits, createEmptyWorld, serialize, setBlockMut, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, deserialize, serialize, setBlockMut, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import {
   native2dLayoutHeads, native2dLayoutRevisions, persons, timelineSceneHeads, timelineSceneRevisions,
   worldPersons, worldSceneRevisions, worlds,
@@ -76,13 +76,11 @@ describe('I09 clone scene semantics', () => {
     const sourceScope = { worldId: 'home-world', timelineId: 'home-main', representation: 'voxel' }
     await commitScene(fixture.db, { worldId: 'home-world', scope: sourceScope, expectedVersion: 0,
       requestId: 'source-timeline-init', document, summary: 'timeline init', kind: 'initial' })
-    const followup = applyEdits(document, [
+    const followup = applyEdits(deserialize(JSON.stringify(document)), [
       { kind: 'place-object', objectId: 'clone-person-followup', objectType: 'stone-lantern', anchor: { x: 2, y: 1, z: 2 }, rotation: 0 },
     ]).document
     await commitScene(fixture.db, { worldId: 'home-world', scope: sourceScope, expectedVersion: 1,
-      requestId: 'source-timeline-followup', document: followup, summary: 'timeline follow-up', kind: 'voxel-edit' })
-    await commitScene(fixture.db, { worldId: 'home-world', expectedVersion: 0, requestId: 'source-legacy-init',
-      document, summary: 'legacy init', kind: 'initial' })
+      requestId: 'source-timeline-followup', document: JSON.parse(serialize(followup)) as SerializedVoxelDocument, summary: 'timeline follow-up', kind: 'voxel-edit' })
 
     const layoutOne = native2dLayout('home-world', 'home-main')
     const layoutTwo: Native2dLayout = { ...layoutOne, placements: [{ ...layoutOne.placements[0]!, origin: { x: 2, z: 2 } }] }
@@ -108,6 +106,11 @@ describe('I09 clone scene semantics', () => {
     for (const row of sceneRows) {
       expect(row.contentHash).toBe(await hashDocument(row.snapshotJson, row.version))
       expect(JSON.parse(row.validationJson!).scope).toEqual({ worldId: clone.worldId, timelineId: cloneTimelineId, representation: 'voxel' })
+      expect(row.snapshotJson).toContain(clonePersonId)
+      expect(row.snapshotJson).not.toContain('person-source')
+      expect(row.snapshotJson).not.toContain('home-main')
+      expect(row.validationJson).not.toContain('person-source')
+      expect(row.validationJson).not.toContain('home-main')
     }
     expect(followupCloneScene.historyParentRevisionId).toBe(initialCloneScene.id)
     const sceneHead = await fixture.db.select().from(timelineSceneHeads).where(eq(timelineSceneHeads.worldId, clone.worldId)).get()

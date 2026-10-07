@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, serialize, type EditOperation, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import { compatibilityRoutes } from './routes'

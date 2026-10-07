@@ -78,7 +78,7 @@ export function assertTimelineSceneSpace(
   if (document && typeof document === 'object' && 'format' in document
     && (document as { format?: unknown }).format === 'voxel-spaces'
     && Array.isArray((document as { spaces?: unknown }).spaces)) {
-    const spaces = (document as { spaces: Array<{ id?: unknown }> }).spaces
+    const spaces = (document as unknown as { spaces: Array<{ id?: unknown }> }).spaces
     if (spaces.some(space => space?.id === spaceId)) return
     throw new TimelineSceneRequestError('空间不存在', 'space-missing', 404)
   }
@@ -130,6 +130,7 @@ export async function readImplicitMainLegacyScene(db: Db, scope: TimelineSceneSc
   let document: unknown
   try { document = JSON.parse(row.documentJson) }
   catch { throw new TimelineSceneRequestError('主时间线旧场景记录损坏', 'legacy-scene-corrupt', 409) }
+  if (!isSerializedVoxelDocument(document) && !isSerializedVoxelSpaces(document)) throw new TimelineSceneRequestError('主时间线旧场景格式不可用', 'legacy-scene-corrupt', 409)
   return { id: row.id, worldId: row.worldId, timelineId: scope.timelineId, representation: scope.representation,
     requestId: row.requestId, parentRevisionId: null, summary: row.summary, kind: row.kind,
     validationJson: row.validationJson, document, version: row.version, contentHash: row.contentHash, createdAt: row.createdAt,
@@ -167,6 +168,7 @@ export async function readImplicitMainLegacyRevision(db: Db, scope: TimelineScen
   let document: unknown
   try { document = JSON.parse(row.documentJson) }
   catch { throw new TimelineSceneRequestError('主时间线旧场景记录损坏', 'legacy-scene-corrupt', 409) }
+  if (!isSerializedVoxelDocument(document) && !isSerializedVoxelSpaces(document)) throw new TimelineSceneRequestError('主时间线旧场景格式不可用', 'legacy-scene-corrupt', 409)
   return { id: row.id, worldId: row.worldId, timelineId: scope.timelineId, representation: scope.representation,
     requestId: row.requestId, parentRevisionId: row.parentVersion === null ? null : `legacy-v${row.parentVersion}`,
     summary: row.summary, kind: row.kind, validationJson: row.validationJson, document, version: row.version,

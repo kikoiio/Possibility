@@ -169,6 +169,12 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
       push('timeline_scene_revision_source_missing', `revision ${row.id} has no matching source timeline revision`)
       continue
     }
+    const expectedParentId = sourceRevision.historyParentRevisionId
+      ? sourceRevisionIdsByCloneId.get(sourceRevision.historyParentRevisionId) ?? null
+      : null
+    if (row.historyParentRevisionId !== expectedParentId) {
+      push('timeline_scene_revision_parent_mismatch', `revision ${row.id} does not preserve its remapped source parent`)
+    }
     try {
       const sourceDocument = JSON.parse(sourceRevision.snapshotJson) as unknown
       const clonedDocument = JSON.parse(row.snapshotJson) as unknown
@@ -212,8 +218,14 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
       push('timeline_scene_head_source_leak', `head for ${row.timelineId} references source revision ${row.currentRevisionId}`)
     }
     const revision = clonedTimelineSceneRevisionRows.find(candidate => candidate.id === row.currentRevisionId)
-    if (revision && (revision.timelineId !== row.timelineId || revision.version !== row.currentVersion)) {
+    if (revision && (revision.timelineId !== row.timelineId || revision.representation !== row.representation || revision.version !== row.currentVersion)) {
       push('timeline_scene_head_version_mismatch', `head for ${row.timelineId} does not match its current revision`)
+    }
+    const sourceTimelineId = clonedTimelineToSource.get(row.timelineId)
+    const sourceHead = sourceTimelineId ? sourceTimelineSceneHeadRows.find(candidate => candidate.timelineId === sourceTimelineId
+      && candidate.representation === row.representation) : undefined
+    if (!sourceHead || sourceRevisionIdsByCloneId.get(sourceHead.currentRevisionId) !== row.currentRevisionId) {
+      push('timeline_scene_head_pointer_mismatch', `head for ${row.timelineId} does not point to the remapped source head`)
     }
   }
   const sourceNativeRevisionIds = new Set(sourceNative2dRevisionRows.map(row => row.id))
@@ -272,8 +284,12 @@ export async function verifyClonedWorld(db: Db, input: VerifyClonedWorldInput): 
       push('native2d_head_revision_mismatch', `native2d head for ${row.timelineId}/${row.sceneId} does not match its revision`)
     }
     const sourceTimelineId = clonedTimelineToSource.get(row.timelineId)
-    if (!sourceTimelineId || !sourceNative2dHeadRows.some(sourceHead => sourceHead.timelineId === sourceTimelineId
-      && sourceHead.sceneId === row.sceneId && sourceHead.currentVersion === row.currentVersion)) {
+    const sourceHead = sourceTimelineId ? sourceNative2dHeadRows.find(candidate => candidate.timelineId === sourceTimelineId
+      && candidate.sceneId === row.sceneId) : undefined
+    const sourceHeadRevision = sourceHead ? sourceNative2dRevisionFor(sourceHead.timelineId, sourceHead.sceneId, sourceHead.currentVersion) : undefined
+    const expectedCloneHeadRevision = sourceHeadRevision ? clonedNative2dRevisionRows.find(candidate =>
+      candidate.timelineId === row.timelineId && candidate.sceneId === row.sceneId && candidate.version === sourceHeadRevision.version) : undefined
+    if (!sourceHead || sourceHead.currentVersion !== row.currentVersion || expectedCloneHeadRevision?.id !== row.currentRevisionId) {
       push('native2d_head_source_missing', `native2d head for ${row.timelineId}/${row.sceneId} has no matching source head`)
     }
   }

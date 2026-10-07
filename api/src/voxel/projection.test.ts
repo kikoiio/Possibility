@@ -187,8 +187,9 @@ describe('projectVoxelEvents 门控(AC2)', () => {
     ])
     await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl-child', expectedVersion: 0,
       requestId: 'projection-child-v1', document: VOXEL_DOC, summary: 'fork anchor', kind: 'fork-restore' })
-    await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl1', expectedVersion: 1,
+    const mainV2 = await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl1', expectedVersion: 1,
       requestId: 'projection-main-v2', document: projectionSceneAt(25), summary: 'later main edit', kind: 'voxel-edit' })
+    await db.update(timelineSceneRevisions).set({ createdAt: '2026-10-15T12:00:00.000Z' }).where(eq(timelineSceneRevisions.id, mainV2.id))
     await commitTimelineScene(db, { worldId: 'w1', timelineId: 'tl-child', expectedVersion: 1,
       requestId: 'projection-child-v2', document: projectionSceneAt(30), summary: 'child edit', kind: 'voxel-edit' })
     await db.insert(personStates).values({ personId: 'p-a', timelineId: 'tl-child', simTime: SIM_NOW, location: '主楼',

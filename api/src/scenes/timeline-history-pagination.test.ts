@@ -38,7 +38,7 @@ async function seedForkedHistory() {
 }
 
 it('decodes at most limit+1 snapshots, pages along the parent chain, and preserves page boundary provenance', async () => {
-  const { db, rootV2, rootV3, childV1, childV2 } = await seedForkedHistory()
+  const { db, rootV1, rootV2, rootV3, childV1, childV2 } = await seedForkedHistory()
   const logStart = fixture!.queryLog.length
 
   const first = await listTimelineSceneHistory(db, scope('bounded-child'), { limit: 2 })
@@ -50,7 +50,7 @@ it('decodes at most limit+1 snapshots, pages along the parent chain, and preserv
   expect(snapshotReads).toHaveLength(3)
 
   const second = await listTimelineSceneHistory(db, scope('bounded-child'), { limit: 2, cursor: first!.nextCursor })
-  expect(second?.revisions.map(revision => revision.id)).toEqual([rootV2.id])
+  expect(second?.revisions.map(revision => revision.id)).toEqual([rootV2.id, rootV1.id])
   expect(second?.boundaries).toEqual([{ fromTimelineId: 'bounded-child', toTimelineId: 'home-main', revisionId: rootV2.id }])
   expect(second?.revisions.some(revision => revision.id === rootV3.id)).toBe(false)
 })

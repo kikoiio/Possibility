@@ -53,7 +53,7 @@ async function addCloneReferenceRows(fixture: Fixture, worldId: string, timeline
   const edited = applyEdits(document, [
     { kind: 'place-object', objectId: 'clone-bound-person-followup', objectType: 'stone-lantern', anchor: { x: 2, y: 1, z: 2 }, rotation: 0 },
   ]).document
-  await commitScene(fixture.db, { worldId, scope: scoped, expectedVersion: first.revision.version,
+  await commitScene(fixture.db, { worldId, scope: scoped, expectedVersion: first.version,
     requestId: 'clone-reference-scene-followup', document: JSON.parse(serialize(edited)) as SerializedVoxelDocument,
     summary: 'clone identity follow-up', kind: 'voxel-edit' })
 
