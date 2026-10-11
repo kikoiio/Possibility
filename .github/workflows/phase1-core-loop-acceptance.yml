@@ -39,7 +39,7 @@ jobs:
       - name: Contract build and focused API tests
         run: |
           npm --workspace @possibility/voxel-contract run build
-          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism src/scenes/fallback.test.ts src/scenes/voxel-draft.test.ts src/voxel/normalize.test.ts
+          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism src/scenes/fallback.test.ts src/scenes/voxel-draft.test.ts src/voxel/normalize.test.ts src/worlds/create-voxel.test.ts src/scenes/compatibility/routes.test.ts src/scenes/repair.test.ts
           npm --workspace api run build
 
       - name: Web build and focused tests
