@@ -36,10 +36,10 @@ jobs:
         working-directory: web
         run: npx playwright install --with-deps chromium
 
-      - name: Contract build and full API regression suite
+      - name: Contract build and API regression suite (excluding credentialed cloud suites)
         run: |
           npm --workspace @possibility/voxel-contract run build
-          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism
+          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism --exclude 'src/test/phase1-g0-provider.acceptance.test.ts' --exclude 'src/test/phase2-world-loop.acceptance.test.ts'
           npm --workspace api run build
 
       - name: Web build and full Web regression suite
