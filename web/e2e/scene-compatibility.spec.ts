@@ -1266,7 +1266,7 @@ test('未知结果经恢复授权同一请求重试，旧 attempt 被封后仅�
   expect(await sceneVersion(page, E01_WORLD)).toBe(before + 1)
   expect((await revisionRows(page, E01_WORLD))).toHaveLength(rowsBefore.length + 1)
   expect(confirmCount()).toBe(2)
-  const request = await page.request.get(`/api/worlds/${E01_WORLD}/scene/compatibility/requests/${originalRequestId}`, { headers: await bearer(page) })
+  const request = await page.request.get(`/api/worlds/${E01_WORLD}/scene/compatibility/requests/${originalRequestId}?timelineId=a1-e01-main&representation=voxel`, { headers: await bearer(page) })
   expect(request.ok()).toBeTruthy()
   expect(await request.json()).toMatchObject({ status: 'completed', attempt: 1 })
   await dialog.getByRole('button', { name: '关闭兼容检查' }).click()
