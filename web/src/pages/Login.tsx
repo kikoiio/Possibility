@@ -60,6 +60,8 @@ export default function Login() {
       flow.setAccount(response.user)
       if (claiming && getGuestToken() && flow.context) {
         await flow.afterAuthentication(response.user)
+        const completedWorldId = flow.getState().completedWorldId
+        if (completedWorldId) navigate(`/worlds/${completedWorldId}`, { replace: true })
         return
       }
       navigate('/', { replace: true })

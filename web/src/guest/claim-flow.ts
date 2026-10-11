@@ -8,11 +8,13 @@ export interface GuestClaimFlowState {
   context: GuestClaimContext | null
   message: string | null
   account: GuestClaimAccount | null
+  completedWorldId: string | null
 }
 export interface GuestClaimFlow {
   phase: GuestClaimPhase
   context: GuestClaimContext | null
   message: string | null
+  completedWorldId: string | null
   afterAuthentication(account: GuestClaimAccount): Promise<void>
   confirmAndSave(): Promise<void>
   refreshStatus(): Promise<void>
@@ -83,6 +85,7 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
   let context = readResult.kind === 'ready' ? readResult.context : null
   let phase: GuestClaimPhase = readResult.kind === 'storage-unavailable' || readResult.kind === 'corrupt' ? 'storage-error' : context?.phase ?? 'needs-auth'
   let message: string | null = readResult.kind === 'storage-unavailable' ? '浏览器存储不可用，暂时无法可靠恢复保存意图。' : readResult.kind === 'corrupt' ? '保存意图无法读取，请返回原访客副本确认。' : null
+  let completedWorldId: string | null = null
   const listeners = new Set<() => void>()
   let timer: ReturnType<typeof globalThis.setTimeout> | null = null
   let disposed = false
@@ -116,7 +119,7 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
       emit()
       return
     }
-    context = null; phase = 'completed'; message = statusMessage(status); emit()
+    context = null; phase = 'completed'; completedWorldId = status.worldId; message = statusMessage(status); emit()
   }
   async function refreshStatus(): Promise<void> {
     if (disposed) return
@@ -221,7 +224,7 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
     return phase === 'retryable' || phase === 'completed'
   }
   function setAccount(next: GuestClaimAccount | null): void { account = next; emit() }
-  function getState(): GuestClaimFlowState { return { phase, context, message, account } }
+  function getState(): GuestClaimFlowState { return { phase, context, message, account, completedWorldId } }
   function subscribe(listener: () => void): () => void { listeners.add(listener); return () => listeners.delete(listener) }
   function dispose(): void { disposed = true; clearWait(); abortController?.abort(); listeners.clear() }
 
@@ -229,6 +232,7 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
     get phase() { return phase },
     get context() { return context },
     get message() { return message },
+    get completedWorldId() { return completedWorldId },
     afterAuthentication,
     confirmAndSave,
     refreshStatus,
