@@ -166,7 +166,7 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
     })()
     const res = await post(createBody({ scene: broken, sceneRequestId: 'req-create-3' }))
     expect(res.status).toBe(422)
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验') })
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('兼容检查') })
   })
 })
 
@@ -220,7 +220,7 @@ describe('A1 initial scene', () => {
 
     const res = await post(createBody({ scene: invalid, sceneRequestId: 'req-a1-invalid-initial' }))
     expect(res.status).toBe(422)
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验'), issues: expect.any(Array) })
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('兼容检查'), issues: expect.any(Array) })
     await expectNoPartialWorldCreate(f)
   })
 
