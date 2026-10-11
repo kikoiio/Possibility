@@ -70,11 +70,12 @@ export function finalizeEvidence(directory, options = {}) {
   const expectedSha = options.expectedSha === undefined ? currentSha() : options.expectedSha
   const validation = validateEvidence(loaded.manifest, expectedSha)
   const counts = Object.fromEntries(['passed', 'failed', 'unverified'].map(status => [status, loaded.manifest.cases.filter(item => item.status === status).length]))
+  const status = validation.valid ? (counts.unverified === 0 ? 'passed' : 'partial') : 'failed'
   const report = {
     schema: `${PHASE1B_SCHEMA}-final-report`,
     runId: loaded.manifest.runId,
     gitSha: loaded.manifest.gitSha,
-    status: validation.valid ? 'passed' : 'failed',
+    status,
     counts,
     errors: validation.errors,
     cleanup: loaded.manifest.cleanup,
@@ -99,5 +100,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const directory = process.env.PHASE1B_EVIDENCE_DIR ?? 'artifacts/phase1b-guest-save'
   const report = finalizeEvidence(directory)
   console.log(JSON.stringify(report, null, 2))
-  if (report.status !== 'passed') process.exitCode = 1
+  if (report.status === 'failed') process.exitCode = 1
 }

@@ -7,7 +7,7 @@ import { hashGuestToken } from '../access/middleware'
 import { readActiveBaseline } from './baseline-repository'
 import { cloneWorldGraph, deleteClonedWorldGraph } from './world-graph-cloner'
 import { verifyClonedWorld } from './clone-verification'
-import type { ClaimResult, ClaimSourceBinding, ClaimStatus, GuestSessionResult } from './types'
+import type { ClaimResponse, ClaimResult, ClaimSourceBinding, ClaimStatus, GuestSessionResult } from './types'
 import { acquireClaimExecution, candidateWorldIdFor, closeClaimExecution, readClaimOperation, recoverClaimOperation as recoverStoredClaim, type AcquireClaimResult } from './claim-repository'
 import { deleteClaimCandidate, publishVerifiedClaim } from './claim-publication'
 import { readClaimStatus } from './claim-status'
@@ -138,7 +138,7 @@ export class ClaimVerificationError extends Error {
   }
 }
 
-export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; expectedEpoch?: number; expectedBinding?: ClaimSourceBinding; now?: Date }): Promise<ClaimStatus | null> {
+export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; expectedEpoch?: number; expectedBinding?: ClaimSourceBinding; now?: Date }): Promise<ClaimResponse | null> {
   const now = input.now ?? new Date()
   let session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
   if (!session) return null
@@ -146,7 +146,7 @@ export async function claimGuestSession(db: Db, input: { token: string; userId: 
   const active = await db.select().from(demoSandboxes).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.generation, session.generation))).get()
   if (!active || !session.currentSandboxWorldId) return null
 
-  const existingClaim = async (): Promise<ClaimResult | null> => {
+  const existingClaim = async (): Promise<ClaimResponse | null> => {
     const sandbox = await db.select().from(demoSandboxes).where(eq(demoSandboxes.id, active.id)).get()
     if (!sandbox?.claimedWorldId) return null
     const owner = await db.select({ userId: worlds.userId }).from(worlds).where(eq(worlds.id, sandbox.claimedWorldId)).get()

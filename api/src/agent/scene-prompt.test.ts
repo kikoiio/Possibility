@@ -44,6 +44,7 @@ function fakeCtx(): EngineContext {
         llmConfigJson: null,
         lastUserActivityAt: null,
         timeZone: null,
+        claimStagingExecutionId: null,
         createdAt: '',
       },
       locations: [],

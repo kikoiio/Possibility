@@ -20,6 +20,9 @@ export type ClaimResult =
   | { kind: 'claimed'; worldId: string; replayed: boolean }
   | { kind: 'already_claimed_elsewhere' }
 
+/** The versioned response plus the legacy response kept for old callers. */
+export type ClaimResponse = ClaimStatus | ClaimResult
+
 export type ClaimOperationState = 'running' | 'failed' | 'succeeded'
 
 export interface DemoClaimOperation {

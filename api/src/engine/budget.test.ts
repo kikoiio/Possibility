@@ -39,6 +39,7 @@ function world(patch: Partial<World>): World {
     llmConfigJson: null,
     lastUserActivityAt: null,
     timeZone: null,
+    claimStagingExecutionId: null,
     createdAt: '',
     ...patch,
   }

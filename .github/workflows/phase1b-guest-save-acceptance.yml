@@ -100,6 +100,20 @@ jobs:
         env:
           TMPDIR: ${{ github.workspace }}/.tmp/phase1b/${{ github.run_id }}
         run: npm run test:e2e -- --config playwright.guest-claim.config.ts --workers=1
+      - name: Write redacted evidence manifest
+        if: always()
+        working-directory: web
+        env:
+          PHASE1B_EVIDENCE_MANIFEST: ${{ github.workspace }}/artifacts/phase1b-guest-save/${{ github.run_id }}/manifest.json
+        run: npm exec -- tsx scripts/phase1b-guest-save.acceptance.ts --write-manifest
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-guest-save-evidence-${{ github.run_id }}
+          if-no-files-found: error
+          path: artifacts/phase1b-guest-save/${{ github.run_id }}/
+          retention-days: 14
 
   finalize:
     name: Finalize redacted evidence
