@@ -16,7 +16,10 @@ import {
  * failure/unverified reason when that route cannot be exercised.
  */
 test.describe.configure({ mode: 'serial' })
-test.setTimeout(60_000)
+// The matrix intentionally visits 22 real routes in one serial browser
+// context. Keep enough budget for the slowest WebGL mount while bounding each
+// missing selector so one unimplemented surface cannot consume the whole run.
+test.setTimeout(300_000)
 
 const outputRoot = resolve(process.env.PHASE1_BASELINE_OUTPUT_DIR ?? '../artifacts/phase1-core-loop')
 const runId = process.env.PHASE1_BASELINE_RUN_ID ?? `playwright-${process.env.GITHUB_RUN_ID ?? Date.now()}`
@@ -171,7 +174,7 @@ test('records deterministic Phase 1 baseline matrix', async ({ page }, testInfo)
     try {
       if (!journey) throw new Error('未配置确定性入口旅程。')
       await page.goto(journey.path, { waitUntil: 'domcontentloaded' })
-      await page.getByTestId(journey.selector).waitFor({ state: 'visible', timeout: 15_000 })
+      await page.getByTestId(journey.selector).waitFor({ state: 'visible', timeout: 8_000 })
       result.page = await collectPageEvidence(page, screenshotEnabled ? { screenshotPath: resolve(runDir, 'screenshots', `${caseId}.png`) } : {})
       if (result.page.screenshotPath) result.evidencePaths.push(`screenshots/${caseId}.png`)
       result.http = responseRecords.splice(0)
