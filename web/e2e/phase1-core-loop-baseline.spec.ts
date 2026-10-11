@@ -88,6 +88,10 @@ function mapBootstrap() {
 
 async function installRoutes(page: Page): Promise<void> {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'phase1-e2e-token'))
+  // Keep the deterministic token valid for the app's auth bootstrap. Otherwise
+  // the first real /auth/me 401 clears localStorage and sends later journeys to
+  // /login, hiding the page behavior this baseline is meant to observe.
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'owner-1', username: 'baseline-owner' } } }))
   await page.route('**/api/persons**', route => route.fulfill({ json: { persons: [person] } }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [world] } }))
   await page.route('**/api/worlds/phase1-core-world/**', route => {
@@ -119,26 +123,26 @@ type Journey = {
 const journeys: Record<string, Journey> = {
   'BB-01': { path: '/worlds/new?person=person-1', selector: 'scene-create-shell' },
   'BB-02': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'voxel-viewport-canvas' },
-  'BB-03': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-canvas-page' },
-  'BB-04': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-canvas-page' },
-  'BB-05': { path: '/worlds/world-1?timeline=timeline-main', selector: 'fork-entry' },
+  'BB-03': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
+  'BB-04': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
+  'BB-05': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry' },
   'BB-06': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-07': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'voxel-viewport-canvas' },
-  'BB-08': { path: '/worlds/world-1?timeline=timeline-main', selector: 'timeline-switcher' },
-  'BB-09': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-time-zone-setting' },
-  'BB-10': { path: '/worlds/world-1?timeline=timeline-main', selector: 'owner-map-stage' },
+  'BB-08': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'timeline-switcher' },
+  'BB-09': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
+  'BB-10': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'owner-map-stage' },
   'BB-11': { path: '/worlds/new?person=person-1', selector: 'scene-prompt' },
   'BB-12': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
-  'BB-13': { path: '/worlds/world-1?timeline=timeline-main', selector: 'owner-map-stage' },
-  'BB-14': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-time-zone-setting' },
-  'BB-15': { path: '/worlds/world-1?timeline=timeline-main', selector: 'fork-entry' },
-  'BB-16': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-canvas-page' },
+  'BB-13': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'owner-map-stage' },
+  'BB-14': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
+  'BB-15': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry' },
+  'BB-16': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-17': { path: '/worlds/new?person=person-1', selector: 'scene-create-shell' },
   'BB-18': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-status' },
-  'supplemental-registration-claim': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-canvas-page' },
-  'supplemental-guest-timezone': { path: '/worlds/world-1?timeline=timeline-main', selector: 'world-time-zone-setting' },
+  'supplemental-registration-claim': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
+  'supplemental-guest-timezone': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
   'supplemental-interior-3d': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline&presentation=voxel3d', selector: 'voxel-viewport-canvas' },
-  'supplemental-timeline-display': { path: '/worlds/world-1?mode=possibility&timeline=timeline-main', selector: 'timeline-switcher' },
+  'supplemental-timeline-display': { path: '/worlds/phase1-core-world?mode=possibility&timeline=phase1-core-timeline', selector: 'timeline-switcher' },
 }
 
 function caseDefinition(caseId: string): BaselineCase {
