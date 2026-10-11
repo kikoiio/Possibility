@@ -173,6 +173,12 @@ export default function WorldCreate() {
       // Persist the operation identity before sending so a reload after a lost response
       // retries the same create instead of silently allocating a second world.
       createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error: null, draftRequest: draftRequest.current, createRequest: operation })
+      // The regular draft persistence is debounced for edits. A create request can
+      // fail immediately, so flush the current scene before crossing that boundary.
+      await createDraftStore.saveDraft({
+        draft,
+        editedDocument: edited && latestDoc.current ? JSON.parse(serialize(latestDoc.current)) : null,
+      })
       const result = await worldsApi.create({ ...payload, sceneRequestId: operation.requestId })
       const fromWorld = searchParams.get('fromWorld')
       if (fromWorld) {
