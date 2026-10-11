@@ -155,7 +155,7 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
   await page.getByTestId('start-life').click()
   await expect(page.getByTestId('create-live-banner')).toBeVisible()
   expect(routes.draftBodies).toHaveLength(2)
-  expect(routes.draftBodies[0]!.requestId).not.toBe(routes.draftBodies[1]!.requestId)
+  expect(routes.draftBodies[1]!.requestId).toBe(routes.draftBodies[0]!.requestId)
 })
 
 test('a deterministic fallback draft is explicitly marked and remains enterable', async ({ page }) => {
