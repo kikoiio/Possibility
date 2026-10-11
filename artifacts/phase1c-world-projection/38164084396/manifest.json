@@ -1,0 +1,396 @@
+{
+  "schema": "phase1c-world-projection-v1",
+  "runId": "38164084396",
+  "gitSha": "5bf5aac0ad67117bdd160df552f51c1524f8053f",
+  "startedAt": "2026-10-11T18:35:05.509Z",
+  "environment": {
+    "runner": "github-actions",
+    "viewports": [
+      "desktop:1280x720",
+      "compact:485x724"
+    ],
+    "apiMode": "isolated-worker",
+    "modelMode": "no-model-calls"
+  },
+  "cases": [
+    {
+      "ac": "AC1",
+      "kind": "contract",
+      "status": "passed",
+      "summary": "上下文匹配契约由 ComparisonPane.paneLoadStateFrom 矩阵覆盖：任一字段不匹配的读取结果都不渲染",
+      "requestTarget": {
+        "worldAlias": null,
+        "timelineAlias": null,
+        "spaceAlias": null,
+        "presentation": null
+      },
+      "apiContext": null,
+      "pageContext": null,
+      "substitutes": [
+        "comparison-pane-unit-matrix"
+      ],
+      "evidence": [
+        "src/components/world/presentation/ComparisonPane.test.tsx"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC2",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "分叉时间线按选择读取，pane 显示该时间线业务名称与模拟时刻，未回退当前线",
+      "requestTarget": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d"
+      },
+      "apiContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "demo-world",
+        "api-fork"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:interior-2d-fork"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC3",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "interior 选择写入 URL，刷新后恢复同一空间且不静默回退",
+      "requestTarget": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d"
+      },
+      "apiContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "native2d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "demo-world"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:refresh-restore"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC4",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "非样板世界/内厅的 2D 来自真实 API 场景投影（雾影庄演示世界），读取失败不会展示静态庄园样板",
+      "requestTarget": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "demo-world"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:presentation-switch"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC5",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "同一世界/时间线/空间在 2D 与 3D 间切换，事实绑定与模拟时刻保持一致，表现切换不改目标",
+      "requestTarget": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "demo-world"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:presentation-switch"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC6",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "一侧读取失败显示可重试错误；重试只更新该侧，另一侧目标、画面与状态保持",
+      "requestTarget": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "network-fault-injection"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:side-failure-recovery"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC7",
+      "kind": "contract",
+      "status": "passed",
+      "summary": "旧请求隔离由生命周期矩阵覆盖：延迟 A/快速切换 B 只保留 B；卸载后资源释放由 destroy 计数断言",
+      "requestTarget": {
+        "worldAlias": null,
+        "timelineAlias": null,
+        "spaceAlias": null,
+        "presentation": null
+      },
+      "apiContext": null,
+      "pageContext": null,
+      "substitutes": [
+        "presentation-lifecycle-unit-matrix"
+      ],
+      "evidence": [
+        "src/components/world/presentation/PresentationLifecycle.test.ts"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC8",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "双 pane 各自选择时间线；世界/表现/空间兼容时相机联动可用，一侧失败不重置另一侧",
+      "requestTarget": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-2",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-2",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-2",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "network-fault-injection"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:camera-link-gate"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC9",
+      "kind": "negative",
+      "status": "passed",
+      "summary": "伪造世界/空间目标被服务端或读取器拒绝，页面显示业务原因；guest 身份由服务端会话决定",
+      "requestTarget": {
+        "worldAlias": "world-2",
+        "timelineAlias": null,
+        "spaceAlias": "space-2",
+        "presentation": "native2d"
+      },
+      "apiContext": null,
+      "pageContext": null,
+      "substitutes": [
+        "forged-target-probe",
+        "permission-unit-matrix"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:forged-target"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC10",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "刷新、表现与空间切换仅产生读取请求（捕获非 GET：6 个，命中禁写端点 0 个）",
+      "requestTarget": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-1",
+        "timelineAlias": "timeline-1",
+        "spaceAlias": "space-1",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "request-whitelist"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:write-audit"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC11",
+      "kind": "contract",
+      "status": "passed",
+      "summary": "定向单测矩阵（契约/路由/读取器/投影/生命周期/相机隔离）与真实旅程共同构成证据；本 manifest 即关联记录",
+      "requestTarget": {
+        "worldAlias": null,
+        "timelineAlias": null,
+        "spaceAlias": null,
+        "presentation": null
+      },
+      "apiContext": null,
+      "pageContext": null,
+      "substitutes": [
+        "unit-matrix-index"
+      ],
+      "evidence": [
+        "src/components/world/presentation",
+        "src/native2d/__tests__/voxel-scene-projection.test.ts"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    },
+    {
+      "ac": "AC12",
+      "kind": "journey",
+      "status": "passed",
+      "summary": "连续旅程：分叉时间线 + interior → 2D → 3D → 刷新 → 双 pane 比较 → 一侧失败重试，全程无旧响应污染",
+      "requestTarget": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d"
+      },
+      "apiContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "pageContext": {
+        "worldAlias": "world-3",
+        "timelineAlias": "timeline-3",
+        "spaceAlias": "space-3",
+        "presentation": "voxel3d",
+        "sceneVersion": null,
+        "simNow": "2026-10-11T18:34:45.836Z"
+      },
+      "substitutes": [
+        "demo-world",
+        "api-fork",
+        "network-fault-injection"
+      ],
+      "evidence": [
+        "phase1c-world-projection.spec.ts:full-journey"
+      ],
+      "failureReason": "尚未运行该验收项，需在隔离环境执行对应 API/UI 旅程。"
+    }
+  ],
+  "cleanup": {
+    "servicesStopped": true,
+    "tempPathsRemoved": true,
+    "attempted": true,
+    "errors": []
+  },
+  "redaction": {
+    "status": "passed",
+    "findings": []
+  }
+}
