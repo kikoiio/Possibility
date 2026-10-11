@@ -533,8 +533,8 @@ test('旧资料分类：缺场景、损坏 JSON、未知格式和未知版本均
   const cases = [
     { worldId: MISSING_SCENE_WORLD, timelineId: 'a1-missing-scene-main', status: 404, code: 'scene-missing', message: '请求的场景版本不存在', revisions: 0 },
     { worldId: CORRUPT_SCENE_WORLD, timelineId: 'a1-corrupt-scene-main', status: 422, code: 'scene-corrupt', message: '场景文档损坏：无法解析已保存版本', revisions: 1, historyError: 'invalid-json' },
-    { worldId: UNSUPPORTED_SCENE_WORLD, timelineId: 'a1-unsupported-scene-main', status: 422, code: 'format-unsupported', message: '场景表现格式不受当前体素适配器支持', revisions: 1 },
-    { worldId: UNSUPPORTED_VERSION_WORLD, timelineId: 'a1-unsupported-version-main', status: 422, code: 'format-unsupported', message: '场景文档版本不受支持', revisions: 1 },
+    { worldId: UNSUPPORTED_SCENE_WORLD, timelineId: 'a1-unsupported-scene-main', status: 422, code: 'format-unsupported', message: '场景表现格式不受当前体素适配器支持', revisions: 1, historyError: 'invalid-snapshot' },
+    { worldId: UNSUPPORTED_VERSION_WORLD, timelineId: 'a1-unsupported-version-main', status: 422, code: 'format-unsupported', message: '场景文档版本不受支持', revisions: 1, historyError: 'invalid-snapshot' },
   ]
 
   for (const scenario of cases) {
@@ -542,7 +542,7 @@ test('旧资料分类：缺场景、损坏 JSON、未知格式和未知版本均
     if (scenario.historyError) {
       expect(before).toMatchObject({ status: 422, body: { errorCode: scenario.historyError } })
     } else {
-      expect(before.status).toBe(200)
+      expect(before.status, scenario.worldId).toBe(200)
       expect((before.body as { revisions: unknown[] }).revisions).toHaveLength(scenario.revisions)
     }
     const response = await page.request.get(`/api/worlds/${scenario.worldId}/scene/compatibility/inspection`, { headers })
