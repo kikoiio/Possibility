@@ -90,7 +90,7 @@ async function installRoutes(page: Page): Promise<void> {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'owner-1', username: 'baseline-owner' } } }))
   await page.route('**/api/persons**', route => route.fulfill({ json: { persons: [person] } }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [world] } }))
-  await page.route('**/api/worlds/phase1-core-world*', route => {
+  await page.route('**/api/worlds/phase1-core-world/**', route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/time-zone')) return route.fulfill({ json: { timeZone: world.timeZone } })
     if (path.endsWith('/map/bootstrap')) return route.fulfill({ json: mapBootstrap() })
