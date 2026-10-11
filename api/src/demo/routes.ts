@@ -82,8 +82,9 @@ claimRoutes.post('/recover', async c => {
     requestId?: string; observedEpoch?: number; observedExecutionId?: string | null; expectedBinding?: ClaimSourceBinding
   }>().catch(() => null)
   const binding = body?.expectedBinding
-  if (!token || !body?.requestId?.trim() || !binding || !binding.sessionId || !binding.worldId || !Number.isInteger(binding.generation) || binding.generation < 0 || !Number.isInteger(body.observedEpoch) || body.observedEpoch < 0 || (body.observedExecutionId !== null && typeof body.observedExecutionId !== 'string')) return c.json({ error: '恢复请求参数无效' }, 400)
-  const observedEpoch = body.observedEpoch as number
+  const observedEpochValue = body?.observedEpoch
+  if (!token || !body?.requestId?.trim() || !binding || !binding.sessionId || !binding.worldId || !Number.isInteger(binding.generation) || binding.generation < 0 || typeof observedEpochValue !== 'number' || !Number.isInteger(observedEpochValue) || observedEpochValue < 0 || (body.observedExecutionId !== null && typeof body.observedExecutionId !== 'string')) return c.json({ error: '恢复请求参数无效' }, 400)
+  const observedEpoch = observedEpochValue
   const result = await recoverGuestClaimOperation(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim(), observedEpoch, observedExecutionId: body.observedExecutionId ?? null, expectedBinding: binding })
   if (!result) return c.json({ error: '访客体验无法恢复', code: 'claim_unavailable' }, 409)
   if (result.kind === 'in-progress') return c.json(result, { status: 202 })
