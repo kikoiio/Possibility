@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyEdits, createEmptyWorld, deserialize, ensureAssetPlacementIds, serialize } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, deserialize, ensureAssetPlacementIds, serialize, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { demoBaselines, worldSceneRevisions } from '../db/schema'
 import * as llmClient from '../llm/client'
 import * as llmResolution from '../llm/resolve'
@@ -131,7 +131,7 @@ describe('voxel AI edit-plan route', () => {
     const fixture = await createWorldFixture(); fixtures.push(fixture)
     const exterior = compatibilityFixtureRepairedBasis()
     const hall = compatibilityFixtureLegacyScene()
-    const spaces = {
+    const spaces: SerializedVoxelSpaces = {
       format: 'voxel-spaces', version: 1, defaultSpaceId: 'exterior',
       spaces: [
         { id: 'exterior', name: '石灯外景', document: exterior },
