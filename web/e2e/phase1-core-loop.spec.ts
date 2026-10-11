@@ -180,7 +180,10 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
     if (route.request().method() === 'GET') return route.fulfill({ json: { status: 'ready', document: persistedDocument, version: persistedVersion } })
     return route.fallback()
   })
-  await page.route('**/api/worlds/phase1-core-world/map/bootstrap', route => route.fulfill({ json: mapBootstrap(persistedDocument) }))
+  await page.route('**/api/worlds/phase1-core-world/map/bootstrap', route => {
+    routes.apiTrace.push({ method: 'GET', path: '/api/worlds/phase1-core-world/map/bootstrap', status: 200, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow })
+    return route.fulfill({ json: mapBootstrap(persistedDocument) })
+  })
 
   await fillAndGenerate(page, '一个有温室和庭院的山间旧宅。')
   await expect(page.getByTestId('create-error')).toContainText('入口目前无法顺利到达')
