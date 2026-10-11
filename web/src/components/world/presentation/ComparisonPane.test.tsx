@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { SerializedVoxelDocument, VoxelDocument } from '@possibility/voxel-contract'
 import type { WorldSnapshot } from '../../../api/types'
 import type { WorldReadModel } from '../../../native2d/types'
-import type { PaneTarget, PaneUnsupported, PaneWorldData, WorldPresentationContext } from './presentation-types'
+import type { PaneTarget, PaneUnsupported, PaneWorldData, SpaceDescriptor, WorldPresentationContext } from './presentation-types'
 import ComparisonPane, { paneLoadStateFrom } from './ComparisonPane'
 
 function context(overrides: Partial<WorldPresentationContext> = {}): WorldPresentationContext {
@@ -65,8 +65,8 @@ describe('pane load state mapping', () => {
   it('keeps the read data detached from later caller mutations', () => {
     const loaded = data()
     const state = paneLoadStateFrom(loaded, target, 'right')
-    loaded.context.capabilities.observe = false
-    loaded.context.availableSpaces.push({ id: 'x', label: 'x', kind: 'unknown', supportedPresentations: [] })
+    ;(loaded.context.capabilities as Record<string, boolean>).observe = false
+    ;(loaded.context.availableSpaces as SpaceDescriptor[]).push({ id: 'x', label: 'x', kind: 'unknown', supportedPresentations: [] })
     if (state.kind === 'ready') {
       expect(state.data.context.capabilities.observe).toBe(true)
       expect(state.data.context.availableSpaces).toHaveLength(0)

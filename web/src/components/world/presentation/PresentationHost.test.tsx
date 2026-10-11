@@ -2,18 +2,18 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { createPresentationStateStore } from '../../../lib/presentation-state'
-import type { PanePresentationData, PresentationLifecycleAdapters } from './presentation-types'
-import type { PresentationLifecycleAdapters as LifecycleAdapters } from './PresentationLifecycle'
+import type { PanePresentationData } from './presentation-types'
+import type { PresentationLifecycleAdapters } from './PresentationLifecycle'
 import PresentationHost from './PresentationHost'
 
-const adapters: LifecycleAdapters = {
+const adapters: PresentationLifecycleAdapters = {
   native2d: { kind: 'native2d', supports: () => true, mount: async () => { throw new Error('not mounted in SSR') } },
   voxel3d: { kind: 'voxel3d', supports: () => true, mount: async () => { throw new Error('not mounted in SSR') } },
-} satisfies PresentationLifecycleAdapters
+}
 
 const store = createPresentationStateStore(null)
 
-function data(presentation: 'native2d' | 'voxel3d'): PanePresentationData {
+function data(presentation: 'native2d' | 'voxel3d'): PanePresentationData<'voxel3d'> {
   return {
     context: {
       paneId: 'single', worldId: 'world-a', timelineId: 'main', spaceId: 'exterior',
@@ -25,7 +25,7 @@ function data(presentation: 'native2d' | 'voxel3d'): PanePresentationData {
     sceneDocument: {} as never,
     selectedSpaceDocument: {} as never,
     worldReadModel: {} as never,
-  } as PanePresentationData
+  } as PanePresentationData<'voxel3d'>
 }
 
 describe('PresentationHost SSR', () => {

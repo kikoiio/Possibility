@@ -18,6 +18,15 @@ vi.mock('./VoxelPresentationAdapter', () => ({
 
 import { authApi, guestMapApi, mapApi, publicApi } from '../../../api/client'
 import { createPresentationRuntime } from './presentation-runtime'
+import type { PaneSessionLoader, PaneUnsupported, PaneWorldData } from './presentation-types'
+
+async function expectWorldData(promise: ReturnType<PaneSessionLoader>): Promise<PaneWorldData> {
+  const loaded = await promise
+  if ('kind' in loaded && loaded.kind === 'unsupported') {
+    throw new Error(`unexpected unsupported (${loaded.code}): ${loaded.reason}`)
+  }
+  return loaded as PaneWorldData
+}
 
 const mockedAuthMe = vi.mocked(authApi.me)
 const mockedGuestBootstrap = vi.mocked(guestMapApi.bootstrap)
@@ -111,8 +120,7 @@ afterEach(() => {
 describe('presentation runtime pane reader', () => {
   it('assembles the context from one authorized read, defaulting the space to exterior', async () => {
     const { loadSession } = createPresentationRuntime('account')
-    const data = await loadSession(accountTarget, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error(`unexpected unsupported: ${data.reason}`)
+    const data = await expectWorldData(loadSession(accountTarget, new AbortController().signal))
     expect(mockedMapBootstrap).toHaveBeenCalledWith('w1', undefined, expect.any(AbortSignal))
     expect(mockedAuthMe).toHaveBeenCalled()
     expect(data.context).toMatchObject({
@@ -134,8 +142,7 @@ describe('presentation runtime pane reader', () => {
 
   it('honors an explicit interior space and does not fall back to resume or exterior', async () => {
     const { loadSession } = createPresentationRuntime('account')
-    const data = await loadSession({ ...accountTarget, spaceId: 'main-house-interior' }, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error(`unexpected unsupported: ${data.reason}`)
+    const data = await expectWorldData(loadSession({ ...accountTarget, spaceId: 'main-house-interior' }, new AbortController().signal))
     expect(data.context.spaceId).toBe('main-house-interior')
     expect(data.selectedSpaceDocument.size).toEqual({ width: 6, height: 5, depth: 6 })
   })
@@ -144,16 +151,13 @@ describe('presentation runtime pane reader', () => {
     const { loadSession } = createPresentationRuntime('account')
     const result = await loadSession({ ...accountTarget, spaceId: 'ghost-space' }, new AbortController().signal)
     expect(result).toMatchObject({ kind: 'unsupported', code: 'space-missing' })
-    if (result.kind === 'unsupported') {
-      expect(result.alternatives?.map(space => space.id)).toEqual(['exterior', 'main-house-interior'])
-    }
+    expect((result as PaneUnsupported).alternatives?.map(space => space.id)).toEqual(['exterior', 'main-house-interior'])
   })
 
   it('reads the requested timeline and never accepts a different echo', async () => {
     const { loadSession } = createPresentationRuntime('account')
     mockedMapBootstrap.mockResolvedValue(bootstrap({ world: snapshot({ currentTimelineId: 'main' }) }))
-    const data = await loadSession({ ...accountTarget, timelineId: 'main' }, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error('unexpected unsupported')
+    const data = await expectWorldData(loadSession({ ...accountTarget, timelineId: 'main' }, new AbortController().signal))
     expect(data.context.timelineId).toBe('main')
     expect(mockedMapBootstrap).toHaveBeenCalledWith('w1', 'main', expect.any(AbortSignal))
     // 服务端无法按请求读取 fork-1 时（这里以回显 main 模拟），读取失败而非静默改线。
@@ -178,8 +182,7 @@ describe('presentation runtime pane reader', () => {
 
   it('marks guest identity from the guest bootstrap without account capabilities', async () => {
     const { loadSession } = createPresentationRuntime('guest')
-    const data = await loadSession(accountTarget, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error('unexpected unsupported')
+    const data = await expectWorldData(loadSession(accountTarget, new AbortController().signal))
     expect(data.context.identity).toBe('guest')
     expect(mockedGuestBootstrap).toHaveBeenCalledWith('w1', undefined, expect.any(AbortSignal))
     expect(mockedMapBootstrap).not.toHaveBeenCalled()
@@ -190,15 +193,13 @@ describe('presentation runtime pane reader', () => {
     mockedMapBootstrap.mockResolvedValue(bootstrap({
       access: { observe: true, participate: false, editScene: false, fork: false, compare: true, persist: false, resetDemo: false },
     }))
-    const data = await loadSession(accountTarget, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error('unexpected unsupported')
+    const data = await expectWorldData(loadSession(accountTarget, new AbortController().signal))
     expect(data.context.identity).toBe('readonly')
   })
 
   it('reads public worlds through the public snapshot and scene endpoints with echo validation', async () => {
     const { loadSession } = createPresentationRuntime('public')
-    const data = await loadSession(accountTarget, new AbortController().signal)
-    if (data.kind === 'unsupported') throw new Error('unexpected unsupported')
+    const data = await expectWorldData(loadSession(accountTarget, new AbortController().signal))
     expect(mockedPublicSnapshot).toHaveBeenCalledWith('w1', undefined, expect.any(AbortSignal))
     expect(mockedPublicScene).toHaveBeenCalledWith('w1', { timelineId: 'main', representation: 'voxel' }, expect.any(AbortSignal))
     expect(data.context.identity).toBe('readonly')
@@ -217,8 +218,7 @@ describe('presentation runtime pane reader', () => {
       } as SerializedVoxelSpaces,
     }
     mockedMapBootstrap.mockResolvedValue(bootstrap({ scene: themed }))
-    const result3d = await loadSession(accountTarget, new AbortController().signal)
-    if (result3d.kind === 'unsupported') throw new Error('3D should still be readable')
+    const result3d = await expectWorldData(loadSession(accountTarget, new AbortController().signal))
     // 主题不支持 2D 时，空间描述只登记 3D。
     expect(result3d.context.availableSpaces[0].supportedPresentations).toEqual(['voxel3d'])
     const result2d = await loadSession({ ...accountTarget, presentation: 'native2d' }, new AbortController().signal)

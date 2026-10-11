@@ -44,12 +44,16 @@ export function themeOfEnvelope(envelope: ProjectableSceneEnvelope): string | nu
     : envelope.theme
 }
 
-/** 体素物体模板 → 2D 素材映射；未登记的模板不渲染也不阻挡。 */
+/** 体素物体模板 → 2D 素材映射；登记表覆盖雾影庄主题自身的物体目录，未登记的模板不渲染也不阻挡。 */
 const OBJECT_TYPE_TO_2D_ASSET: Readonly<Record<string, string>> = {
   'manor-main-house': 'main-house',
   'manor-two-story-house': 'main-house',
   'manor-greenhouse': 'greenhouse',
   tree: 'tree',
+  'stone-lantern': 'hall-lamp',
+  bench: 'hall-chair',
+  bookshelf: 'hall-table',
+  'flower-bed': 'shrub',
 }
 
 const BUILDING_2D_ASSETS: ReadonlySet<string> = new Set(['main-house', 'greenhouse'])
@@ -377,15 +381,14 @@ export function projectVoxelSpaceScene(input: VoxelSceneProjectionInput): VoxelS
   for (const carrier of carriers) {
     if (!carrier.asset2d || !ASSET_MANIFEST[carrier.asset2d]) continue
     if (BUILDING_2D_ASSETS.has(carrier.asset2d)) continue
-    for (const [index, cell] of carrier.cells.entries()) {
-      if (!insideBounds(cell, geometry)) continue
-      staticObjects.push({
-        id: index === 0 ? carrier.id : `${carrier.id}-${index}`,
-        assetId: carrier.asset2d,
-        origin: { ...cell },
-        blocksMovement: true,
-      })
-    }
+    // 每个承载者渲染为锚点处的单个 2D 素材实例；阻挡仍按其真实投影占地计算。
+    if (!insideBounds(carrier.anchor, geometry)) continue
+    staticObjects.push({
+      id: carrier.id,
+      assetId: carrier.asset2d,
+      origin: { ...carrier.anchor },
+      blocksMovement: true,
+    })
   }
 
   const space: SpaceDefinition = {
