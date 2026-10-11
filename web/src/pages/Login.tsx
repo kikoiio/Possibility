@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, authApi, clearToken, demoApi, getGuestToken, setToken } from '../api/client'
 import GuestClaimStatusPanel from '../components/guest/GuestClaimStatusPanel'
@@ -19,23 +19,37 @@ export default function Login() {
   const claiming = search.get('claimDemo') === '1'
   const store = useMemo(() => createGuestClaimStore(), [])
   const flow = useMemo(() => createGuestClaimFlow({ store }), [store])
+  const claimInitialization = useRef<Promise<void> | null>(null)
+
+  function ensureClaimContext(): Promise<void> {
+    if (!claiming || !getGuestToken()) return Promise.resolve()
+    claimInitialization.current ??= (async () => {
+      if (flow.context) return
+      try {
+        const session = await demoApi.current()
+        const context = createInitialGuestClaimContext(
+          { sessionId: session.sessionId, worldId: session.worldId, generation: session.generation },
+          { guestToken: getGuestToken() },
+        )
+        if (store.write(context).ok) {
+          // The flow was created before the persisted context existed. Refreshing
+          // reads it back without starting a claim.
+          flow.setAccount(null)
+          await flow.refreshStatus()
+        }
+      } catch {
+        // The recovery panel explains a missing source copy.
+      }
+    })()
+    return claimInitialization.current
+  }
 
   useEffect(() => () => flow.dispose(), [flow])
   useEffect(() => {
     if (!claiming || !getGuestToken()) return
     let active = true
     void (async () => {
-      if (!flow.context) {
-        try {
-          const session = await demoApi.current()
-          const context = createInitialGuestClaimContext({ sessionId: session.sessionId, worldId: session.worldId, generation: session.generation }, { guestToken: getGuestToken() })
-          store.write(context)
-          // The flow was created before the compatibility context existed; reload
-          // its source through the same persisted store without starting a claim.
-          flow.setAccount(null)
-          await flow.refreshStatus()
-        } catch { /* The recovery panel explains a missing source copy. */ }
-      }
+      await ensureClaimContext()
       if (localStorage.getItem('possibility_token')) {
         try {
           const account = (await authApi.me({ redirectOnUnauthorized: false })).user
@@ -58,10 +72,15 @@ export default function Login() {
       setToken(response.token)
       setCurrentUser(response.user)
       flow.setAccount(response.user)
-      if (claiming && getGuestToken() && flow.context) {
-        await flow.afterAuthentication(response.user)
-        const completedWorldId = flow.getState().completedWorldId
-        if (completedWorldId) navigate(`/worlds/${completedWorldId}`, { replace: true })
+      if (claiming && getGuestToken()) {
+        await ensureClaimContext()
+        if (flow.context) {
+          await flow.afterAuthentication(response.user)
+          const completedWorldId = flow.getState().completedWorldId
+          if (completedWorldId) navigate(`/worlds/${completedWorldId}`, { replace: true })
+          return
+        }
+        setError('找不到原访客副本，请返回原访客副本后重试。')
         return
       }
       navigate('/', { replace: true })
