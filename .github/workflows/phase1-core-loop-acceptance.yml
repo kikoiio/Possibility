@@ -2,6 +2,11 @@ name: Phase 1 core loop acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      compatibility_grep:
+        description: Optional Playwright title filter for focused compatibility debugging
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -65,11 +70,14 @@ jobs:
           PLAYWRIGHT_COMPAT_WEB_PORT: '15198'
           PLAYWRIGHT_COMPAT_PERSIST_TO: ${{ runner.temp }}/phase1-compatibility-${{ github.run_id }}
           PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/artifacts/phase1-core-loop/github-${{ github.run_id }}/compatibility-results.json
+          COMPATIBILITY_GREP: ${{ inputs.compatibility_grep }}
         run: |
           npx playwright test e2e/phase1-core-loop-baseline.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1 --grep='responsive fallback journey'
-          npm run test:e2e:compat -- --project=compatibility-desktop --workers=1 --reporter=list,json
+          COMPAT_ARGS=(--project=compatibility-desktop --workers=1 --reporter=list,json)
+          if [[ -n "$COMPATIBILITY_GREP" ]]; then COMPAT_ARGS+=(--grep="$COMPATIBILITY_GREP"); fi
+          npm run test:e2e:compat -- "${COMPAT_ARGS[@]}"
 
       - name: Summarize matrix and verify cleanup
         if: always()

@@ -86,8 +86,9 @@ async function hash(value: unknown): Promise<string> {
 async function revisionRows(page: Page, worldId: string, timelineId?: string): Promise<Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }>> {
   const scope = timelineId ? `?timelineId=${encodeURIComponent(timelineId)}&representation=voxel` : ''
   const res = await page.request.get(`/api/worlds/${worldId}/scene/revisions${scope}`, { headers: await bearer(page) })
-  expect(res.ok()).toBeTruthy()
-  return (await res.json() as { revisions: Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }> }).revisions
+  const body = await res.text()
+  expect(res.ok(), `scene revisions returned ${res.status()} for ${worldId}${scope}: ${body}`).toBeTruthy()
+  return (JSON.parse(body) as { revisions: Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }> }).revisions
 }
 
 /** 请求计数器（只观察，不拦截）。 */
