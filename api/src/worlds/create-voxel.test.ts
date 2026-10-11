@@ -57,10 +57,10 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
     expect(isSerializedVoxelDocument(JSON.parse(revision!.documentJson))).toBe(true)
   })
 
-  it('地点绑定覆盖不符 → 400;缺 sceneRequestId → 400', async () => {
+  it('地点绑定覆盖不符 → 422;缺 sceneRequestId → 400', async () => {
     await setup()
     const mismatch = await post(createBody({ scene: voxelEnvelope(LOCATIONS.slice(1).map(l => l.name)), sceneRequestId: 'req-create-2' }))
-    expect(mismatch.status).toBe(400)
+    expect(mismatch.status).toBe(422)
     expect(await mismatch.json()).toMatchObject({ error: expect.stringContaining('地点绑定') })
     const noReqId = await post(createBody({ sceneRequestId: undefined }))
     expect(noReqId.status).toBe(400)
@@ -153,7 +153,7 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
     expect(await f.db.select().from(worldSceneRevisions).all()).toHaveLength(1)
   })
 
-  it('体素校验失败(不可行走) → 400 并携带 issues', async () => {
+  it('体素校验失败(不可行走) → 422 并携带 issues', async () => {
     await setup()
     // 平地 y=1 整层封死 → 无净空
     const broken = (() => {
@@ -165,7 +165,7 @@ describe('POST /api/worlds 体素场景创建(S1)', () => {
       return JSON.parse(serialize({ ...applyEdits(base, ops).document, locations: LOCATIONS.map((l, i) => ({ name: l.name, objectId: `spot-${i}` })) })) as SerializedVoxelDocument
     })()
     const res = await post(createBody({ scene: broken, sceneRequestId: 'req-create-3' }))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验') })
   })
 })
@@ -219,7 +219,7 @@ describe('A1 initial scene', () => {
     })) as SerializedVoxelDocument
 
     const res = await post(createBody({ scene: invalid, sceneRequestId: 'req-a1-invalid-initial' }))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('校验'), issues: expect.any(Array) })
     await expectNoPartialWorldCreate(f)
   })
@@ -227,7 +227,7 @@ describe('A1 initial scene', () => {
   it('真实创建入口：选定人物与场景绑定不符时不创建任何世界数据', async () => {
     const f = await setup()
     const res = await post(createBody({ scene: envelopeWithPersonBinding('p-stranger'), sceneRequestId: 'req-a1-binding-mismatch' }))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(422)
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('人物绑定') })
     await expectNoPartialWorldCreate(f)
   })
@@ -310,10 +310,10 @@ describe('A1 initial scene', () => {
     expect(await f.db.select().from(worldPersons).where(eq(worldPersons.worldId, worldId)).all()).toHaveLength(0)
   })
 
-  it('人物绑定预检：场景绑定未选定人物 → 400；绑定选定人物 → 200（B54/P17）', async () => {
+  it('人物绑定预检：场景绑定未选定人物 → 422；绑定选定人物 → 200（B54/P17）', async () => {
     await setup()
     const stranger = await post(createBody({ scene: envelopeWithPersonBinding('p-stranger'), sceneRequestId: 'req-a1-stranger' }))
-    expect(stranger.status).toBe(400)
+    expect(stranger.status).toBe(422)
     expect(await stranger.json()).toMatchObject({ error: expect.stringContaining('人物绑定') })
     const own = await post(createBody({ scene: envelopeWithPersonBinding('p1'), sceneRequestId: 'req-a1-own' }))
     expect(own.status).toBe(200)
