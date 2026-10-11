@@ -167,10 +167,11 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
 
   const statements: BatchItem<'sqlite'>[] = []
   const ownerId = input.staging?.ownerId ?? input.targetOwnerId
-  // Keep the target owner on the world row so scene proof triggers can validate
-  // the intended publication owner; the staging marker still hides the world.
+  // Existing world state triggers require a running world while its graph is
+  // copied. The staging marker keeps this candidate hidden; pause it after all
+  // child rows have been inserted, before the batch is committed.
   statements.push(db.insert(worlds).values({ ...source, id: worldId, userId: input.targetOwnerId, name: input.name ?? source.name, isDemo: false,
-    status: input.staging ? 'paused' : source.status, claimStagingExecutionId: input.staging?.executionId ?? null }))
+    status: input.staging ? 'running' : source.status, claimStagingExecutionId: input.staging?.executionId ?? null }))
   pushInChunks(statements, sourcePeople.map(row => ({ ...row, id: personIds.get(row.id)!, userId: ownerId })), chunk => db.insert(persons).values(chunk))
   pushInChunks(statements, links.map(row => ({ ...row, worldId, personId: personIds.get(row.personId)! })), chunk => db.insert(worldPersons).values(chunk))
   pushInChunks(statements, sourceTimelines.map(row => ({
@@ -317,6 +318,12 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     timelineId: timelineIds.get(row.timelineId)!,
     payloadJson: remapSceneJson(row.payloadJson, refIds),
   })), chunk => db.insert(forkSnapshots).values(chunk))
+
+  if (input.staging) {
+    statements.push(db.update(worlds).set({ status: 'paused' }).where(and(
+      eq(worlds.id, worldId), eq(worlds.claimStagingExecutionId, input.staging.executionId),
+    )))
+  }
 
   await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
   return { worldId, mainTimelineId: timelineIds.get(mainTimeline.id)!, personIds, timelineIds, eventIds, commandIds }

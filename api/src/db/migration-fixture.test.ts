@@ -125,7 +125,10 @@ describe('A1 e2e legacy fixture', () => {
       // 生活保留与基线对照：迁移前后逐行一致
       expect(rows(sqlite, 'users', 'id')).toEqual(snapshot.users)
       expect(rows(sqlite, 'persons', 'id')).toEqual(snapshot.persons)
-      expect(rows(sqlite, 'worlds', 'id')).toEqual(snapshot.worlds)
+      // Phase 1B adds a nullable staging marker; legacy world data remains
+      // identical apart from that intentionally new column.
+      expect((rows(sqlite, 'worlds', 'id') as Array<Record<string, unknown>>).map(({ claim_staging_execution_id: _staging, ...world }) => world))
+        .toEqual(snapshot.worlds)
       expect(rows(sqlite, 'world_persons', 'world_id, person_id')).toEqual(snapshot.worldPersons)
       expect(rows(sqlite, 'timelines', 'id')).toEqual(snapshot.timelines)
       expect(rows(sqlite, 'person_states', 'person_id')).toEqual(snapshot.personStates)
