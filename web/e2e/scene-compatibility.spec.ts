@@ -83,8 +83,9 @@ async function hash(value: unknown): Promise<string> {
 }
 
 /** 真实路由快照：场景历史行。 */
-async function revisionRows(page: Page, worldId: string): Promise<Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }>> {
-  const res = await page.request.get(`/api/worlds/${worldId}/scene/revisions`, { headers: await bearer(page) })
+async function revisionRows(page: Page, worldId: string, timelineId?: string): Promise<Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }>> {
+  const scope = timelineId ? `?timelineId=${encodeURIComponent(timelineId)}&representation=voxel` : ''
+  const res = await page.request.get(`/api/worlds/${worldId}/scene/revisions${scope}`, { headers: await bearer(page) })
   expect(res.ok()).toBeTruthy()
   return (await res.json() as { revisions: Array<{ version: number; parentVersion: number | null; summary: string; kind: string; contentHash: string }> }).revisions
 }
@@ -523,19 +524,19 @@ test('旧资料分类：缺场景、损坏 JSON、未知格式和未知版本均
   await login(page)
   const headers = await bearer(page)
   const cases = [
-    { worldId: MISSING_SCENE_WORLD, status: 404, code: 'scene-missing', message: '请求的场景版本不存在', revisions: 0 },
-    { worldId: CORRUPT_SCENE_WORLD, status: 422, code: 'scene-corrupt', message: '场景文档损坏：无法解析已保存版本', revisions: 1 },
-    { worldId: UNSUPPORTED_SCENE_WORLD, status: 422, code: 'format-unsupported', message: '场景表现格式不受当前体素适配器支持', revisions: 1 },
-    { worldId: UNSUPPORTED_VERSION_WORLD, status: 422, code: 'format-unsupported', message: '场景文档版本不受支持', revisions: 1 },
+    { worldId: MISSING_SCENE_WORLD, timelineId: 'a1-missing-scene-main', status: 404, code: 'scene-missing', message: '请求的场景版本不存在', revisions: 0 },
+    { worldId: CORRUPT_SCENE_WORLD, timelineId: 'a1-corrupt-scene-main', status: 422, code: 'scene-corrupt', message: '场景文档损坏：无法解析已保存版本', revisions: 1 },
+    { worldId: UNSUPPORTED_SCENE_WORLD, timelineId: 'a1-unsupported-scene-main', status: 422, code: 'format-unsupported', message: '场景表现格式不受当前体素适配器支持', revisions: 1 },
+    { worldId: UNSUPPORTED_VERSION_WORLD, timelineId: 'a1-unsupported-version-main', status: 422, code: 'format-unsupported', message: '场景文档版本不受支持', revisions: 1 },
   ]
 
   for (const scenario of cases) {
-    const before = await revisionRows(page, scenario.worldId)
+    const before = await revisionRows(page, scenario.worldId, scenario.timelineId)
     expect(before).toHaveLength(scenario.revisions)
     const response = await page.request.get(`/api/worlds/${scenario.worldId}/scene/compatibility/inspection`, { headers })
     expect(response.status(), scenario.worldId).toBe(scenario.status)
     expect(await response.json()).toMatchObject({ errorCode: scenario.code, error: scenario.message })
-    expect(await revisionRows(page, scenario.worldId)).toEqual(before)
+    expect(await revisionRows(page, scenario.worldId, scenario.timelineId)).toEqual(before)
   }
 })
 
