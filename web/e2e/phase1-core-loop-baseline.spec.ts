@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import {
@@ -43,12 +43,7 @@ const world = {
   ],
 }
 const timeline = { id: 'phase1-core-timeline', parentTimelineId: null, simNow: '2026-10-02T12:00:00.000Z', name: '主线' }
-const scene = {
-  format: 'voxel-document',
-  size: { width: 16, height: 8, depth: 16 },
-  objects: [],
-  locations: [],
-}
+const scene = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
 
 function snapshot() {
   return {
@@ -164,7 +159,7 @@ function caseDefinition(caseId: string): BaselineCase {
 }
 
 test('records deterministic Phase 1 baseline matrix', async ({ page }, testInfo) => {
-  const manifest = createAcceptanceManifest(runId, 'playwright')
+  const manifest = createAcceptanceManifest(runId, process.env.GITHUB_SHA ?? 'unknown')
   const responseRecords: Array<{ method: string; path: string; status: number }> = []
   page.on('response', response => {
     const url = new URL(response.url())
