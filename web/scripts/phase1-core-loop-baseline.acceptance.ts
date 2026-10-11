@@ -165,11 +165,31 @@ export function writeAcceptanceManifest(manifest: BaselineRunManifest, outputPat
   const scan = scanForSecrets(safeManifest)
   if (!scan.passed) throw new Error(`Refusing to write acceptance manifest containing secrets: ${scan.findings.join(', ')}`)
   safeManifest.redaction = { ...safeManifest.redaction, status: 'passed', findings: scan.findings }
+  for (const item of safeManifest.cases) {
+    const relativePath = `cases/${item.caseId}.json`
+    if (!item.evidencePaths.includes(relativePath)) item.evidencePaths.push(relativePath)
+  }
   const validation = validateAcceptanceManifest(safeManifest)
   if (!validation.passed) throw new Error(`Invalid phase 1 baseline manifest: ${validation.errors.join('; ')}`)
-  mkdirSync(dirname(resolve(outputPath)), { recursive: true })
-  writeFileSync(resolve(outputPath), `${JSON.stringify(safeManifest, null, 2)}\n`, { mode: 0o600 })
-  return resolve(outputPath)
+  const absoluteOutputPath = resolve(outputPath)
+  const outputDirectory = dirname(absoluteOutputPath)
+  mkdirSync(outputDirectory, { recursive: true })
+  for (const item of safeManifest.cases) {
+    const casePath = resolve(outputDirectory, 'cases', `${item.caseId}.json`)
+    mkdirSync(dirname(casePath), { recursive: true })
+    writeFileSync(casePath, `${JSON.stringify({
+      schema: `${BASELINE_SCHEMA}-case`,
+      runId: safeManifest.runId,
+      caseId: item.caseId,
+      status: item.status,
+      verified: item.status === 'passed',
+      page: item.page,
+      http: item.http,
+      failure: item.failure,
+    }, null, 2)}\n`, { mode: 0o600 })
+  }
+  writeFileSync(absoluteOutputPath, `${JSON.stringify(safeManifest, null, 2)}\n`, { mode: 0o600 })
+  return absoluteOutputPath
 }
 
 /**

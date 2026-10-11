@@ -56,7 +56,12 @@ jobs:
       - name: Browser acceptance (deterministic fixtures only)
         if: ${{ hashFiles('web/e2e/phase1-core-loop.spec.ts') != '' }}
         working-directory: web
-        run: npx playwright test e2e/phase1-core-loop.spec.ts --workers=1
+        env:
+          PHASE1_BASELINE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/phase1-core-loop
+          PHASE1_BASELINE_RUN_ID: github-${{ github.run_id }}
+        run: |
+          npx playwright test e2e/phase1-core-loop-baseline.spec.ts --project=desktop-chromium --workers=1
+          npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1
 
       - name: Upload core loop evidence
         if: always()

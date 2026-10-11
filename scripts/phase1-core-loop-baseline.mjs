@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import {
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -215,10 +216,38 @@ function materializeCaseEvidence(runDir, manifest) {
       caseId: item.caseId,
       status: item.status,
       verified: item.status === 'passed',
+      identity: item.identity,
+      context: item.context,
+      entry: item.entry,
       page: item.page,
+      http: item.http,
       failure: item.failure,
     })
   }
+}
+
+function mergeBrowserEvidence(runDir, manifest, sourceDir = process.env.PHASE1_BASELINE_EVIDENCE_DIR) {
+  if (!sourceDir) return 0
+  let merged = 0
+  for (const item of manifest.cases) {
+    const sourcePath = resolve(sourceDir, `${item.caseId}.json`)
+    try {
+      const evidence = JSON.parse(readFileSync(sourcePath, 'utf8'))
+      if (!evidence || evidence.caseId !== item.caseId) continue
+      item.status = evidence.status
+      item.identity = evidence.identity ?? item.identity
+      item.context = evidence.context ?? item.context
+      item.page = evidence.page ?? item.page
+      item.http = Array.isArray(evidence.http) ? evidence.http : item.http
+      item.failure = evidence.failure ?? item.failure
+      item.evidencePaths = [join(CASE_EVIDENCE_DIR, `${item.caseId}.json`)]
+      merged += 1
+    } catch {
+      // Missing sidecars remain explicitly unverified and are handled by the
+      // normal manifest validation path.
+    }
+  }
+  return merged
 }
 
 function writeRunArtifacts(runDir, manifest) {
@@ -288,9 +317,7 @@ export async function runBaseline({ outputRoot = process.env.PHASE1_BASELINE_OUT
   try {
     services.push(...await startServices())
     manifest.cleanup.attempted = true
-    // The baseline runner intentionally records every unimplemented journey as
-    // unverified. Page evidence can be attached later by the web acceptance
-    // helper without changing this status.
+    mergeBrowserEvidence(runDir, manifest)
     writeRunArtifacts(runDir, manifest)
     return { ...manifest, runDir }
   } catch (error) {
