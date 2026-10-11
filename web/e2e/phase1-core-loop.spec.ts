@@ -47,11 +47,11 @@ function draftResponse(overrides: Record<string, unknown> = {}): DraftResponse {
   }
 }
 
-function mapBootstrap() {
+function mapBootstrap(document = voxelDoc) {
   return {
     access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
     world: snapshot,
-    scene: { status: 'ready', document: voxelDoc },
+    scene: { status: 'ready', document },
     presentation: {
       timelineId: snapshot.currentTimelineId,
       stateVersion: 1,
@@ -228,6 +228,35 @@ test('a deterministic fallback draft is explicitly marked and remains enterable'
       actions: ['enter', 'repair'],
     })],
   })
+  let persistedDocument: unknown = voxelDoc
+  let persistedVersion = 1
+  let editSaveCount = 0
+  await page.route('**/api/voxel/edit-plan', route => route.fulfill({ json: {
+    ops: [{ kind: 'set-block', at: { x: 1, y: 1, z: 1 }, block: 'wood-plank' }],
+  } }))
+  await page.route('**/api/worlds/phase1-core-world/scene/compatibility/preflight', route => route.fulfill({ json: {
+    status: 'valid',
+    basis: {
+      expectedCurrentVersion: persistedVersion,
+      currentContentHash: 'phase1-fallback-hash',
+      source: { worldId: snapshot.world.id, version: persistedVersion, contentHash: 'phase1-fallback-hash', timelineId: snapshot.currentTimelineId, representation: 'voxel', spaceId: 'exterior' },
+      candidateHash: 'phase1-edit-candidate', rulesVersion: 'phase1-rules', assetManifestHash: 'phase1-assets',
+      templateCatalogHash: 'phase1-templates', bindingHash: 'phase1-binding', contextFingerprint: 'phase1-context', baseline: null,
+    },
+    report: { status: 'valid', issues: [], issueCount: 0, checkedSpaceIds: ['exterior'], pendingSpaceIds: [], countIsExact: true, stopReason: null, workUnitsUsed: 1, elapsedMs: 1, ruleNotes: { items: [], total: 0, hasMore: false } },
+  } }))
+  await page.route('**/api/worlds/phase1-core-world/scene/voxel-revision', async route => {
+    const body = route.request().postDataJSON() as { document?: unknown }
+    persistedDocument = body.document
+    persistedVersion += 1
+    editSaveCount += 1
+    return route.fulfill({ json: { document: persistedDocument, version: persistedVersion, revisionId: 'phase1-fallback-edit', contentHash: 'phase1-fallback-edited-hash', createdAt: snapshot.simNow } })
+  })
+  await page.route('**/api/worlds/phase1-core-world/scene**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { status: 'ready', document: persistedDocument, version: persistedVersion } })
+    return route.fallback()
+  })
+  await page.route('**/api/worlds/phase1-core-world/map/bootstrap', route => route.fulfill({ json: mapBootstrap(persistedDocument) }))
 
   await fillAndGenerate(page, '一座有小路、主楼和花园的旧宅。')
   await expect(page.getByTestId('fallback-ready')).toContainText('确定性保底场景')
@@ -240,7 +269,16 @@ test('a deterministic fallback draft is explicitly marked and remains enterable'
   await page.getByTestId('voxel-tool-ai').click()
   await expect(page.getByTestId('voxel-ai-edit')).toBeVisible()
   await page.getByTestId('voxel-ai-input').fill('修整庭院的小路，保持旧宅和温室不变。')
-  await expect(page.getByTestId('voxel-ai-preview')).toBeEnabled()
+  await page.getByTestId('voxel-ai-preview').click()
+  await expect(page.getByTestId('voxel-ai-pending')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('voxel-ai-confirm').click()
+  await expect.poll(() => editSaveCount, { timeout: 15_000 }).toBe(1)
+  const editedDocument = persistedDocument
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+  expect(persistedVersion).toBe(2)
+  expect(JSON.stringify(persistedDocument)).not.toEqual(JSON.stringify(voxelDoc))
+  expect(editedDocument).toEqual(persistedDocument)
 })
 
 test('a lost create response is recovered with the same request id and payload', async ({ page }) => {
