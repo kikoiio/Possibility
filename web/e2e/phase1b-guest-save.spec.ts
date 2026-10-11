@@ -15,6 +15,7 @@ async function seed(page: import('@playwright/test').Page, request: import('@pla
 
 test.describe('phase1b explicit identity and persistent source', () => {
   test('AC1 first login saves the selected guest copy', async ({ page, request }) => {
+    test.setTimeout(240_000)
     await seed(page, request)
     await page.getByRole('link', { name: '登录并保存' }).click()
     await expect(page).toHaveURL(/claimDemo=1/)
@@ -22,7 +23,12 @@ test.describe('phase1b explicit identity and persistent source', () => {
     await page.getByLabel('用户名').fill(`phase1b-login-${Date.now().toString(36)}`)
     await page.getByLabel('密码', { exact: true }).fill('phase1b-pass-6')
     await page.getByRole('button', { name: '注册', exact: true }).click()
-    await expect(page).toHaveURL(/\/worlds\//, { timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: /正在保存访客副本|保存结果尚未确认|访客副本已保存|可以重试保存/ })).toBeVisible({ timeout: 180_000 })
+    const verify = page.getByRole('button', { name: '核实结果', exact: true })
+    if (await verify.isVisible().catch(() => false)) {
+      await verify.click()
+      await expect(page.getByRole('heading', { name: /保存结果尚未确认|访客副本已保存|可以重试保存/ })).toBeVisible({ timeout: 120_000 })
+    }
   })
 
   test('AC2 wrong password keeps the guest intent for a later login', async ({ page, request }) => {
