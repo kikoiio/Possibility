@@ -148,7 +148,7 @@ describe('voxel AI edit-plan route', () => {
     const response = await voxelRoutes.request('/voxel/edit-plan', {
       method: 'POST', headers,
       body: JSON.stringify(requestBody({
-        timelineId: 'home-main', representation: 'voxel', spaceId: 'exterior', document: JSON.stringify(spaces),
+        timelineId: 'home-main', representation: 'voxel', spaceId: 'exterior', document: JSON.stringify(exterior),
       })),
     }, fixture.env)
 
