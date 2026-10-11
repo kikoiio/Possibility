@@ -18,6 +18,7 @@ test.describe('phase1b explicit identity and persistent source', () => {
     await seed(page, request)
     await page.getByRole('link', { name: '登录并保存' }).click()
     await expect(page).toHaveURL(/claimDemo=1/)
+    await page.getByRole('button', { name: '没有账号？注册一个', exact: true }).click()
     await page.getByLabel('用户名').fill(`phase1b-login-${Date.now().toString(36)}`)
     await page.getByLabel('密码', { exact: true }).fill('phase1b-pass-6')
     await page.getByRole('button', { name: '注册', exact: true }).click()
