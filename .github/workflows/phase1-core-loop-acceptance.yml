@@ -63,6 +63,13 @@ jobs:
           npx playwright test e2e/phase1-core-loop-baseline.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1
 
+      - name: Summarize matrix and verify cleanup
+        if: always()
+        env:
+          PHASE1_BASELINE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/phase1-core-loop
+          PHASE1_BASELINE_RUN_ID: github-${{ github.run_id }}
+        run: node scripts/finalize-phase1-core-loop-acceptance.mjs
+
       - name: Upload core loop evidence
         if: always()
         uses: actions/upload-artifact@v4
