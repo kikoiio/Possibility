@@ -1049,7 +1049,7 @@ export async function commitScene(db: Db, input: {
   } catch (error) { throw new SceneConflict(error instanceof Error ? error.message : undefined) }
   return { document, version, contentHash, createdAt: now }
 }
-export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string, pendingBindings?: PendingSceneBindings, timelineId?: string): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>, BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]> {
+export async function initialSceneStatements(db: Db, worldId: string, document: StoredSceneDocument, requestId: string, pendingBindings?: PendingSceneBindings, timelineId?: string, metadata?: { source?: 'generated' | 'fallback'; fallback?: boolean }): Promise<[BatchItem<'sqlite'>, BatchItem<'sqlite'>, BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]> {
   const now = new Date().toISOString()
   const doc = structuredClone(document)
   const themeId = voxelThemeId(doc)
@@ -1061,13 +1061,15 @@ export async function initialSceneStatements(db: Db, worldId: string, document: 
     : await loadSceneWriteProofFacts(db, worldId)
   const proof = buildInitialWriteProof(facts, { candidate: { version: 1, contentHash } })
   const revisionId = crypto.randomUUID()
+  const summary = metadata?.fallback ? '开始生活时的确定性保底场景' : '开始生活时的场景'
+  const kind = metadata?.fallback ? 'initial-fallback' : 'initial'
   return [
-    db.insert(worldSceneRevisions).values({ id: revisionId, worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
+    db.insert(worldSceneRevisions).values({ id: revisionId, worldId, version: 1, parentVersion: null, requestId, contentHash, documentJson: JSON.stringify(doc), summary, kind, compatibilityJson: metadata ? JSON.stringify({ source: metadata.source ?? 'generated', fallback: metadata.fallback ?? false }) : null, validationJson: JSON.stringify(proof), commitGuard: true, createdAt: now }),
     db.insert(worldScenes).values({ worldId, currentVersion: 1, themeId, updatedAt: now }),
     // B30 步骤2 最终断言：批内核对外层世界/成员/地点与依据快照一致，不符则 guard=0 整批回滚
     buildCommitGuardStatement(db, { revisionId, worldId, version: 1, requestId, baseline: proof.baseline, expectedBindings: facts.bindings }),
     ...await legacyMainSceneStatements(db, { worldId, timelineId, document: doc, version: 1, expectedVersion: 0,
-      requestId, summary: '开始生活时的场景', kind: 'initial', validationJson: JSON.stringify(proof), createdAt: now }),
+      requestId, summary, kind, validationJson: JSON.stringify(proof), createdAt: now }),
   ]
 }
 

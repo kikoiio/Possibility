@@ -3,6 +3,12 @@ export interface ContentIssueCopy {
   suggestion: string
 }
 
+export interface SceneIssuePresentation extends ContentIssueCopy {
+  impact: string
+  retryable: boolean
+  action: 'retry' | 'recheck' | 'repair' | 'use-fallback' | 'return'
+}
+
 export const CONTENT_ISSUE_FALLBACK: ContentIssueCopy = {
   summary: '场景结构还需要调整。',
   suggestion: '可以简化描述，减少复杂结构，并重新生成。',
@@ -81,4 +87,37 @@ export const CONTENT_ISSUE_COPY: Record<ContentIssueCode, ContentIssueCopy> = {
     summary: '有些大型物件彼此重叠，或没有稳当地放在地面上。',
     suggestion: '可以拉开大型物件之间的距离，并确保它们放在平整地面上。',
   },
+}
+
+const SCENE_ISSUE_IMPACT: Record<string, string> = {
+  'invalid-envelope': '场景文档无法读取，因此不能保存或进入。',
+  'invalid-document': '场景文档结构不完整，因此不能保存或进入。',
+  'unsupported-format': '当前表现不支持这个场景格式。',
+  'unsupported-version': '当前版本无法读取这个场景。',
+  'scene-missing': '当前空间没有可进入的场景。',
+  'scene-corrupt': '当前场景版本损坏，不能直接进入。',
+  'binding-mismatch': '地点或居民与当前世界不一致，不能保存。',
+  'missing-location': '世界中的地点没有完整的场景承载物。',
+  'missing-resident': '选定居民没有可用的场景绑定。',
+  'connection-invalid': '空间之间没有可验证的入口连接。',
+  'context-unavailable': '暂时无法取得场景检查所需的上下文。',
+  'budget-exceeded': '本次检查达到工作量上限，场景尚未写入。',
+  'deadline': '本次检查超时，场景尚未写入。',
+  'cancelled': '本次检查已取消，场景尚未写入。',
+}
+
+/** Convert validator output into user-facing guidance without exposing internal identifiers. */
+export function sceneIssuePresentation(code: string, fallback?: Partial<SceneIssuePresentation>): SceneIssuePresentation {
+  const content = CONTENT_ISSUE_COPY[code as ContentIssueCode] ?? CONTENT_ISSUE_FALLBACK
+  const impact = SCENE_ISSUE_IMPACT[code] ?? fallback?.impact ?? `${content.summary}该场景不能直接进入。`
+  const incomplete = code === 'context-unavailable' || code === 'budget-exceeded' || code === 'deadline' || code === 'cancelled'
+  const retryable = fallback?.retryable ?? incomplete
+  const action = fallback?.action ?? (incomplete ? 'retry' : 'repair')
+  return {
+    summary: fallback?.summary ?? content.summary,
+    suggestion: fallback?.suggestion ?? content.suggestion,
+    impact,
+    retryable,
+    action,
+  }
 }

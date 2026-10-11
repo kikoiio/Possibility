@@ -78,10 +78,13 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     /** 服务端附带的校验明细（如 422 的 issues 列表），无则 undefined */
-    public issues?: { code: string; message: string }[],
+    public issues?: { code: string; message: string; summary?: string; suggestion?: string }[],
     public kind?: string,
     public callsUsed?: number,
     public errorCode?: string,
+    public actions?: string[],
+    public summary?: Record<string, unknown>,
+    public requestId?: string,
   ) {
     super(message)
   }
@@ -89,10 +92,13 @@ export class ApiError extends Error {
 
 type ApiErrorEnvelope = {
   error?: string
-  issues?: { code: string; message: string }[]
+  issues?: { code: string; message: string; summary?: string; suggestion?: string }[]
   kind?: string
   callsUsed?: number
   errorCode?: string
+  actions?: string[]
+  summary?: Record<string, unknown>
+  requestId?: string
 }
 
 async function readApiErrorEnvelope(response: Response): Promise<ApiErrorEnvelope> {
@@ -118,11 +124,19 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, behav
     const data = await readApiErrorEnvelope(res)
     // 持有 token 时的 401 = 会话失效，跳登录页；登录失败则原地展示服务端消息
     if (hadToken && behavior.redirectOnUnauthorized !== false && !location.pathname.startsWith('/login')) location.href = '/login'
-    throw new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
+    const error = new ApiError(401, data.error ?? '未登录或会话已过期', data.issues, data.kind, data.callsUsed, data.errorCode)
+    error.actions = data.actions
+    error.summary = data.summary
+    error.requestId = data.requestId
+    throw error
   }
   if (!res.ok) {
     const data = await readApiErrorEnvelope(res)
-    throw new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
+    const error = new ApiError(res.status, data.error ?? `请求失败（${res.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
+    error.actions = data.actions
+    error.summary = data.summary
+    error.requestId = data.requestId
+    throw error
   }
   return res.json() as Promise<T>
 }
@@ -396,7 +410,7 @@ export const demoApi = {
 
 export const worldSceneApi = {
   // S1 体素创建:提示词 → 世界骨架 + 体素草稿信封(S2 起唯一创建通道)
-  draftVoxel: (prompt: string, personIds: string[], requestId = crypto.randomUUID()) => apiFetch<VoxelSceneDraftResponse>('/api/scene-drafts/voxel', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
+  draftVoxel: (prompt: string, personIds: string[], requestId: string = crypto.randomUUID()) => apiFetch<VoxelSceneDraftResponse>('/api/scene-drafts/voxel', { method: 'POST', body: JSON.stringify({ prompt, personIds, requestId }) }),
   repairContext: (worldId: string, scope: SceneScope) => apiFetch<SceneRepairContext>(`/api/worlds/${encodeURIComponent(worldId)}/scene/repair-context?timelineId=${encodeURIComponent(scope.timelineId)}&representation=${scope.representation}`),
   repairDraft: (worldId: string, scope: SceneScope, prompt: string, requestId = crypto.randomUUID()) => apiFetch<SceneRepairDraftResponse>(
     `/api/worlds/${encodeURIComponent(worldId)}/scene/repair-draft`,

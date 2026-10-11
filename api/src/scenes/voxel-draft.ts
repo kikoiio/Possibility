@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { serialize, type SceneAction, type SceneRedactedSummary, type SerializedVoxelDocument } from '@possibility/voxel-contract'
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'
@@ -11,6 +11,7 @@ import { draftWorld, type WorldDraft } from '../worlds/draft'
 import { generateWorld, WorldGeneratorError } from '../voxel/generate'
 import { buildWorldGeneratorMessages } from '../voxel/prompts'
 import { libraryManifest } from '../voxel/library-manifest'
+import { buildFallbackScene, fallbackContentHash } from './fallback'
 
 export interface VoxelSceneDraftResult {
   world: WorldDraft
@@ -18,6 +19,11 @@ export interface VoxelSceneDraftResult {
   explanation: string
   warnings: string[]
   callsUsed: number
+  source?: 'generated' | 'fallback'
+  fallback?: boolean
+  contentHash?: string
+  actions?: SceneAction[]
+  summary?: SceneRedactedSummary
 }
 
 export interface VoxelSceneDraftError extends Error {
@@ -48,6 +54,40 @@ export interface FixedWorldVoxelSceneDraft {
   explanation: string
   warnings: string[]
   callsUsed: number
+  source?: 'generated' | 'fallback'
+  fallback?: boolean
+  contentHash?: string
+  actions?: SceneAction[]
+  summary?: SceneRedactedSummary
+}
+
+function draftSummary(input: {
+  source: 'generated' | 'fallback'
+  serialized: string
+  callsUsed: number
+  fallback?: boolean
+  summary?: string
+}): SceneRedactedSummary {
+  return {
+    redacted: true,
+    source: input.source,
+    providerCalls: input.callsUsed,
+    contentHash: fallbackContentHash(input.serialized),
+    fallback: input.fallback ?? false,
+    persisted: false,
+    summary: input.summary,
+    nextStep: input.fallback ? 'enter' : 'recheck',
+  }
+}
+
+function fallbackForWorld(
+  world: { id?: string; name?: string; description?: string; locations: Array<{ name: string; description?: string }> },
+  residents: Array<{ id: string; name?: string }>,
+): ReturnType<typeof buildFallbackScene> {
+  return buildFallbackScene({
+    world: { id: world.id, name: world.name, description: world.description, locations: world.locations },
+    residents: residents.map((resident) => ({ personId: resident.id, name: resident.name })),
+  })
 }
 
 /** Generate a scene for an existing world without drafting or persisting a new world skeleton. */
@@ -61,7 +101,7 @@ export async function createFixedWorldVoxelSceneDraft(
     world: { id: string } & WorldDraft
     residents: { id: string; name: string }[]
   },
-  deps: { generateWorldFn?: typeof generateWorld } = {},
+  deps: { generateWorldFn?: typeof generateWorld; allowFallback?: boolean } = {},
 ): Promise<FixedWorldVoxelSceneDraft> {
   if (!request.requestId || !request.prompt.trim()) throw new Error('请提供场景描述和请求标识')
   if (request.world.locations.length === 0 || request.residents.length === 0) throw new Error('原世界资料不完整，无法补建场景')
@@ -76,10 +116,12 @@ export async function createFixedWorldVoxelSceneDraft(
     sceneReceipt = reserve
     const { config } = await resolveLlmConfig(db, env, { userId, worldId: request.world.id }, reserve)
     const assets = libraryManifest() ?? undefined
-    const doc = await (deps.generateWorldFn ?? generateWorld)(
-      buildVoxelSceneDescription(request.world, request.prompt, request.residents.map(person => person.name)),
-      'mist-manor',
-      {
+    let doc
+    try {
+      doc = await (deps.generateWorldFn ?? generateWorld)(
+        buildVoxelSceneDescription(request.world, request.prompt, request.residents.map(person => person.name)),
+        'mist-manor',
+        {
         id: `repair-${request.world.id}-${request.requestId}`,
         complete: messages => complete(config, messages, {
           maxTokens: 16000,
@@ -91,8 +133,24 @@ export async function createFixedWorldVoxelSceneDraft(
         maxAttempts: 4,
         requiredLocationNames: request.world.locations.map(location => location.name),
         buildMessages: assets ? (description, theme) => buildWorldGeneratorMessages(description, theme, assets) : undefined,
-      },
-    )
+        },
+      )
+    } catch (error) {
+      const allowFallback = deps.allowFallback ?? !deps.generateWorldFn
+      const fallback = allowFallback ? fallbackForWorld(request.world, request.residents) : null
+      if (!fallback?.ok) throw error
+      const serialized = JSON.stringify(fallback.document)
+      return {
+        worldId: request.world.id,
+        document: fallback.document,
+        explanation: fallback.explanation,
+        warnings: [...fallback.warnings, `生成失败后已使用确定性保底场景：${error instanceof Error ? error.message : '未知错误'}`],
+        callsUsed: sceneReceipt.calls,
+        source: 'fallback', fallback: true, contentHash: fallback.contentHash,
+        actions: ['enter', 'repair'],
+        summary: draftSummary({ source: 'fallback', serialized, callsUsed: sceneReceipt.calls, fallback: true, summary: fallback.explanation }),
+      }
+    }
     const expected = request.world.locations.map(location => location.name)
     const actual = doc.locations.map(location => location.name)
     if (actual.length !== expected.length || new Set(actual).size !== actual.length
@@ -105,6 +163,10 @@ export async function createFixedWorldVoxelSceneDraft(
       explanation: `「${request.world.name}」的场景已经成形，可以继续调整后保存到原世界。`,
       warnings: [],
       callsUsed: sceneReceipt.calls,
+      source: 'generated',
+      contentHash: fallbackContentHash(JSON.stringify(JSON.parse(serialize(doc)))),
+      actions: ['recheck', 'enter'],
+      summary: draftSummary({ source: 'generated', serialized: serialize(doc), callsUsed: sceneReceipt.calls, summary: '场景生成完成，请在保存前完成最终兼容检查。' }),
     }
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error))
@@ -123,7 +185,7 @@ export async function createVoxelSceneDraft(
   db: Db,
   userId: string,
   request: { requestId: string; prompt: string; personIds: string[] },
-  deps: { draftWorldFn?: typeof draftWorld; generateWorldFn?: typeof generateWorld } = {},
+  deps: { draftWorldFn?: typeof draftWorld; generateWorldFn?: typeof generateWorld; allowFallback?: boolean } = {},
 ): Promise<VoxelSceneDraftResult> {
   const selected = [...new Set(request.personIds)]
   if (selected.length < 1 || selected.length > 6) throw new Error('需要选择 1-6 位居民')
@@ -139,20 +201,38 @@ export async function createVoxelSceneDraft(
     const reserve = userReservation(db, userId, budgetFromEnv(env), 'scene')
     sceneReceipt = reserve
     const { config } = await resolveLlmConfig(db, env, { userId }, reserve)
-    const doc = await (deps.generateWorldFn ?? generateWorld)(buildVoxelSceneDescription(world, request.prompt), 'mist-manor', {
-      id: `draft-${request.requestId}`,
-      complete: (messages) => complete(config, messages, {
-        maxTokens: 16000,
-        requestId: request.requestId,
-        responseFormat: { type: 'json_object' },
-        thinking: { type: 'disabled' },
-      }),
-      assets,
-      // 弱模型修可行走性(净空/连通)偏慢,多给一次机会;确定性归一已兜住机械错误,这里只兜语义错误
-      maxAttempts: 4,
-      requiredLocationNames: world.locations.map(location => location.name),
-      buildMessages: assets ? (desc, theme) => buildWorldGeneratorMessages(desc, theme, assets) : undefined,
-    })
+    let doc
+    try {
+      doc = await (deps.generateWorldFn ?? generateWorld)(buildVoxelSceneDescription(world, request.prompt), 'mist-manor', {
+        id: `draft-${request.requestId}`,
+        complete: (messages) => complete(config, messages, {
+          maxTokens: 16000,
+          requestId: request.requestId,
+          responseFormat: { type: 'json_object' },
+          thinking: { type: 'disabled' },
+        }),
+        assets,
+        // 弱模型修可行走性(净空/连通)偏慢,多给一次机会;确定性归一已兜住机械错误,这里只兜语义错误
+        maxAttempts: 4,
+        requiredLocationNames: world.locations.map(location => location.name),
+        buildMessages: assets ? (desc, theme) => buildWorldGeneratorMessages(desc, theme, assets) : undefined,
+      })
+    } catch (error) {
+      const allowFallback = deps.allowFallback ?? !deps.generateWorldFn
+      const fallback = allowFallback ? fallbackForWorld({ ...world, id: `draft-${request.requestId}` }, selected.map(id => ({ id }))) : null
+      if (!fallback?.ok) throw error
+      const serialized = JSON.stringify(fallback.document)
+      return {
+        world,
+        document: fallback.document,
+        explanation: fallback.explanation,
+        warnings: [...fallback.warnings, `生成失败后已使用确定性保底场景：${error instanceof Error ? error.message : '未知错误'}`],
+        callsUsed: callsUsed(),
+        source: 'fallback', fallback: true, contentHash: fallback.contentHash,
+        actions: ['enter', 'repair'],
+        summary: draftSummary({ source: 'fallback', serialized, callsUsed: callsUsed(), fallback: true, summary: fallback.explanation }),
+      }
+    }
     const bound = new Set(doc.locations.map(l => l.name))
     const missing = world.locations.filter(l => !bound.has(l.name))
     if (missing.length > 0) throw new WorldGeneratorError(`有地点没有绑定到场景物体:${missing.map(l => l.name).join('、')}`, [], [], 'binding')
@@ -162,6 +242,10 @@ export async function createVoxelSceneDraft(
       explanation: `「${world.name}」已经成形:可以拖一拖、让 AI 改一改,或者直接让这里开始生活。`,
       warnings: [],
       callsUsed: callsUsed(),
+      source: 'generated',
+      contentHash: fallbackContentHash(serialize(doc)),
+      actions: ['recheck', 'enter'],
+      summary: draftSummary({ source: 'generated', serialized: serialize(doc), callsUsed: callsUsed(), summary: '场景生成完成，请在保存前完成最终兼容检查。' }),
     }
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error))

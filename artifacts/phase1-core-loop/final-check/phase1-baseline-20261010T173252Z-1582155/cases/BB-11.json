@@ -1,0 +1,15 @@
+{
+  "schema": "phase1-core-loop-baseline-v1-case",
+  "runId": "phase1-baseline-20261010T173252Z-1582155",
+  "caseId": "BB-11",
+  "status": "unverified",
+  "verified": false,
+  "page": {
+    "url": null,
+    "labels": []
+  },
+  "failure": {
+    "summary": "尚未运行该验收项。",
+    "nextStep": "在隔离环境运行对应入口旅程。"
+  }
+}

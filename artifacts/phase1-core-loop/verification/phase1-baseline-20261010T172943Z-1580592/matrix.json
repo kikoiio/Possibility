@@ -1,0 +1,582 @@
+{
+  "schema": "phase1-core-loop-baseline-v1",
+  "runId": "phase1-baseline-20261010T172943Z-1580592",
+  "gitSha": "c3ef4a8a8a9a80ed58cdfe7f18621c584d2e62a3",
+  "startedAt": "2026-10-10T17:29:43.241Z",
+  "environment": {
+    "runner": "local",
+    "dataMode": "baseline",
+    "viewportSet": [
+      "desktop:1440x900",
+      "narrow-485:485x724",
+      "narrow-390:390x844"
+    ]
+  },
+  "cases": [
+    {
+      "caseId": "BB-01",
+      "category": "bb",
+      "entry": "新世界创建/场景检查",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-01.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-02",
+      "category": "bb",
+      "entry": "2D 与真实世界/室内空间",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-02.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-03",
+      "category": "bb",
+      "entry": "传话事实一致性",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-03.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-04",
+      "category": "bb",
+      "entry": "访客认领重试",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-04.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-05",
+      "category": "bb",
+      "entry": "Fork 弹窗",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-05.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-06",
+      "category": "bb",
+      "entry": "Fork 过期恢复",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-06.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-07",
+      "category": "bb",
+      "entry": "pane 恢复",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-07.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-08",
+      "category": "bb",
+      "entry": "时间线同步",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-08.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-09",
+      "category": "bb",
+      "entry": "访客时区",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-09.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-10",
+      "category": "bb",
+      "entry": "人物推断标记",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-10.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-11",
+      "category": "bb",
+      "entry": "示例生成失败",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-11.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-12",
+      "category": "bb",
+      "entry": "窄屏工具条",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-12.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-13",
+      "category": "bb",
+      "entry": "无人地点状态",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-13.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-14",
+      "category": "bb",
+      "entry": "时间叙述",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-14.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-15",
+      "category": "bb",
+      "entry": "What-if 入口",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-15.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-16",
+      "category": "bb",
+      "entry": "工程字段暴露",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-16.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-17",
+      "category": "bb",
+      "entry": "首次到场叙述",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-17.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "BB-18",
+      "category": "bb",
+      "entry": "paused/archived 状态",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/BB-18.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "supplemental-registration-claim",
+      "category": "supplemental",
+      "entry": "注册后自动认领",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/supplemental-registration-claim.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "supplemental-guest-timezone",
+      "category": "supplemental",
+      "entry": "访客时区显示",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/supplemental-guest-timezone.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "supplemental-interior-3d",
+      "category": "supplemental",
+      "entry": "室内 3D",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/supplemental-interior-3d.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    },
+    {
+      "caseId": "supplemental-timeline-display",
+      "category": "supplemental",
+      "entry": "时间线显示",
+      "identity": "unverified",
+      "context": {
+        "worldId": null,
+        "timelineId": null,
+        "spaceId": null,
+        "simNow": null
+      },
+      "status": "unverified",
+      "http": [],
+      "page": {
+        "url": null,
+        "labels": []
+      },
+      "evidencePaths": [
+        "cases/supplemental-timeline-display.json"
+      ],
+      "failure": {
+        "summary": "尚未运行该验收项。",
+        "nextStep": "在隔离环境运行对应入口旅程。"
+      }
+    }
+  ],
+  "cleanup": {
+    "servicesStopped": true,
+    "tempPathsRemoved": true,
+    "attempted": true,
+    "errors": []
+  },
+  "redaction": {
+    "status": "passed",
+    "patterns": [
+      "credential-key",
+      "bearer",
+      "provider-key"
+    ],
+    "findings": []
+  }
+}

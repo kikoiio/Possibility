@@ -8,6 +8,7 @@ import {
   deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
   type SerializedVoxelDocument,
 } from '@possibility/voxel-contract'
+import type { SceneAction } from '@possibility/voxel-contract'
 import { libraryManifest } from '../voxel/library-manifest'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'
@@ -99,7 +100,7 @@ worldsRoutes.post('/draft', async (c) => {
 /** 确认创建世界：骨架 + 选定 1-6 人物 → 世界/关联/主线/初始状态，直接开跑 */
 worldsRoutes.post('/', async (c) => {
   const body = await c.req
-    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; timeZone?: string; scene?: SerializedVoxelDocument; sceneRequestId?: string }>()
+    .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; timeZone?: string; scene?: SerializedVoxelDocument; sceneRequestId?: string; sceneSource?: 'generated' | 'fallback'; sceneFallback?: boolean }>()
     .catch(() => null)
   const name = body?.name?.trim()
   const description = body?.description?.trim()
@@ -127,17 +128,24 @@ worldsRoutes.post('/', async (c) => {
         return c.json({ error: `体素场景无法解析:${error instanceof Error ? error.message : String(error)}` }, 400)
       }
       const issues = [...validateDocument(doc, undefined, libraryManifest() ?? undefined), ...validateWalkability(doc)]
-      if (issues.length > 0) return c.json({ error: '体素场景未通过校验', issues: issues.slice(0, 12) }, 400)
+      if (issues.length > 0) {
+        return c.json({
+          error: '体素场景未通过最终兼容检查', errorCode: 'compatibility-required',
+          actions: ['repair', 'use-fallback'] satisfies SceneAction[],
+          summary: { redacted: true, source: 'edited', issueCodes: [...new Set(issues.map(issue => issue.code))], persisted: false, fallback: false, nextStep: 'repair' },
+          issues: issues.slice(0, 12),
+        }, 422)
+      }
       const boundLocations = new Set(doc.locations.map(l => l.name))
       if (boundLocations.size !== locations.length || locations.some(l => !boundLocations.has(l.name))) {
-        return c.json({ error: '体素场景地点绑定必须与世界地点完全一致' }, 400)
+        return c.json({ error: '体素场景地点绑定必须与世界地点完全一致', errorCode: 'compatibility-required', actions: ['repair', 'use-fallback'] satisfies SceneAction[] }, 422)
       }
       // B54/P17：人物绑定预检——场景内人物载体必须属于本次选定的人物（不要求每个人物都有载体，但错人明确拒绝）
       const requestedPersons = new Set(personIds)
       const boundPersons = new Set(doc.objects.flatMap(object =>
         object.binding?.kind === 'person' && object.binding.personId ? [object.binding.personId] : []))
       if ([...boundPersons].some(id => !requestedPersons.has(id))) {
-        return c.json({ error: '体素场景人物绑定必须属于本次选定的人物' }, 400)
+        return c.json({ error: '体素场景人物绑定必须属于本次选定的人物', errorCode: 'compatibility-required', actions: ['repair', 'use-fallback'] satisfies SceneAction[] }, 422)
       }
       body.scene = JSON.parse(serialize(doc)) as SerializedVoxelDocument
     } else {
@@ -245,7 +253,8 @@ worldsRoutes.post('/', async (c) => {
       baselineVersion: 0, reasonCodesJson: '["created_complete"]', assessedAt: now }),
   )
   // B30/B54：首版场景语句拼入同一批；绑定快照取本次待创建的成员/地点（此时尚未落库，不能读库）
-  if (body.scene && sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, sceneRequestId, { personIds, locations }, mainTimelineId))
+  if (body.scene && sceneRequestId) statements.push(...await initialSceneStatements(db, worldId, body.scene, sceneRequestId, { personIds, locations }, mainTimelineId,
+    { source: body.sceneSource, fallback: body.sceneFallback }))
   try {
     await db.batch(statements)
   } catch (error) {

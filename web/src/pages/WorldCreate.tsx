@@ -14,7 +14,17 @@ const createDraftStore = createCreateDraftStore<CreatePageContext, CreatePageSav
 interface CreatePageContext {
   prompt: string
   selectedPersonIds: string[]
-  error: { message: string; kind?: string; issues?: { code: string; message: string; summary?: string; suggestion?: string }[]; callsUsed?: number } | null
+  error: {
+    message: string
+    kind?: string
+    status?: number
+    errorCode?: string
+    actions?: string[]
+    summary?: Record<string, unknown>
+    issues?: { code: string; message: string; summary?: string; suggestion?: string }[]
+    callsUsed?: number
+  } | null
+  draftRequest?: { fingerprint: string; requestId: string } | null
   createRequest?: { fingerprint: string; requestId: string } | null
 }
 
@@ -51,6 +61,7 @@ export default function WorldCreate() {
   const restoreApplied = useRef(false)
   const [stage, setStage] = useState(0)
   const [live, setLive] = useState<{ worldId: string; snapshot: WorldSnapshot } | null>(null)
+  const draftRequest = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const createRequest = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const [archiveWarning, setArchiveWarning] = useState('')
   const [archiveWarningWorldId, setArchiveWarningWorldId] = useState<string | null>(null)
@@ -70,6 +81,7 @@ export default function WorldCreate() {
         if (savedContext) {
           setPrompt(savedContext.prompt ?? '')
           setError(savedContext.error ?? null)
+          draftRequest.current = savedContext.draftRequest ?? null
           createRequest.current = savedContext.createRequest ?? null
         }
         if (savedDraft) {
@@ -99,7 +111,7 @@ export default function WorldCreate() {
     if (!restored || live) return
     const timer = window.setTimeout(() => {
       void Promise.all([
-        createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error, createRequest: createRequest.current }),
+        createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error, draftRequest: draftRequest.current, createRequest: createRequest.current }),
         draft ? createDraftStore.saveDraft({
           draft,
           editedDocument: edited && latestDoc.current ? JSON.parse(serialize(latestDoc.current)) : null,
@@ -119,15 +131,24 @@ export default function WorldCreate() {
 
   async function generate() {
     if (!prompt.trim() || !selected.length || busy) { setError({ message: !selected.length ? '请先选择至少一位居民。' : '请描述你想创造的地方。' }); return }
+    const fingerprint = JSON.stringify({ prompt: prompt.trim(), personIds: [...selected].sort() })
+    let operation = draftRequest.current
+    if (!operation || operation.fingerprint !== fingerprint) {
+      operation = { fingerprint, requestId: crypto.randomUUID() }
+      draftRequest.current = operation
+    }
     setBusy(true); setError(null)
+    // Save before the request starts so a refresh or lost response can retry the
+    // same server request instead of allocating another generation identity.
+    createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error: null, draftRequest: operation, createRequest: createRequest.current })
     try {
-      const result = await worldSceneApi.draftVoxel(prompt.trim(), selected)
+      const result = await worldSceneApi.draftVoxel(prompt.trim(), selected, operation.requestId)
       const document = deserialize(JSON.stringify(result.document))
       latestDoc.current = document
       setDraft(result); setDoc(document); setEdited(false)
     } catch (e) {
       setError(e instanceof ApiError
-        ? { message: e.message, kind: e.kind, issues: e.issues, callsUsed: e.callsUsed }
+        ? { message: e.message, kind: e.kind, status: e.status, errorCode: e.errorCode, actions: e.actions, summary: e.summary, issues: e.issues, callsUsed: e.callsUsed }
         : { message: e instanceof Error ? e.message : '世界生成失败;描述和人物选择已保留。' })
     }
     finally { setBusy(false) }
@@ -140,6 +161,7 @@ export default function WorldCreate() {
       const payload = {
         name: draft.world.name, description: draft.world.description, locations: draft.world.locations,
         personIds: selected, timeZone: browserTimeZone(),
+        sceneSource: draft.source, sceneFallback: draft.fallback === true,
         scene: JSON.parse(serialize(finalDoc)),
       }
       const fingerprint = JSON.stringify(payload)
@@ -150,7 +172,7 @@ export default function WorldCreate() {
       }
       // Persist the operation identity before sending so a reload after a lost response
       // retries the same create instead of silently allocating a second world.
-      createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error: null, createRequest: operation })
+      createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error: null, draftRequest: draftRequest.current, createRequest: operation })
       const result = await worldsApi.create({ ...payload, sceneRequestId: operation.requestId })
       const fromWorld = searchParams.get('fromWorld')
       if (fromWorld) {
@@ -180,7 +202,21 @@ export default function WorldCreate() {
           navigate(`/worlds/${encodeURIComponent(result.id)}`)
         }
       }
-    } catch (e) { setError({ message: e instanceof Error ? e.message : '保存失败;世界仍保留在当前页面。' }) }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const compatibility = e.status === 422 && e.errorCode === 'compatibility-required'
+        setError({
+          message: e.message,
+          status: e.status,
+          errorCode: e.errorCode,
+          actions: e.actions?.length ? e.actions : compatibility ? ['repair', 'use-fallback'] : undefined,
+          summary: e.summary,
+          issues: e.issues,
+          kind: e.kind,
+          callsUsed: e.callsUsed,
+        })
+      } else setError({ message: e instanceof Error ? e.message : '保存失败;世界仍保留在当前页面。' })
+    }
     finally { setBusy(false) }
   }
 
@@ -205,6 +241,30 @@ export default function WorldCreate() {
           {error.callsUsed !== undefined && <p className="mt-2 text-xs text-[#68796d]">本次已使用 {error.callsUsed} 次模型调用。</p>}
         </>}
         {(error.kind === 'config' || error.kind === 'budget') && <button onClick={() => navigate('/settings')} className="mt-2 rounded-full border border-red-200 px-2 py-0.5 text-xs text-red-600 underline-offset-2 hover:underline" data-testid="error-goto-settings">前往设置</button>}
+        {(error.errorCode === 'compatibility-required' || error.actions?.some(action => action === 'repair' || action === 'use-fallback')) && draft && <div className="mt-3 border-t border-red-100 pt-3 text-[#6d5840]" data-testid="compatibility-recovery">
+          <p className="text-xs font-medium text-[#805b2a]">场景需要修复后才能开始生活。</p>
+          <p className="mt-1 text-[11px] leading-relaxed">保留的草稿和请求标识仍在本机。你可以恢复生成版本继续调整，或使用已经准备好的保底场景。</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {error.actions?.includes('repair') && <button type="button" data-testid="create-repair" onClick={() => {
+              const restoredDoc = deserialize(JSON.stringify(draft.document))
+              latestDoc.current = restoredDoc
+              setDoc(restoredDoc)
+              setEdited(false)
+              setError(null)
+            }} className="rounded-full border border-[#c9aa7b] px-3 py-1 text-[11px] font-medium text-[#805b2a]">恢复生成版本并重试</button>}
+            {error.actions?.includes('use-fallback') && <button type="button" data-testid="create-use-fallback" onClick={() => {
+              if (!draft.fallback) {
+                setError({ ...error, message: '当前草稿还没有可用的保底版本，请重新生成后再试。' })
+                return
+              }
+              const fallbackDoc = deserialize(JSON.stringify(draft.document))
+              latestDoc.current = fallbackDoc
+              setDoc(fallbackDoc)
+              setEdited(false)
+              setError(null)
+            }} className="rounded-full bg-[#805b2a] px-3 py-1 text-[11px] font-medium text-white">使用保底场景</button>}
+          </div>
+        </div>}
       </div>}
       {archiveWarning && <div role="status" className="pointer-events-auto absolute left-1/2 top-20 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl bg-white px-4 py-3 text-sm text-amber-800 shadow-lg" data-testid="archive-warning">
         <p>{archiveWarning}</p>
@@ -220,7 +280,7 @@ export default function WorldCreate() {
         </div>
         {busy && <p className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 px-5 py-3 text-center text-sm text-[#405246] shadow-xl backdrop-blur-md" data-testid="voxel-gen-stage">{GEN_STAGES[stage]}</p>}
         <div className="rounded-3xl border border-white/80 bg-[#f8faf6]/95 p-5 shadow-xl backdrop-blur-md"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-[#354a3e]">谁会在这里生活?</p><p className="mt-1 text-xs text-[#829083]">选择 1–6 位人物,之后仍可调整世界。</p></div><span className="text-xs text-[#839083]">{selected.length}/6</span></div><div className="mt-3 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => { setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id]); setError(null) }} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-4 py-2 text-sm ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}</div>
-          {!persons.length && <div className="mt-3 text-sm text-[#7b867c]"><p>还没有可选择的人物。</p><Link to={`/people/new?returnTo=/worlds/new${searchParams.get('fromWorld') ? `&fromWorld=${encodeURIComponent(searchParams.get('fromWorld')!)}` : ''}`} onClick={() => createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error, createRequest: createRequest.current })} className="mt-1 inline-block font-medium text-[#385443] underline underline-offset-2">创建一位人物</Link></div>}
+          {!persons.length && <div className="mt-3 text-sm text-[#7b867c]"><p>还没有可选择的人物。</p><Link to={`/people/new?returnTo=/worlds/new${searchParams.get('fromWorld') ? `&fromWorld=${encodeURIComponent(searchParams.get('fromWorld')!)}` : ''}`} onClick={() => createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error, draftRequest: draftRequest.current, createRequest: createRequest.current })} className="mt-1 inline-block font-medium text-[#385443] underline underline-offset-2">创建一位人物</Link></div>}
           <button data-testid="generate-scene" onClick={generate} disabled={busy || !prompt.trim() || !selected.length} className="mt-4 rounded-full bg-[#274739] px-5 py-2.5 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-45">{busy ? '正在搭建场景…' : '开始创造'}</button>
         </div>
       </section>}
@@ -228,6 +288,7 @@ export default function WorldCreate() {
         <div className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 p-4 text-[#405246] shadow-xl backdrop-blur-md">
           <p className="text-[10px] uppercase tracking-[.16em] text-[#7a897d]">{draft.world.name}</p>
           <h1 className="mt-0.5 font-story text-lg">继续调整这方天地</h1>
+          {draft.fallback && <p role="status" className="mt-2 rounded-lg bg-[#f6edd5] px-2 py-1.5 text-[10px] text-[#806a35]" data-testid="fallback-ready">生成多次未通过检查，已准备确定性保底场景；保存后仍可继续修复。</p>}
           <p className="mt-2 text-xs leading-relaxed text-[#68796d]">{draft.explanation}</p>
           <p className="mt-2 text-[10px] leading-relaxed text-[#849184]">右下角可以挖方块、摆建筑，修改会自动记下。AI 改造需先保存并进入有编辑权限的世界。{edited ? '已记下你的调整。' : ''}</p>
           {draft.warnings.length > 0 && <p className="mt-2 text-[10px] text-[#8a7a4a]">{draft.warnings.join(';')}</p>}

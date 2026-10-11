@@ -323,7 +323,18 @@ export interface WorldSnapshot {
 export type { SceneLifeOverlay }
 export interface SceneDraftWorld { name: string; description: string; locations: LocationDef[] }
 /** S1 体素创建:骨架 + 单空间体素信封草稿 */
-export interface VoxelSceneDraftResponse { world: SceneDraftWorld; document: SerializedVoxelDocument; explanation: string; warnings: string[]; callsUsed: number }
+export interface VoxelSceneDraftResponse {
+  world: SceneDraftWorld
+  document: SerializedVoxelDocument
+  explanation: string
+  warnings: string[]
+  callsUsed: number
+  source?: 'generated' | 'fallback'
+  fallback?: boolean
+  contentHash?: string
+  actions?: string[]
+  summary?: { redacted: true; source?: string; contentHash?: string | null; fallback?: boolean; nextStep?: string; summary?: string }
+}
 export interface SceneRepairContext {
   world: { id: string; name: string; description: string; locations: LocationDef[] }
   residents: { id: string; name: string }[]
@@ -335,6 +346,10 @@ export interface SceneRepairDraftResponse {
   explanation: string
   warnings: string[]
   callsUsed: number
+  source?: 'generated' | 'fallback'
+  fallback?: boolean
+  contentHash?: string
+  actions?: string[]
 }
 export type SceneRepresentation = 'voxel' | 'native2d'
 

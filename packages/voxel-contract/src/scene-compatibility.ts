@@ -14,6 +14,102 @@ export type SceneTarget =
 
 export type CompatibilityPurpose = 'repair-current' | 'restore-history'
 
+/** Actions exposed by scene generation and compatibility results. */
+export type SceneAction = 'retry' | 'recheck' | 'repair' | 'use-fallback' | 'enter'
+/** Compatibility spelling for callers that describe actions as next steps. */
+export type SceneCompatibilityAction = SceneAction
+
+export type SceneCandidateSource = 'generated' | 'edited' | 'fallback'
+
+/** A normalized, serializable description of a deterministic normalization fix. */
+export interface SceneNormalizationFix {
+  code: string
+  summary: string
+}
+
+/**
+ * Redacted result metadata shared by API responses, logs, and evidence.
+ * It deliberately contains hashes/counters and user-facing summaries only;
+ * raw prompts, provider payloads, credentials, and scene documents do not belong here.
+ */
+export interface SceneRedactedSummary {
+  redacted: true
+  source?: SceneCandidateSource
+  attempt?: number
+  providerCalls?: number
+  candidateHash?: string | null
+  contentHash?: string | null
+  issueCodes?: string[]
+  normalizationFixes?: SceneNormalizationFix[]
+  rulesVersion?: string
+  assetManifestHash?: string
+  bindingHash?: string
+  contextFingerprint?: string
+  workUnitsUsed?: number
+  stopReason?: SceneStopReason | null
+  persisted?: boolean
+  fallback?: boolean
+  summary?: string
+  nextStep?: string
+}
+
+/** Compatibility aliases used by API and evidence consumers. */
+export type SceneResultSummary = SceneRedactedSummary
+export type SceneCandidateSummary = SceneRedactedSummary
+export type SceneCompatibilitySummary = SceneRedactedSummary
+
+/** The serializable metadata common to gate-like compatibility results. */
+export interface SceneCompatibilityOutcome {
+  actions: SceneAction[]
+  fallback: boolean
+  summary: SceneRedactedSummary
+}
+
+/** Marker accepted on wire for old and new fallback responses. */
+export type SceneFallbackMarker = boolean
+
+/** Inputs supplied to a deterministic scene provider in tests and acceptance fixtures. */
+export interface DeterministicSceneProviderInput {
+  prompt: string
+  requestId: string
+  attempt: number
+  world?: unknown
+  personIds?: string[]
+}
+
+/** A provider failure that can be safely surfaced in a redacted attempt summary. */
+export interface DeterministicSceneProviderFailure {
+  code: string
+  message?: string
+  summary?: string
+  retryable?: boolean
+}
+
+/** Optional structured shape for fixed provider fixtures. The provider may return any JSON value. */
+export interface DeterministicSceneProviderResult<T = unknown> {
+  status: 'ready' | 'failed'
+  value?: T
+  failure?: DeterministicSceneProviderFailure
+  summary?: SceneRedactedSummary
+}
+
+/**
+ * Provider contract used by deterministic tests. `calls` is the canonical counter;
+ * `callCount` is retained as a readable compatibility alias for existing fixtures.
+ */
+export interface DeterministicSceneProvider {
+  generate(input: DeterministicSceneProviderInput): Promise<unknown>
+  readonly calls: number
+  readonly callCount: number
+  readonly getCallCount?: () => number
+}
+
+/** A fixed result/failure sequence is convenient for deterministic provider fixtures. */
+export interface DeterministicSceneProviderScript {
+  results: Array<unknown>
+  repeatLast?: boolean
+}
+
 export type SceneCandidate =
   | {
       kind: 'operations'
@@ -33,6 +129,27 @@ export type SceneCandidate =
       label?: string
       explanation?: string
     }
+
+/** Candidate after deterministic normalization, ready for the compatibility gate. */
+export interface NormalizedSceneCandidate {
+  candidate: SceneCandidate
+  document: SceneDocument
+  normalizationFixes: SceneNormalizationFix[]
+  source: SceneCandidateSource
+  attempt: number
+  requestId: string
+  contentHash: string
+  summary?: SceneRedactedSummary
+}
+
+/** Shared result shape for inspection, create-before-commit, and repair gates. */
+export interface SceneGateResult extends SceneCompatibilityOutcome {
+  status: 'valid' | 'invalid' | 'incomplete'
+  candidate: NormalizedSceneCandidate
+  report: SceneValidationReport
+  basis: SceneValidationBasis
+  persisted: boolean
+}
 
 export interface SceneSourceRef {
   worldId: string
@@ -286,11 +403,17 @@ export type SceneRepairResult =
       candidate: StoredSceneDocument
       changes: SceneRepairChange[]
       report: SceneValidationReport
+      actions?: SceneAction[]
+      fallback?: boolean
+      summary?: SceneRedactedSummary
     }
   | {
       status: 'blocked'
       changes: SceneRepairChange[]
       report: SceneValidationReport
+      actions?: SceneAction[]
+      fallback?: boolean
+      summary?: SceneRedactedSummary
     }
 
 export interface SceneCompatibilityDraft {
@@ -305,6 +428,9 @@ export interface SceneCompatibilityDraft {
   candidate: StoredSceneDocument | null
   changes: SceneRepairChange[]
   report: SceneValidationReport | null
+  actions?: SceneAction[]
+  fallback?: boolean
+  summary?: SceneRedactedSummary
   createdAt: string
   updatedAt: string
 }
@@ -438,6 +564,9 @@ export interface SceneCompatibilityDraftView {
   canConfirm: boolean
   changes: SceneRepairChangePage
   report: SceneValidationReportView | null
+  actions?: SceneAction[]
+  fallback?: boolean
+  summary?: SceneRedactedSummary
   createdAt: string
   updatedAt: string
 }
@@ -463,7 +592,7 @@ export type SceneCompatibilityRequestResponse =
     }
   | { status: 'missing' | 'unknown'; retryAllowed: false }
 
-export interface SceneInspectionResultReady {
+export interface SceneInspectionResultReady extends Partial<SceneCompatibilityOutcome> {
   status: 'ready'
   source: SceneSourceRef
   basis: SceneValidationBasis
@@ -476,9 +605,9 @@ export type SceneInspectionResult =
   | { status: 'missing' | 'corrupt' | 'unsupported'; error: SceneCompatibilityFailure }
 
 export type SceneEditPreflightResult =
-  | { status: 'valid'; basis: SceneValidationBasis & { candidateHash: string }; report: SceneValidationReport }
-  | { status: 'invalid' | 'incomplete'; report: SceneValidationReport }
-  | { status: 'compatibility-required'; report: SceneValidationReport }
+  | ({ status: 'valid'; basis: SceneValidationBasis & { candidateHash: string }; report: SceneValidationReport } & Partial<SceneCompatibilityOutcome>)
+  | ({ status: 'invalid' | 'incomplete'; report: SceneValidationReport } & Partial<SceneCompatibilityOutcome>)
+  | ({ status: 'compatibility-required'; report: SceneValidationReport } & Partial<SceneCompatibilityOutcome>)
 
 /** Public aliases for the remaining lifecycle DTOs used by older callers. */
 export type SceneDraftRequest = CreateCompatibilityDraftInput
@@ -503,4 +632,113 @@ export interface SceneHttpErrorView {
   requestId?: string
   issues?: SceneIssuePage
   retryable?: boolean
+}
+
+const SCENE_ACTIONS: readonly SceneAction[] = ['retry', 'recheck', 'repair', 'use-fallback', 'enter']
+const SCENE_STOP_REASONS: readonly SceneStopReason[] = [
+  'unsupported-size', 'work-limit', 'visit-limit', 'issue-limit', 'attempt-limit',
+  'deadline', 'cancelled', 'context-unavailable', 'payload-limit', 'space-limit', 'workspace-limit',
+]
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function finiteInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) ? value : undefined
+}
+
+/** Parse known action values while ignoring unknown fields from newer/older payloads. */
+export function parseSceneActions(value: unknown): SceneAction[] {
+  if (!Array.isArray(value)) return []
+  const actions: SceneAction[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || !SCENE_ACTIONS.includes(item as SceneAction)) continue
+    const action = item as SceneAction
+    if (!actions.includes(action)) actions.push(action)
+  }
+  return actions
+}
+
+/** Return a JSON-safe action array with unsupported/duplicate values removed. */
+export function serializeSceneActions(value: unknown): SceneAction[] {
+  return parseSceneActions(value)
+}
+
+/** Parse the boolean fallback marker used by both current and legacy result DTOs. */
+export function parseSceneFallbackMarker(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (!isRecord(value)) return false
+  if (typeof value.fallback === 'boolean') return value.fallback
+  if (typeof value.used === 'boolean') return value.used
+  return value.source === 'fallback' || value.kind === 'fallback'
+}
+
+/** Return the stable wire representation for a fallback marker. */
+export function serializeSceneFallbackMarker(value: unknown): SceneFallbackMarker {
+  return parseSceneFallbackMarker(value)
+}
+
+/** Compatibility aliases for callers that omit the word "Marker". */
+export const parseSceneFallback = parseSceneFallbackMarker
+export const serializeSceneFallback = serializeSceneFallbackMarker
+
+/** Parse a redacted summary and drop unknown or potentially sensitive fields. */
+export function parseSceneRedactedSummary(value: unknown): SceneRedactedSummary | null {
+  if (!isRecord(value)) return null
+  const result: SceneRedactedSummary = { redacted: true }
+  const source = value.source
+  if (source === 'generated' || source === 'edited' || source === 'fallback') result.source = source
+  const attempt = finiteInteger(value.attempt)
+  if (attempt !== undefined && attempt >= 0) result.attempt = attempt
+  const providerCalls = finiteInteger(value.providerCalls)
+  if (providerCalls !== undefined && providerCalls >= 0) result.providerCalls = providerCalls
+  for (const key of ['candidateHash', 'contentHash', 'rulesVersion', 'assetManifestHash', 'bindingHash', 'contextFingerprint', 'summary', 'nextStep'] as const) {
+    const item = value[key]
+    if (typeof item === 'string') result[key] = item
+    else if ((key === 'candidateHash' || key === 'contentHash') && item === null) result[key] = null
+  }
+  if (Array.isArray(value.issueCodes)) {
+    result.issueCodes = value.issueCodes.filter((item): item is string => typeof item === 'string')
+  }
+  if (Array.isArray(value.normalizationFixes)) {
+    result.normalizationFixes = value.normalizationFixes.flatMap(item => {
+      if (!isRecord(item) || typeof item.code !== 'string' || typeof item.summary !== 'string') return []
+      return [{ code: item.code, summary: item.summary }]
+    })
+  }
+  const workUnitsUsed = finiteInteger(value.workUnitsUsed)
+  if (workUnitsUsed !== undefined && workUnitsUsed >= 0) result.workUnitsUsed = workUnitsUsed
+  if (value.stopReason === null || SCENE_STOP_REASONS.includes(value.stopReason as SceneStopReason)) {
+    result.stopReason = value.stopReason as SceneStopReason | null
+  }
+  if (typeof value.persisted === 'boolean') result.persisted = value.persisted
+  if (typeof value.fallback === 'boolean') result.fallback = value.fallback
+  return result
+}
+
+/** Serialize only the stable, redacted summary fields. */
+export function serializeSceneRedactedSummary(value: unknown): SceneRedactedSummary | null {
+  const parsed = parseSceneRedactedSummary(value)
+  return parsed ? { ...parsed, ...(parsed.issueCodes ? { issueCodes: [...parsed.issueCodes] } : {}), ...(parsed.normalizationFixes ? { normalizationFixes: parsed.normalizationFixes.map(fix => ({ ...fix })) } : {}) } : null
+}
+
+/** Parse action/fallback/summary fields from any compatibility result. */
+export function parseSceneCompatibilityOutcome(value: unknown): SceneCompatibilityOutcome {
+  const record = isRecord(value) ? value : {}
+  return {
+    actions: parseSceneActions(record.actions),
+    fallback: parseSceneFallbackMarker(record.fallback),
+    summary: parseSceneRedactedSummary(record.summary) ?? { redacted: true },
+  }
+}
+
+/** Serialize action/fallback/summary fields without carrying unknown legacy fields through. */
+export function serializeSceneCompatibilityOutcome(value: unknown): SceneCompatibilityOutcome {
+  const outcome = parseSceneCompatibilityOutcome(value)
+  return {
+    actions: serializeSceneActions(outcome.actions),
+    fallback: serializeSceneFallbackMarker(outcome.fallback),
+    summary: serializeSceneRedactedSummary(outcome.summary) ?? { redacted: true },
+  }
 }

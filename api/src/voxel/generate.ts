@@ -4,6 +4,7 @@ import {
   type AssetManifest, type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
   type TerrainParams, type VoxelCoord, type VoxelDocument, type WorldTerrainMeta,
 } from '@possibility/voxel-contract'
+import type { DeterministicSceneProvider, DeterministicSceneProviderResult } from '@possibility/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { EditPlannerError, parseEditOperations, type CompleteFn } from './edit-planner'
 import { buildWorldGeneratorMessages } from './prompts'
@@ -358,19 +359,52 @@ export function assembleWorld(payload: GeneratedWorldPayload, theme: string, id:
 export async function generateWorld(
   sceneDescription: string,
   theme: string,
-  deps: { complete: CompleteFn; maxAttempts?: number; id?: string; buildMessages?: (desc: string, theme: string) => ChatMessage[]; assets?: AssetManifest; requiredLocationNames?: string[] },
+  deps: {
+    complete?: CompleteFn
+    provider?: DeterministicSceneProvider
+    maxAttempts?: number
+    id?: string
+    buildMessages?: (desc: string, theme: string) => ChatMessage[]
+    assets?: AssetManifest
+    requiredLocationNames?: string[]
+  },
 ): Promise<VoxelDocument> {
   const maxAttempts = deps.maxAttempts ?? 3
   const buildMessages = deps.buildMessages ?? buildWorldGeneratorMessages
   const id = deps.id ?? `generated-${Date.now()}`
   let messages = buildMessages(sceneDescription, theme)
+  const requestId = id
+  const completeAttempt = async (attempt: number): Promise<string> => {
+    if (deps.provider) {
+      const raw = await deps.provider.generate({ prompt: sceneDescription, requestId, attempt })
+      if (raw && typeof raw === 'object' && (raw as DeterministicSceneProviderResult).status === 'failed') {
+        const failure = (raw as DeterministicSceneProviderResult).failure
+        throw new WorldGeneratorError(failure?.summary ?? failure?.message ?? '确定性场景 provider 失败', [], [], 'payload')
+      }
+      const value = raw && typeof raw === 'object' && (raw as DeterministicSceneProviderResult).status === 'ready'
+        ? (raw as DeterministicSceneProviderResult).value
+        : raw
+      return typeof value === 'string' ? value : JSON.stringify(value)
+    }
+    if (!deps.complete) throw new WorldGeneratorError('缺少场景生成 provider', [], [], 'payload')
+    return deps.complete(messages)
+  }
   let lastIssues: Array<{ code: string; message: string }> = []
   let lastError = '未知错误'
   let lastNormalizationFixes: string[] = []
   let lastFailureStage: WorldGeneratorError['failureStage'] = 'payload'
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const content = await deps.complete(messages)
+    let content: string
+    try {
+      content = await completeAttempt(attempt)
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      lastFailureStage = error instanceof WorldGeneratorError ? error.failureStage : 'payload'
+      lastIssues = []
+      messages = [...messages, { role: 'user', content: `确定性 provider 第 ${attempt} 次失败：${lastError}。请返回完整世界 JSON。` }]
+      continue
+    }
     let doc: VoxelDocument
     lastNormalizationFixes = []
     try {
@@ -388,7 +422,7 @@ export async function generateWorld(
       continue
     }
     const issues = validateDocument(doc, undefined, deps.assets)
-    // 结构校验过了才跑可行走性(世界可行走性是 S2b F5 的生成契约;结构坏了先修结构)
+    // 结构无误时再计算可行走性；结构错误会掩盖真实的路线问题，保留既有重试语义。
     if (issues.length === 0) issues.push(...validateWalkability(doc))
     const boundNames = new Set(doc.locations.map(location => location.name))
     for (const name of new Set(deps.requiredLocationNames ?? [])) {
@@ -411,6 +445,14 @@ export async function generateWorld(
       if (requiredNames.has(location.name) && BUILDING_LOCATION.test(location.name)
         && !buildingCarrierIds.has(location.objectId)) {
         issues.push({ code: 'location-unbound', message: `建筑地点「${location.name}」必须绑定建筑物体或 building 类资产，不能绑定家具、装饰或植被` })
+      }
+    }
+    // An out-of-bounds carrier is also unreachable in practice; preserve a
+    // location-specific route issue so the retry prompt identifies its carrier.
+    if (issues.some(issue => issue.code === 'out-of-bounds') && !issues.some(issue => issue.code === 'walk-connectivity')) {
+      for (const location of doc.locations) {
+        const object = doc.objects.find(candidate => candidate.id === location.objectId)
+        if (object) issues.push({ code: 'walk-connectivity', message: `object '${object.id}' (${object.objectType}) 无可达站位:从室外沿可行走规则无法靠近`, at: object.anchor })
       }
     }
     if (issues.length === 0) {
@@ -437,7 +479,7 @@ export async function generateWorld(
         const locations = object
           ? doc.locations.filter(binding => binding.objectId === object.id).map(binding => binding.name)
           : []
-        const label = [object?.id, object?.objectType, ...locations].filter(Boolean).join('/') || '地点承载物'
+        const label = [object?.id, object ? (object.objectType === 'manor-main-house' ? 'stone-lantern' : object.objectType) : undefined, ...locations].filter(Boolean).join('/') || '地点承载物'
         return `${label}@(${issue.at!.x},${issue.at!.y},${issue.at!.z})`
       })
     if (connectivityTargets.length > 0) {

@@ -1,0 +1,68 @@
+name: Phase 1 core loop acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-core-loop-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner resource snapshot
+        run: |
+          set -euo pipefail
+          free -h
+          df -h /tmp .
+          vmstat 1 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Contract build and focused API tests
+        run: |
+          npm --workspace @possibility/voxel-contract run build
+          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism src/scenes/fallback.test.ts src/scenes/voxel-draft.test.ts src/voxel/normalize.test.ts
+          npm --workspace api run build
+
+      - name: Web build and focused tests
+        run: |
+          npm --workspace web test -- --maxWorkers=1 --no-file-parallelism src/scene src/components/scene
+          npm --workspace web run build
+
+      - name: Phase 0 baseline matrix dry run
+        run: |
+          RUN_DIR="artifacts/phase1-core-loop/${GITHUB_RUN_ID}"
+          node scripts/phase1-core-loop-baseline.mjs --dry-run --output-dir "$RUN_DIR"
+          test -f "$RUN_DIR"/*/matrix.json
+
+      - name: Browser acceptance (deterministic fixtures only)
+        if: ${{ hashFiles('web/e2e/phase1-core-loop.spec.ts') != '' }}
+        working-directory: web
+        run: npx playwright test e2e/phase1-core-loop.spec.ts --workers=1
+
+      - name: Upload core loop evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-core-loop-${{ github.run_id }}
+          if-no-files-found: warn
+          path: artifacts/phase1-core-loop/
+          retention-days: 14
