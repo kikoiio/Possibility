@@ -152,6 +152,36 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
     ],
   })
 
+  let persistedDocument: unknown = voxelDoc
+  let persistedVersion = 1
+  let editSaveCount = 0
+  await page.route('**/api/voxel/edit-plan', route => route.fulfill({ json: {
+    ops: [{ kind: 'set-block', at: { x: 1, y: 1, z: 1 }, block: 'wood-plank' }],
+  } }))
+  await page.route('**/api/worlds/phase1-core-world/scene/compatibility/preflight', route => route.fulfill({ json: {
+    status: 'valid',
+    basis: {
+      expectedCurrentVersion: persistedVersion,
+      currentContentHash: 'phase1-repaired-hash',
+      source: { worldId: snapshot.world.id, version: persistedVersion, contentHash: 'phase1-repaired-hash', timelineId: snapshot.currentTimelineId, representation: 'voxel', spaceId: 'exterior' },
+      candidateHash: 'phase1-retried-edit-candidate', rulesVersion: 'phase1-rules', assetManifestHash: 'phase1-assets',
+      templateCatalogHash: 'phase1-templates', bindingHash: 'phase1-binding', contextFingerprint: 'phase1-context', baseline: null,
+    },
+    report: { status: 'valid', issues: [], issueCount: 0, checkedSpaceIds: ['exterior'], pendingSpaceIds: [], countIsExact: true, stopReason: null, workUnitsUsed: 1, elapsedMs: 1, ruleNotes: { items: [], total: 0, hasMore: false } },
+  } }))
+  await page.route('**/api/worlds/phase1-core-world/scene/voxel-revision', async route => {
+    const body = route.request().postDataJSON() as { document?: unknown }
+    persistedDocument = body.document
+    persistedVersion += 1
+    editSaveCount += 1
+    return route.fulfill({ json: { document: persistedDocument, version: persistedVersion, revisionId: 'phase1-retried-edit', contentHash: 'phase1-retried-edited-hash', createdAt: snapshot.simNow } })
+  })
+  await page.route('**/api/worlds/phase1-core-world/scene**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { status: 'ready', document: persistedDocument, version: persistedVersion } })
+    return route.fallback()
+  })
+  await page.route('**/api/worlds/phase1-core-world/map/bootstrap', route => route.fulfill({ json: mapBootstrap(persistedDocument) }))
+
   await fillAndGenerate(page, '一个有温室和庭院的山间旧宅。')
   await expect(page.getByTestId('create-error')).toContainText('入口目前无法顺利到达')
   await expect(page.getByTestId('create-error')).toContainText('请减少隔断，再重新生成')
@@ -168,6 +198,19 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
   expect(routes.createBodies[0]!.scene).toEqual(voxelDoc)
   await page.reload()
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('voxel-tool-ai').click()
+  await expect(page.getByTestId('voxel-ai-edit')).toBeVisible()
+  await page.getByTestId('voxel-ai-input').fill('修整庭院的小路，保持旧宅和温室不变。')
+  await page.getByTestId('voxel-ai-preview').click()
+  await expect(page.getByTestId('voxel-ai-pending')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('voxel-ai-confirm').click()
+  await expect.poll(() => editSaveCount, { timeout: 15_000 }).toBe(1)
+  const editedDocument = persistedDocument
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+  expect(persistedVersion).toBe(2)
+  expect(JSON.stringify(persistedDocument)).not.toEqual(JSON.stringify(voxelDoc))
+  expect(editedDocument).toEqual(persistedDocument)
   const requestId = routes.createBodies[0]!.sceneRequestId
   const draftRequestId = routes.draftBodies[0]!.requestId
   expect(routes.apiTrace).toEqual(expect.arrayContaining([
