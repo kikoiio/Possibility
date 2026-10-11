@@ -36,15 +36,15 @@ jobs:
         working-directory: web
         run: npx playwright install --with-deps chromium
 
-      - name: Contract build and focused API tests
+      - name: Contract build and full API regression suite
         run: |
           npm --workspace @possibility/voxel-contract run build
-          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism src/scenes/fallback.test.ts src/scenes/voxel-draft.test.ts src/voxel/normalize.test.ts src/worlds/create-voxel.test.ts src/scenes/compatibility/routes.test.ts src/scenes/repair.test.ts
+          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism
           npm --workspace api run build
 
-      - name: Web build and focused tests
+      - name: Web build and full Web regression suite
         run: |
-          npm --workspace web test -- --maxWorkers=1 --no-file-parallelism src/scene src/components/scene
+          npm --workspace web test -- --maxWorkers=1 --no-file-parallelism
           npm --workspace web run build
 
       - name: Phase 0 baseline matrix dry run
@@ -59,9 +59,12 @@ jobs:
         env:
           PHASE1_BASELINE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/phase1-core-loop
           PHASE1_BASELINE_RUN_ID: github-${{ github.run_id }}
+          PHASE1_BASELINE_SCREENSHOTS: 'true'
+          PHASE1_RESPONSIVE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/phase1-core-loop/github-${{ github.run_id }}/responsive
         run: |
           npx playwright test e2e/phase1-core-loop-baseline.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1
+          npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1 --grep='responsive fallback journey'
 
       - name: Summarize matrix and verify cleanup
         if: always()

@@ -21,6 +21,20 @@ function canConnect(port) {
 if (!existsSync(matrixPath)) throw new Error(`Missing browser matrix: ${matrixPath}`)
 const matrix = JSON.parse(readFileSync(matrixPath, 'utf8'))
 const counts = Object.fromEntries(['passed', 'failed', 'unverified'].map(status => [status, matrix.cases.filter(item => item.status === status).length]))
+const responsiveDir = join(runDir, 'responsive')
+const responsiveCases = ['narrow-485', 'narrow-390'].map(name => {
+  const resultPath = join(responsiveDir, `${name}-result.json`)
+  const screenshotPath = join(responsiveDir, `${name}-fallback-ready.png`)
+  try {
+    const result = JSON.parse(readFileSync(resultPath, 'utf8'))
+    if (result.status !== 'passed' || !existsSync(screenshotPath)) errors.push(`Responsive journey incomplete: ${name}`)
+    return { name, width: result.viewport?.width ?? null, height: result.viewport?.height ?? null, status: result.status, steps: result.steps, screenshot: `responsive/${name}-fallback-ready.png` }
+  } catch {
+    errors.push(`Responsive journey evidence missing: ${name}`)
+    return { name, width: null, height: null, status: 'unverified', reason: 'No successful browser journey record or screenshot.' }
+  }
+})
+const gui = { status: 'unverified', reason: 'Phase 1 is a browser based web flow; the repository has no native GUI target for this acceptance stage.' }
 
 const activePorts = []
 for (const port of [15173, 18787]) if (await canConnect(port)) activePorts.push(port)
@@ -49,6 +63,11 @@ const summary = [
   '',
   `Commit: \`${matrix.gitSha}\` · Cases: ${matrix.cases.length} · Passed: ${counts.passed} · Failed: ${counts.failed} · Unverified: ${counts.unverified}`,
   '',
+  '### Responsive browser journeys',
+  '',
+  ...responsiveCases.map(item => `- ${item.name} (${item.width ?? '?'}×${item.height ?? '?'}): ${item.status}${item.screenshot ? ` · \`${item.screenshot}\`` : ` · ${item.reason}`}`),
+  `- Native GUI: ${gui.status} · ${gui.reason}`,
+  '',
   `Cleanup: services stopped=${matrix.cleanup.servicesStopped}; temporary paths removed=${matrix.cleanup.tempPathsRemoved}${errors.length ? `; errors=${errors.join('; ')}` : ''}`,
   '',
   '| Case | Status |',
@@ -61,6 +80,7 @@ mkdirSync(runDir, { recursive: true })
 writeFileSync(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`)
 writeFileSync(join(runDir, 'matrix.json'), `${JSON.stringify(matrix, null, 2)}\n`)
 writeFileSync(join(runDir, 'cleanup.json'), `${JSON.stringify(matrix.cleanup, null, 2)}\n`)
+writeFileSync(join(runDir, 'responsive-matrix.json'), `${JSON.stringify({ cases: responsiveCases, gui }, null, 2)}\n`)
 writeFileSync(join(runDir, 'summary.md'), summary)
 if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, summary, { flag: 'a' })
 

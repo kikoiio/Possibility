@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
@@ -206,4 +207,52 @@ test('a lost create response is recovered with the same request id and payload',
   expect(routes.createBodies[1]!.sceneRequestId).toBe(routes.createBodies[0]!.sceneRequestId)
   expect(routes.createBodies[1]).toEqual(routes.createBodies[0])
 })
+
+for (const viewport of [
+  { name: 'narrow-485', width: 485, height: 724 },
+  { name: 'narrow-390', width: 390, height: 844 },
+]) {
+  test(`responsive fallback journey at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    const routes = await installCoreRoutes(page, {
+      drafts: [draftResponse({
+        source: 'fallback',
+        fallback: true,
+        callsUsed: 3,
+        contentHash: `phase1-fallback-${viewport.name}`,
+        explanation: '生成多次未通过检查，已准备确定性保底场景。',
+        warnings: ['已保留后续修复入口。'],
+        actions: ['enter', 'repair'],
+      })],
+    })
+
+    await fillAndGenerate(page, '一座有小路、主楼和花园的旧宅。')
+    await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
+    await expect(page.getByTestId('fallback-ready')).toContainText('确定性保底场景')
+    await expect(page.getByTestId('fallback-ready')).toContainText('保存后仍可继续修复')
+    await expect(page.getByTestId('start-life')).toBeVisible()
+    await expect(page.getByTestId('start-life')).toBeEnabled()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+
+    const outputDir = resolve(process.env.PHASE1_RESPONSIVE_OUTPUT_DIR ?? '../artifacts/phase1-core-loop/responsive')
+    mkdirSync(outputDir, { recursive: true })
+    await page.screenshot({ path: resolve(outputDir, `${viewport.name}-fallback-ready.png`), fullPage: true })
+    await page.getByTestId('start-life').click()
+    await expect(page.getByTestId('create-live-banner')).toBeVisible()
+    await page.reload()
+    await expect(page.getByTestId('voxel-viewport-loading')).toBeHidden({ timeout: 15_000 })
+    await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+    expect(routes.createBodies).toHaveLength(1)
+    expect(routes.createBodies[0]).toMatchObject({ sceneRequestId: expect.any(String), scene: { format: 'voxel-document' } })
+    const resultPath = resolve(outputDir, `${viewport.name}-result.json`)
+    writeFileSync(resultPath, `${JSON.stringify({
+      viewport,
+      status: 'passed',
+      steps: ['fallback-ready', 'enter', 'refresh-and-resume'],
+      documentScrollWidth: await page.evaluate(() => document.documentElement.scrollWidth),
+      createAttempts: routes.createBodies.length,
+      screenshot: `${viewport.name}-fallback-ready.png`,
+    }, null, 2)}\n`)
+  })
+}
 
