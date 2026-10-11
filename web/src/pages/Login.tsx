@@ -20,6 +20,7 @@ export default function Login() {
   const store = useMemo(() => createGuestClaimStore(), [])
   const flow = useMemo(() => createGuestClaimFlow({ store }), [store])
   const claimInitialization = useRef<Promise<void> | null>(null)
+  const flowLifecycle = useRef(0)
 
   function ensureClaimContext(): Promise<void> {
     if (!claiming || !getGuestToken()) return Promise.resolve()
@@ -44,7 +45,16 @@ export default function Login() {
     return claimInitialization.current
   }
 
-  useEffect(() => () => flow.dispose(), [flow])
+  useEffect(() => {
+    const lifecycle = ++flowLifecycle.current
+    return () => {
+      // React StrictMode replays effects in development. Defer disposal until
+      // the replay has had a chance to install its replacement effect.
+      queueMicrotask(() => {
+        if (flowLifecycle.current === lifecycle) flow.dispose()
+      })
+    }
+  }, [flow])
   useEffect(() => {
     if (!claiming || !getGuestToken()) return
     let active = true
