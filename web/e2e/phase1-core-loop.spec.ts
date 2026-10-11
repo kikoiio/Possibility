@@ -73,12 +73,15 @@ async function installCoreRoutes(page: Page, options: {
 }) {
   const draftBodies: Record<string, unknown>[] = []
   const createBodies: Record<string, unknown>[] = []
+  const apiTrace: Array<Record<string, unknown>> = []
 
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'phase1-e2e-token'))
   await page.route('**/api/persons', route => route.fulfill({ json: { persons: [person] } }))
   await page.route('**/api/scene-drafts/voxel', async route => {
-    draftBodies.push(route.request().postDataJSON() as Record<string, unknown>)
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    draftBodies.push(body)
     const response = options.drafts[Math.min(draftBodies.length - 1, options.drafts.length - 1)]!
+    apiTrace.push({ method: 'POST', path: '/api/scene-drafts/voxel', status: response.status ?? 200, requestId: body.requestId })
     return route.fulfill({ status: response.status ?? 200, json: response.json })
   })
   await page.route('**/api/worlds', async route => {
@@ -86,17 +89,21 @@ async function installCoreRoutes(page: Page, options: {
     const body = route.request().postDataJSON() as Record<string, unknown>
     createBodies.push(body)
     const response = options.onCreate?.(body, createBodies.length) ?? { json: { id: snapshot.world.id, timelineId: snapshot.currentTimelineId } }
+    apiTrace.push({ method: 'POST', path: '/api/worlds', status: response.status ?? 200, attempt: createBodies.length, requestId: body.sceneRequestId, worldId: response.json.id, timelineId: response.json.timelineId })
     return route.fulfill({ status: response.status ?? 200, json: response.json })
   })
   await page.route('**/api/worlds/phase1-core-world**', async route => {
     const url = route.request().url()
-    if (url.includes('/map/bootstrap')) return route.fulfill({ json: mapBootstrap() })
+    if (url.includes('/map/bootstrap')) {
+      apiTrace.push({ method: 'GET', path: '/api/worlds/phase1-core-world/map/bootstrap', status: 200, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow })
+      return route.fulfill({ json: mapBootstrap() })
+    }
     if (url.includes('/map/resume')) return route.fulfill({ json: { ok: true } })
     if (url.includes('/stream')) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' })
     return route.fulfill({ json: snapshot })
   })
 
-  return { draftBodies, createBodies }
+  return { draftBodies, createBodies, apiTrace }
 }
 
 async function fillAndGenerate(page: Page, prompt = '白雾缭绕的山间旧宅，有温室和石灯庭院。') {
@@ -159,6 +166,53 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
   expect(routes.draftBodies[1]!.requestId).toBe(routes.draftBodies[0]!.requestId)
 })
 
+test('an invalid new-world candidate is blocked, then the explicit fallback is saved and restored', async ({ page }) => {
+  const routes = await installCoreRoutes(page, {
+    drafts: [draftResponse({
+      fallback: true,
+      source: 'fallback',
+      contentHash: 'phase1-invalid-gate-fallback',
+      explanation: '生成候选未通过最终检查，已准备可进入的保底场景。',
+      actions: ['enter', 'repair'],
+    })],
+    onCreate: (_body, attempt) => attempt === 1
+      ? { status: 422, json: { error: '场景检查未通过，尚未写入世界。', errorCode: 'compatibility-required', actions: ['repair', 'use-fallback'] } }
+      : { json: { id: snapshot.world.id, timelineId: snapshot.currentTimelineId } },
+  })
+
+  await fillAndGenerate(page)
+  await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
+  await page.getByTestId('start-life').click()
+  await expect(page.getByTestId('create-error')).toContainText('尚未写入世界')
+  await expect(page.getByTestId('compatibility-recovery')).toBeVisible()
+  await page.getByTestId('create-use-fallback').click()
+  await expect(page.getByTestId('fallback-ready')).toBeVisible()
+  await page.getByTestId('start-life').click()
+  await expect(page.getByTestId('create-live-banner')).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+  expect(routes.createBodies).toHaveLength(2)
+  const requestId = routes.draftBodies[0]!.requestId
+  expect(requestId).toEqual(routes.createBodies[0]!.sceneRequestId)
+  expect(routes.createBodies[1]!.sceneRequestId).toBe(requestId)
+  expect(routes.apiTrace).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'POST', path: '/api/scene-drafts/voxel', status: 200, requestId }),
+    expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 422, attempt: 1, requestId }),
+    expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 200, attempt: 2, requestId, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId }),
+    expect.objectContaining({ method: 'GET', path: `/api/worlds/${snapshot.world.id}/map/bootstrap`, status: 200, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow }),
+  ]))
+  const runId = process.env.PHASE1_BASELINE_RUN_ID ?? `playwright-${Date.now()}`
+  const outputDir = resolve(process.env.PHASE1_BASELINE_OUTPUT_DIR ?? '../artifacts/phase1-core-loop', runId, 'correlation')
+  mkdirSync(outputDir, { recursive: true })
+  writeFileSync(resolve(outputDir, 'BB-01.json'), `${JSON.stringify({
+    runId,
+    requestId,
+    context: { worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow },
+    apiTrace: routes.apiTrace,
+    page: { url: page.url(), labels: ['首次门禁拒绝未写入', '保底保存复用同一 requestId', '进入后的 bootstrap 时间线与空间匹配'] },
+  }, null, 2)}\n`)
+})
+
 test('a deterministic fallback draft is explicitly marked and remains enterable', async ({ page }) => {
   const routes = await installCoreRoutes(page, {
     drafts: [draftResponse({
@@ -178,6 +232,12 @@ test('a deterministic fallback draft is explicitly marked and remains enterable'
   await page.getByTestId('start-life').click()
   await expect(page.getByTestId('create-live-banner')).toBeVisible()
   expect(routes.createBodies[0]).toMatchObject({ sceneRequestId: expect.any(String), scene: { format: 'voxel-document' } })
+  await page.reload()
+  await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('voxel-tool-ai').click()
+  await expect(page.getByTestId('voxel-ai-edit')).toBeVisible()
+  await page.getByTestId('voxel-ai-input').fill('修整庭院的小路，保持旧宅和温室不变。')
+  await expect(page.getByTestId('voxel-ai-preview')).toBeEnabled()
 })
 
 test('a lost create response is recovered with the same request id and payload', async ({ page }) => {

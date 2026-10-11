@@ -15,6 +15,22 @@ const change = (index: number) => ({
   fromBlock: 'stone', toBlock: 'air', summary: `变化 ${index}`,
 })
 
+const issueCases = [
+  ['invalid-envelope', 'format', false], ['invalid-document', 'format', false], ['invalid-json', 'format', false],
+  ['unsupported-format', 'format', false], ['unsupported-version', 'format', false], ['unsupported-size', 'format', false],
+  ['unsupported-document-version', 'format', false], ['invalid-document-envelope', 'format', false], ['missing-spaces', 'format', false],
+  ['missing-default-space', 'format', false], ['invalid-space-entry', 'format', false], ['unknown-default-space', 'format', false],
+  ['scene-missing', 'structure', false], ['scene-corrupt', 'format', false], ['scene-invalid', 'structure', false],
+  ['out-of-bounds', 'structure', false], ['unknown-block', 'structure', false], ['floating-object', 'structure', false],
+  ['object-overlap', 'structure', false], ['locked-violation', 'binding', false], ['invalid-meta', 'structure', false],
+  ['asset-collision', 'asset', false], ['asset-unsupported', 'asset', false], ['asset-overlap', 'asset', false], ['unknown-asset', 'asset', false],
+  ['binding-mismatch', 'binding', false], ['missing-location', 'binding', false], ['missing-resident', 'binding', false],
+  ['location-unbound', 'binding', false], ['connection-invalid', 'connection', false],
+  ['walk-clearance', 'walkability', false], ['walk-connectivity', 'walkability', false], ['walk-lighting', 'walkability', false],
+  ['walk-stairs', 'walkability', false], ['walk-gap', 'walkability', false],
+  ['context-unavailable', 'structure', true], ['budget-exceeded', 'structure', true], ['deadline', 'structure', true], ['cancelled', 'structure', true],
+] as const
+
 function continuation(): CompatibilityContinuation {
   const issues = Array.from({ length: 20 }, (_, index) => issue(index))
   const changes = Array.from({ length: 20 }, (_, index) => change(index))
@@ -131,5 +147,48 @@ describe('SceneCompatibilityPanel server paging', () => {
     vi.stubGlobal('fetch', fetchMock)
     await sceneCompatibilityApi.readDraft('world-1', { timelineId: 'timeline-1', representation: 'voxel' }, 'draft-1', { page: { limit: 20, issuesOffset: 20, changesOffset: 0 } })
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/worlds/world-1/scene/compatibility/drafts/draft-1?timelineId=timeline-1&representation=voxel&limit=20&issuesOffset=20&changesOffset=0')
+  })
+
+  it.each(issueCases)('gives %s a readable impact, saved status, suggestion, and next step', (code, category, retryable) => {
+    const current = continuation()
+    const report = current.draft!.report!
+    const visibleIssue = {
+      ...issue(100), code, category, summary: '物体 123e4567-e89b-42d3-a456-426614174000 无法通过检查。', suggestion: '请调整后重新检查。',
+      spaceId: '123e4567-e89b-42d3-a456-426614174001',
+      id: 'internal-issue-id', objectId: 'PRIVATE-OBJECT-UUID', placementId: 'PRIVATE-ASSET-UUID',
+      origin: 'existing' as const,
+    }
+    current.state = 'diagnosed'
+    current.draft = null
+    current.inspection = { report: { ...report, status: retryable ? 'incomplete' : 'invalid', issues: { items: [visibleIssue], offset: 0, limit: 1, total: 1, countIsExact: true, hasMore: false }, issueCount: 1 }, canCreateRepairDraft: true } as unknown as CompatibilityContinuation['inspection']
+    const html = renderToStaticMarkup(createElement(SceneCompatibilityPanel, {
+      continuation: current, canEdit: true, onBuild: () => {}, onRecheck: () => {}, onClose: () => {},
+    }))
+    expect(html).toContain(category === 'format' ? '场景资料暂时无法读取。' : category === 'structure' ? '场景结构需要调整。' : category === 'asset' ? '有些物件摆放需要调整。' : category === 'binding' ? '地点或居民与场景的对应关系需要调整。' : category === 'connection' ? '地点之间的连接需要调整。' : '居民通行路线需要调整。')
+    expect(html).not.toContain('123e4567-e89b-42d3-a456-426614174000')
+    expect(html).not.toContain('123e4567-e89b-42d3-a456-426614174001')
+    expect(html).toContain('影响：')
+    expect(html).toContain('请调整后重新检查。')
+    expect(html).toContain('问题来自当前已保存版本')
+    expect(html).toContain(retryable ? '重新检查' : '预览修复方案')
+    expect(html).toContain(retryable ? '可以重试检查' : '此问题需先修复，不能通过重试检查消除')
+    expect(html).not.toContain('PRIVATE-OBJECT-UUID')
+    expect(html).not.toContain('PRIVATE-ASSET-UUID')
+    expect(html).not.toContain('internal-issue-id')
+  })
+
+  it('offers a retry action for incomplete checks and marks candidate issues as not written', () => {
+    const current = continuation()
+    const report = current.draft!.report!
+    current.draft!.report = { ...report, issues: { items: [{
+      ...issue(101), code: 'deadline', category: 'structure', origin: 'repair',
+      summary: '检查超时。', suggestion: '可以重新检查。',
+    }], offset: 0, limit: 1, total: 1, countIsExact: true, hasMore: false }, issueCount: 1 }
+    const html = renderToStaticMarkup(createElement(SceneCompatibilityPanel, {
+      continuation: current, canEdit: true, onBuild: () => {}, onRecheck: () => {}, onClose: () => {},
+    }))
+    expect(html).toContain('本次修改尚未写入')
+    expect(html).toContain('重新检查')
+    expect(html).toContain('可以重试检查')
   })
 })

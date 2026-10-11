@@ -66,6 +66,45 @@ function reportStatusLabel(status: SceneValidationReport['status']): string {
   return status === 'valid' ? '完整有效' : status === 'invalid' ? '发现阻断问题' : '检查未完成'
 }
 
+function issueImpact(issue: SceneIssue): string {
+  switch (issue.category) {
+    case 'format': return '场景资料无法按当前格式读取，暂时不能保存或进入。'
+    case 'structure': return '场景结构未通过检查，暂时不能保存或进入。'
+    case 'asset': return '物件摆放未通过检查，可能影响场景安全和稳定。'
+    case 'binding': return '场景与世界中的地点或居民没有正确对应。'
+    case 'connection': return '地点之间缺少可验证的连接，居民可能无法到达。'
+    case 'walkability': return '居民无法按当前路线顺利通行。'
+  }
+}
+
+function issueSummary(issue: SceneIssue): string {
+  const hasInternalIdentifier = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(issue.summary)
+    || /\b(?:object|placement|asset)[_-]?(?:id|uuid)\b/i.test(issue.summary)
+  if (!hasInternalIdentifier) return issue.summary
+  switch (issue.category) {
+    case 'format': return '场景资料暂时无法读取。'
+    case 'structure': return '场景结构需要调整。'
+    case 'asset': return '有些物件摆放需要调整。'
+    case 'binding': return '地点或居民与场景的对应关系需要调整。'
+    case 'connection': return '地点之间的连接需要调整。'
+    case 'walkability': return '居民通行路线需要调整。'
+  }
+}
+
+function visibleSpaceId(spaceId: string | null): string | null {
+  if (!spaceId || spaceId === 'single' || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(spaceId)) return null
+  return spaceId
+}
+
+function issueRetryable(issue: SceneIssue): boolean {
+  return issue.code === 'context-unavailable' || issue.code === 'budget-exceeded'
+    || issue.code === 'deadline' || issue.code === 'cancelled'
+}
+
+function issueWrittenLabel(issue: SceneIssue): string {
+  return issue.origin === 'existing' ? '问题来自当前已保存版本' : '本次修改尚未写入'
+}
+
 function changeKindLabel(kind: SceneRepairChange['kind']): string {
   switch (kind) {
     case 'move-asset': return '移动摆放'
@@ -90,7 +129,15 @@ export function Pager({ offset, limit, total, hasMore, countIsExact = true, onPa
   </div>
 }
 
-function IssueList({ issues, onPage, busy }: { issues: Paged<SceneIssue>; onPage?: (offset: number) => void; busy?: boolean }) {
+function IssueList({ issues, onPage, busy, canRepair, onBuild, onRecheck, onReturn }: {
+  issues: Paged<SceneIssue>
+  onPage?: (offset: number) => void
+  busy?: boolean
+  canRepair: boolean
+  onBuild?: () => void
+  onRecheck?: () => void
+  onReturn: () => void
+}) {
   const local = useLocalPage(issues.items)
   const serverPaged = !!onPage
   const visible = serverPaged ? issues.items : local.visible
@@ -99,11 +146,20 @@ function IssueList({ issues, onPage, busy }: { issues: Paged<SceneIssue>; onPage
     {!visible.length
       ? <p className="mt-2 text-xs text-[#798579]">没有加载到问题明细。</p>
       : <ul className="mt-2 space-y-2">{visible.map(issue => <li key={issue.id} className="rounded-lg border border-[#e4e8df] bg-white px-3 py-2">
-        <p className="text-xs text-[#3f5646]">{issue.summary}</p>
+        <p className="text-xs text-[#3f5646]">{issueSummary(issue)}</p>
+        <p className="mt-1 text-[11px] text-[#6b7a6f]" data-testid="scene-issue-impact">影响：{issueImpact(issue)}</p>
         <p className="mt-1 text-[11px] text-[#859085]">
-          {[issue.spaceId ? `空间 ${issue.spaceId}` : null, issue.at ? coordText(issue.at) : null, issue.origin === 'existing' ? '既存问题' : issue.origin === 'edit' ? '本次编辑' : '本次修复'].filter(Boolean).join(' · ')}
+          {[visibleSpaceId(issue.spaceId) ? `空间 ${visibleSpaceId(issue.spaceId)}` : null, issue.at ? coordText(issue.at) : null, issue.origin === 'existing' ? '既存问题' : issue.origin === 'edit' ? '本次编辑' : '本次修复'].filter(Boolean).join(' · ')}
         </p>
         {issue.suggestion && <p className="mt-1 text-[11px] text-[#6b7a6f]">{issue.suggestion}</p>}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] text-[#859085]" data-testid="scene-issue-write-status">{issueWrittenLabel(issue)}</span>
+          <button type="button" disabled={busy} onClick={issueRetryable(issue) ? onRecheck : canRepair ? onBuild : onReturn}
+            className="rounded-full border border-[#d4ded3] px-3 py-1 text-[11px] text-[#496153] disabled:opacity-40">
+            {issueRetryable(issue) ? '重新检查' : canRepair ? '预览修复方案' : '返回场景'}
+          </button>
+          <span className="sr-only">{issueRetryable(issue) ? '可以重试检查' : '此问题需先修复，不能通过重试检查消除'}</span>
+        </div>
       </li>)}</ul>}
     <Pager offset={serverPaged ? issues.offset : local.page * PAGE_SIZE} limit={serverPaged ? issues.limit : PAGE_SIZE} total={serverPaged ? issues.total : issues.items.length} hasMore={serverPaged ? issues.hasMore : local.page < local.pageCount - 1} countIsExact={issues.countIsExact} onPage={onPage ? (offset) => onPage(offset) : (offset) => local.setPage(Math.floor(offset / PAGE_SIZE))} busy={busy} />
     {issues.hasMore && <p className="mt-2 text-[11px] text-[#859085]">还有未显示的问题；未展示全部不影响检查结论。</p>}
@@ -236,7 +292,8 @@ export function SceneCompatibilityPanel({ continuation, sceneScope, canEdit, pre
           <h3 className="text-sm font-medium text-[#3f5646]">检查结果：{reportStatusLabel(report.status)}</h3>
           <SpaceProgress report={report} />
         </div>
-        {issues && issues.total > 0 && <IssueList issues={issues} onPage={draft ? offset => void loadPage('issues', offset) : undefined} busy={pageLoading !== null} />}
+        {issues && issues.total > 0 && <IssueList issues={issues} onPage={draft ? offset => void loadPage('issues', offset) : undefined} busy={pageLoading !== null}
+          canRepair={!!inspection?.canCreateRepairDraft && canEdit} onBuild={onBuild} onRecheck={onRecheck} onReturn={onClose} />}
         <RuleNoteList report={report} />
       </div>}
 

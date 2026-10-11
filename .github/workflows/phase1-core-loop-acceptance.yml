@@ -78,6 +78,7 @@ jobs:
           COMPAT_ARGS=(--project=compatibility-desktop --workers=1 --reporter=list,json)
           if [[ -n "$COMPATIBILITY_GREP" ]]; then COMPAT_ARGS+=(--grep="$COMPATIBILITY_GREP"); fi
           npm run test:e2e:compat -- "${COMPAT_ARGS[@]}"
+          node --test ../scripts/phase1-core-loop-correlation.test.mjs
 
       - name: Summarize matrix and verify cleanup
         if: always()

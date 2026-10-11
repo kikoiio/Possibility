@@ -39,6 +39,8 @@ export type BaselineCase = {
   entry: string
   identity: string
   context: { worldId: string | null; timelineId: string | null; spaceId: string | null; simNow: string | null }
+  requestId?: string
+  apiTrace?: Array<{ method: string; path: string; status: number; requestId?: string; worldId?: string; timelineId?: string; spaceId?: string; simNow?: string; attempt?: number }>
   status: BaselineStatus
   http: Array<{ method: string; path: string; status: number }>
   page: { url: string | null; labels: string[]; screenshotPath?: string }
@@ -183,6 +185,11 @@ export function writeAcceptanceManifest(manifest: BaselineRunManifest, outputPat
       caseId: item.caseId,
       status: item.status,
       verified: item.status === 'passed',
+      identity: item.identity,
+      context: item.context,
+      requestId: item.requestId,
+      apiTrace: item.apiTrace,
+      entry: item.entry,
       page: item.page,
       http: item.http,
       failure: item.failure,

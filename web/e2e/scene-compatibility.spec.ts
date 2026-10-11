@@ -825,9 +825,12 @@ test('用户自建旧场景经真实编辑入口（手动编辑被既存问题�
   await expect(dialog).toContainText('检查完成', { timeout: 30_000 })
   await expect(dialog).toContainText('发现阻断问题')
   await expect(dialog).toContainText('既存问题')
+  await expect(dialog.getByTestId('scene-issue-impact').first()).toContainText('影响：')
+  await expect(dialog.getByTestId('scene-issue-write-status').first()).toContainText('当前已保存版本')
 
   // 预览明确确认：变化清单 + 只读前后预览（同一预览实例切修复前/后）
-  await buildRepairPreview(dialog)
+  await dialog.getByRole('button', { name: '预览修复方案' }).first().click()
+  await expect(dialog).toContainText('修复预览', { timeout: 30_000 })
   await expect(dialog).toContainText(/本次修复变化（\d+ 项）/)
   await dialog.getByRole('tab', { name: '修复前' }).click()
   await expect(dialog.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 120_000 })

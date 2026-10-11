@@ -218,6 +218,8 @@ function materializeCaseEvidence(runDir, manifest) {
       verified: item.status === 'passed',
       identity: item.identity,
       context: item.context,
+      requestId: item.requestId,
+      apiTrace: item.apiTrace,
       entry: item.entry,
       page: item.page,
       http: item.http,
@@ -237,6 +239,8 @@ function mergeBrowserEvidence(runDir, manifest, sourceDir = process.env.PHASE1_B
       item.status = evidence.status
       item.identity = evidence.identity ?? item.identity
       item.context = evidence.context ?? item.context
+      item.requestId = evidence.requestId ?? item.requestId
+      item.apiTrace = Array.isArray(evidence.apiTrace) ? evidence.apiTrace : item.apiTrace
       item.page = evidence.page ?? item.page
       item.http = Array.isArray(evidence.http) ? evidence.http : item.http
       item.failure = evidence.failure ?? item.failure

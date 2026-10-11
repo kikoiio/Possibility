@@ -1,6 +1,7 @@
 import { createConnection } from 'node:net'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { validateCoreJourneyCorrelation } from './phase1-core-loop-correlation.mjs'
 
 const outputRoot = resolve(process.env.PHASE1_BASELINE_OUTPUT_DIR ?? 'artifacts/phase1-core-loop')
 const runId = process.env.PHASE1_BASELINE_RUN_ID ?? `github-${process.env.GITHUB_RUN_ID ?? 'local'}`
@@ -21,6 +22,32 @@ function canConnect(port) {
 if (!existsSync(matrixPath)) throw new Error(`Missing browser matrix: ${matrixPath}`)
 const matrix = JSON.parse(readFileSync(matrixPath, 'utf8'))
 const counts = Object.fromEntries(['passed', 'failed', 'unverified'].map(status => [status, matrix.cases.filter(item => item.status === status).length]))
+const correlationPath = join(runDir, 'correlation', 'BB-01.json')
+try {
+  const correlation = JSON.parse(readFileSync(correlationPath, 'utf8'))
+  const trace = Array.isArray(correlation.apiTrace) ? correlation.apiTrace : []
+  const correlationValidation = validateCoreJourneyCorrelation(correlation, runId)
+  errors.push(...correlationValidation.errors.map(error => `Core journey correlation: ${error}.`))
+  if (correlationValidation.passed) {
+    const bb01 = matrix.cases.find(item => item.caseId === 'BB-01')
+    if (bb01) {
+      bb01.requestId = correlation.requestId
+      bb01.context = correlation.context
+      bb01.apiTrace = trace
+      bb01.page = { ...bb01.page, url: correlation.page.url, labels: [...new Set([...(bb01.page?.labels ?? []), ...correlation.page.labels])] }
+      bb01.evidencePaths = [...new Set([...(bb01.evidencePaths ?? []), 'correlation/BB-01.json'])]
+      mkdirSync(join(runDir, 'cases'), { recursive: true })
+      writeFileSync(join(runDir, 'cases', 'BB-01.json'), `${JSON.stringify({
+        schema: `${matrix.schema}-case`, runId, caseId: 'BB-01', status: bb01.status,
+        verified: bb01.status === 'passed', identity: bb01.identity, context: bb01.context,
+        requestId: bb01.requestId, apiTrace: bb01.apiTrace, entry: bb01.entry,
+        page: bb01.page, http: bb01.http, failure: bb01.failure,
+      }, null, 2)}\n`)
+    }
+  }
+} catch {
+  errors.push('Core journey correlation evidence is missing or invalid.')
+}
 const responsiveDir = join(runDir, 'responsive')
 const compatibilityResultsPath = join(runDir, 'compatibility-results.json')
 let compatibilitySummary = { status: 'unverified', expected: 0, unexpected: null }

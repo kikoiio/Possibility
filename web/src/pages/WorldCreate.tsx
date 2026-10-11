@@ -41,6 +41,13 @@ function requestedPersonIds(searchParams: URLSearchParams): string[] {
   ].map(id => id.trim()).filter(Boolean))]
 }
 
+function safeCreateIssueText(value: string | undefined): string | null {
+  if (!value) return null
+  if (/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(value)
+    || /\b(?:object|placement|asset)[_-]?(?:id|uuid)\b/i.test(value)) return '场景结构需要调整。'
+  return value
+}
+
 /**
  * 体素创建(S1):一句话 + 选居民 → AI 体素草稿(单空间信封)→ 视口内拖拽/AI 编辑
  * (编辑由 EditController 防抖自动同步到 latestDoc)→「让这里开始生活」随创建入库。
@@ -242,8 +249,12 @@ export default function WorldCreate() {
       </header>
       {error && <div role="alert" className="pointer-events-auto absolute left-1/2 top-20 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl bg-white px-4 py-3 text-sm text-red-700 shadow-lg" data-testid="create-error">
         <p>{error.message}</p>
+        <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="create-error-status">
+          <p>影响：此候选未通过检查，暂时不能创建世界。</p>
+          <p className="mt-1">写入状态：未写入；调整描述后可以重试，或在有可用草稿时选择保底场景。</p>
+        </div>
         {error.kind === 'content' && <>
-          {error.issues?.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{error.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.summary ?? issue.message}{issue.suggestion ? ` ${issue.suggestion}` : ''}</li>)}</ul> : <p className="mt-2 text-xs">可以简化描述，减少复杂结构，并重新生成。</p>}
+          {error.issues?.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{error.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{safeCreateIssueText(issue.summary ?? issue.message)}{issue.suggestion ? ` ${safeCreateIssueText(issue.suggestion)}` : ''}</li>)}</ul> : <p className="mt-2 text-xs">可以简化描述，减少复杂结构，并重新生成。</p>}
           {error.callsUsed !== undefined && <p className="mt-2 text-xs text-[#68796d]">本次已使用 {error.callsUsed} 次模型调用。</p>}
         </>}
         {(error.kind === 'config' || error.kind === 'budget') && <button onClick={() => navigate('/settings')} className="mt-2 rounded-full border border-red-200 px-2 py-0.5 text-xs text-red-600 underline-offset-2 hover:underline" data-testid="error-goto-settings">前往设置</button>}
@@ -287,7 +298,7 @@ export default function WorldCreate() {
         {busy && <p className="rounded-2xl border border-white/80 bg-[#f8faf6]/95 px-5 py-3 text-center text-sm text-[#405246] shadow-xl backdrop-blur-md" data-testid="voxel-gen-stage">{GEN_STAGES[stage]}</p>}
         <div className="rounded-3xl border border-white/80 bg-[#f8faf6]/95 p-5 shadow-xl backdrop-blur-md"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-[#354a3e]">谁会在这里生活?</p><p className="mt-1 text-xs text-[#829083]">选择 1–6 位人物,之后仍可调整世界。</p></div><span className="text-xs text-[#839083]">{selected.length}/6</span></div><div className="mt-3 flex flex-wrap gap-2">{persons.map(person => <button key={person.id} disabled={!selectedIds.has(person.id) && selected.length >= 6} onClick={() => { setSelected(old => old.includes(person.id) ? old.filter(id => id !== person.id) : [...old, person.id]); setError(null) }} aria-pressed={selectedIds.has(person.id)} className={`rounded-full border px-4 py-2 text-sm ${selectedIds.has(person.id) ? 'border-[#597b62] bg-[#e8efe5] text-[#385443]' : 'border-[#e0e4db] bg-white text-[#69766b]'} disabled:opacity-35`}>{person.name}</button>)}</div>
           {!persons.length && <div className="mt-3 text-sm text-[#7b867c]"><p>还没有可选择的人物。</p><Link to={`/people/new?returnTo=/worlds/new${searchParams.get('fromWorld') ? `&fromWorld=${encodeURIComponent(searchParams.get('fromWorld')!)}` : ''}`} onClick={() => createDraftStore.saveContext({ prompt, selectedPersonIds: selected, error, draftRequest: draftRequest.current, createRequest: createRequest.current })} className="mt-1 inline-block font-medium text-[#385443] underline underline-offset-2">创建一位人物</Link></div>}
-          <button data-testid="generate-scene" onClick={generate} disabled={busy || !prompt.trim() || !selected.length} className="mt-4 rounded-full bg-[#274739] px-5 py-2.5 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-45">{busy ? '正在搭建场景…' : '开始创造'}</button>
+          <button data-testid="generate-scene" onClick={generate} disabled={busy || !prompt.trim() || !selected.length} className="mt-4 rounded-full bg-[#274739] px-5 py-2.5 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-45">{busy ? '正在搭建场景…' : error ? '重试生成' : '开始创造'}</button>
         </div>
       </section>}
       {draft && !live && <section className="pointer-events-auto absolute right-3 top-24 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5" data-testid="voxel-create-workspace">
