@@ -32,6 +32,7 @@ const world = {
   name: '阶段一雾影庄',
   description: '白雾町的一座旧宅、温室和石灯庭院。',
   status: 'running',
+  hasScene: true,
   pauseReason: null,
   isDemo: false,
   callsToday: 0,
@@ -89,7 +90,7 @@ async function installRoutes(page: Page): Promise<void> {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'owner-1', username: 'baseline-owner' } } }))
   await page.route('**/api/persons**', route => route.fulfill({ json: { persons: [person] } }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [world] } }))
-  await page.route('**/api/worlds/phase1-core-world/**', route => {
+  await page.route('**/api/worlds/phase1-core-world*', route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/time-zone')) return route.fulfill({ json: { timeZone: world.timeZone } })
     if (path.endsWith('/map/bootstrap')) return route.fulfill({ json: mapBootstrap() })
@@ -113,6 +114,7 @@ type Journey = {
   path: string
   selector: string
   reason?: string
+  openTimelineMenu?: boolean
 }
 
 const journeys: Record<string, Journey> = {
@@ -120,24 +122,24 @@ const journeys: Record<string, Journey> = {
   'BB-02': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'voxel-viewport-canvas' },
   'BB-03': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-04': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
-  'BB-05': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry' },
+  'BB-05': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry', openTimelineMenu: true },
   'BB-06': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-07': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'voxel-viewport-canvas' },
-  'BB-08': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'timeline-switcher' },
+  'BB-08': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'timeline-menu-toggle' },
   'BB-09': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
   'BB-10': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'owner-map-stage' },
   'BB-11': { path: '/worlds/new?person=person-1', selector: 'scene-prompt' },
   'BB-12': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-13': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'owner-map-stage' },
   'BB-14': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
-  'BB-15': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry' },
+  'BB-15': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'fork-entry', openTimelineMenu: true },
   'BB-16': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'BB-17': { path: '/worlds/new?person=person-1', selector: 'scene-create-shell' },
   'BB-18': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-status' },
   'supplemental-registration-claim': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-canvas-page' },
   'supplemental-guest-timezone': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline', selector: 'world-time-zone-setting' },
   'supplemental-interior-3d': { path: '/worlds/phase1-core-world?timeline=phase1-core-timeline&presentation=voxel3d', selector: 'voxel-viewport-canvas' },
-  'supplemental-timeline-display': { path: '/worlds/phase1-core-world?mode=possibility&timeline=phase1-core-timeline', selector: 'timeline-switcher' },
+  'supplemental-timeline-display': { path: '/worlds/phase1-core-world?mode=possibility&timeline=phase1-core-timeline', selector: 'timeline-menu-toggle' },
 }
 
 function caseDefinition(caseId: string): BaselineCase {
@@ -173,7 +175,12 @@ test('records deterministic Phase 1 baseline matrix', async ({ page }, testInfo)
     try {
       if (!journey) throw new Error('未配置确定性入口旅程。')
       await page.goto(journey.path, { waitUntil: 'domcontentloaded' })
-      await page.getByTestId(journey.selector).waitFor({ state: 'visible', timeout: 8_000 })
+      const timelineMenuToggle = page.getByRole('button', { name: /主宇宙|主线/ })
+      if (journey.openTimelineMenu) await timelineMenuToggle.click({ timeout: 8_000 })
+      const target = journey.selector === 'timeline-menu-toggle'
+        ? timelineMenuToggle
+        : page.getByTestId(journey.selector)
+      await target.waitFor({ state: 'visible', timeout: 8_000 })
       result.page = await collectPageEvidence(page, screenshotEnabled ? { screenshotPath: resolve(runDir, 'screenshots', `${caseId}.png`) } : {})
       if (result.page.screenshotPath) result.evidencePaths.push(`screenshots/${caseId}.png`)
       result.http = responseRecords.splice(0)
