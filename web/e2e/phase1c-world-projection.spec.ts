@@ -180,6 +180,7 @@ test.describe('phase1c projection journeys', () => {
     // 无效空间：显示原因与可用替代，不静默回退，也不展示静态庄园样板。
     await expect(page.getByTestId('comparison-pane-single')).toContainText('空间', { timeout: 60_000 })
     record('AC9', {
+      kind: 'negative',
       status: 'passed',
       summary: '伪造世界/空间目标被服务端或读取器拒绝，页面显示业务原因；guest 身份由服务端会话决定',
       requestTarget: { worldAlias: aliases.world('world-that-does-not-exist'), timelineAlias: null, spaceAlias: aliases.space('not-a-space'), presentation: 'native2d' },
@@ -207,6 +208,8 @@ test.describe('phase1c projection journeys', () => {
     await expect(page.getByTestId('pane-facts-left')).toContainText('主宇宙')
     await expect(page.getByTestId('comparison-pane-right')).toContainText('重试此侧', { timeout: 60_000 })
     const leftBefore = await page.getByTestId('pane-facts-left').innerText()
+    const leftSimNow = await page.getByTestId('pane-facts-left').locator('time').innerText()
+    const rightFacts = page.getByTestId('pane-facts-right')
 
     // 解除注入并重试：只有右侧恢复，左侧上下文不变。
     await page.unroute(`**/map/bootstrap*timeline*${forkId}*`)
@@ -214,8 +217,9 @@ test.describe('phase1c projection journeys', () => {
     const dismissTour = page.getByRole('button', { name: '跳过' })
     if (await dismissTour.isVisible().catch(() => false)) await dismissTour.click()
     await page.getByRole('button', { name: '重试此侧' }).click()
-    await expect(page.getByTestId('pane-facts-right')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByTestId('pane-facts-right')).toContainText('投影验收分支')
+    await expect(rightFacts).toBeVisible({ timeout: 60_000 })
+    await expect(rightFacts).toContainText('投影验收分支')
+    const rightSimNow = await rightFacts.locator('time').innerText()
     expect(await page.getByTestId('pane-facts-left').innerText()).toEqual(leftBefore)
 
     // 相机联动门禁：同世界同表现同空间（缺省 exterior）时可用。
@@ -223,29 +227,32 @@ test.describe('phase1c projection journeys', () => {
     await expect(page.getByTestId('comparison-camera-link')).toHaveAttribute('data-camera-link-compatible', 'true')
 
     record('AC6', {
+      kind: 'journey',
       status: 'passed',
       summary: '一侧读取失败显示可重试错误；重试只更新该侧，另一侧目标、画面与状态保持',
       requestTarget: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d' },
-      apiContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
-      pageContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
+      apiContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: rightSimNow },
+      pageContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: rightSimNow },
       substitutes: ['network-fault-injection'],
       evidence: ['phase1c-world-projection.spec.ts:side-failure-recovery'],
     })
     record('AC8', {
+      kind: 'journey',
       status: 'passed',
       summary: '双 pane 各自选择时间线；世界/表现/空间兼容时相机联动可用，一侧失败不重置另一侧',
       requestTarget: { worldAlias, timelineAlias: mainAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d' },
-      apiContext: { worldAlias, timelineAlias: mainAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
-      pageContext: { worldAlias, timelineAlias: mainAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
+      apiContext: { worldAlias, timelineAlias: mainAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: leftSimNow },
+      pageContext: { worldAlias, timelineAlias: mainAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: leftSimNow },
       substitutes: ['network-fault-injection'],
       evidence: ['phase1c-world-projection.spec.ts:camera-link-gate'],
     })
     record('AC12', {
+      kind: 'journey',
       status: 'passed',
       summary: '连续旅程：分叉时间线 + interior → 2D → 3D → 刷新 → 双 pane 比较 → 一侧失败重试，全程无旧响应污染',
-      requestTarget: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('main-house-interior'), presentation: 'voxel3d' },
-      apiContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('main-house-interior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
-      pageContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('main-house-interior'), presentation: 'voxel3d', sceneVersion: null, simNow: null },
+      requestTarget: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d' },
+      apiContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: rightSimNow },
+      pageContext: { worldAlias, timelineAlias: forkAlias, spaceAlias: aliases.space('exterior'), presentation: 'voxel3d', sceneVersion: null, simNow: rightSimNow },
       substitutes: ['demo-world', 'api-fork', 'network-fault-injection'],
       evidence: ['phase1c-world-projection.spec.ts:full-journey'],
     })
@@ -256,6 +263,7 @@ test.describe('phase1c projection journeys', () => {
     await page.goto('/login')
     await expect(page.getByText('Possibility')).toBeVisible()
     record('AC1', {
+      kind: 'contract',
       status: 'passed',
       summary: '上下文匹配契约由 ComparisonPane.paneLoadStateFrom 矩阵覆盖：任一字段不匹配的读取结果都不渲染',
       requestTarget: { worldAlias: null, timelineAlias: null, spaceAlias: null, presentation: null },
@@ -265,6 +273,7 @@ test.describe('phase1c projection journeys', () => {
       evidence: ['src/components/world/presentation/ComparisonPane.test.tsx'],
     })
     record('AC7', {
+      kind: 'contract',
       status: 'passed',
       summary: '旧请求隔离由生命周期矩阵覆盖：延迟 A/快速切换 B 只保留 B；卸载后资源释放由 destroy 计数断言',
       requestTarget: { worldAlias: null, timelineAlias: null, spaceAlias: null, presentation: null },
@@ -274,6 +283,7 @@ test.describe('phase1c projection journeys', () => {
       evidence: ['src/components/world/presentation/PresentationLifecycle.test.ts'],
     })
     record('AC11', {
+      kind: 'contract',
       status: 'passed',
       summary: '定向单测矩阵（契约/路由/读取器/投影/生命周期/相机隔离）与真实旅程共同构成证据；本 manifest 即关联记录',
       requestTarget: { worldAlias: null, timelineAlias: null, spaceAlias: null, presentation: null },

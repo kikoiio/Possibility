@@ -10,6 +10,12 @@ export const PHASE1C_VIEWPORTS = [
 
 export type AcceptanceStatus = 'passed' | 'failed' | 'unverified'
 
+/**
+ * journey：真实入口读取成功并要求 API/页面上下文关联一致；
+ * contract：单元/契约矩阵证据（无页面上下文）；negative：真实入口上的拒绝路径（无 ready 上下文）。
+ */
+export type AcceptanceKind = 'journey' | 'contract' | 'negative'
+
 export type ContextSummary = {
   worldAlias: string | null
   timelineAlias: string | null
@@ -21,6 +27,7 @@ export type ContextSummary = {
 
 export type AcceptanceCase = {
   ac: string
+  kind: AcceptanceKind
   status: AcceptanceStatus
   summary: string
   requestTarget: { worldAlias: string | null; timelineAlias: string | null; spaceAlias: string | null; presentation: string | null }
@@ -78,6 +85,7 @@ export function createContextAliasRegistry() {
 function blankCase(ac: string): AcceptanceCase {
   return {
     ac,
+    kind: 'journey',
     status: 'unverified',
     summary: unverifiedReason,
     requestTarget: { worldAlias: null, timelineAlias: null, spaceAlias: null, presentation: null },

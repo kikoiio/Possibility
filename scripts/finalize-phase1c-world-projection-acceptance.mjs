@@ -48,7 +48,18 @@ export function validateEvidence(manifest, expectedSha = currentSha()) {
   }
   for (const item of cases) {
     if (!item || item.status !== 'passed') continue
+    const kind = item.kind ?? 'journey'
+    if (!Array.isArray(item.evidence) || item.evidence.length === 0) errors.push(`${item.ac} has no evidence paths`)
+    if (kind === 'contract') {
+      // 契约证据来自单元矩阵：无页面上下文，但必须声明替身并指向具体证据来源。
+      if (!Array.isArray(item.substitutes) || item.substitutes.length === 0) errors.push(`${item.ac} contract case has no declared substitutes`)
+      continue
+    }
     if (!item.requestTarget?.worldAlias || !item.requestTarget?.presentation) errors.push(`${item.ac} has no request target association`)
+    if (kind === 'negative') {
+      // 拒绝路径：断言的就是没有 ready 上下文，只要求目标与证据关联。
+      continue
+    }
     if (!item.apiContext?.worldAlias || !item.apiContext?.timelineAlias || item.apiContext?.simNow == null) {
       errors.push(`${item.ac} has no API-confirmed context`)
     }
@@ -59,7 +70,6 @@ export function validateEvidence(manifest, expectedSha = currentSha()) {
       || item.apiContext?.spaceAlias !== item.pageContext?.spaceAlias) {
       errors.push(`${item.ac} page context does not match the API-confirmed context`)
     }
-    if (!Array.isArray(item.evidence) || item.evidence.length === 0) errors.push(`${item.ac} has no evidence paths`)
   }
   return { valid: errors.length === 0, errors }
 }

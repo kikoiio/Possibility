@@ -13,7 +13,8 @@ function fixture(overrides = {}) {
     startedAt: new Date().toISOString(),
     environment: { runner: 'test', viewports: ['desktop:1280x720'], apiMode: 'isolated-worker', modelMode: 'no-model-calls' },
     cases: ACCEPTANCE_IDS.map(ac => ({
-      ac, status: 'passed', summary: 'verified',
+      ac, kind: ac === 'AC1' || ac === 'AC7' || ac === 'AC11' ? 'contract' : ac === 'AC9' ? 'negative' : 'journey',
+      status: 'passed', summary: 'verified',
       requestTarget: { worldAlias: `world-1`, timelineAlias: ac === 'AC2' ? 'timeline-2' : 'timeline-1', spaceAlias: ac === 'AC3' ? 'space-2' : 'space-1', presentation: 'voxel3d' },
       apiContext: {
         worldAlias: 'world-1',
@@ -27,7 +28,8 @@ function fixture(overrides = {}) {
         spaceAlias: ac === 'AC3' ? 'space-2' : 'space-1',
         presentation: 'voxel3d', sceneVersion: 3, simNow: '2026-10-07T12:00:00Z',
       },
-      evidence: [`cases/${ac}.json`], substitutes: [],
+      evidence: [`cases/${ac}.json`],
+      substitutes: ac === 'AC1' || ac === 'AC7' || ac === 'AC11' ? ['unit-matrix'] : [],
     })),
     cleanup: { servicesStopped: true, tempPathsRemoved: true, attempted: true, errors: [] },
     redaction: { status: 'passed', findings: [] },
@@ -42,8 +44,9 @@ test('accepts complete, associated, cleaned and redacted evidence', () => {
 
 test('rejects stale SHA, page/API context drift and unconfirmed cleanup', () => {
   const drifted = fixture()
-  drifted.cases[0].pageContext.simNow = '2020-01-01T00:00:00Z'
-  drifted.cases[0].pageContext.spaceAlias = 'space-9'
+  const journeyCase = drifted.cases.find(item => item.ac === 'AC2')
+  journeyCase.pageContext.simNow = '2020-01-01T00:00:00Z'
+  journeyCase.pageContext.spaceAlias = 'space-9'
   const driftResult = validateEvidence(drifted, 'fixture-sha')
   assert.equal(driftResult.valid, false)
   assert.match(driftResult.errors.join('\n'), /does not match the API-confirmed context/)
@@ -52,6 +55,41 @@ test('rejects stale SHA, page/API context drift and unconfirmed cleanup', () => 
   const staleResult = validateEvidence(stale, 'current-sha')
   assert.equal(staleResult.valid, false)
   assert.match(staleResult.errors.join('\n'), /SHA|cleanup/)
+})
+
+test('contract and negative cases need evidence but not journey context', () => {
+  const contractOnly = fixture()
+  for (const item of contractOnly.cases) {
+    if (item.ac !== 'AC1') { item.status = 'unverified'; continue }
+    item.kind = 'contract'
+    delete item.apiContext
+    delete item.pageContext
+  }
+  assert.deepEqual(validateEvidence(contractOnly, 'fixture-sha'), { valid: true, errors: [] })
+
+  const contractWithoutSubstitutes = JSON.parse(JSON.stringify(contractOnly))
+  contractWithoutSubstitutes.cases[0].substitutes = []
+  const substituteResult = validateEvidence(contractWithoutSubstitutes, 'fixture-sha')
+  assert.equal(substituteResult.valid, false)
+  assert.match(substituteResult.errors.join('\n'), /no declared substitutes/)
+
+  const negativeOnly = fixture()
+  for (const item of negativeOnly.cases) {
+    if (item.ac !== 'AC9') { item.status = 'unverified'; continue }
+    item.kind = 'negative'
+    delete item.apiContext
+    delete item.pageContext
+  }
+  assert.deepEqual(validateEvidence(negativeOnly, 'fixture-sha'), { valid: true, errors: [] })
+
+  const journeyOnly = fixture()
+  for (const item of journeyOnly.cases) {
+    if (item.ac !== 'AC2') { item.status = 'unverified'; continue }
+    delete item.apiContext
+  }
+  const journeyResult = validateEvidence(journeyOnly, 'fixture-sha')
+  assert.equal(journeyResult.valid, false)
+  assert.match(journeyResult.errors.join('\n'), /no API-confirmed context/)
 })
 
 test('rejects credentials and raw trace shaped evidence', () => {
