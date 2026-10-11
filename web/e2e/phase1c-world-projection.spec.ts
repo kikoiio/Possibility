@@ -42,13 +42,18 @@ async function seed(page: Page, request: APIRequestContext) {
   await expect(page.getByTestId('guest-world-map')).toBeVisible({ timeout: 60_000 })
 }
 
-async function demoWorldId(request: APIRequestContext): Promise<string> {
-  const demo = await request.get('/api/public/demo')
-  expect(demo.ok()).toBe(true)
-  return ((await demo.json()) as { id: string }).id
+/** The guest sandbox is a private clone; its world id comes from the guest session. */
+async function sandboxWorldId(page: Page): Promise<string> {
+  const session = await page.evaluate(async () => {
+    const response = await fetch('/api/demo/session')
+    if (!response.ok) throw new Error(`demo session unavailable: ${response.status}`)
+    return response.json() as Promise<{ worldId: string }>
+  })
+  expect(session.worldId).toBeTruthy()
+  return session.worldId
 }
 
-/** Creates a readable fork of the guest demo world through its own guest session. */
+/** Creates a readable fork of the guest sandbox world through its own guest session. */
 async function forkDemoWorld(page: Page, request: APIRequestContext, worldId: string): Promise<string> {
   const guestToken = await page.evaluate(() => localStorage.getItem('possibility_guest_token'))
   expect(guestToken).toBeTruthy()
@@ -76,7 +81,7 @@ test.describe('phase1c projection journeys', () => {
       if (req.method() !== 'GET') writes.push(`${req.method()} ${new URL(req.url()).pathname}`)
     })
     await seed(page, request)
-    const worldId = await demoWorldId(request)
+    const worldId = await sandboxWorldId(page)
     const forkId = await forkDemoWorld(page, request, worldId)
     const worldAlias = aliases.world(worldId)
     const forkAlias = aliases.timeline(forkId)
@@ -182,7 +187,7 @@ test.describe('phase1c projection journeys', () => {
   test('AC6/AC8/AC12 comparison panes stay isolated when one side fails and recovers', async ({ page, request }) => {
     test.setTimeout(240_000)
     await seed(page, request)
-    const worldId = await demoWorldId(request)
+    const worldId = await sandboxWorldId(page)
     const forkId = await forkDemoWorld(page, request, worldId)
     const worldAlias = aliases.world(worldId)
     const mainAlias = aliases.timeline('main')
