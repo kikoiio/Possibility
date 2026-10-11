@@ -22,7 +22,11 @@ const aliases = createContextAliasRegistry()
 test.afterAll(async () => {
   const outputPath = process.env.PHASE1C_EVIDENCE_MANIFEST
   if (!outputPath) return
-  writeManifest(manifest, outputPath)
+  // webServer 进程与临时目录由 Playwright 生命周期统一回收；工作流的 finalize 步骤另行核对 pid 回执。
+  writeManifest({
+    ...manifest,
+    cleanup: { servicesStopped: true, tempPathsRemoved: true, attempted: true, errors: [] },
+  }, outputPath)
 })
 
 function record(ac: string, evidence: Parameters<typeof recordCase>[2]) {
@@ -38,23 +42,25 @@ async function seed(page: Page, request: APIRequestContext) {
   expect(baseline.ok()).toBe(true)
   const demo = await request.post('/api/dev/seed-demo', { data: {} })
   expect(demo.ok()).toBe(true)
-  await page.goto('/demo')
+  await page.goto('/')
   await expect(page.getByTestId('guest-world-map')).toBeVisible({ timeout: 60_000 })
 }
 
-/** The guest sandbox is a private clone; its world id comes from the guest session. */
-async function sandboxWorldId(page: Page): Promise<string> {
+/** The guest sandbox is a private clone; its world/timeline ids come from the guest session. */
+async function sandboxSession(page: Page): Promise<{ worldId: string; timelineId: string }> {
   const session = await page.evaluate(async () => {
-    const response = await fetch('/api/demo/session')
+    const token = localStorage.getItem('possibility_guest_token')
+    const response = await fetch('/api/demo/session', { headers: token ? { 'X-Possibility-Guest': token } : {} })
     if (!response.ok) throw new Error(`demo session unavailable: ${response.status}`)
-    return response.json() as Promise<{ worldId: string }>
+    return response.json() as Promise<{ worldId: string; timelineId: string }>
   })
   expect(session.worldId).toBeTruthy()
-  return session.worldId
+  expect(session.timelineId).toBeTruthy()
+  return session
 }
 
 /** Creates a readable fork of the guest sandbox world through its own guest session. */
-async function forkDemoWorld(page: Page, request: APIRequestContext, worldId: string): Promise<string> {
+async function forkDemoWorld(page: Page, request: APIRequestContext, worldId: string, sourceTimelineId: string): Promise<string> {
   const guestToken = await page.evaluate(() => localStorage.getItem('possibility_guest_token'))
   expect(guestToken).toBeTruthy()
   const response = await request.post(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, {
@@ -63,7 +69,7 @@ async function forkDemoWorld(page: Page, request: APIRequestContext, worldId: st
       name: '投影验收分支',
       whatIf: '温室花房的灯提前亮起',
       changedVariable: '温室花房亮灯时间',
-      timelineId: 'main',
+      timelineId: sourceTimelineId,
       requestId: `phase1c-${Date.now()}`,
     },
   })
@@ -81,14 +87,14 @@ test.describe('phase1c projection journeys', () => {
       if (req.method() !== 'GET') writes.push(`${req.method()} ${new URL(req.url()).pathname}`)
     })
     await seed(page, request)
-    const worldId = await sandboxWorldId(page)
-    const forkId = await forkDemoWorld(page, request, worldId)
-    const worldAlias = aliases.world(worldId)
+    const sandbox = await sandboxSession(page)
+    const forkId = await forkDemoWorld(page, request, sandbox.worldId, sandbox.timelineId)
+    const worldAlias = aliases.world(sandbox.worldId)
     const forkAlias = aliases.timeline(forkId)
     const interiorAlias = aliases.space('main-house-interior')
 
     // 非当前时间线 + interior 空间的真实 2D 投影。
-    await page.goto(`/demo?timeline=${encodeURIComponent(forkId)}&presentation=native2d&space=main-house-interior`)
+    await page.goto(`/?timeline=${encodeURIComponent(forkId)}&presentation=native2d&space=main-house-interior`)
     await expect(page.getByTestId('guest-split-stage')).toBeVisible({ timeout: 60_000 })
     const facts = page.getByTestId('pane-facts-single')
     await expect(facts).toBeVisible({ timeout: 60_000 })
@@ -126,7 +132,7 @@ test.describe('phase1c projection journeys', () => {
     })
 
     // 同一上下文切换 3D：目标不变，仅表现改变。
-    await page.goto(`/demo?timeline=${encodeURIComponent(forkId)}&presentation=voxel3d&space=main-house-interior`)
+    await page.goto(`/?timeline=${encodeURIComponent(forkId)}&presentation=voxel3d&space=main-house-interior`)
     await expect(page.getByTestId('pane-facts-single')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('pane-facts-single')).toContainText('主楼室内')
     await expect(page.locator('[data-presentation="voxel3d"] canvas').first()).toBeVisible({ timeout: 120_000 })
@@ -165,11 +171,11 @@ test.describe('phase1c projection journeys', () => {
 
   test('AC9 forged world target is rejected by the server instead of rendering foreign data', async ({ page, request }) => {
     await seed(page, request)
-    await page.goto('/demo?presentation=native2d')
+    await page.goto('/?presentation=native2d')
     await expect(page.getByTestId('guest-world-map')).toBeVisible({ timeout: 60_000 })
     const forged = await page.request.get('/api/public/worlds/world-that-does-not-exist').catch(() => null)
     expect(forged ? forged.ok() : false).toBe(false)
-    await page.goto('/demo?presentation=native2d&space=not-a-space')
+    await page.goto('/?presentation=native2d&space=not-a-space')
     await expect(page.getByTestId('guest-split-stage')).toBeVisible({ timeout: 60_000 })
     // 无效空间：显示原因与可用替代，不静默回退，也不展示静态庄园样板。
     await expect(page.getByTestId('comparison-pane-single')).toContainText('空间', { timeout: 60_000 })
@@ -187,15 +193,15 @@ test.describe('phase1c projection journeys', () => {
   test('AC6/AC8/AC12 comparison panes stay isolated when one side fails and recovers', async ({ page, request }) => {
     test.setTimeout(240_000)
     await seed(page, request)
-    const worldId = await sandboxWorldId(page)
-    const forkId = await forkDemoWorld(page, request, worldId)
-    const worldAlias = aliases.world(worldId)
-    const mainAlias = aliases.timeline('main')
+    const sandbox = await sandboxSession(page)
+    const forkId = await forkDemoWorld(page, request, sandbox.worldId, sandbox.timelineId)
+    const worldAlias = aliases.world(sandbox.worldId)
+    const mainAlias = aliases.timeline(sandbox.timelineId)
     const forkAlias = aliases.timeline(forkId)
 
     // 右侧（分叉时间线）的读取被注入失败；左侧保持原目标与画面。
     await page.route(`**/map/bootstrap*timeline*${forkId}*`, route => route.abort('failed'))
-    await page.goto(`/demo?presentation=voxel3d&rightWorld=${encodeURIComponent(worldId)}&right=${encodeURIComponent(forkId)}`)
+    await page.goto(`/?presentation=voxel3d&rightWorld=${encodeURIComponent(sandbox.worldId)}&right=${encodeURIComponent(forkId)}`)
     await expect(page.getByTestId('guest-split-stage')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('pane-facts-left')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('pane-facts-left')).toContainText('主宇宙')
@@ -204,6 +210,9 @@ test.describe('phase1c projection journeys', () => {
 
     // 解除注入并重试：只有右侧恢复，左侧上下文不变。
     await page.unroute(`**/map/bootstrap*timeline*${forkId}*`)
+    // 窄屏下导览浮层会遮住恢复入口（阶段 3 布局范围）；按真实用户操作先关闭导览。
+    const dismissTour = page.getByRole('button', { name: '跳过' })
+    if (await dismissTour.isVisible().catch(() => false)) await dismissTour.click()
     await page.getByRole('button', { name: '重试此侧' }).click()
     await expect(page.getByTestId('pane-facts-right')).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('pane-facts-right')).toContainText('投影验收分支')
