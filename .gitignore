@@ -7,9 +7,8 @@ api/wrangler.staging-test.toml
 *.local
 .DS_Store
 .playwright-mcp
-/docs/*
-!/docs/README.md
-!/docs/PRODUCT_VISION.md
+# 项目文档仅保留在本地，不提交到 GitHub
+/docs/
 .agents
 .codex
 .claude
