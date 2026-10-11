@@ -1429,8 +1429,8 @@ test('A9.4 登出期间迟到的旧世界诊断不进入新账号页面', async 
   await inspectionEntered
   // The compatibility dialog covers the map header while the inspection is pending.
   // Open the real settings disclosure and invoke its logout control during the request.
-  await page.locator('details summary[aria-label="设置"]').evaluate(summary => (summary as HTMLElement).click())
-  await page.getByRole('button', { name: '退出登录' }).evaluate(button => (button as HTMLButtonElement).click())
+  await page.getByRole('button', { name: '设置', exact: true }).evaluate(button => (button as HTMLButtonElement).click())
+  await page.getByRole('dialog', { name: '设置与世界管理' }).getByRole('button', { name: '退出登录' }).evaluate(button => (button as HTMLButtonElement).click())
   await page.waitForURL(/\/login/)
   const afterLogout = await page.evaluate(() => localStorage.getItem('possibility:scene-compatibility:v1'))
   expect(afterLogout ?? '').not.toContain(`${ownerId}\u0000${E01_WORLD}`)
