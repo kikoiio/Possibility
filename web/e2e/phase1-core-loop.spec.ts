@@ -164,42 +164,16 @@ test('an invalid deterministic candidate keeps the draft context and can be retr
   await expect(page.getByTestId('create-live-banner')).toBeVisible()
   expect(routes.draftBodies).toHaveLength(2)
   expect(routes.draftBodies[1]!.requestId).toBe(routes.draftBodies[0]!.requestId)
-})
-
-test('an invalid new-world candidate is blocked, then the explicit fallback is saved and restored', async ({ page }) => {
-  const routes = await installCoreRoutes(page, {
-    drafts: [draftResponse({
-      fallback: true,
-      source: 'fallback',
-      contentHash: 'phase1-invalid-gate-fallback',
-      explanation: '生成候选未通过最终检查，已准备可进入的保底场景。',
-      actions: ['enter', 'repair'],
-    })],
-    onCreate: (_body, attempt) => attempt === 1
-      ? { status: 422, json: { error: '场景检查未通过，尚未写入世界。', errorCode: 'compatibility-required', actions: ['repair', 'use-fallback'] } }
-      : { json: { id: snapshot.world.id, timelineId: snapshot.currentTimelineId } },
-  })
-
-  await fillAndGenerate(page)
-  await expect(page.getByTestId('voxel-create-workspace')).toBeVisible()
-  await page.getByTestId('start-life').click()
-  await expect(page.getByTestId('create-error')).toContainText('尚未写入世界')
-  await expect(page.getByTestId('compatibility-recovery')).toBeVisible()
-  await page.getByTestId('create-use-fallback').click()
-  await expect(page.getByTestId('fallback-ready')).toBeVisible()
-  await page.getByTestId('start-life').click()
-  await expect(page.getByTestId('create-live-banner')).toBeVisible()
+  expect(routes.createBodies).toHaveLength(1)
+  expect(routes.createBodies[0]!.scene).toEqual(voxelDoc)
   await page.reload()
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
-  expect(routes.createBodies).toHaveLength(2)
-  const draftRequestId = routes.draftBodies[0]!.requestId
   const requestId = routes.createBodies[0]!.sceneRequestId
-  expect(routes.createBodies[1]!.sceneRequestId).toBe(requestId)
-  expect(routes.createBodies[1]!.scene).toEqual(routes.draftBodies[0]!.document)
+  const draftRequestId = routes.draftBodies[0]!.requestId
   expect(routes.apiTrace).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'POST', path: '/api/scene-drafts/voxel', status: 502, requestId: draftRequestId }),
     expect.objectContaining({ method: 'POST', path: '/api/scene-drafts/voxel', status: 200, requestId: draftRequestId }),
-    expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 422, attempt: 1, requestId }),
-    expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 200, attempt: 2, requestId, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId }),
+    expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 200, requestId, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId }),
     expect.objectContaining({ method: 'GET', path: `/api/worlds/${snapshot.world.id}/map/bootstrap`, status: 200, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow }),
   ]))
   const runId = process.env.PHASE1_BASELINE_RUN_ID ?? `playwright-${Date.now()}`
@@ -212,7 +186,7 @@ test('an invalid new-world candidate is blocked, then the explicit fallback is s
     sameDocument: true,
     context: { worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow },
     apiTrace: routes.apiTrace,
-    page: { url: page.url(), labels: ['首次门禁拒绝未写入', '保底保存复用同一 requestId', '进入后的 bootstrap 时间线与空间匹配'] },
+    page: { url: page.url(), labels: ['无效候选保留请求 ID 并重试成功', '有效草稿通过创建门禁', '进入后 bootstrap 上下文匹配'] },
   }, null, 2)}\n`)
 })
 

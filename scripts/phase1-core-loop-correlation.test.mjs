@@ -8,9 +8,9 @@ function evidence(overrides = {}) {
   return {
     runId: 'github-123', requestId: 'create-request-1', draftRequestId: 'draft-request-1', sameDocument: true, context,
     apiTrace: [
-      { method: 'POST', path: '/api/scene-drafts/voxel', status: 200, requestId: 'draft-request-1' },
-      { method: 'POST', path: '/api/worlds', status: 422, attempt: 1, requestId: 'create-request-1' },
-      { method: 'POST', path: '/api/worlds', status: 200, attempt: 2, requestId: 'create-request-1', worldId: 'world-1', timelineId: 'timeline-1' },
+      { method: 'POST', path: '/api/scene-drafts/voxel', status: 502, attempt: 1, requestId: 'draft-request-1' },
+      { method: 'POST', path: '/api/scene-drafts/voxel', status: 200, attempt: 2, requestId: 'draft-request-1' },
+      { method: 'POST', path: '/api/worlds', status: 200, attempt: 1, requestId: 'create-request-1', worldId: 'world-1', timelineId: 'timeline-1' },
       { method: 'GET', path: '/api/worlds/world-1/map/bootstrap', status: 200, ...context },
     ],
     page: { url: '/worlds/world-1', labels: ['已保存并恢复'] },
@@ -19,7 +19,7 @@ function evidence(overrides = {}) {
 }
 
 describe('validateCoreJourneyCorrelation', () => {
-  it('accepts one request linked from the blocked gate through save and authoritative bootstrap', () => {
+  it('accepts one journey linked from generation retry through creation and authoritative bootstrap', () => {
     assert.deepEqual(validateCoreJourneyCorrelation(evidence(), 'github-123'), { passed: true, errors: [] })
   })
 
@@ -27,7 +27,7 @@ describe('validateCoreJourneyCorrelation', () => {
     const mixed = evidence()
     mixed.runId = 'github-other'
     mixed.apiTrace[2].requestId = 'create-request-other'
-    mixed.apiTrace[0].requestId = 'draft-request-other'
+    mixed.apiTrace[1].requestId = 'draft-request-other'
     mixed.apiTrace[3].timelineId = 'timeline-other'
     const result = validateCoreJourneyCorrelation(mixed, 'github-123')
     assert.equal(result.passed, false)

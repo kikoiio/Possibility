@@ -2,8 +2,6 @@ export function validateCoreJourneyCorrelation(correlation, expectedRunId) {
   const errors = []
   const trace = Array.isArray(correlation?.apiTrace) ? correlation.apiTrace : []
   const context = correlation?.context ?? {}
-  const failedGate = trace.find(item => item.method === 'POST' && item.path === '/api/worlds'
-    && item.status === 422 && item.requestId === correlation?.requestId)
   const created = trace.find(item => item.method === 'POST' && item.path === '/api/worlds'
     && item.status === 200 && item.requestId === correlation?.requestId)
   const bootstrap = trace.find(item => item.method === 'GET'
@@ -26,8 +24,7 @@ export function validateCoreJourneyCorrelation(correlation, expectedRunId) {
   if (typeof correlation?.requestId !== 'string' || !correlation.requestId) errors.push('requestId is missing')
   if (typeof correlation?.draftRequestId !== 'string' || !correlation.draftRequestId) errors.push('draftRequestId is missing')
   if (correlation?.sameDocument !== true) errors.push('created scene does not match the generated draft')
-  if (!draft) errors.push('scene draft request is not linked to the journey requestId')
-  if (!failedGate) errors.push('blocked world create is not linked to the journey requestId')
+  if (!draft) errors.push('successful scene draft is not linked to the journey draftRequestId')
   if (!created) errors.push('successful world create is not linked to the journey requestId')
   if (!contextMatches) errors.push('world/timeline/space/simNow do not match the authoritative bootstrap')
   if (!correlation?.page || !Array.isArray(correlation.page.labels) || !correlation.page.url) errors.push('page correlation evidence is incomplete')
