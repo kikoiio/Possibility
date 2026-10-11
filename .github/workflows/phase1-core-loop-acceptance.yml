@@ -61,10 +61,15 @@ jobs:
           PHASE1_BASELINE_RUN_ID: github-${{ github.run_id }}
           PHASE1_BASELINE_SCREENSHOTS: 'true'
           PHASE1_RESPONSIVE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/phase1-core-loop/github-${{ github.run_id }}/responsive
+          PLAYWRIGHT_COMPAT_API_PORT: '18798'
+          PLAYWRIGHT_COMPAT_WEB_PORT: '15198'
+          PLAYWRIGHT_COMPAT_PERSIST_TO: ${{ runner.temp }}/phase1-compatibility-${{ github.run_id }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/artifacts/phase1-core-loop/github-${{ github.run_id }}/compatibility-results.json
         run: |
           npx playwright test e2e/phase1-core-loop-baseline.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1
           npx playwright test e2e/phase1-core-loop.spec.ts --project=desktop-chromium --workers=1 --grep='responsive fallback journey'
+          npm run test:e2e:compat -- --project=compatibility-desktop --workers=1 --reporter=list,json
 
       - name: Summarize matrix and verify cleanup
         if: always()

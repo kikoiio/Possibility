@@ -22,6 +22,19 @@ if (!existsSync(matrixPath)) throw new Error(`Missing browser matrix: ${matrixPa
 const matrix = JSON.parse(readFileSync(matrixPath, 'utf8'))
 const counts = Object.fromEntries(['passed', 'failed', 'unverified'].map(status => [status, matrix.cases.filter(item => item.status === status).length]))
 const responsiveDir = join(runDir, 'responsive')
+const compatibilityResultsPath = join(runDir, 'compatibility-results.json')
+let compatibilitySummary = { status: 'unverified', expected: 0, unexpected: null }
+try {
+  const results = JSON.parse(readFileSync(compatibilityResultsPath, 'utf8'))
+  compatibilitySummary = {
+    status: results.stats?.unexpected === 0 ? 'passed' : 'failed',
+    expected: results.stats?.expected ?? 0,
+    unexpected: results.stats?.unexpected ?? null,
+  }
+  if (compatibilitySummary.status !== 'passed' || compatibilitySummary.expected === 0) errors.push('Real compatibility browser suite did not pass or had no tests.')
+} catch {
+  errors.push('Real compatibility browser suite JSON evidence is missing.')
+}
 const responsiveCases = ['narrow-485', 'narrow-390'].map(name => {
   const resultPath = join(responsiveDir, `${name}-result.json`)
   const screenshotPath = join(responsiveDir, `${name}-fallback-ready.png`)
@@ -36,20 +49,26 @@ const responsiveCases = ['narrow-485', 'narrow-390'].map(name => {
 })
 const gui = { status: 'unverified', reason: 'Phase 1 is a browser based web flow; the repository has no native GUI target for this acceptance stage.' }
 
+const compatibilityTempPath = process.env.PLAYWRIGHT_COMPAT_PERSIST_TO
 const activePorts = []
-for (const port of [15173, 18787]) if (await canConnect(port)) activePorts.push(port)
+for (const port of [15173, 18787, 15198, 18798]) if (await canConnect(port)) activePorts.push(port)
 if (activePorts.length) errors.push(`Acceptance services still listening on ports ${activePorts.join(', ')}`)
 
 if (activePorts.length === 0) {
-  const tempNames = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
+  const tempNames = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'possibility-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
   for (const name of tempNames) {
     try { rmSync(join('/tmp', name), { recursive: true, force: true }) }
     catch (error) { errors.push(`Could not remove /tmp/${name}: ${error instanceof Error ? error.message : String(error)}`) }
   }
+  if (compatibilityTempPath) {
+    try { rmSync(compatibilityTempPath, { recursive: true, force: true }) }
+    catch (error) { errors.push(`Could not remove compatibility fixture directory: ${error instanceof Error ? error.message : String(error)}`) }
+  }
 }
 
-const remainingTemps = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
+const remainingTemps = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'possibility-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
 if (remainingTemps.length) errors.push(`Temporary paths remain: ${remainingTemps.join(', ')}`)
+if (compatibilityTempPath && existsSync(compatibilityTempPath)) errors.push('Compatibility fixture directory remains.')
 matrix.cleanup = {
   servicesStopped: activePorts.length === 0,
   tempPathsRemoved: remainingTemps.length === 0,
@@ -67,6 +86,10 @@ const summary = [
   '',
   ...responsiveCases.map(item => `- ${item.name} (${item.width ?? '?'}×${item.height ?? '?'}): ${item.status}${item.screenshot ? ` · \`${item.screenshot}\`` : ` · ${item.reason}`}`),
   `- Native GUI: ${gui.status} · ${gui.reason}`,
+  '',
+  '### Real compatibility browser suite',
+  '',
+  `- ${compatibilitySummary.status}: ${compatibilitySummary.expected} tests; unexpected=${compatibilitySummary.unexpected ?? 'unknown'}. JSON: \`compatibility-results.json\``,
   '',
   `Cleanup: services stopped=${matrix.cleanup.servicesStopped}; temporary paths removed=${matrix.cleanup.tempPathsRemoved}${errors.length ? `; errors=${errors.join('; ')}` : ''}`,
   '',
