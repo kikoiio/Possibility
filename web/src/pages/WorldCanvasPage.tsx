@@ -34,6 +34,7 @@ import PresentationSwitcher from '../components/world/presentation/PresentationS
 import { createPresentationRuntime } from '../components/world/presentation/presentation-runtime'
 import { readPresentationRoute, updatePanePresentation, updatePaneTimeline, updateRightPaneTarget } from '../components/world/presentation/presentation-route'
 import { createPresentationStateStore } from '../lib/presentation-state'
+import { createGuestClaimStore, createInitialGuestClaimContext } from '../guest/claim-store'
 
 type AsyncReadState<T> =
   | { status: 'closed' | 'loading' }
@@ -44,7 +45,7 @@ type AsyncReadState<T> =
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
  * 文字主视图已退役;辅助文字以覆盖层形式保留。
  */
-export default function WorldCanvasPage({ worldId, readonly = false, guest = false, claimPending = false }: { worldId: string; readonly?: boolean; guest?: boolean; claimPending?: boolean }) {
+export default function WorldCanvasPage({ worldId, readonly = false, guest = false, claimPending = false, guestSession }: { worldId: string; readonly?: boolean; guest?: boolean; claimPending?: boolean; guestSession?: { sessionId: string; worldId: string; generation: number } }) {
   const [search, setSearch] = useSearchParams(); const timelineId = search.get('timeline')
   const navigate = useNavigate()
   const presentationStore = useMemo(() => createPresentationStateStore(), [])
@@ -75,6 +76,15 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const splitEventEls = useRef(new Map<string, HTMLElement>())
   const [mode, setMode] = useState<'life' | 'possibility'>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life')
   const [error, setError] = useState('')
+  const persistClaimIntent = useCallback(() => {
+    if (!guest || !guestSession) return true
+    const store = createGuestClaimStore()
+    const existing = store.read()
+    if (existing.kind === 'ready' && existing.context.source.sessionId === guestSession.sessionId && existing.context.source.worldId === guestSession.worldId && existing.context.source.generation === guestSession.generation) return true
+    const result = store.write(createInitialGuestClaimContext({ sessionId: guestSession.sessionId, worldId: guestSession.worldId, generation: guestSession.generation }, { guestToken: getGuestToken() }))
+    if (!result.ok) { setError('浏览器存储不可用，无法可靠保存访客副本。'); return false }
+    return true
+  }, [guest, guestSession])
   useEffect(() => {
     setGuestRequestContext(guest)
     return () => setGuestRequestContext(false)
@@ -944,6 +954,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       /> : null}
       guest={guest}
       claimPending={claimPending}
+      onClaimIntent={persistClaimIntent}
       editable={canEditScene}
       planEdits={canEditScene ? planSceneEdits : undefined}
       preflightEdits={canEditScene ? preflightSceneCandidate : undefined}

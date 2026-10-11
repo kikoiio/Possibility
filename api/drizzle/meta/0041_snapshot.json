@@ -1,0 +1,11 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "phase1b-guest-claim-operations",
+  "prevId": "2a61745b-0c38-44ba-8480-315109473c95",
+  "tables": {},
+  "views": {},
+  "enums": {},
+  "_meta": { "schemas": {}, "tables": {}, "columns": {} },
+  "internal": { "indexes": {} }
+}

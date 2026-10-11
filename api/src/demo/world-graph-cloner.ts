@@ -17,6 +17,8 @@ export interface CloneWorldGraphInput {
   targetOwnerId: string
   requestId: string
   name?: string
+  /** Claim candidates are held by the source guest owner until publication. */
+  staging?: { executionId: string; ownerId?: string }
 }
 
 export interface CloneWorldGraphResult {
@@ -164,8 +166,12 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     ? await db.select().from(dialogueTurns).where(inArray(dialogueTurns.dialogueId, dialogueRows.map(row => row.id))).all() : []
 
   const statements: BatchItem<'sqlite'>[] = []
-  statements.push(db.insert(worlds).values({ ...source, id: worldId, userId: input.targetOwnerId, name: input.name ?? source.name, isDemo: false }))
-  pushInChunks(statements, sourcePeople.map(row => ({ ...row, id: personIds.get(row.id)!, userId: input.targetOwnerId })), chunk => db.insert(persons).values(chunk))
+  const ownerId = input.staging?.ownerId ?? input.targetOwnerId
+  // Keep the target owner on the world row so scene proof triggers can validate
+  // the intended publication owner; the staging marker still hides the world.
+  statements.push(db.insert(worlds).values({ ...source, id: worldId, userId: input.targetOwnerId, name: input.name ?? source.name, isDemo: false,
+    status: input.staging ? 'paused' : source.status, claimStagingExecutionId: input.staging?.executionId ?? null }))
+  pushInChunks(statements, sourcePeople.map(row => ({ ...row, id: personIds.get(row.id)!, userId: ownerId })), chunk => db.insert(persons).values(chunk))
   pushInChunks(statements, links.map(row => ({ ...row, worldId, personId: personIds.get(row.personId)! })), chunk => db.insert(worldPersons).values(chunk))
   pushInChunks(statements, sourceTimelines.map(row => ({
     ...row, id: timelineIds.get(row.id)!, worldId,
@@ -210,7 +216,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     timelineId: row.timelineId ? timelineIds.get(row.timelineId) ?? null : null,
   }))), chunk => db.insert(memories).values(chunk))
   pushInChunks(statements, conversationRows.map(row => ({
-    ...row, id: conversationIds.get(row.id)!, userId: input.targetOwnerId, personId: personIds.get(row.personId)!, timelineId: timelineIds.get(row.timelineId)!,
+    ...row, id: conversationIds.get(row.id)!, userId: ownerId, personId: personIds.get(row.personId)!, timelineId: timelineIds.get(row.timelineId)!,
   })), chunk => db.insert(conversations).values(chunk))
   pushInChunks(statements, await Promise.all(messageRows.map(async row => ({ ...row,
     id: await stableId(input.requestId, 'message', row.id), conversationId: conversationIds.get(row.conversationId)!,
@@ -227,7 +233,7 @@ export async function cloneWorldGraph(db: Db, input: CloneWorldGraphInput): Prom
     personId: personIds.get(row.personId)!, visitorId: personIds.get(row.visitorId)!,
     sourceDialogueId: row.sourceDialogueId ? dialogueIds.get(row.sourceDialogueId) ?? null : null,
   }))), chunk => db.insert(commitments).values(chunk))
-  pushInChunks(statements, visitRows.map(row => ({ ...row, userId: input.targetOwnerId, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(worldVisits).values(chunk))
+  pushInChunks(statements, visitRows.map(row => ({ ...row, userId: ownerId, timelineId: timelineIds.get(row.timelineId)! })), chunk => db.insert(worldVisits).values(chunk))
   // X1: clone timeline-scoped scene history and remap parent revision IDs so
   // the clone never points back into the source world.
   const sceneIdentityMap = new Map<string, string>([...personIds, ...timelineIds])

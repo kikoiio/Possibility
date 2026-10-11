@@ -157,6 +157,48 @@ export async function apiFetchAsGuest<T>(path: string, options: RequestInit = {}
   return res.json() as Promise<T>
 }
 
+/** An authentication request has no actor yet: never attach a guest credential. */
+async function apiFetchUnauthenticated<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  headers.delete('Authorization')
+  headers.delete('X-Possibility-Guest')
+  const response = await fetch(path, { ...options, headers })
+  if (!response.ok) {
+    const data = await readApiErrorEnvelope(response)
+    const error = new ApiError(response.status, data.error ?? `请求失败（${response.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
+    error.actions = data.actions
+    error.summary = data.summary
+    error.requestId = data.requestId
+    throw error
+  }
+  return response.json() as Promise<T>
+}
+
+/** Claim endpoints deliberately carry both identities and never clear the guest copy on account 401. */
+async function apiFetchWithClaimIdentity<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const accountToken = getToken()
+  const guestToken = getGuestToken()
+  if (accountToken) headers.set('Authorization', `Bearer ${accountToken}`)
+  if (guestToken) headers.set('X-Possibility-Guest', guestToken)
+  const response = await fetch(path, { ...options, headers })
+  if (response.status === 401) {
+    // The account session can expire while the source copy remains valid.
+    if (accountToken) clearToken()
+  }
+  if (!response.ok) {
+    const data = await readApiErrorEnvelope(response)
+    const error = new ApiError(response.status, data.error ?? `请求失败（${response.status}）`, data.issues, data.kind, data.callsUsed, data.errorCode)
+    error.actions = data.actions
+    error.summary = data.summary
+    error.requestId = data.requestId
+    throw error
+  }
+  return response.json() as Promise<T>
+}
+
 /** SSE 事件（后端 data: {...}\n\n 格式） */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SSEEvent = { type: string; [key: string]: any }
@@ -377,9 +419,33 @@ export const guestMapApi = {
 }
 
 export const authApi = {
+  login: (credentials: { username: string; password: string }) =>
+    apiFetchUnauthenticated<{ token: string; user: { id: string; username: string } }>('/api/auth/login', {
+      method: 'POST', body: JSON.stringify(credentials),
+    }),
+  register: (credentials: { username: string; password: string }) =>
+    apiFetchUnauthenticated<{ token: string; user: { id: string; username: string } }>('/api/auth/register', {
+      method: 'POST', body: JSON.stringify(credentials),
+    }),
   me: (options?: { redirectOnUnauthorized?: boolean }) =>
     apiFetch<{ user: { id: string; username: string } }>('/api/auth/me', {}, options),
 }
+
+export type ClaimSourceBinding = { sessionId: string; worldId: string; generation: number }
+export type ClaimRequest = { requestId: string; expectedEpoch: number; expectedBinding: ClaimSourceBinding }
+export type RecoverClaimRequest = {
+  requestId: string
+  observedEpoch: number
+  observedExecutionId: string | null
+  expectedBinding: ClaimSourceBinding
+}
+export type ClaimStatus =
+  | { kind: 'not-started'; epoch: number; safeToSwitch: false }
+  | { kind: 'in-progress'; epoch: number; executionId?: string; recoveryAvailable: boolean; safeToSwitch: false }
+  | { kind: 'retryable'; epoch: number; safeToSwitch: true }
+  | { kind: 'claimed'; worldId: string; replayed: boolean }
+  | { kind: 'conflict'; code: 'already_claimed_elsewhere' }
+  | { kind: 'unavailable'; code: 'claim_unavailable' | 'source_changed' }
 
 export const demoApi = {
   start: async () => {
@@ -394,16 +460,33 @@ export const demoApi = {
     setGuestClaimPending(false)
     return result
   },
-  claim: async (requestId: string = crypto.randomUUID()) => {
-    setGuestClaimPending(true)
-    const result = await apiFetch<{ kind: 'claimed'; worldId: string; replayed: boolean }>('/api/demo/session/claim', {
-      method: 'POST',
-      headers: getGuestToken() ? { 'X-Possibility-Guest': getGuestToken()! } : undefined,
-      body: JSON.stringify({ requestId }),
+  claimStatus: async (input: { requestId: string; expectedBinding: ClaimSourceBinding }) => {
+    const query = new URLSearchParams({
+      requestId: input.requestId,
+      sessionId: input.expectedBinding.sessionId,
+      worldId: input.expectedBinding.worldId,
+      generation: String(input.expectedBinding.generation),
     })
-    setGuestClaimPending(false)
-    return result
+    return apiFetchWithClaimIdentity<ClaimStatus>(`/api/demo/session/claim?${query.toString()}`, { cache: 'no-store' })
   },
+  claim: async (request: ClaimRequest | string = crypto.randomUUID(), options: { signal?: AbortSignal } = {}) => {
+    const requestId = typeof request === 'string' ? request : request.requestId
+    setGuestClaimPending(true)
+    const body = typeof request === 'string' ? { requestId } : request
+    try {
+      const result = await apiFetchWithClaimIdentity<ClaimStatus>('/api/demo/session/claim', {
+        method: 'POST', body: JSON.stringify(body), signal: options.signal,
+      })
+      if (result.kind === 'claimed') setGuestClaimPending(false)
+      return result
+    } finally {
+      // A failed/unknown request still leaves the pending marker for recovery.
+      if (typeof request === 'string') setGuestClaimPending(false)
+    }
+  },
+  recoverClaim: (request: RecoverClaimRequest) => apiFetchWithClaimIdentity<ClaimStatus>('/api/demo/session/claim/recover', {
+    method: 'POST', body: JSON.stringify(request),
+  }),
   fork: (worldId: string, timelineId: string, input: Pick<ForkScenarioInput, 'name' | 'whatIf' | 'changedVariable'>, requestId: string = crypto.randomUUID()) => apiFetchAsGuest<ForkResult>(`/api/demo/worlds/${encodeURIComponent(worldId)}/fork`, { method: 'POST', body: JSON.stringify({ ...input, timelineId, requestId }) }),
   compare: (worldId: string, left: string, right: string) => apiFetchAsGuest<{ differences: { facts: unknown[]; states: unknown[]; events: { leftOnly: unknown[]; rightOnly: unknown[] } }; limitations: string[] }>(`/api/demo/worlds/${encodeURIComponent(worldId)}/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`),
 }

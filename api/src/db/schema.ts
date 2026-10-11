@@ -49,6 +49,9 @@ export const worlds = sqliteTable('worlds', {
   callsDay: text('calls_day'),
   // 最近一次用户交互（聊天/注入/章节等）；闲置自动归档以此为据（null = 不归档）
   lastUserActivityAt: text('last_user_activity_at'),
+  /** Non-null while a guest claim candidate is being verified. Staged worlds are
+   * deliberately invisible to normal world queries and engine ticks. */
+  claimStagingExecutionId: text('claim_staging_execution_id'),
   // IANA time zone; null is legacy data interpreted as UTC
   timeZone: text('time_zone'),
   createdAt: text('created_at').notNull().default(''),
@@ -762,4 +765,23 @@ export const demoSandboxes = sqliteTable('demo_sandboxes', {
   uniqueIndex('demo_sandboxes_request').on(t.sessionId, t.requestId),
   index('demo_sandboxes_session_status').on(t.sessionId, t.status),
   index('demo_sandboxes_status_expiry').on(t.status, t.expiresAt),
+])
+
+/** Durable single-flight state for saving one guest sandbox. */
+export const demoClaimOperations = sqliteTable('demo_claim_operations', {
+  sandboxId: text('sandbox_id').primaryKey().references(() => demoSandboxes.id, { onDelete: 'cascade' }),
+  requestId: text('request_id').notNull(),
+  targetUserId: text('target_user_id').notNull().references(() => users.id),
+  epoch: integer('epoch').notNull().default(0),
+  executionId: text('execution_id'),
+  executionNo: integer('execution_no').notNull().default(0),
+  state: text('state').notNull().default('failed'),
+  leaseUntil: text('lease_until'),
+  candidateWorldId: text('candidate_world_id'),
+  failureCode: text('failure_code'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  index('demo_claim_operations_state').on(t.state, t.updatedAt),
+  index('demo_claim_operations_request').on(t.sandboxId, t.requestId),
 ])

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { demoBaselines, dialogues, events, personStates, timelines, universeEvidence, worlds } from '../db/schema'
 import type { Env } from '../index'
@@ -157,7 +157,7 @@ async function runTickInner(env: Env, db: Db, assertLease: () => Promise<void>):
   const activeBaselines = await db.select({ worldId: demoBaselines.worldId }).from(demoBaselines)
     .where(eq(demoBaselines.status, 'active')).all()
   const baselineWorldIds = new Set(activeBaselines.map(row => row.worldId))
-  const runningWorlds = (await db.select().from(worlds).where(eq(worlds.status, 'running')).all())
+  const runningWorlds = (await db.select().from(worlds).where(and(eq(worlds.status, 'running'), isNull(worlds.claimStagingExecutionId))).all())
     .filter(world => !baselineWorldIds.has(world.id))
 
   for (const world of runningWorlds) {

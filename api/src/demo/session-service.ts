@@ -7,7 +7,10 @@ import { hashGuestToken } from '../access/middleware'
 import { readActiveBaseline } from './baseline-repository'
 import { cloneWorldGraph, deleteClonedWorldGraph } from './world-graph-cloner'
 import { verifyClonedWorld } from './clone-verification'
-import type { ClaimResult, GuestSessionResult } from './types'
+import type { ClaimResult, ClaimSourceBinding, ClaimStatus, GuestSessionResult } from './types'
+import { acquireClaimExecution, candidateWorldIdFor, closeClaimExecution, readClaimOperation, recoverClaimOperation as recoverStoredClaim, type AcquireClaimResult } from './claim-repository'
+import { deleteClaimCandidate, publishVerifiedClaim } from './claim-publication'
+import { readClaimStatus } from './claim-status'
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -135,10 +138,11 @@ export class ClaimVerificationError extends Error {
   }
 }
 
-export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; now?: Date }): Promise<ClaimResult | null> {
+export async function claimGuestSession(db: Db, input: { token: string; userId: string; requestId: string; expectedEpoch?: number; expectedBinding?: ClaimSourceBinding; now?: Date }): Promise<ClaimStatus | null> {
   const now = input.now ?? new Date()
   let session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
   if (!session) return null
+  if (input.expectedBinding && (input.expectedBinding.sessionId !== session.id || input.expectedBinding.generation !== session.generation || input.expectedBinding.worldId !== session.currentSandboxWorldId)) return { kind: 'unavailable', code: 'source_changed' }
   const active = await db.select().from(demoSandboxes).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.generation, session.generation))).get()
   if (!active || !session.currentSandboxWorldId) return null
 
@@ -147,8 +151,8 @@ export async function claimGuestSession(db: Db, input: { token: string; userId: 
     if (!sandbox?.claimedWorldId) return null
     const owner = await db.select({ userId: worlds.userId }).from(worlds).where(eq(worlds.id, sandbox.claimedWorldId)).get()
     return owner?.userId === input.userId
-      ? { kind: 'claimed', worldId: sandbox.claimedWorldId, replayed: true }
-      : { kind: 'already_claimed_elsewhere' }
+      ? { kind: 'claimed', worldId: sandbox.claimedWorldId, replayed: true } as ClaimStatus
+      : (input.expectedBinding ? { kind: 'conflict', code: 'already_claimed_elsewhere' } as ClaimStatus : { kind: 'already_claimed_elsewhere' } as ClaimResult)
   }
   const priorClaim = await existingClaim()
   if (priorClaim) return priorClaim
@@ -166,32 +170,68 @@ export async function claimGuestSession(db: Db, input: { token: string; userId: 
   } else if (session.status !== 'claim_pending') return null
   if (!session || session.status !== 'claim_pending' || !session.currentSandboxWorldId) return null
 
-  const cloned = await cloneWorldGraph(db, {
-    sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId,
-    requestId: `claim:${session.id}:${input.userId}:${input.requestId}`, name: '雾影庄 · 保存的可能',
+  const cloneRequestId = `claim:${session.id}:${input.userId}:${input.requestId}`
+  const candidate = await candidateWorldIdFor(cloneRequestId, session.currentSandboxWorldId)
+  // Legacy callers predate the versioned claim contract. Keep their existing
+  // retry behavior by reading the durable failed epoch; new callers must send
+  // expectedEpoch explicitly and therefore cannot bypass a version fence.
+  const operation = await readClaimOperation(db, active.id)
+  const expectedEpoch = input.expectedEpoch ?? (input.expectedBinding || !operation || operation.state !== 'failed' ? 0 : operation.epoch)
+  const acquired = await acquireClaimExecution(db, {
+    sandboxId: active.id, requestId: input.requestId, targetUserId: input.userId,
+    expectedEpoch, candidateWorldId: candidate, now,
   })
-  // S2/F4：核验通过才落 claimed;失败删半成品克隆图,访客会话与副本原样保留,同 requestId 可干净重试
-  const verification = await verifyClonedWorld(db, {
-    sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId, worldId: cloned.worldId,
-    mainTimelineId: cloned.mainTimelineId, personIds: cloned.personIds, timelineIds: cloned.timelineIds,
-    commandIds: cloned.commandIds,
-  })
-  if (!verification.ok) {
-    await deleteClonedWorldGraph(db, cloned)
-    throw new ClaimVerificationError(verification.issues)
+  if (acquired.kind === 'in-progress') {
+    if (!input.expectedBinding && acquired.operation.targetUserId !== input.userId) return { kind: 'already_claimed_elsewhere' }
+    return { kind: 'in-progress', epoch: acquired.operation.epoch, ...(acquired.operation.targetUserId === input.userId && acquired.operation.executionId ? { executionId: acquired.operation.executionId } : {}), recoveryAvailable: false, safeToSwitch: false }
   }
-  const won = await db.update(demoSandboxes).set({ status: 'claimed', claimedWorldId: cloned.worldId })
-    .where(and(eq(demoSandboxes.id, active.id), eq(demoSandboxes.status, 'active'), isNull(demoSandboxes.claimedWorldId)))
-    .returning({ id: demoSandboxes.id })
-  if (won.length) {
-    await db.update(guestSessions).set({ status: 'claimed', updatedAt: now.toISOString() })
-      .where(and(eq(guestSessions.id, session.id), eq(guestSessions.status, 'claim_pending')))
+  if (acquired.kind === 'succeeded') {
+    const owner = await db.select({ userId: worlds.userId }).from(worlds).where(eq(worlds.id, acquired.worldId)).get()
+    return owner?.userId === input.userId ? { kind: 'claimed', worldId: acquired.worldId, replayed: true } : (input.expectedBinding ? { kind: 'conflict', code: 'already_claimed_elsewhere' } : { kind: 'already_claimed_elsewhere' } as ClaimResult)
+  }
+  if (acquired.kind === 'retryable') return { kind: 'retryable', epoch: acquired.epoch, safeToSwitch: true }
+  if (acquired.kind === 'stale') return { kind: 'unavailable', code: 'claim_unavailable' }
+  if (acquired.kind === 'conflict') return input.expectedBinding ? { kind: 'conflict', code: 'already_claimed_elsewhere' } : { kind: 'already_claimed_elsewhere' } as ClaimResult
+  const execution = acquired.execution
+  let cloned: Awaited<ReturnType<typeof cloneWorldGraph>> | null = null
+  try {
+    cloned = await cloneWorldGraph(db, {
+      sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId,
+      requestId: cloneRequestId, name: '雾影庄 · 保存的可能',
+      staging: { executionId: execution.executionId, ownerId: session.ownerUserId },
+    })
+    const verification = await verifyClonedWorld(db, {
+      sourceWorldId: session.currentSandboxWorldId, targetOwnerId: input.userId, worldId: cloned.worldId,
+      mainTimelineId: cloned.mainTimelineId, personIds: cloned.personIds, timelineIds: cloned.timelineIds,
+      commandIds: cloned.commandIds,
+    })
+    if (!verification.ok) {
+      await deleteClaimCandidate(db, execution, cloned)
+      await closeClaimExecution(db, { ...execution, failureCode: 'verification_failed', now })
+      throw new ClaimVerificationError(verification.issues)
+    }
+    const published = await publishVerifiedClaim(db, execution, cloned, { sandboxId: active.id, sessionId: session.id, now })
+    if (!published) return { kind: 'in-progress', epoch: execution.epoch, executionId: execution.executionId, recoveryAvailable: true, safeToSwitch: false }
     return { kind: 'claimed', worldId: cloned.worldId, replayed: false }
+  } catch (error) {
+    if (error instanceof ClaimVerificationError) throw error
+    if (cloned) await deleteClaimCandidate(db, execution, cloned).catch(() => undefined)
+    await closeClaimExecution(db, { ...execution, failureCode: 'claim_failed', now }).catch(() => undefined)
+    throw error
   }
+}
 
-  // 同 requestId 的同账号并发可能共享确定性克隆；确认不是赢家结果后才清理临时图。
-  const winner = await existingClaim()
-  if (winner?.kind === 'claimed' && winner.worldId === cloned.worldId) return winner
-  await deleteClonedWorldGraph(db, cloned)
-  return winner
+export async function readGuestClaimStatus(db: Db, input: { token: string; userId: string; requestId: string; expectedBinding: ClaimSourceBinding; now?: Date }): Promise<ClaimStatus> {
+  return readClaimStatus(db, input)
+}
+
+export async function recoverGuestClaimOperation(db: Db, input: { token: string; userId: string; requestId: string; observedEpoch: number; observedExecutionId: string | null; expectedBinding: ClaimSourceBinding; now?: Date }): Promise<ClaimStatus | null> {
+  const session = await db.select().from(guestSessions).where(eq(guestSessions.tokenHash, await hashGuestToken(input.token))).get()
+  if (!session || session.id !== input.expectedBinding.sessionId || session.generation !== input.expectedBinding.generation || session.currentSandboxWorldId !== input.expectedBinding.worldId) return { kind: 'unavailable', code: 'source_changed' }
+  const sandbox = await db.select().from(demoSandboxes).where(and(eq(demoSandboxes.sessionId, session.id), eq(demoSandboxes.generation, session.generation))).get()
+  if (!sandbox) return { kind: 'unavailable', code: 'claim_unavailable' }
+  const result = await recoverStoredClaim(db, { sandboxId: sandbox.id, requestId: input.requestId, targetUserId: input.userId, observedEpoch: input.observedEpoch, observedExecutionId: input.observedExecutionId, now: input.now })
+  if (result.kind === 'in-progress') return { kind: 'in-progress', epoch: result.operation.epoch, executionId: result.operation.executionId ?? undefined, recoveryAvailable: Boolean(result.operation.leaseUntil && result.operation.leaseUntil <= (input.now ?? new Date()).toISOString()), safeToSwitch: false }
+  if (result.kind === 'retryable') return { kind: 'retryable', epoch: result.epoch, safeToSwitch: true }
+  return { kind: 'unavailable', code: 'claim_unavailable' }
 }

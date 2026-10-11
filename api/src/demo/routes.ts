@@ -11,7 +11,8 @@ import { normalizeForkFields } from '../life/fork-fields'
 import { compareTimelines } from '../life/compare'
 import { timelines } from '../db/schema'
 import { and, eq } from 'drizzle-orm'
-import { claimGuestSession, ClaimVerificationError, createGuestSession, resetGuestSession, resumeGuestSession } from './session-service'
+import { claimGuestSession, ClaimVerificationError, createGuestSession, resetGuestSession, resumeGuestSession, readGuestClaimStatus, recoverGuestClaimOperation } from './session-service'
+import type { ClaimSourceBinding } from './types'
 
 export const demoRoutes = new Hono<{ Bindings: Env }>()
 
@@ -38,16 +39,32 @@ demoRoutes.post('/session/reset', async c => {
 
 const claimRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 claimRoutes.use('*', authMiddleware)
+claimRoutes.get('/', async c => {
+  const token = c.req.header(GUEST_TOKEN_HEADER)?.trim()
+  const requestId = c.req.query('requestId')?.trim()
+  const sessionId = c.req.query('sessionId')?.trim()
+  const worldId = c.req.query('worldId')?.trim()
+  const generationRaw = c.req.query('generation')?.trim()
+  const generation = generationRaw === undefined ? NaN : Number(generationRaw)
+  if (!token || !requestId || !sessionId || !worldId || !Number.isInteger(generation) || generation < 0) return c.json({ error: '访客凭证、requestId 和原副本绑定必填' }, 400)
+  const result = await readGuestClaimStatus(createDb(c.env.DB), { token, userId: c.get('user').id, requestId, expectedBinding: { sessionId, worldId, generation } })
+  c.header('Cache-Control', 'no-store')
+  return c.json(result)
+})
 claimRoutes.post('/', async c => {
   const token = c.req.header(GUEST_TOKEN_HEADER)?.trim()
-  const body = await c.req.json<{ requestId?: string }>().catch(() => null)
+  const body = await c.req.json<{ requestId?: string; expectedEpoch?: number; expectedBinding?: ClaimSourceBinding }>().catch(() => null)
   if (!token || !body?.requestId?.trim()) return c.json({ error: '访客凭证和 requestId 必填' }, 400)
   try {
-    const result = await claimGuestSession(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim() })
+    if (body.expectedEpoch !== undefined && (!Number.isInteger(body.expectedEpoch) || body.expectedEpoch < 0)) return c.json({ error: 'expectedEpoch 无效' }, 400)
+    const result = await claimGuestSession(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim(), expectedEpoch: body.expectedEpoch, expectedBinding: body.expectedBinding })
     if (!result) return c.json({ error: '访客体验无法认领', code: 'claim_unavailable' }, 409)
-    if (result.kind === 'already_claimed_elsewhere') {
-      return c.json({ error: '这份访客副本已由其他账号保存', code: result.kind }, 409)
+    if (result.kind === 'conflict' || result.kind === 'already_claimed_elsewhere') {
+      return c.json({ error: '这份访客副本已由其他账号保存', code: result.kind === 'conflict' ? result.code : result.kind }, 409)
     }
+    if (result.kind === 'unavailable') return c.json(result, { status: 409 })
+    if (result.kind === 'in-progress') return c.json(result, { status: 202 })
+    if (result.kind === 'retryable') return c.json(result, { status: 409 })
     return c.json(result)
   } catch (error) {
     // S2/F4/N5：核验失败返回可理解类别,访客副本保留可重试;内部 issue 只记服务端日志
@@ -58,6 +75,19 @@ claimRoutes.post('/', async c => {
     console.error('[claim] 保存失败:', error instanceof Error ? error.message : 'unknown error')
     return c.json({ error: '演示世界暂时无法保存，请稍后重试', code: 'claim_failed' }, 500)
   }
+})
+claimRoutes.post('/recover', async c => {
+  const token = c.req.header(GUEST_TOKEN_HEADER)?.trim()
+  const body = await c.req.json<{
+    requestId?: string; observedEpoch?: number; observedExecutionId?: string | null; expectedBinding?: ClaimSourceBinding
+  }>().catch(() => null)
+  const binding = body?.expectedBinding
+  if (!token || !body?.requestId?.trim() || !binding || !binding.sessionId || !binding.worldId || !Number.isInteger(binding.generation) || binding.generation < 0 || !Number.isInteger(body.observedEpoch) || body.observedEpoch < 0 || (body.observedExecutionId !== null && typeof body.observedExecutionId !== 'string')) return c.json({ error: '恢复请求参数无效' }, 400)
+  const result = await recoverGuestClaimOperation(createDb(c.env.DB), { token, userId: c.get('user').id, requestId: body.requestId.trim(), observedEpoch: body.observedEpoch, observedExecutionId: body.observedExecutionId ?? null, expectedBinding: binding })
+  if (!result) return c.json({ error: '访客体验无法恢复', code: 'claim_unavailable' }, 409)
+  if (result.kind === 'in-progress') return c.json(result, { status: 202 })
+  if (result.kind === 'unavailable') return c.json(result, { status: 409 })
+  return c.json(result)
 })
 demoRoutes.route('/session/claim', claimRoutes)
 
