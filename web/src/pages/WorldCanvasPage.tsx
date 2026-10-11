@@ -102,6 +102,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [authIdentityEpoch, setAuthIdentityEpoch] = useState(0)
   const authIdentityEpochRef = useRef(0)
   const compatSessionRef = useRef<CompatibilitySession | null>(null)
+  const pendingCompatibilityRef = useRef<{ purpose: CompatibilityPurpose; target: SceneTarget } | null>(null)
   useEffect(() => subscribeAuthIdentityChange(() => {
     authIdentityEpochRef.current += 1
     setAuthIdentityEpoch(authIdentityEpochRef.current)
@@ -145,13 +146,22 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
         // Do not load locally cached draft metadata until the server confirms this
         // identity can read the requested world's current scene.
-        await worldSceneApi.get(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, { redirectOnUnauthorized: false })
+        const current = await worldSceneApi.get(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, { redirectOnUnauthorized: false })
         if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
         session = createCompatibilitySession({ scope: { actorKey: `${actorKey}\u001f${activeTimelineId}\u001fvoxel`, worldId }, client })
         compatSessionRef.current = session
         unsubscribe = session.subscribe(setCompatContinuation)
         setCompatContinuation(session.snapshot())
         setCompatReadyScope({ worldId, timelineId: activeTimelineId, authIdentityEpoch: identityEpoch })
+        const pending = pendingCompatibilityRef.current
+        if (pending) {
+          pendingCompatibilityRef.current = null
+          void session.check({
+            purpose: pending.purpose,
+            target: pending.target,
+            expectedCurrentVersion: current.status === 'ready' ? current.version : 0,
+          }).catch(() => undefined)
+        }
       } catch {
         if (active) {
           setCompatContinuation(null)
@@ -162,6 +172,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     void attachAuthorizedSession()
     return () => {
       active = false
+      pendingCompatibilityRef.current = null
       unsubscribe?.()
       session?.dispose()
       if (compatSessionRef.current === session) compatSessionRef.current = null
@@ -652,7 +663,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   async function openCompatibility(purpose: CompatibilityPurpose, target: SceneTarget) {
     closeSceneHistory()
     const session = compatSessionRef.current
-    if (!session || !activeTimelineId || archived) return
+    if (!activeTimelineId || archived) return
+    if (!session) {
+      pendingCompatibilityRef.current = { purpose, target }
+      return
+    }
+    pendingCompatibilityRef.current = null
     try {
       const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
       const current = await worldSceneApi.get(worldId, scope)
