@@ -88,14 +88,18 @@ voxelRoutes.post('/voxel/edit-plan', async (c) => {
     body.timelineId !== undefined ? eq(timelines.id, body.timelineId) : isNull(timelines.parentTimelineId))).get()
   if (!timeline || timeline.status !== 'active') return editPlanFailure(c, 409, 'permission', '目标时间线不存在或只读。', false)
   const sceneScope = body.timelineId !== undefined ? { worldId: body.worldId, timelineId: timeline.id, representation: 'voxel' } : undefined
-  const spaceId = body.spaceId === 'exterior' ? 'single' : body.spaceId
-  const bindings = await loadWorldSceneBindings(db, body.worldId, sceneScope, spaceId)
-  const access = { bindings, ...(sceneScope ? { scope: sceneScope } : {}), ...(spaceId ? { spaceId } : {}) }
   const current = await readCurrentScene(db, body.worldId, sceneScope)
   if (!current) {
     return editPlanFailure(c, 409, 'conflict', '世界还没有已保存的场景。', false,
       '请先为这个世界创建场景。')
   }
+  // The legacy single-document UI calls its only space "exterior". Preserve
+  // actual IDs for multi-space documents, where "exterior" is a real space.
+  const spaceId = body.spaceId === 'exterior' && !isSerializedVoxelSpaces(current.document)
+    ? 'single'
+    : body.spaceId
+  const bindings = await loadWorldSceneBindings(db, body.worldId, sceneScope, spaceId)
+  const access = { bindings, ...(sceneScope ? { scope: sceneScope } : {}), ...(spaceId ? { spaceId } : {}) }
   const inspection = await inspectSceneCompatibility(db, { worldId: body.worldId, access })
   if (inspection.status !== 'ready') {
     return c.json({ error: inspection.error.message, kind: 'compatibility', retryable: false, errorCode: inspection.error.code, nextStep: '请先完成场景兼容检查。' }, inspection.status === 'missing' ? 404 : 422)

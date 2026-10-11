@@ -7,7 +7,7 @@ import { BudgetRefusal } from '../engine/guard'
 import { LlmContractError } from '../llm/contracts'
 import { createWorldFixture } from '../test/world-fixture'
 import { EditPlannerError } from './edit-planner'
-import { commitScene } from '../scenes/repository'
+import { commitScene, commitTimelineScene } from '../scenes/repository'
 import { scenesRoutes } from '../scenes/routes'
 import {
   COMPATIBILITY_FIXTURE_INVALID_BRANCH,
@@ -122,6 +122,38 @@ describe('voxel AI edit-plan route', () => {
     expect(response.status).toBe(422)
     const result = await response.json() as { kind: string; errorCode: string }
     expect(result).toMatchObject({ kind: 'compatibility', errorCode: 'compatibility-required' })
+    expect(resolve).not.toHaveBeenCalled()
+    expect(complete).not.toHaveBeenCalled()
+    expect(await revisionCount(fixture)).toBe(1)
+  })
+
+  it('A1 maps the legacy exterior alias only for single-space scenes', async () => {
+    const fixture = await createWorldFixture(); fixtures.push(fixture)
+    const exterior = compatibilityFixtureRepairedBasis()
+    const hall = compatibilityFixtureLegacyScene()
+    const spaces = {
+      format: 'voxel-spaces', version: 1, defaultSpaceId: 'exterior',
+      spaces: [
+        { id: 'exterior', name: '石灯外景', document: exterior },
+        { id: 'hall', name: '老花房', document: hall },
+      ],
+    }
+    await commitTimelineScene(fixture.db, {
+      worldId: 'home-world', timelineId: 'home-main', representation: 'voxel',
+      expectedVersion: 0, requestId: 'seed-multi-space', document: spaces, summary: 'multi-space seed', kind: 'initial',
+    })
+    const resolve = vi.spyOn(llmResolution, 'resolveLlmConfig')
+    const complete = vi.spyOn(llmClient, 'complete')
+
+    const response = await voxelRoutes.request('/voxel/edit-plan', {
+      method: 'POST', headers,
+      body: JSON.stringify(requestBody({
+        timelineId: 'home-main', representation: 'voxel', spaceId: 'exterior', document: JSON.stringify(spaces),
+      })),
+    }, fixture.env)
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ kind: 'compatibility', errorCode: 'compatibility-required' })
     expect(resolve).not.toHaveBeenCalled()
     expect(complete).not.toHaveBeenCalled()
     expect(await revisionCount(fixture)).toBe(1)
