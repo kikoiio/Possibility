@@ -1,6 +1,6 @@
 import type {
   CameraSnapshot,
-  PaneTarget,
+  CameraStateTarget,
   PresentationKind,
   PresentationStateStore,
 } from '../components/world/presentation/presentation-types'
@@ -21,19 +21,21 @@ export interface CameraStateRecord {
   formatVersion: 1
   worldId: string
   timelineId: string
+  spaceId: string
   presentation: PresentationKind
   camera: CameraSnapshot
   savedAt: number
 }
 
-type CameraTarget = PaneTarget & { timelineId: string }
+/** Camera history is scoped to one world/timeline/space/presentation tuple. */
+export type CameraTarget = CameraStateTarget
 
 export const PRESENTATION_PREFERENCE_KEY = 'possibility:presentation:preferred'
 
 /** A tuple avoids collisions even when IDs contain separators or Unicode. */
 export function cameraStorageKey(target: CameraTarget): string {
   return `possibility:presentation:camera:${JSON.stringify([
-    target.worldId, target.timelineId, target.presentation,
+    target.worldId, target.timelineId, target.spaceId, target.presentation,
   ])}`
 }
 
@@ -109,9 +111,13 @@ export function createPresentationStateStore(
     },
     getCamera(target) {
       const record = read(cameraStorageKey(target))
+      // Records without a concrete space (pre-1C format or damaged) never
+      // restore: a foreign space's camera must not pose as this space's view.
       if (!isObject(record) || record.formatVersion !== 1
         || !isFiniteNumber(record.savedAt)
+        || typeof record.spaceId !== 'string' || record.spaceId === ''
         || record.worldId !== target.worldId || record.timelineId !== target.timelineId
+        || record.spaceId !== target.spaceId
         || record.presentation !== target.presentation || !isCameraSnapshot(record.camera)
         || record.camera.kind !== target.presentation) return null
       return record.camera
@@ -120,7 +126,7 @@ export function createPresentationStateStore(
       if (!isCameraSnapshot(camera) || camera.kind !== target.presentation) return
       write(cameraStorageKey(target), {
         formatVersion: 1, worldId: target.worldId, timelineId: target.timelineId,
-        presentation: target.presentation, camera, savedAt: Date.now(),
+        spaceId: target.spaceId, presentation: target.presentation, camera, savedAt: Date.now(),
       })
     },
   }

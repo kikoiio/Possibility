@@ -13,7 +13,12 @@ function optionalId(value: string | null): string | undefined {
   return value != null && value.trim() !== '' ? value : undefined
 }
 
-/** worldId comes from the left world's path; the query never overrides it. */
+/**
+ * worldId comes from the left world's path; the query never overrides it.
+ * Space selections stay unresolved here: the authorized reader maps a missing
+ * value to exterior once, so a stale/garbage parameter can never impersonate
+ * a server-confirmed space.
+ */
 export function readPresentationRoute(
   worldId: string,
   query: URLSearchParams,
@@ -21,18 +26,23 @@ export function readPresentationRoute(
 ): PresentationRoute {
   const fallback = presentationOrDefault(defaultPresentation, 'voxel3d')
   const timelineId = optionalId(query.get('timeline'))
+  const spaceId = optionalId(query.get('space'))
   const left: PaneTarget = {
     worldId,
     ...(timelineId === undefined ? {} : { timelineId }),
+    ...(spaceId === undefined ? {} : { spaceId }),
     presentation: presentationOrDefault(query.get('presentation'), fallback),
   }
   const rightWorld = optionalId(query.get('rightWorld'))
   const rightTimeline = optionalId(query.get('right'))
+  const rightSpace = optionalId(query.get('rightSpace'))
+  // An orphan rightSpace alone is not a target; it never opens a right pane.
   const right: PaneTarget | null = rightWorld === undefined && rightTimeline === undefined
     ? null
     : {
       worldId: rightWorld ?? worldId,
       ...(rightTimeline === undefined ? {} : { timelineId: rightTimeline }),
+      ...(rightSpace === undefined ? {} : { spaceId: rightSpace }),
       presentation: presentationOrDefault(query.get('rightPresentation'), fallback),
     }
   return { left, right }
@@ -61,6 +71,19 @@ export function updatePaneTimeline(
   return next
 }
 
+export function updatePaneSpace(
+  query: URLSearchParams,
+  paneId: PaneId,
+  spaceId: string | null,
+): URLSearchParams {
+  const next = new URLSearchParams(query)
+  const key = paneId === 'right' ? 'rightSpace' : 'space'
+  const id = optionalId(spaceId)
+  if (id === undefined) next.delete(key)
+  else next.set(key, id)
+  return next
+}
+
 /** Closing the right pane removes its whole target; left path/query stay untouched. */
 export function updateRightPaneTarget(
   query: URLSearchParams,
@@ -70,12 +93,16 @@ export function updateRightPaneTarget(
   if (target === null) {
     next.delete('rightWorld')
     next.delete('right')
+    next.delete('rightSpace')
     next.delete('rightPresentation')
   } else {
     next.set('rightWorld', target.worldId)
     const timelineId = optionalId(target.timelineId ?? null)
     if (timelineId !== undefined) next.set('right', timelineId)
     else next.delete('right')
+    const spaceId = optionalId(target.spaceId ?? null)
+    if (spaceId !== undefined) next.set('rightSpace', spaceId)
+    else next.delete('rightSpace')
     next.set('rightPresentation', target.presentation)
   }
   return next

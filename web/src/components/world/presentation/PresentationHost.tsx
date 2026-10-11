@@ -4,7 +4,7 @@ import type { CameraSnapshot, PresentationStateStore } from './presentation-type
 import type { PresentationContext, PresentationTransitionResult } from './PresentationLifecycle'
 
 export interface PresentationHostProps {
-  context: PresentationContext
+  data: PresentationContext
   adapters: PresentationLifecycleAdapters
   store: PresentationStateStore
   className?: string
@@ -15,7 +15,7 @@ export interface PresentationHostProps {
 
 /** Owns one renderer lifecycle. A sibling pane always gets a separate host and lifecycle. */
 export default function PresentationHost({
-  context,
+  data,
   adapters,
   store,
   className,
@@ -28,6 +28,7 @@ export default function PresentationHost({
   const [attempt, setAttempt] = useState(0)
   const callbacksRef = useRef({ onCameraChange, onMounted, onTransition })
   callbacksRef.current = { onCameraChange, onMounted, onTransition }
+  const context = data.context
   const capabilitiesKey = JSON.stringify(context.capabilities)
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export default function PresentationHost({
     setFailure(null)
     const cameraHost = host.parentElement ?? host
     cameraHost.removeAttribute('data-camera-state')
-    void lifecycle.transition(context, host, {
+    void lifecycle.transition(data, host, {
       onCameraChange: camera => {
         cameraHost.dataset.cameraState = JSON.stringify(camera)
         callbacksRef.current.onCameraChange?.(camera)
@@ -60,7 +61,9 @@ export default function PresentationHost({
       callbacksRef.current.onMounted?.(null)
       lifecycle.destroy()
     }
-  }, [context.paneId, context.worldId, context.timelineId, context.presentation, context.identity, context.stateVersion, context.simNow, capabilitiesKey, adapters, store, attempt])
+  }, [data, adapters, store, attempt, context.paneId, context.worldId, context.timelineId, context.spaceId,
+    context.presentation, context.identity, context.sceneId, context.sceneVersion, context.stateVersion,
+    context.simNow, capabilitiesKey])
 
   const message = failure instanceof Error ? failure.message : failure == null ? '' : String(failure)
   return (

@@ -24,7 +24,7 @@ export interface WorldPresentation {
 export interface MapBootstrap {
   access: WorldCapabilities
   world: Awaited<ReturnType<typeof worldSnapshot>>
-  scene: { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
+  scene: { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
   presentation: WorldPresentation
   theme: { id: string; assetVersion: string }
   resume: { worldId: string; timelineId: string; spaceId: string; mode: 'create' | 'life' | 'possibility'; updatedAt: string }
@@ -61,8 +61,8 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
       representation: 'voxel',
     })
     const stored = timelineStored ?? (!timelineId ? await readCurrentScene(db, worldId) : null)
-    // S2 起存储层只剩体素系负载,格式由客户端按信封识别
-    scene = !stored ? { status: 'missing' } : { status: 'ready', document: stored.document }
+    // S2 起存储层只剩体素系负载,格式由客户端按信封识别;version 供表现层跨视图核对
+    scene = !stored ? { status: 'missing' } : { status: 'ready', document: stored.document, version: stored.version }
   } catch {
     scene = { status: 'unavailable', retryable: true }
   }

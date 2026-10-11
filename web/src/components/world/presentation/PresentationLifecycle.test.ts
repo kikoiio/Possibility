@@ -1,21 +1,40 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { SerializedVoxelDocument, VoxelDocument } from '@possibility/voxel-contract'
+import type { WorldSnapshot } from '../../../api/types'
+import type { WorldReadModel } from '../../../native2d/types'
 import type {
   CameraSnapshotFor,
   MountedPresentation,
+  PanePresentationData,
   PresentationAdapter,
   PresentationKind,
   PresentationStateStore,
+  WorldPresentationContext,
 } from './presentation-types'
 import {
   createPresentationLifecycle,
-  type PresentationContext,
 } from './PresentationLifecycle'
 
-const nativeContext: PresentationContext = {
-  paneId: 'single', worldId: 'world-a', timelineId: 'main', presentation: 'native2d',
-  identity: 'owner', capabilities: {}, stateVersion: 1, simNow: '2026-10-07T00:00:00Z',
+const context: WorldPresentationContext = {
+  paneId: 'single', worldId: 'world-a', timelineId: 'main', spaceId: 'exterior',
+  presentation: 'native2d', identity: 'owner', capabilities: {},
+  sceneId: 'scene-1', sceneVersion: 3, stateVersion: 1,
+  simNow: '2026-10-07T00:00:00Z', timeZone: 'UTC', availableSpaces: [],
 }
-const voxelContext: PresentationContext = { ...nativeContext, presentation: 'voxel3d' }
+
+function paneData<K extends PresentationKind>(presentation: K, overrides: Partial<WorldPresentationContext> = {}): PanePresentationData<K> {
+  return {
+    context: { ...context, presentation, ...overrides },
+    snapshot: { stateVersion: 1 } as unknown as WorldSnapshot,
+    sceneDocument: { format: 'voxel-document' } as unknown as SerializedVoxelDocument,
+    selectedSpaceDocument: { id: 'scene-1' } as unknown as VoxelDocument,
+    worldReadModel: { scope: { source: 'account', worldId: 'world-a', timelineId: 'main', sceneId: 'scene-1', sceneVersion: 3 } } as unknown as WorldReadModel,
+  } as PanePresentationData<K>
+}
+
+const nativeData = () => paneData('native2d')
+const voxelData = () => paneData('voxel3d')
+
 const nativeCamera: CameraSnapshotFor<'native2d'> = {
   kind: 'native2d', version: 1, camera: { pan: { x: 3, y: -4 }, zoom: 1.5 },
 }
@@ -51,8 +70,9 @@ function mounted<K extends PresentationKind>(
 function adapter<K extends PresentationKind>(
   kind: K,
   mount: PresentationAdapter<K>['mount'],
+  supports: PresentationAdapter<K>['supports'] = () => true,
 ): PresentationAdapter<K> {
-  return { kind, mount }
+  return { kind, mount, supports }
 }
 
 function store(overrides: Partial<PresentationStateStore> = {}): PresentationStateStore {
@@ -76,7 +96,7 @@ describe('PresentationLifecycle', () => {
     const lifecycle = createPresentationLifecycle({
       store: state,
       adapters: {
-        native2d: adapter('native2d', (_host, _context, options) => {
+        native2d: adapter('native2d', (_host, _data, options) => {
           signal = options.signal
           reportCamera = options.onCameraChange
           return pending.promise
@@ -85,8 +105,8 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    const staleMount = lifecycle.transition(nativeContext, host, { onCameraChange })
-    const activeTransition = await lifecycle.transition(voxelContext, host)
+    const staleMount = lifecycle.transition(nativeData(), host, { onCameraChange })
+    const activeTransition = await lifecycle.transition(voxelData(), host)
     expect(activeTransition).toEqual({ kind: 'mounted', presentation: 'voxel3d' })
     expect(signal?.aborted).toBe(true)
 
@@ -99,7 +119,7 @@ describe('PresentationLifecycle', () => {
     expect(lateHandle.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it('captures and saves the old camera before disposing on transition', async () => {
+  it('captures and saves the old camera before disposing on transition, keyed by space', async () => {
     const events: string[] = []
     const oldHandle = mounted('native2d', {
       captureCamera: () => { events.push('capture'); return nativeCamera },
@@ -116,51 +136,56 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    expect(await lifecycle.transition(nativeContext, host))
+    expect(await lifecycle.transition(nativeData(), host))
       .toEqual({ kind: 'mounted', presentation: 'native2d' })
-    await lifecycle.transition(voxelContext, host)
+    await lifecycle.transition(voxelData(), host)
     expect(events).toEqual(['capture', 'save:native2d', 'dispose'])
     expect(state.setCamera).toHaveBeenCalledWith({
-      worldId: 'world-a', timelineId: 'main', presentation: 'native2d',
+      worldId: 'world-a', timelineId: 'main', spaceId: 'exterior', presentation: 'native2d',
     }, nativeCamera)
   })
 
-  it('restores the matching discriminated camera snapshot for the selected adapter', async () => {
+  it('restores the camera only for the matching world/timeline/space/presentation tuple', async () => {
     const state = store({ getCamera: vi.fn(() => voxelCamera) })
     let restoredCamera: CameraSnapshotFor<'voxel3d'> | undefined
     const lifecycle = createPresentationLifecycle({
       store: state,
       adapters: {
         native2d: adapter('native2d', async () => mounted('native2d')),
-        voxel3d: adapter('voxel3d', async (_host, _context, options) => {
+        voxel3d: adapter('voxel3d', async (_host, _data, options) => {
           restoredCamera = options.camera
           return mounted('voxel3d')
         }),
       },
     })
 
-    expect(await lifecycle.transition(voxelContext, host))
+    expect(await lifecycle.transition(voxelData(), host))
       .toEqual({ kind: 'mounted', presentation: 'voxel3d' })
     expect(state.getCamera).toHaveBeenCalledWith({
-      worldId: 'world-a', timelineId: 'main', presentation: 'voxel3d',
+      worldId: 'world-a', timelineId: 'main', spaceId: 'exterior', presentation: 'voxel3d',
     })
     expect(restoredCamera).toEqual(voxelCamera)
+
+    // Interior space of the same world must not reuse the exterior camera.
+    ;(state.getCamera as ReturnType<typeof vi.fn>).mockClear()
+    await lifecycle.transition(paneData('voxel3d', { spaceId: 'main-house-interior' }), host)
+    expect(state.getCamera).toHaveBeenCalledWith({
+      worldId: 'world-a', timelineId: 'main', spaceId: 'main-house-interior', presentation: 'voxel3d',
+    })
     lifecycle.destroy()
   })
 
-  it('uses a context snapshot after the caller mutates its original object', async () => {
+  it('uses a data snapshot after the caller mutates its original object', async () => {
     const pending = deferred<MountedPresentation<'native2d'>>()
-    const originalContext: PresentationContext = {
-      ...nativeContext, capabilities: { canEdit: true },
-    }
-    let mountedContext: PresentationContext | undefined
+    const original = paneData('native2d', { capabilities: { canEdit: true } })
+    let mountedContext: WorldPresentationContext | undefined
     let reportCamera: ((camera: CameraSnapshotFor<'native2d'>) => void) | undefined
     const state = store()
     const lifecycle = createPresentationLifecycle({
       store: state,
       adapters: {
-        native2d: adapter('native2d', (_host, context, options) => {
-          mountedContext = context
+        native2d: adapter('native2d', (_host, data, options) => {
+          mountedContext = data.context
           reportCamera = options.onCameraChange
           return pending.promise
         }),
@@ -168,18 +193,20 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    const pendingMount = lifecycle.transition(originalContext, host)
-    originalContext.worldId = 'world-mutated'
-    originalContext.timelineId = 'timeline-mutated'
-    const mutableCapabilities = originalContext.capabilities as Record<string, boolean>
+    const pendingMount = lifecycle.transition(original, host)
+    original.context.worldId = 'world-mutated'
+    original.context.timelineId = 'timeline-mutated'
+    original.context.spaceId = 'mutated-space'
+    const mutableCapabilities = original.context.capabilities as Record<string, boolean>
     mutableCapabilities.canEdit = false
     expect(mountedContext?.worldId).toBe('world-a')
     expect(mountedContext?.timelineId).toBe('main')
+    expect(mountedContext?.spaceId).toBe('exterior')
     expect(mountedContext?.capabilities.canEdit).toBe(true)
 
     reportCamera?.(nativeCamera)
     expect(state.setCamera).toHaveBeenCalledWith({
-      worldId: 'world-a', timelineId: 'main', presentation: 'native2d',
+      worldId: 'world-a', timelineId: 'main', spaceId: 'exterior', presentation: 'native2d',
     }, nativeCamera)
     pending.resolve(mounted('native2d'))
     expect(await pendingMount).toEqual({ kind: 'mounted', presentation: 'native2d' })
@@ -195,7 +222,7 @@ describe('PresentationLifecycle', () => {
       captureCamera: () => {
         if (reenter) {
           reenter = false
-          nestedTransition = lifecycle?.transition(nativeContext, host)
+          nestedTransition = lifecycle?.transition(nativeData(), host)
         }
         return nativeCamera
       },
@@ -211,9 +238,9 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    await lifecycle!.transition(nativeContext, host)
+    await lifecycle!.transition(nativeData(), host)
     reenter = true
-    expect(await lifecycle!.transition(voxelContext, host)).toEqual({ kind: 'stale' })
+    expect(await lifecycle!.transition(voxelData(), host)).toEqual({ kind: 'stale' })
     expect(nestedTransition).toBeDefined()
     expect(await nestedTransition).toEqual({ kind: 'mounted', presentation: 'native2d' })
     lifecycle!.destroy()
@@ -234,11 +261,61 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    expect(await lifecycle.transition(nativeContext, host))
+    expect(await lifecycle.transition(nativeData(), host))
       .toEqual({ kind: 'error', error: failure, retryable: true })
-    expect(await lifecycle.transition(nativeContext, host))
+    expect(await lifecycle.transition(nativeData(), host))
       .toEqual({ kind: 'mounted', presentation: 'native2d' })
     expect(mount).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses to mount when the adapter does not support the read result', async () => {
+    const mount = vi.fn<PresentationAdapter<'native2d'>['mount']>()
+    const lifecycle = createPresentationLifecycle({
+      store: store(),
+      adapters: {
+        native2d: adapter('native2d', mount, () => false),
+        voxel3d: adapter('voxel3d', async () => mounted('voxel3d')),
+      },
+    })
+
+    const result = await lifecycle.transition(nativeData(), host)
+    expect(result.kind).toBe('error')
+    expect((result as { error: Error }).error.message).toContain('无法呈现')
+    expect((result as { retryable: boolean }).retryable).toBe(true)
+    expect(mount).not.toHaveBeenCalled()
+  })
+
+  it('never persists camera changes reported after a newer transition', async () => {
+    const pending = deferred<MountedPresentation<'native2d'>>()
+    let reportCamera: ((camera: CameraSnapshotFor<'native2d'>) => void) | undefined
+    const setCamera = vi.fn()
+    const state = store({ setCamera })
+    let voxelReport: ((camera: CameraSnapshotFor<'voxel3d'>) => void) | undefined
+    const lifecycle = createPresentationLifecycle({
+      store: state,
+      adapters: {
+        native2d: adapter('native2d', (_host, _data, options) => {
+          reportCamera = options.onCameraChange
+          return pending.promise
+        }),
+        voxel3d: adapter('voxel3d', async (_host, _data, options) => {
+          voxelReport = options.onCameraChange
+          return mounted('voxel3d')
+        }),
+      },
+    })
+
+    const staleMount = lifecycle.transition(nativeData(), host)
+    await lifecycle.transition(voxelData(), host)
+    reportCamera?.(nativeCamera)
+    voxelReport?.(voxelCamera)
+    expect(setCamera).toHaveBeenCalledTimes(1)
+    expect(setCamera).toHaveBeenCalledWith({
+      worldId: 'world-a', timelineId: 'main', spaceId: 'exterior', presentation: 'voxel3d',
+    }, voxelCamera)
+    pending.resolve(mounted('native2d'))
+    expect(await staleMount).toEqual({ kind: 'stale' })
+    lifecycle.destroy()
   })
 
   async function assertDestroyCleansUp(
@@ -254,11 +331,11 @@ describe('PresentationLifecycle', () => {
       },
     })
 
-    await lifecycle.transition(nativeContext, host)
+    await lifecycle.transition(nativeData(), host)
     expect(() => lifecycle.destroy()).not.toThrow()
     expect(() => lifecycle.destroy()).not.toThrow()
     expect(handle.dispose).toHaveBeenCalledTimes(1)
-    expect(await lifecycle.transition(nativeContext, host))
+    expect(await lifecycle.transition(nativeData(), host))
       .toEqual({ kind: 'disposed' })
   }
 
@@ -279,14 +356,14 @@ describe('PresentationLifecycle', () => {
       store: store(),
       adapters: {
         native2d: adapter('native2d', async () => mounted('native2d')),
-        voxel3d: adapter('voxel3d', (_host, _context, options) => {
+        voxel3d: adapter('voxel3d', (_host, _data, options) => {
           reportCamera = options.onCameraChange
           return pending.promise
         }),
       },
     })
 
-    const lateMount = lifecycle.transition(voxelContext, host, { onCameraChange })
+    const lateMount = lifecycle.transition(voxelData(), host, { onCameraChange })
     lifecycle.destroy()
     reportCamera?.(voxelCamera)
     expect(onCameraChange).not.toHaveBeenCalled()

@@ -1,28 +1,35 @@
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelDocument } from '@possibility/voxel-contract'
 import { authApi, guestMapApi, mapApi, publicApi } from '../../../api/client'
-import type { MapBootstrap } from '../../../api/map'
+import type { MapScene } from '../../../api/map'
 import type { WorldSnapshot } from '../../../api/types'
-import { createInitialLayout } from '../../../native2d/layout-validation'
-import { buildPresentation } from '../../../native2d/presentation'
-import { createWorldSource } from '../../../native2d/world-source'
-import { MIST_MANOR_SCENE } from '../../../native2d/scene'
-import type { WorldReadModel } from '../../../native2d/types'
+import { effectiveTimeZone } from '../../../lib/world-time'
+import type { WorldEnvironmentFact, WorldReadModel, WorldRuntimeState } from '../../../native2d/types'
+import { projectVoxelSpaceScene, supportsNative2dTheme } from '../../../native2d/voxel-scene-projection'
 import type { VoxelViewportProps } from '../../../voxel/VoxelViewport'
-import { parseVoxelDocument, parseVoxelSpaces } from '../../../voxel/flags'
+import { parseVoxelDocument } from '../../../voxel/flags'
 import { buildSceneOverlay } from '../../../scene/life/overlay'
-import type { PaneSessionLoader } from './ComparisonPane'
 import { createNative2dPresentationAdapter } from '../../../native2d/WorldPresentationAdapter'
 import { createVoxelPresentationAdapter } from './VoxelPresentationAdapter'
 import type { PresentationLifecycleAdapters } from './PresentationLifecycle'
-import type { PaneTarget, WorldPresentationContext } from './presentation-types'
+import type {
+  PaneSessionLoader,
+  PaneTarget,
+  PaneUnsupported,
+  SpaceDescriptor,
+  WorldPresentationContext,
+} from './presentation-types'
 
 export type PresentationAccessMode = 'account' | 'guest' | 'public'
 
-interface PaneWorldData {
+interface RawPaneRead {
   snapshot: WorldSnapshot
-  bootstrap?: MapBootstrap
-  document: unknown
+  scene: MapScene
   access: Record<string, boolean>
   identity: WorldPresentationContext['identity']
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException('Pane load cancelled', 'AbortError')
 }
 
 function requestedTimeline(snapshot: WorldSnapshot, target: PaneTarget): string {
@@ -33,12 +40,11 @@ async function readPaneWorld(
   mode: PresentationAccessMode,
   target: PaneTarget,
   signal: AbortSignal,
-): Promise<PaneWorldData> {
+): Promise<RawPaneRead> {
   if (mode === 'public') {
     const snapshot = await publicApi.snapshot(target.worldId, target.timelineId, signal)
-    const scene = await publicApi.scene(target.worldId, { timelineId: requestedTimeline(snapshot, target), representation: 'voxel' }, signal)
-    if (scene.status !== 'ready') throw new Error('这个世界还没有可呈现的 3D 场景。')
-    return { snapshot, document: scene.document, access: { observe: true }, identity: 'readonly' }
+    const scene = await publicApi.scene(target.worldId, { timelineId: snapshot.currentTimelineId, representation: 'voxel' }, signal)
+    return { snapshot, scene, access: { observe: true }, identity: 'readonly' }
   }
 
   const [bootstrap, account] = mode === 'guest'
@@ -47,49 +53,138 @@ async function readPaneWorld(
       mapApi.bootstrap(target.worldId, target.timelineId, signal),
       authApi.me({ redirectOnUnauthorized: false }),
     ])
-  if (bootstrap.scene.status !== 'ready') throw new Error('这个世界还没有可呈现的 3D 场景。')
   const access = { ...bootstrap.access }
   const identity: WorldPresentationContext['identity'] = mode === 'guest' ? 'guest'
     : account?.user?.id && (access.editScene || access.persist) ? 'owner' : 'readonly'
-  return { snapshot: bootstrap.world, bootstrap, document: bootstrap.scene.document, access, identity }
+  return { snapshot: bootstrap.world, scene: bootstrap.scene, access, identity }
 }
 
-function selectVoxelDocument(data: PaneWorldData, worldId: string) {
-  const spaces = parseVoxelSpaces(data.document)
-  if (spaces) {
-    const selectedId = data.bootstrap?.resume.spaceId ?? spaces.defaultSpaceId
-    const space = spaces.spaces.find(item => item.id === selectedId)
-      ?? spaces.spaces.find(item => item.id === spaces.defaultSpaceId)
-    const document = space ? parseVoxelDocument(space.document) : null
-    if (document) return { document, spaceId: space!.id }
+function documentTheme(document: SerializedVoxelDocument | SerializedVoxelSpaces): string | null {
+  if (document.format === 'voxel-spaces') return document.spaces[0]?.document.theme ?? null
+  return document.theme
+}
+
+function unsupported(code: string, reason: string, alternatives?: readonly SpaceDescriptor[]): PaneUnsupported {
+  return alternatives ? { kind: 'unsupported', code, reason, alternatives } : { kind: 'unsupported', code, reason }
+}
+
+function sceneMissing(scene: MapScene): PaneUnsupported | null {
+  if (scene.status === 'ready') return null
+  if (scene.status === 'unavailable') throw new Error('场景暂时不可用，请重试读取。')
+  return unsupported('scene-missing', '这个世界还没有可呈现的场景。')
+}
+
+/** 空间描述与选定空间只来自场景信封本身；缺省目标在读取阶段一次性补为外景。 */
+function resolveSpaces(
+  envelope: SerializedVoxelDocument | SerializedVoxelSpaces,
+  target: PaneTarget,
+  native2dSupported: boolean,
+): { kind: 'ok'; available: SpaceDescriptor[]; selectedId: string } | PaneUnsupported {
+  const supported: SpaceDescriptor['supportedPresentations'] = native2dSupported
+    ? ['voxel3d', 'native2d']
+    : ['voxel3d']
+  if (envelope.format === 'voxel-spaces') {
+    const available: SpaceDescriptor[] = envelope.spaces.map(space => ({
+      id: space.id,
+      label: space.name || space.id,
+      kind: space.id === 'exterior' || space.id.endsWith('-interior') ? (space.id === 'exterior' ? 'exterior' : 'interior') : 'unknown',
+      supportedPresentations: supported,
+    }))
+    const selectedId = target.spaceId ?? available.find(space => space.kind === 'exterior')?.id
+      ?? envelope.defaultSpaceId
+    if (!available.some(space => space.id === selectedId)) {
+      return available.length > 0
+        ? unsupported('space-missing', '所选空间在当前场景中不存在，可改用以下可用空间。', available)
+        : unsupported('space-missing', '所选空间在当前场景中不存在。')
+    }
+    return { kind: 'ok', available, selectedId }
   }
-  const document = parseVoxelDocument(data.document)
-  if (!document) throw new Error(`世界 ${worldId} 返回的 3D 场景格式不受支持。`)
-  return { document, spaceId: 'exterior' }
+  const available: SpaceDescriptor[] = [{
+    id: 'exterior', label: '外景', kind: 'exterior', supportedPresentations: supported,
+  }]
+  if (target.spaceId !== undefined && target.spaceId !== 'exterior') {
+    return unsupported('space-missing', '所选空间在当前场景中不存在，可改用以下可用空间。', available)
+  }
+  return { kind: 'ok', available, selectedId: 'exterior' }
 }
 
-function guestWorldReadModel(snapshot: WorldSnapshot): WorldReadModel {
-  const timelineId = snapshot.currentTimelineId
+function selectedSpaceDocumentOf(
+  envelope: SerializedVoxelDocument | SerializedVoxelSpaces,
+  selectedId: string,
+): { kind: 'ok'; document: VoxelDocument } | PaneUnsupported {
+  if (envelope.format === 'voxel-spaces') {
+    const space = envelope.spaces.find(item => item.id === selectedId)
+    if (!space) return unsupported('space-missing', '所选空间在当前场景中不存在。')
+    const document = parseVoxelDocument(space.document)
+    return document
+      ? { kind: 'ok', document }
+      : unsupported('scene-format', '所选空间的场景数据格式暂不受支持。')
+  }
+  const document = parseVoxelDocument(envelope)
+  return document
+    ? { kind: 'ok', document }
+    : unsupported('scene-format', '场景数据格式暂不受支持。')
+}
+
+function environmentFacts(snapshot: WorldSnapshot): readonly WorldEnvironmentFact[] {
+  return snapshot.currentFacts
+    .filter(fact => fact.factType === 'environment')
+    .map(fact => ({
+      id: fact.id,
+      locationName: typeof fact.value.location === 'string' ? fact.value.location : null,
+      condition: typeof fact.value.condition === 'string' ? fact.value.condition : '',
+      value: typeof fact.value.value === 'string' ? fact.value.value : String(fact.value.value ?? ''),
+      simTime: fact.simTime,
+      version: fact.version,
+    }))
+}
+
+function runtimeStateOf(snapshot: WorldSnapshot): WorldRuntimeState {
+  return {
+    status: snapshot.world.status,
+    pauseReason: snapshot.world.pauseReason,
+    callsToday: snapshot.world.callsToday,
+    worldModelVersion: snapshot.worldModelVersion,
+    evidenceStatus: snapshot.evidenceStatus,
+  }
+}
+
+/** 同一次 snapshot 生成读模型；2D 表现和环境覆盖层与 3D 事实同源。 */
+function worldReadModelOf(
+  snapshot: WorldSnapshot,
+  identity: WorldPresentationContext['identity'],
+  sceneId: string,
+  sceneVersion: number,
+): WorldReadModel {
   return {
     scope: {
-      source: 'account',
+      source: identity === 'readonly' ? 'public' : 'account',
       worldId: snapshot.world.id,
-      timelineId,
-      sceneId: MIST_MANOR_SCENE.id,
-      sceneVersion: MIST_MANOR_SCENE.version,
+      timelineId: snapshot.currentTimelineId,
+      sceneId,
+      sceneVersion,
     },
     worldName: snapshot.world.name,
     simNow: snapshot.simNow,
-    timeZone: snapshot.timeZone ?? snapshot.world.timeZone ?? 'UTC',
+    timeZone: effectiveTimeZone(snapshot.timeZone ?? snapshot.world.timeZone),
     stateVersion: snapshot.stateVersion,
     locations: snapshot.world.locations.map(location => ({ name: location.name, description: location.description })),
-    residents: snapshot.locationBoard.flatMap(location => location.persons.map(person => ({
+    residents: snapshot.locationBoard.flatMap(entry => entry.persons.map(person => ({
       personId: person.id,
       name: person.name,
-      locationName: location.location,
-      activity: person.activity || null,
+      locationName: entry.location,
+      activity: person.activity.trim() ? person.activity : null,
     }))),
+    environment: environmentFacts(snapshot),
+    runtime: runtimeStateOf(snapshot),
   }
+}
+
+function sceneIdentityOf(envelope: SerializedVoxelDocument | SerializedVoxelSpaces, selectedId: string): string {
+  if (envelope.format === 'voxel-spaces') {
+    return envelope.spaces.find(space => space.id === selectedId)?.document.id ?? envelope.spaces[0]?.document.id ?? selectedId
+  }
+  return envelope.id
 }
 
 /** Creates the per-pane API/session and renderer factories for the approved workspace. */
@@ -98,56 +193,92 @@ export function createPresentationRuntime(mode: PresentationAccessMode): {
   adapters: PresentationLifecycleAdapters
 } {
   const loadSession: PaneSessionLoader = async (target, signal) => {
+    throwIfAborted(signal)
     const data = await readPaneWorld(mode, target, signal)
+    throwIfAborted(signal)
+    // 服务端回显是唯一事实：目标不匹配绝不静默改用其他世界或时间线。
+    if (data.snapshot.world.id !== target.worldId) {
+      throw new Error('服务端返回的世界与请求目标不一致，请重试读取。')
+    }
     const timelineId = requestedTimeline(data.snapshot, target)
-    if (timelineId !== data.snapshot.currentTimelineId) {
+    if (data.snapshot.currentTimelineId !== timelineId) {
       throw new Error('服务端返回了不同时间线，请重试读取。')
     }
-    return {
+    const sceneMissingResult = sceneMissing(data.scene)
+    if (sceneMissingResult) return sceneMissingResult
+    const scene = data.scene as Extract<MapScene, { status: 'ready' }>
+    const envelope: SerializedVoxelDocument | SerializedVoxelSpaces = scene.document
+    const native2dSupported = supportsNative2dTheme(documentTheme(envelope))
+    const spaces = resolveSpaces(envelope, target, native2dSupported)
+    if (spaces.kind === 'unsupported') return spaces
+    const selectedSpace = selectedSpaceDocumentOf(envelope, spaces.selectedId)
+    if (selectedSpace.kind === 'unsupported') return selectedSpace
+    throwIfAborted(signal)
+
+    const sceneVersion = scene.version ?? 0
+    const sceneId = sceneIdentityOf(envelope, spaces.selectedId)
+    const worldReadModel = worldReadModelOf(data.snapshot, data.identity, sceneId, sceneVersion)
+    if (target.presentation === 'native2d') {
+      // 2D 的可呈现性在读取层判定：主题不支持或空间不可投影时直接给出原因，
+      // 绝不把静态庄园样板当作成功结果。
+      const projected = projectVoxelSpaceScene({
+        envelope,
+        spaceId: spaces.selectedId,
+        world: worldReadModel,
+        sceneId,
+        sceneVersion,
+      })
+      if (projected.kind === 'unsupported') return projected
+    }
+
+    const context: WorldPresentationContext = {
       paneId: 'single',
       worldId: target.worldId,
       timelineId,
+      spaceId: spaces.selectedId,
       presentation: target.presentation,
       identity: data.identity,
       capabilities: data.access,
-      stateVersion: data.snapshot.stateVersion,
+      sceneId,
+      sceneVersion,
+      stateVersion: data.snapshot.stateVersion ?? null,
       simNow: data.snapshot.simNow,
+      timeZone: effectiveTimeZone(data.snapshot.timeZone ?? data.snapshot.world.timeZone),
+      availableSpaces: spaces.available,
+    }
+    return {
+      context,
+      snapshot: data.snapshot,
+      sceneDocument: envelope,
+      selectedSpaceDocument: selectedSpace.document,
+      worldReadModel,
     }
   }
 
   const adapters: PresentationLifecycleAdapters = {
-    voxel3d: createVoxelPresentationAdapter(async (context, signal): Promise<VoxelViewportProps> => {
-      const data = await readPaneWorld(mode, context, signal)
-      const { document, spaceId } = selectVoxelDocument(data, context.worldId)
+    // 两个适配器只消费同一次读取结果；不再各自重读世界或猜测空间。
+    voxel3d: createVoxelPresentationAdapter(async data => {
       const names = Object.fromEntries(data.snapshot.locationBoard.flatMap(row => row.persons.map(person => [person.id, person.name])))
-      return {
-        document,
-        spaceId,
-        overlay: buildSceneOverlay(data.snapshot, context.timelineId),
+      const props: VoxelViewportProps = {
+        document: data.selectedSpaceDocument,
+        spaceId: data.context.spaceId,
+        overlay: buildSceneOverlay(data.snapshot, data.context.timelineId),
         events: data.snapshot.voxelEvents ?? null,
-        timeZone: data.snapshot.timeZone ?? data.snapshot.world.timeZone ?? 'UTC',
+        timeZone: data.context.timeZone,
         personNames: names,
       }
+      return props
     }),
-    native2d: createNative2dPresentationAdapter(async (context, signal) => {
-      if (mode === 'guest') {
-        const { snapshot } = await readPaneWorld(mode, context, signal)
-        const world = guestWorldReadModel(snapshot)
-        const layout = createInitialLayout(MIST_MANOR_SCENE, world.scope)
-        return {
-          scene: MIST_MANOR_SCENE,
-          presentation: buildPresentation(world, MIST_MANOR_SCENE, layout, MIST_MANOR_SCENE.defaultSpaceId),
-        }
-      }
-      const source = createWorldSource({
-        kind: mode === 'account' ? 'account' : 'public',
-        worldId: context.worldId,
-        timelineId: context.timelineId,
-      }, MIST_MANOR_SCENE)
-      const world = await source.load(signal)
-      const layout = createInitialLayout(MIST_MANOR_SCENE, world.scope)
-      const presentation = buildPresentation(world, MIST_MANOR_SCENE, layout, MIST_MANOR_SCENE.defaultSpaceId)
-      return { scene: MIST_MANOR_SCENE, presentation }
+    native2d: createNative2dPresentationAdapter(async data => {
+      const projected = projectVoxelSpaceScene({
+        envelope: data.sceneDocument,
+        spaceId: data.context.spaceId,
+        world: data.worldReadModel,
+        sceneId: data.context.sceneId,
+        sceneVersion: data.context.sceneVersion,
+      })
+      if (projected.kind === 'unsupported') throw new Error(projected.reason)
+      return { scene: projected.scene, presentation: projected.presentation }
     }),
   }
   return { loadSession, adapters }

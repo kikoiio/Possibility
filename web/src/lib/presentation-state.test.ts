@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CameraSnapshot, PaneTarget } from '../components/world/presentation/presentation-types'
+import type { CameraSnapshot, CameraStateTarget } from '../components/world/presentation/presentation-types'
 import type { Camera } from '../native2d/projection'
 import type { OrbitPose } from '../voxel/engine/camera'
 import {
@@ -15,7 +15,7 @@ class MemoryStorage implements PresentationStorage {
   setItem(key: string, value: string): void { this.entries.set(key, value) }
 }
 
-const target = { worldId: 'world-a', timelineId: 'main', presentation: 'native2d' } as const
+const target: CameraStateTarget = { worldId: 'world-a', timelineId: 'main', spaceId: 'exterior', presentation: 'native2d' }
 const camera: Camera = { pan: { x: -12.5, y: 40 }, zoom: 1.25 }
 const pose: OrbitPose = { theta: -0.5, phi: 0.9, distance: 24, target: { x: 1, y: 2, z: -3 } }
 const native = (overrides: Partial<Camera> = {}): CameraSnapshot => ({
@@ -24,7 +24,7 @@ const native = (overrides: Partial<Camera> = {}): CameraSnapshot => ({
 const voxel = (overrides: Partial<OrbitPose> = {}): CameraSnapshot => ({
   kind: 'voxel3d', version: 1, pose: { ...pose, ...overrides },
 })
-function cameraRecord(snapshot: unknown = native(), overrides: Record<string, unknown> = {}) {
+function cameraRecord(snapshot: unknown = native(), overrides: object = {}) {
   return { formatVersion: 1, ...target, camera: snapshot, savedAt: 123, ...overrides }
 }
 
@@ -46,12 +46,13 @@ describe('browser presentation persistence', () => {
     }
   })
 
-  it('isolates world, timeline and presentation and restores through a fresh store', () => {
+  it('isolates world, timeline, space and presentation and restores through a fresh store', () => {
     const storage = new MemoryStorage()
     const store = createPresentationStateStore(storage)
-    const targets: (PaneTarget & { timelineId: string })[] = [
+    const targets: CameraStateTarget[] = [
       target, { ...target, worldId: 'world-b' }, { ...target, timelineId: 'fork' },
       { ...target, presentation: 'voxel3d' },
+      { ...target, spaceId: 'main-house-interior' },
       { ...target, worldId: 'a:b', timelineId: 'c' },
       { ...target, worldId: 'a', timelineId: 'b:c' },
       { ...target, worldId: '世界/🙂', timelineId: 'branch?&=' },
@@ -62,6 +63,9 @@ describe('browser presentation persistence', () => {
     expect(storage.entries.size).toBe(targets.length)
     const restored = createPresentationStateStore(storage)
     targets.forEach((item, index) => expect(restored.getCamera(item)).toEqual(snapshots[index]))
+    // 相机绝不跨空间恢复：外景与内景互不可见。
+    expect(restored.getCamera({ ...target, spaceId: 'main-house-interior' })).toEqual(snapshots[4])
+    expect(restored.getCamera({ ...target, spaceId: 'absent-space' })).toBeNull()
     expect(restored.getCamera({ ...target, timelineId: 'absent' })).toBeNull()
     expect(JSON.parse(storage.getItem(cameraStorageKey(target))!)).toEqual({
       ...cameraRecord(snapshots[0]), savedAt: expect.any(Number),
@@ -87,9 +91,16 @@ describe('browser presentation persistence', () => {
     ...[
       { formatVersion: 2 }, { formatVersion: 0 }, { formatVersion: '1' },
       { worldId: 'world-b' }, { timelineId: 'fork' }, { presentation: 'voxel3d' },
+      { spaceId: 'main-house-interior' },
+      // 旧格式（缺 spaceId）或空空间不得伪装成当前空间的相机。
+      { spaceId: undefined }, { spaceId: '' },
       { savedAt: null }, { savedAt: '123' }, { camera: { ...native(), version: 2 } },
       { camera: voxel() },
     ].map(overrides => [JSON.stringify(overrides), JSON.stringify(cameraRecord(native(), overrides))]),
+    ['missing spaceId key', JSON.stringify((() => {
+      const { spaceId: _spaceId, ...rest } = cameraRecord()
+      return rest
+    })())],
     ['infinite timestamp', JSON.stringify(cameraRecord()).replace('"savedAt":123', '"savedAt":1e400')],
     ['infinite zoom', JSON.stringify(cameraRecord()).replace('"zoom":1.25', '"zoom":1e400')],
   ])('rejects invalid/mismatched camera records and retains bytes: %s', (_name, raw) => {
@@ -119,8 +130,8 @@ describe('browser presentation persistence', () => {
   it.each(invalidSnapshots)('rejects %s on both reads and writes', (_name, snapshot) => {
     const storage = new MemoryStorage()
     const store = createPresentationStateStore(storage)
-    const scope = { ...target, presentation: (snapshot as CameraSnapshot).kind === 'voxel3d'
-      ? 'voxel3d' as const : 'native2d' as const }
+    const kind = (snapshot as CameraSnapshot).kind === 'voxel3d' ? 'voxel3d' as const : 'native2d' as const
+    const scope: CameraStateTarget = { ...target, presentation: kind }
     const key = cameraStorageKey(scope)
     const raw = JSON.stringify(cameraRecord(snapshot, scope))
     storage.setItem(key, raw)

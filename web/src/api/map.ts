@@ -20,7 +20,7 @@ export interface WorldPresentation {
   locations: { name: string; description: string; residentCount: number }[]
   signals: { eventId: string; locationName: string; kind: 'movement' | 'gathering' | 'conversation' | 'environment'; emphasis: 'ambient' | 'noticeable' }[]
 }
-export type MapScene = { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
+export type MapScene = { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version?: number } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
 export interface MapBootstrap {
   access: WorldCapabilities
   world: WorldSnapshot

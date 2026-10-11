@@ -1,11 +1,10 @@
 import { createNative2dViewport } from './viewport'
+import { supportsNative2dTheme, themeOfEnvelope } from './voxel-scene-projection'
 import type { SceneDefinition, ScenePresentation } from './types'
-import type { PresentationAdapter, WorldPresentationContext } from '../components/world/presentation/presentation-types'
-
-type Native2dContext = WorldPresentationContext & { presentation: 'native2d' }
+import type { PanePresentationData, PresentationAdapter } from '../components/world/presentation/presentation-types'
 
 export type Native2dPresentationSource = (
-  context: Native2dContext,
+  data: PanePresentationData<'native2d'>,
   signal: AbortSignal,
 ) => Promise<{ scene: SceneDefinition; presentation: ScenePresentation }>
 
@@ -13,8 +12,9 @@ export type Native2dPresentationSource = (
 export function createNative2dPresentationAdapter(source: Native2dPresentationSource): PresentationAdapter<'native2d'> {
   return {
     kind: 'native2d',
-    async mount(host, context, options) {
-      const { scene, presentation } = await source(context, options.signal)
+    supports: data => supportsNative2dTheme(themeOfEnvelope(data.sceneDocument)),
+    async mount(host, data, options) {
+      const { scene, presentation } = await source(data, options.signal)
       if (options.signal.aborted) throw new DOMException('Pane load cancelled', 'AbortError')
       const viewport = await createNative2dViewport(host, scene, {
         signal: options.signal,

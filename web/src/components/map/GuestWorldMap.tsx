@@ -25,6 +25,10 @@ export interface GuestWorldMapProps {
   snapshot: WorldSnapshot
   overlay: SceneLifeOverlay | null
   initialSpaceId?: string
+  /** 受控空间选择：来自 URL/pane target；缺省时才回落到 exterior/resume 建议。 */
+  spaceId?: string
+  /** 空间选择回调：更新 URL/pane target，不直接写访客世界的 resume。 */
+  onSpaceSelect?: (spaceId: string) => void
   initialMode?: 'create' | 'life' | 'possibility'
   guest?: boolean
   claimPending?: boolean
@@ -59,6 +63,8 @@ export function GuestWorldMap({
   snapshot,
   overlay,
   initialSpaceId,
+  spaceId: controlledSpaceId,
+  onSpaceSelect,
   initialMode = 'life',
   guest = true,
   claimPending = false,
@@ -89,8 +95,21 @@ export function GuestWorldMap({
   const [worldChoices, setWorldChoices] = useState<ReturnType<typeof buildWorldDisambiguationItems>>([])
   const [sceneLocation, setSceneLocation] = useState<string | null>(null)
   useEffect(() => setLiveSnapshot(snapshot), [snapshot])
+  const requestedSpaceId = controlledSpaceId ?? initialSpaceId
   const [spaceId, setSpaceIdState] = useState(() =>
-    voxelSpaces.spaces.some(space => space.id === initialSpaceId) ? initialSpaceId! : voxelSpaces.defaultSpaceId)
+    voxelSpaces.spaces.some(space => space.id === requestedSpaceId) ? requestedSpaceId! : voxelSpaces.defaultSpaceId)
+  // 无效空间不静默回退：保留请求值并展示原因与可用替代空间。
+  const [invalidSpaceId, setInvalidSpaceId] = useState<string | null>(
+    requestedSpaceId && !voxelSpaces.spaces.some(space => space.id === requestedSpaceId) ? requestedSpaceId : null)
+  useEffect(() => {
+    if (!controlledSpaceId) return
+    if (voxelSpaces.spaces.some(space => space.id === controlledSpaceId)) {
+      setInvalidSpaceId(null)
+      setSpaceIdState(current => current === controlledSpaceId ? current : controlledSpaceId)
+    } else {
+      setInvalidSpaceId(controlledSpaceId)
+    }
+  }, [controlledSpaceId, voxelSpaces])
   const [selected, setSelected] = useState<string | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -183,9 +202,10 @@ export function GuestWorldMap({
     })
     return () => { active = false }
   }, [guest])
-  // 体素模式:当前空间文档(空间切换 → 换文档重挂载视口)
+  // 体素模式:当前空间文档(空间切换 → 换文档重挂载视口);无效空间不回退到其他空间
   const voxelDoc = useMemo(() => {
-    const space = voxelSpaces.spaces.find(item => item.id === spaceId) ?? voxelSpaces.spaces[0]
+    const space = voxelSpaces.spaces.find(item => item.id === spaceId)
+    if (!space) return null
     try {
       return deserialize(JSON.stringify(space.document))
     } catch {
@@ -251,7 +271,9 @@ export function GuestWorldMap({
   }, [liveSnapshot.world.id])
   function setSpaceId(next: string) {
     setSpaceIdState(next)
-    void (guest ? guestMapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId: next, mode: mode === 'observe' ? 'life' : mode }) : mapApi.saveResume(liveSnapshot.world.id, { timelineId: liveSnapshot.currentTimelineId, spaceId: next, mode: mode === 'observe' ? 'life' : mode }))
+    setInvalidSpaceId(null)
+    // 空间选择经 URL/pane target 持久化；resume 由既有页面流程负责，空间切换本身零写入。
+    onSpaceSelect?.(next)
   }
   function setMapMode(next: 'observe' | 'life' | 'possibility') {
     setMode(next)
@@ -330,7 +352,14 @@ export function GuestWorldMap({
           onSelectLocation={(_name, objectId) => selectObject(objectId)}
           onSelectPerson={selectResident}
         />
-      : <div className="grid h-full place-items-center text-sm text-ink-faint">空间场景暂时不可用。</div>}
+      : <div className="grid h-full place-content-center justify-items-center gap-3 p-4 text-sm text-ink-soft" data-testid="space-unavailable">
+          <p>{invalidSpaceId ? '所选空间在当前场景中不存在，可改用以下空间。' : '空间场景暂时不可用。'}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {voxelSpaces.spaces.filter(space => invalidSpaceId ? true : space.id !== spaceId).map(space => (
+              <button key={space.id} type="button" data-testid={`space-alternative-${space.id}`} onClick={() => { setSpaceId(space.id); setSelected(null); setSelectedPersonId(null) }} className="rounded-full border border-ink-line bg-sheet px-4 py-2 text-xs hover:bg-paper-deep transition">{space.name || space.id} →</button>
+            ))}
+          </div>
+        </div>}
     <div className="pointer-events-none absolute inset-0 z-stage">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-sage-900/80 via-sage-900/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>

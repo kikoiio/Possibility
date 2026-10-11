@@ -3,6 +3,7 @@ import type { PaneId, PresentationKind } from './presentation-types'
 import {
   readPresentationRoute,
   updatePanePresentation,
+  updatePaneSpace,
   updatePaneTimeline,
   updateRightPaneTarget,
 } from './presentation-route'
@@ -82,6 +83,20 @@ describe('presentation route decoding', () => {
     const route = readPresentationRoute('world-a', new URLSearchParams('timeline=+&rightWorld=+&right=fork'))
     expect(route.left.timelineId).toBeUndefined()
     expect(route.right?.worldId).toBe('world-a')
+  })
+
+  it('decodes left and right space selections and keeps them unresolved when absent', () => {
+    expect(readPresentationRoute('world-a', new URLSearchParams('space=exterior&rightWorld=world-b&rightSpace=main-house-interior')))
+      .toEqual({
+        left: { worldId: 'world-a', spaceId: 'exterior', presentation: 'voxel3d' },
+        right: { worldId: 'world-b', spaceId: 'main-house-interior', presentation: 'voxel3d' },
+      })
+    expect(readPresentationRoute('world-a', new URLSearchParams()).left).not.toHaveProperty('spaceId')
+    expect(readPresentationRoute('world-a', new URLSearchParams()).right).toBeNull()
+  })
+
+  it('does not open a right pane from an orphan rightSpace alone', () => {
+    expect(readPresentationRoute('world-a', new URLSearchParams('rightSpace=exterior')).right).toBeNull()
   })
 
   it('preserves decoded opaque IDs and does not mutate query while reading', () => {
@@ -165,5 +180,40 @@ describe('presentation route updates', () => {
   it('changing an orphan right presentation does not invent a target', () => {
     const next = updatePanePresentation(new URLSearchParams(), 'right', 'native2d')
     expect(readPresentationRoute('world-a', next).right).toBeNull()
+  })
+
+  it('changes only the requested space and never writes a right space into a left key or vice versa', () => {
+    for (const paneId of ['single', 'left', 'right'] as const) {
+      const query = initial()
+      const original = query.toString()
+      const next = updatePaneSpace(query, paneId, 'main-house-interior')
+      const expected = initial()
+      expected.set(paneId === 'right' ? 'rightSpace' : 'space', 'main-house-interior')
+      expect([...next]).toEqual([...expected])
+      expect(query.toString()).toBe(original)
+      const cleared = updatePaneSpace(query, paneId, null)
+      const expectedCleared = initial()
+      expectedCleared.delete(paneId === 'right' ? 'rightSpace' : 'space')
+      expect([...cleared]).toEqual([...expectedCleared])
+    }
+    // 右键更新写 rightSpace 且不动左键；左键更新写 space 且不动右键。
+    const rightUpdate = updatePaneSpace(new URLSearchParams('space=exterior'), 'right', 'exterior')
+    expect(rightUpdate.get('rightSpace')).toBe('exterior')
+    expect(rightUpdate.get('space')).toBe('exterior')
+    const leftUpdate = updatePaneSpace(new URLSearchParams('rightSpace=exterior'), 'left', 'exterior')
+    expect(leftUpdate.get('space')).toBe('exterior')
+    expect(leftUpdate.get('rightSpace')).toBe('exterior')
+  })
+
+  it('round-trips an explicit right space through the full right target and clears it on close', () => {
+    const query = initial()
+    const target = { worldId: 'world-b', timelineId: 'fork', spaceId: 'main-house-interior', presentation: 'native2d' } as const
+    const opened = updateRightPaneTarget(query, target)
+    expect(readPresentationRoute('world-a', new URLSearchParams(opened.toString())).right).toEqual(target)
+    const closed = updateRightPaneTarget(opened, null)
+    for (const key of ['rightWorld', 'right', 'rightSpace', 'rightPresentation']) {
+      expect(closed.has(key)).toBe(false)
+    }
+    expect(closed.get('space')).toBeNull()
   })
 })

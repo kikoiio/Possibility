@@ -1,8 +1,9 @@
 import type {
   CameraSnapshot,
   CameraSnapshotFor,
+  CameraStateTarget,
   MountedPresentation,
-  PaneTarget,
+  PanePresentationData,
   PresentationAdapter,
   PresentationKind,
   PresentationStateStore,
@@ -10,12 +11,12 @@ import type {
 } from './presentation-types'
 
 export type PresentationContext = {
-  [K in PresentationKind]: WorldPresentationContext & { presentation: K }
+  [K in PresentationKind]: PanePresentationData<K>
 }[PresentationKind]
 
 export type MountedPresentationForKind = {
   [K in PresentationKind]: {
-    target: PaneTarget & { presentation: K }
+    target: CameraStateTarget
     mounted: MountedPresentation<K>
   }
 }[PresentationKind]
@@ -69,13 +70,6 @@ export function createPresentationLifecycle(dependencies: {
       && request === candidate && !candidate.controller.signal.aborted
   }
 
-  function snapshotContext(context: PresentationContext): PresentationContext {
-    if (context.presentation === 'native2d') {
-      return { ...context, capabilities: { ...context.capabilities } }
-    }
-    return { ...context, capabilities: { ...context.capabilities } }
-  }
-
   function isCameraFor<K extends PresentationKind>(
     camera: CameraSnapshot | null,
     kind: K,
@@ -83,10 +77,11 @@ export function createPresentationLifecycle(dependencies: {
     return camera !== null && camera.kind === kind && camera.version === 1
   }
 
-  function targetFor(context: WorldPresentationContext): PaneTarget & { timelineId: string } {
+  function targetFor(context: WorldPresentationContext): CameraStateTarget {
     return {
       worldId: context.worldId,
       timelineId: context.timelineId,
+      spaceId: context.spaceId,
       presentation: context.presentation,
     }
   }
@@ -117,7 +112,7 @@ export function createPresentationLifecycle(dependencies: {
 
   async function mount<K extends PresentationKind>(
     adapter: PresentationAdapter<K>,
-    context: WorldPresentationContext & { presentation: K },
+    data: PanePresentationData<K>,
     host: HTMLElement,
     candidate: MountRequest,
     options?: {
@@ -125,6 +120,7 @@ export function createPresentationLifecycle(dependencies: {
       onMounted?: (entry: MountedPresentationForKind) => void
     },
   ): Promise<PresentationTransitionResult> {
+    const context = data.context
     let camera: CameraSnapshotFor<K> | undefined
     try {
       const saved = dependencies.store.getCamera(targetFor(context))
@@ -133,9 +129,14 @@ export function createPresentationLifecycle(dependencies: {
       // A failed restore is equivalent to having no saved camera.
     }
     if (!isCurrent(candidate)) return { kind: 'stale' }
+    if (!adapter.supports(data)) {
+      request = undefined
+      candidate.controller.abort()
+      return { kind: 'error', error: new Error('这种表现无法呈现当前上下文，请改用其他表现。'), retryable: true }
+    }
 
     try {
-      const handle = await adapter.mount(host, context, {
+      const handle = await adapter.mount(host, data, {
         signal: candidate.controller.signal,
         camera,
         onCameraChange: snapshot => {
@@ -163,10 +164,14 @@ export function createPresentationLifecycle(dependencies: {
   }
 
   return {
-    transition(context, host, options) {
+    transition(data, host, options) {
       if (destroyed) return Promise.resolve({ kind: 'disposed' })
       const transitionGeneration = ++generation
-      const contextSnapshot = snapshotContext(context)
+      // 浅拷贝并 detach context/capabilities：调用方随后修改原对象不影响本次挂载。
+      const dataSnapshot = {
+        ...data,
+        context: { ...data.context, capabilities: { ...data.context.capabilities } },
+      } as PresentationContext
       invalidateCurrent()
       releaseMounted()
       if (destroyed) return Promise.resolve({ kind: 'disposed' })
@@ -176,10 +181,10 @@ export function createPresentationLifecycle(dependencies: {
         controller: new AbortController(),
       }
       request = candidate
-      if (contextSnapshot.presentation === 'native2d') {
-        return mount(dependencies.adapters.native2d, contextSnapshot, host, candidate, options)
+      if (dataSnapshot.context.presentation === 'native2d') {
+        return mount(dependencies.adapters.native2d, dataSnapshot as PanePresentationData<'native2d'>, host, candidate, options)
       }
-      return mount(dependencies.adapters.voxel3d, contextSnapshot, host, candidate, options)
+      return mount(dependencies.adapters.voxel3d, dataSnapshot as PanePresentationData<'voxel3d'>, host, candidate, options)
     },
     destroy() {
       if (destroyed) return

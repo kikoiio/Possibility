@@ -25,6 +25,7 @@ import GlobalCapBanner from '../components/GlobalCapBanner'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 import MapSelectionCard from '../components/map/MapSelectionCard'
 import { formatWorldTime } from '../lib/world-time'
+import { timelineOptionLabel } from '../world/timeline-display'
 import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
 import WorldHeader from '../components/world/shell/WorldHeader'
 import SplitViewStage from '../components/world/shell/SplitViewStage'
@@ -32,7 +33,7 @@ import WorldModalsContainer from '../components/world/shell/WorldModalsContainer
 import ComparisonHost from '../components/world/presentation/ComparisonHost'
 import PresentationSwitcher from '../components/world/presentation/PresentationSwitcher'
 import { createPresentationRuntime } from '../components/world/presentation/presentation-runtime'
-import { readPresentationRoute, updatePanePresentation, updatePaneTimeline, updateRightPaneTarget } from '../components/world/presentation/presentation-route'
+import { readPresentationRoute, updatePanePresentation, updatePaneSpace, updatePaneTimeline, updateRightPaneTarget } from '../components/world/presentation/presentation-route'
 import { createPresentationStateStore } from '../lib/presentation-state'
 import { createGuestClaimStore, createInitialGuestClaimContext } from '../guest/claim-store'
 
@@ -229,16 +230,18 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const isSmall = useMemo(() => typeof window !== 'undefined' && matchMedia('(max-width: 767px)').matches, [])
   const presentationRoute = readPresentationRoute(worldId, search, presentationStore.getPreferred())
   const comparisonWorkspaceActive = search.has('presentation') || search.has('rightWorld') || presentationRoute.left.presentation === 'native2d'
-  const savedVoxelCamera = presentationStore.getCamera({ worldId, timelineId: activeTimelineId || 'main', presentation: 'voxel3d' })
+  const savedVoxelCamera = presentationStore.getCamera({ worldId, timelineId: activeTimelineId || 'main', spaceId: 'exterior', presentation: 'voxel3d' })
   const legacyVoxelPose = savedVoxelCamera?.kind === 'voxel3d' ? savedVoxelCamera.pose : null
   const presentationWorlds = useMemo(() => {
+    const timelineLabels = (snapshot?.timelines ?? []).map(timeline => ({ id: timeline.id, label: timelineOptionLabel(timeline) }))
     const options = worldChoices.map(world => ({
       id: world.id,
       name: world.name,
       timelineIds: world.id === worldId ? snapshot?.timelines.map(timeline => timeline.id) : undefined,
+      timelineLabels: world.id === worldId ? timelineLabels : undefined,
     }))
     if (!options.some(world => world.id === worldId)) {
-      options.unshift({ id: worldId, name: snapshot?.world.name ?? worldId, timelineIds: snapshot?.timelines.map(timeline => timeline.id) })
+      options.unshift({ id: worldId, name: snapshot?.world.name ?? worldId, timelineIds: snapshot?.timelines.map(timeline => timeline.id), timelineLabels })
     }
     return options
   }, [worldChoices, worldId, snapshot])
@@ -250,14 +253,18 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     }
     if (!target) return
     presentationStore.setPreferred(target.presentation)
-    const next = updatePanePresentation(updatePaneTimeline(search, 'left', target.timelineId ?? null), 'left', target.presentation)
+    const next = updatePaneSpace(
+      updatePanePresentation(updatePaneTimeline(search, 'left', target.timelineId ?? null), 'left', target.presentation),
+      'left',
+      target.spaceId ?? null,
+    )
     if (target.worldId === worldId) setSearch(next, { replace: true })
     else navigate(`/worlds/${encodeURIComponent(target.worldId)}?${next.toString()}`)
   }, [navigate, presentationStore, search, setSearch, worldId])
   const selectSinglePresentation = useCallback((presentation: 'native2d' | 'voxel3d') => {
     if (presentation !== 'voxel3d' && presentationRoute.left.presentation === 'voxel3d') {
       const pose = (window as Window & { __voxelEngine?: { getOrbitPose(): OrbitPose | null } }).__voxelEngine?.getOrbitPose()
-      if (pose && activeTimelineId) presentationStore.setCamera({ worldId, timelineId: activeTimelineId, presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
+      if (pose && activeTimelineId) presentationStore.setCamera({ worldId, timelineId: activeTimelineId, spaceId: 'exterior', presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
     }
     presentationStore.setPreferred(presentation)
     setSearch(updatePanePresentation(search, 'single', presentation), { replace: true })
@@ -270,7 +277,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }, [presentationStore, search, setSearch])
   const saveLegacyCameraPose = useCallback((pose: OrbitPose) => {
     if (!activeTimelineId) return
-    presentationStore.setCamera({ worldId, timelineId: activeTimelineId, presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
+    presentationStore.setCamera({ worldId, timelineId: activeTimelineId, spaceId: 'exterior', presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
   }, [activeTimelineId, presentationStore, worldId])
   const otherSnapshot = rightSceneRead.status === 'ready' ? rightSceneRead.value : null
   const comparison = comparisonRead.status === 'ready' ? comparisonRead.value : null
@@ -904,6 +911,12 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       snapshot={snapshot}
       overlay={overlay}
       initialSpaceId={resumeSpaceId}
+      spaceId={search.get('space') ?? undefined}
+      onSpaceSelect={next => {
+        const params = new URLSearchParams(search)
+        params.set('space', next)
+        setSearch(params, { replace: true })
+      }}
       initialMode={mode === 'possibility' ? 'possibility' : resumeMode}
       splitActive={comparisonWorkspaceActive || splitActive}
       onCloseSplit={() => closeSplit('right')}

@@ -2,12 +2,10 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import VoxelViewport, { type VoxelViewportProps } from '../../../voxel/VoxelViewport'
 import type { OrbitPose } from '../../../voxel/engine'
-import type { PresentationAdapter, WorldPresentationContext } from './presentation-types'
-
-type VoxelContext = WorldPresentationContext & { presentation: 'voxel3d' }
+import type { PanePresentationData, PresentationAdapter } from './presentation-types'
 
 export type VoxelViewportPropsResolver = (
-  context: VoxelContext,
+  data: PanePresentationData<'voxel3d'>,
   signal: AbortSignal,
 ) => VoxelViewportProps | Promise<VoxelViewportProps>
 
@@ -28,8 +26,10 @@ function engineFor(paneId: string): VoxelEngineHandle | undefined {
 export function createVoxelPresentationAdapter(resolveProps: VoxelViewportPropsResolver): PresentationAdapter<'voxel3d'> {
   return {
     kind: 'voxel3d',
-    async mount(host, context, options) {
-      const props = await resolveProps(context, options.signal)
+    supports: () => true,
+    async mount(host, data, options) {
+      const context = data.context
+      const props = await resolveProps(data, options.signal)
       if (options.signal.aborted) throw new DOMException('Pane load cancelled', 'AbortError')
       const root = createRoot(host)
       let disposed = false
