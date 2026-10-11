@@ -19,7 +19,7 @@ function setup() {
   store.write(createInitialGuestClaimContext({ sessionId: 's', worldId: 'w', generation: 0 }, { guestToken: 'guest-token' }))
   const claim = vi.fn<() => Promise<ClaimStatus>>(async () => ({ kind: 'claimed', worldId: 'saved', replayed: false }))
   const claimStatus = vi.fn<() => Promise<ClaimStatus>>(async () => ({ kind: 'not-started', epoch: 0, safeToSwitch: false }))
-  const recoverClaim = vi.fn(async () => ({ kind: 'retryable' as const, epoch: 1, safeToSwitch: true }))
+  const recoverClaim = vi.fn<() => Promise<ClaimStatus>>(async () => ({ kind: 'retryable', epoch: 1, safeToSwitch: true }))
   return { store, claim, claimStatus, recoverClaim, storage }
 }
 
