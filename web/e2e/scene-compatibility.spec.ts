@@ -28,6 +28,7 @@ const SECOND_WORLD = 'a1-second-world' // 对照世界：单空间 valid
 const DEMO_WORLD = 'a1-demo-world' // 演示基线世界：valid，active baseline → 全员只读
 const SPACES_WORLD = 'a1-legacy-spaces-world' // 旧双空间庭院：exterior valid + hall invalid
 const E01_WORLD = 'a1-e01-demo-copy' // E01 独立原始多空间保存演示副本
+const MIGRATED_LEGACY_SUMMARY = '迁移时复制旧世界当前场景'
 const BOOKSHELF_WORLD = 'a1-bookshelf-world' // 家具内部格误判与保存几何对照
 const MISSING_SCENE_WORLD = 'a1-missing-scene-world'
 const CORRUPT_SCENE_WORLD = 'a1-corrupt-scene-world'
@@ -157,7 +158,7 @@ async function openHistory(page: Page): Promise<Locator> {
 async function startRestoreV1Journey(page: Page, worldId = LEGACY_WORLD): Promise<Locator> {
   await expect(page).toHaveURL(new RegExp(`/worlds/${worldId}`))
   const history = await openHistory(page)
-  const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
+  const rowV1 = history.locator('li').filter({ hasText: MIGRATED_LEGACY_SUMMARY })
   await expect(rowV1).toBeVisible({ timeout: 30_000 })
   await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
   const dialog = compatDialog(page)
@@ -332,7 +333,7 @@ test('E01 同一多空间旧副本连续完成修复、AI/手动编辑、刷新�
     .find(space => space.id === 'hall')?.document
   const r1Asset = r1Hall?.assetPlacements?.find(placement => placement.id === 'fixture-legacy-asset')
   expect(r1Asset?.anchor).not.toEqual([4, 1, 4])
-  expect((await revisions()).some(row => row.version === 1 && row.summary === '隔离 fixture 原始旧场景')).toBe(true)
+  expect((await revisions()).some(row => row.version === 1 && row.summary === MIGRATED_LEGACY_SUMMARY)).toBe(true)
   expect((await revisions()).find(row => row.version === 1)?.contentHash).toMatch(/^[a-f0-9]{64}$/)
   const inspectR1 = await page.request.get(`/api/worlds/${E01_WORLD}/scene/compatibility/inspection`, { headers })
   expect(inspectR1.ok()).toBeTruthy()
@@ -379,7 +380,7 @@ test('E01 同一多空间旧副本连续完成修复、AI/手动编辑、刷新�
 
   // 7. Select original invalid h0, preview repair, and confirm to a new current version r4.
   const history = await openHistory(page)
-  const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
+  const rowV1 = history.locator('li').filter({ hasText: MIGRATED_LEGACY_SUMMARY })
   await expect(rowV1).toBeVisible()
   await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
   const restore = compatDialog(page)
@@ -399,7 +400,7 @@ test('E01 同一多空间旧副本连续完成修复、AI/手动编辑、刷新�
   // 8. Verify persisted source chain, original h0 bytes, life records, identities and audit rows.
   const allRevisions = await revisions()
   expect(allRevisions).toHaveLength(historyBefore.length + 4)
-  expect(allRevisions.find(row => row.version === 1)?.summary).toBe('隔离 fixture 原始旧场景')
+  expect(allRevisions.find(row => row.version === 1)?.summary).toBe(MIGRATED_LEGACY_SUMMARY)
   expect(await hash(await sceneDocument(page, E01_WORLD))).toBe(await hash(r4.document))
   const sourceRes = await page.request.get(`/api/worlds/${E01_WORLD}/scene/compatibility/source/1/spaces/hall`, { headers })
   expect(sourceRes.ok()).toBeTruthy()
@@ -503,7 +504,7 @@ test('E02 有效单空间用户世界连续完成诊断、AI/手动编辑、刷�
   const persisted = await snapshot()
   expect(await hash(persisted.document)).toBe(await hash(afterManual.document))
   const history = await openHistory(page)
-  const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
+  const rowV1 = history.locator('li').filter({ hasText: MIGRATED_LEGACY_SUMMARY })
   await expect(rowV1).toBeVisible()
   await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
   await expect(page.getByRole('dialog', { name: '场景历史' })).toHaveCount(0, { timeout: 30_000 })
@@ -996,7 +997,7 @@ test('有效历史恢复：预检有效目标直接恢复为新增当前版本�
 
   // 历史 → v1（有效）→ 恢复到此版本：预检有效，走快速通道直接恢复
   const history = await openHistory(page)
-  const rowV1 = history.locator('li').filter({ hasText: '隔离 fixture 原始旧场景' })
+  const rowV1 = history.locator('li').filter({ hasText: MIGRATED_LEGACY_SUMMARY })
   await expect(rowV1).toBeVisible({ timeout: 30_000 })
   await rowV1.getByRole('button', { name: '恢复到此版本' }).click()
   // 有效目标不打开兼容旅程，恢复完成后历史面板关闭
@@ -1007,7 +1008,7 @@ test('有效历史恢复：预检有效目标直接恢复为新增当前版本�
   // 新增当前版本，目标 v1 原文仍在历史中
   const rowsAfter = await revisionRows(page, SECOND_WORLD)
   expect(rowsAfter.length).toBe(rowsBefore + 1)
-  expect(rowsAfter.some(row => row.version === 1 && row.summary === '隔离 fixture 原始旧场景')).toBe(true)
+  expect(rowsAfter.some(row => row.version === 1 && row.summary === MIGRATED_LEGACY_SUMMARY)).toBe(true)
 })
 
 // ── W36：无效历史目标，先修复预览，不启用原无效目标 ────────────────
@@ -1036,7 +1037,7 @@ test('无效历史恢复：先修复预览，原 restore 不被调用，确认�
   expect(restoreCalls()).toBe(0)
   expect(await sceneVersion(page, E01_WORLD)).toBe(before + 1)
   // 原历史 v1 不被回滚改写
-  expect((await revisionRows(page, E01_WORLD)).some(row => row.version === 1 && row.summary === '隔离 fixture 原始旧场景')).toBe(true)
+  expect((await revisionRows(page, E01_WORLD)).some(row => row.version === 1 && row.summary === MIGRATED_LEGACY_SUMMARY)).toBe(true)
   await dialog.getByRole('button', { name: '关闭兼容检查' }).click()
 })
 

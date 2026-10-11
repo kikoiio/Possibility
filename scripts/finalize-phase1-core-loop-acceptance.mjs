@@ -1,5 +1,5 @@
 import { createConnection } from 'node:net'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const outputRoot = resolve(process.env.PHASE1_BASELINE_OUTPUT_DIR ?? 'artifacts/phase1-core-loop')
@@ -50,6 +50,11 @@ const responsiveCases = ['narrow-485', 'narrow-390'].map(name => {
 const gui = { status: 'unverified', reason: 'Phase 1 is a browser based web flow; the repository has no native GUI target for this acceptance stage.' }
 
 const compatibilityTempPath = process.env.PLAYWRIGHT_COMPAT_PERSIST_TO
+const compatibilityOutputDir = '/tmp/possibility-a1-compatibility-playwright-results'
+if (existsSync(compatibilityOutputDir)) {
+  try { cpSync(compatibilityOutputDir, join(runDir, 'compatibility-playwright-output'), { recursive: true }) }
+  catch (error) { errors.push(`Could not preserve compatibility browser diagnostics: ${error instanceof Error ? error.message : String(error)}`) }
+}
 const activePorts = []
 for (const port of [15173, 18787, 15198, 18798]) if (await canConnect(port)) activePorts.push(port)
 if (activePorts.length) errors.push(`Acceptance services still listening on ports ${activePorts.join(', ')}`)
