@@ -516,7 +516,7 @@ test('E02 有效单空间用户世界连续完成诊断、AI/手动编辑、刷�
   expect(finalRows).toHaveLength(initialRows.length + 3)
   expect(finalRows.find(row => row.version === initialVersion)?.contentHash).toBe(initialRevision?.contentHash)
   expect(finalRows.find(row => row.version === restored.version)?.contentHash).toMatch(/^[a-f0-9]{64}$/)
-  expect(finalRows.some(row => row.version === restored.version && row.kind === 'restore')).toBe(true)
+  expect(finalRows.some(row => row.version === restored.version && row.kind === 'ancestor-restore')).toBe(true)
 })
 
 test('旧资料分类：缺场景、损坏 JSON、未知格式和未知版本均明确拒绝且不写历史', async ({ page }) => {
