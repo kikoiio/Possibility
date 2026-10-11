@@ -154,7 +154,7 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
     const capturedAccount = account
     const submitted: GuestClaimContext = {
       ...captured,
-      target: capturedAccount,
+      target: { userId: capturedAccount.id, username: capturedAccount.username },
       submitted: true,
       confirmationRequired: true,
       phase: 'saving',
@@ -191,12 +191,12 @@ export function createGuestClaimFlow(deps: GuestClaimFlowDeps = {}): GuestClaimF
     account = nextAccount
     if (!context) return
     if (context.submitted || context.target) {
-      context = { ...context, target: nextAccount, confirmationRequired: true, phase: 'confirm-account' }
+      context = { ...context, target: { userId: nextAccount.id, username: nextAccount.username }, confirmationRequired: true, phase: 'confirm-account' }
       phase = 'confirm-account'; message = `当前保存目标账号：${nextAccount.username}。请确认后保存。`; emit()
       return
     }
-    context = { ...context, target: nextAccount, confirmationRequired: false }
-    if (!persist(context)) return
+    const prepared = { ...context, target: { userId: nextAccount.id, username: nextAccount.username }, confirmationRequired: false }
+    if (!persist(prepared)) return
     await confirmAndSave()
   }
   async function recover(): Promise<void> {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { ClaimStatus } from '../api/client'
 import { createGuestClaimFlow } from './claim-flow'
 import { createGuestClaimStore, createInitialGuestClaimContext } from './claim-store'
 
@@ -16,8 +17,8 @@ function setup() {
   const storage = new MemoryStorage()
   const store = createGuestClaimStore({ storage, getToken: () => 'guest-token', clearToken: () => undefined })
   store.write(createInitialGuestClaimContext({ sessionId: 's', worldId: 'w', generation: 0 }, { guestToken: 'guest-token' }))
-  const claim = vi.fn(async () => ({ kind: 'claimed' as const, worldId: 'saved', replayed: false }))
-  const claimStatus = vi.fn(async () => ({ kind: 'not-started' as const, epoch: 0, safeToSwitch: false }))
+  const claim = vi.fn<() => Promise<ClaimStatus>>(async () => ({ kind: 'claimed', worldId: 'saved', replayed: false }))
+  const claimStatus = vi.fn<() => Promise<ClaimStatus>>(async () => ({ kind: 'not-started', epoch: 0, safeToSwitch: false }))
   const recoverClaim = vi.fn(async () => ({ kind: 'retryable' as const, epoch: 1, safeToSwitch: true }))
   return { store, claim, claimStatus, recoverClaim, storage }
 }
@@ -52,6 +53,7 @@ describe('guest claim save wait boundary', () => {
 describe('guest claim safe manual recovery', () => {
   it('recovery updates the version and does not submit a follow-up claim', async () => {
     const deps = setup()
+    deps.claim.mockImplementationOnce(async () => ({ kind: 'in-progress', epoch: 0, recoveryAvailable: false, safeToSwitch: false }))
     const flow = createGuestClaimFlow({ store: deps.store, client: deps, getGuestToken: () => 'guest-token' })
     await flow.afterAuthentication({ id: 'u', username: 'alice' })
     deps.claim.mockClear()
