@@ -32,6 +32,7 @@ try {
     const bb01 = matrix.cases.find(item => item.caseId === 'BB-01')
     if (bb01) {
       bb01.requestId = correlation.requestId
+      bb01.draftRequestId = correlation.draftRequestId
       bb01.context = correlation.context
       bb01.apiTrace = trace
       bb01.page = { ...bb01.page, url: correlation.page.url, labels: [...new Set([...(bb01.page?.labels ?? []), ...correlation.page.labels])] }
@@ -40,7 +41,7 @@ try {
       writeFileSync(join(runDir, 'cases', 'BB-01.json'), `${JSON.stringify({
         schema: `${matrix.schema}-case`, runId, caseId: 'BB-01', status: bb01.status,
         verified: bb01.status === 'passed', identity: bb01.identity, context: bb01.context,
-        requestId: bb01.requestId, apiTrace: bb01.apiTrace, entry: bb01.entry,
+        requestId: bb01.requestId, draftRequestId: bb01.draftRequestId, apiTrace: bb01.apiTrace, entry: bb01.entry,
         page: bb01.page, http: bb01.http, failure: bb01.failure,
       }, null, 2)}\n`)
     }

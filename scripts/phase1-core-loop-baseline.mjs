@@ -219,6 +219,7 @@ function materializeCaseEvidence(runDir, manifest) {
       identity: item.identity,
       context: item.context,
       requestId: item.requestId,
+      draftRequestId: item.draftRequestId,
       apiTrace: item.apiTrace,
       entry: item.entry,
       page: item.page,
@@ -240,6 +241,7 @@ function mergeBrowserEvidence(runDir, manifest, sourceDir = process.env.PHASE1_B
       item.identity = evidence.identity ?? item.identity
       item.context = evidence.context ?? item.context
       item.requestId = evidence.requestId ?? item.requestId
+      item.draftRequestId = evidence.draftRequestId ?? item.draftRequestId
       item.apiTrace = Array.isArray(evidence.apiTrace) ? evidence.apiTrace : item.apiTrace
       item.page = evidence.page ?? item.page
       item.http = Array.isArray(evidence.http) ? evidence.http : item.http

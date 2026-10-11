@@ -9,7 +9,7 @@ export function validateCoreJourneyCorrelation(correlation, expectedRunId) {
   const bootstrap = trace.find(item => item.method === 'GET'
     && item.path === `/api/worlds/${context.worldId}/map/bootstrap`)
   const draft = trace.find(item => item.method === 'POST' && item.path === '/api/scene-drafts/voxel'
-    && item.status === 200 && item.requestId === correlation?.requestId)
+    && item.status === 200 && item.requestId === correlation?.draftRequestId)
   const contextMatches = typeof context.worldId === 'string' && context.worldId.length > 0
     && typeof context.timelineId === 'string' && context.timelineId.length > 0
     && context.spaceId === 'exterior'
@@ -24,6 +24,8 @@ export function validateCoreJourneyCorrelation(correlation, expectedRunId) {
 
   if (correlation?.runId !== expectedRunId) errors.push('runId does not match the baseline manifest runId')
   if (typeof correlation?.requestId !== 'string' || !correlation.requestId) errors.push('requestId is missing')
+  if (typeof correlation?.draftRequestId !== 'string' || !correlation.draftRequestId) errors.push('draftRequestId is missing')
+  if (correlation?.sameDocument !== true) errors.push('created scene does not match the generated draft')
   if (!draft) errors.push('scene draft request is not linked to the journey requestId')
   if (!failedGate) errors.push('blocked world create is not linked to the journey requestId')
   if (!created) errors.push('successful world create is not linked to the journey requestId')

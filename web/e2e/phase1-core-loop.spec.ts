@@ -192,11 +192,12 @@ test('an invalid new-world candidate is blocked, then the explicit fallback is s
   await page.reload()
   await expect(page.getByTestId('voxel-viewport-canvas')).toBeVisible({ timeout: 15_000 })
   expect(routes.createBodies).toHaveLength(2)
-  const requestId = routes.draftBodies[0]!.requestId
-  expect(requestId).toEqual(routes.createBodies[0]!.sceneRequestId)
+  const draftRequestId = routes.draftBodies[0]!.requestId
+  const requestId = routes.createBodies[0]!.sceneRequestId
   expect(routes.createBodies[1]!.sceneRequestId).toBe(requestId)
+  expect(routes.createBodies[1]!.scene).toEqual(routes.draftBodies[0]!.document)
   expect(routes.apiTrace).toEqual(expect.arrayContaining([
-    expect.objectContaining({ method: 'POST', path: '/api/scene-drafts/voxel', status: 200, requestId }),
+    expect.objectContaining({ method: 'POST', path: '/api/scene-drafts/voxel', status: 200, requestId: draftRequestId }),
     expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 422, attempt: 1, requestId }),
     expect.objectContaining({ method: 'POST', path: '/api/worlds', status: 200, attempt: 2, requestId, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId }),
     expect.objectContaining({ method: 'GET', path: `/api/worlds/${snapshot.world.id}/map/bootstrap`, status: 200, worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow }),
@@ -207,6 +208,8 @@ test('an invalid new-world candidate is blocked, then the explicit fallback is s
   writeFileSync(resolve(outputDir, 'BB-01.json'), `${JSON.stringify({
     runId,
     requestId,
+    draftRequestId,
+    sameDocument: true,
     context: { worldId: snapshot.world.id, timelineId: snapshot.currentTimelineId, spaceId: 'exterior', simNow: snapshot.simNow },
     apiTrace: routes.apiTrace,
     page: { url: page.url(), labels: ['首次门禁拒绝未写入', '保底保存复用同一 requestId', '进入后的 bootstrap 时间线与空间匹配'] },

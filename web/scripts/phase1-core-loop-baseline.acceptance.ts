@@ -40,6 +40,7 @@ export type BaselineCase = {
   identity: string
   context: { worldId: string | null; timelineId: string | null; spaceId: string | null; simNow: string | null }
   requestId?: string
+  draftRequestId?: string
   apiTrace?: Array<{ method: string; path: string; status: number; requestId?: string; worldId?: string; timelineId?: string; spaceId?: string; simNow?: string; attempt?: number }>
   status: BaselineStatus
   http: Array<{ method: string; path: string; status: number }>

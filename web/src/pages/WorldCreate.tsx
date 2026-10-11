@@ -249,10 +249,11 @@ export default function WorldCreate() {
       </header>
       {error && <div role="alert" className="pointer-events-auto absolute left-1/2 top-20 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl bg-white px-4 py-3 text-sm text-red-700 shadow-lg" data-testid="create-error">
         <p>{error.message}</p>
-        <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="create-error-status">
+        {(error.kind === 'content' || error.errorCode === 'compatibility-required') && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="create-error-status">
           <p>影响：此候选未通过检查，暂时不能创建世界。</p>
           <p className="mt-1">写入状态：未写入；调整描述后可以重试，或在有可用草稿时选择保底场景。</p>
-        </div>
+        </div>}
+        {error.status !== undefined && error.status >= 500 && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">写入状态尚未确认；保留的请求可以查询或使用原请求重试。</p>}
         {error.kind === 'content' && <>
           {error.issues?.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{error.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{safeCreateIssueText(issue.summary ?? issue.message)}{issue.suggestion ? ` ${safeCreateIssueText(issue.suggestion)}` : ''}</li>)}</ul> : <p className="mt-2 text-xs">可以简化描述，减少复杂结构，并重新生成。</p>}
           {error.callsUsed !== undefined && <p className="mt-2 text-xs text-[#68796d]">本次已使用 {error.callsUsed} 次模型调用。</p>}
