@@ -17,6 +17,11 @@ import { cancelChatRequest, ChatRequestConflict, buildChatCompletionWrites, fail
 import { ensureUniverseRevision } from '../world-state/model'
 import { commitWorldCommand } from '../world-state/commit'
 import { WorldStateError } from '../world-state/types'
+import { buildEvidenceSnapshot } from '../provenance/read'
+import { ensureResponseSnapshot } from '../provenance/responses'
+import { resolveEvidenceScope } from '../provenance/scope'
+import { finalizeGroundedResponse } from '../provenance/grounding'
+import { completeResponseAttempt, ensureResponseAttempt, readResponseSnapshot } from '../provenance/responses'
 
 type Conversation = typeof conversations.$inferSelect
 
@@ -156,6 +161,7 @@ async function runAndStream(
   const expectedVersion = opts.phoneRequest ? (await ensureUniverseRevision(db, ctx.world.id, ctx.timeline.id)).version : undefined
 
   let full = ''
+  let published = ''
   let complete = false
   const controller = new AbortController()
   activeChatRequests.set(opts.runId, controller)
@@ -165,6 +171,14 @@ async function runAndStream(
     for await (const ev of runAgentTurn(env, db, ctx, opts.input, opts.history ?? [], {
       signal: controller.signal, runId: opts.runId,
       ...(opts.phoneRequest ? { onComplete: async (run) => {
+        let answer = full
+        let grounded = null as Awaited<ReturnType<typeof finalizeGroundedResponse>> | null
+        const savedSnapshot = await readResponseSnapshot(db, `provenance-response:${opts.runId}`, opts.userId)
+        if (savedSnapshot && likelyProvenanceQuestion(opts.input, savedSnapshot.snapshot.records.map(record => ({ topic: record.topic, content: record.content })))) {
+          grounded = finalizeGroundedResponse(savedSnapshot.snapshot, null, 'generation_failed')
+          answer = grounded.body
+        }
+        published = answer
         run.current.activity = '通过电话与用户交谈'
         const action = {
           type: 'resident_state' as const,
@@ -187,22 +201,50 @@ async function runAndStream(
           committed = await commitWorldCommand(db, {
             id: commandId, worldId: ctx.world.id, timelineId: ctx.timeline.id, userId: ctx.world.userId,
             actorKind: 'system', expectedVersion: expectedVersion!, action,
-          }, buildChatCompletionWrites(db, opts.phoneRequest!, full))
+          }, buildChatCompletionWrites(db, opts.phoneRequest!, answer))
         } catch (error) {
           if (error instanceof WorldStateError) throw error
           throw new Error('电话回合提交失败，请重试。')
+        }
+        if (grounded) {
+          try {
+            const attempt = await ensureResponseAttempt(db, { responseId: savedSnapshot!.row.responseId, attemptId: opts.runId })
+            await completeResponseAttempt(db, attempt.row.attemptId, grounded)
+          } catch (error) {
+            // The chat/world commit remains authoritative. A later GET can
+            // report the missing attempt without rolling back an already
+            // committed phone turn.
+            console.error('[provenance] response attempt persistence failed', error)
+          }
         }
         return committed.commandId
       } } : {}),
     })) {
       await heartbeatChatRequest(db, opts.runId)
-      if (ev.type === 'text') full += ev.delta
+      if (ev.type === 'text') {
+        full += ev.delta
+        // Phone responses are held until the atomic completion callback has
+        // committed the request. This prevents an uncommitted candidate from
+        // appearing in SSE before the durable request/effect boundary.
+        if (!opts.phoneRequest) await stream.writeSSE({ data: JSON.stringify(ev) })
+        continue
+      }
+      if (opts.phoneRequest && ev.type === 'memory') {
+        // Phone side effects are already durable in the command transaction;
+        // do not stream staged memory details around the final response
+        // grounding gate.
+        continue
+      }
       if (ev.type === 'done') {
         if (ev.error) {
           await stream.writeSSE({ data: JSON.stringify({ type: 'error', message: ev.error }) })
         } else {
           complete = true
+          if (opts.phoneRequest && published.trim()) {
+            await stream.writeSSE({ data: JSON.stringify({ type: 'text', delta: published }) })
+          }
         }
+        await stream.writeSSE({ data: JSON.stringify(ev) })
         break
       }
       await stream.writeSSE({ data: JSON.stringify(ev) })
@@ -215,6 +257,18 @@ async function runAndStream(
     if (activeChatRequests.get(opts.runId) === controller) activeChatRequests.delete(opts.runId)
   }
   return { text: full, complete }
+}
+
+function likelyProvenanceQuestion(input: string, records: { topic: string; content: string }[]): boolean {
+  const normalizedInput = input.trim().toLocaleLowerCase()
+  if (!normalizedInput || !records.length) return false
+  return records.some(record => {
+    const terms = [record.topic, record.content]
+      .map(value => value.trim().toLocaleLowerCase())
+      .flatMap(value => [value, ...Array.from({ length: Math.max(0, value.length - 1) }, (_, index) => value.slice(index, index + 2))])
+      .filter(term => term.length >= 2)
+    return terms.some(term => normalizedInput.includes(term))
+  })
 }
 
 async function requestResponse(db: Db, conversationId: string, requestId: string, userId: string) {
@@ -321,6 +375,26 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
   }
   // 用户交互痕迹：闲置自动归档以此为据
   await touchWorldActivity(db, ctx.world.id)
+
+  // Freeze the resident-visible provenance context before model work. The
+  // snapshot is immutable and is also the sole source that later expression
+  // retries may use; it never writes a world fact or resident memory.
+  try {
+    const access = { kind: 'user' as const, userId, ownerId: userId,
+      username: c.get('user').username, role: c.get('user').role }
+    const scope = await resolveEvidenceScope(db, access, {
+      worldId: ctx.world.id, timelineId: ctx.timeline.id, residentId: ctx.person.id,
+    })
+    const evidence = await buildEvidenceSnapshot(db, access, scope, { limit: 100 })
+    await ensureResponseSnapshot(db, {
+      chatRequestId: requestId, conversationId: convo.id, worldId: ctx.world.id,
+      timelineId: ctx.timeline.id, residentId: ctx.person.id, userId,
+      question: content, snapshot: evidence,
+    })
+  } catch (error) {
+    await failChatRequest(db, requestId, 'provenance_snapshot_failed')
+    return c.json({ error: error instanceof Error ? error.message : '无法保存电话来源快照' }, 409)
+  }
 
   const recent = await db
     .select()

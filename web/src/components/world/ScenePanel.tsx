@@ -3,6 +3,7 @@ import { ApiError, personaApi, sceneApi, worldsApi } from '../../api/client'
 import type { Persona, PersonaMention, PersonaMessage, SceneEvent, WorldSummary } from '../../api/types'
 import { resolveSceneEntryLocation } from '../../scene/entry-location'
 import { actionAvailability, actionExample, refreshedActionLocation } from '../../scene/action-guidance'
+import { decideInformRecovery } from '../../lib/informRecovery'
 import SceneChatList from './scene/SceneChatList'
 import SceneActionSection from './scene/SceneActionSection'
 
@@ -109,6 +110,8 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
   const [infoContent, setInfoContent] = useState('')
   const [infoBusy, setInfoBusy] = useState(false)
   const [infoNotice, setInfoNotice] = useState('')
+  const [infoReceiptId, setInfoReceiptId] = useState<string | null>(null)
+  const [infoRecipientId, setInfoRecipientId] = useState<string | null>(null)
   const [intentText, setIntentText] = useState('')
   const [intentBusy, setIntentBusy] = useState(false)
   const [intentNotice, setIntentNotice] = useState('')
@@ -312,14 +315,28 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
   const handleInform = async () => {
     if (!persona?.location || persona.location !== location || !infoRecipient || !infoTopic.trim() || !infoContent.trim() || infoBusy) return
     setInfoBusy(true); setInfoNotice('')
+    const commandId = crypto.randomUUID()
     try {
       const state = await worldsApi.state(worldId, timelineId)
       const result = await sceneApi.inform(worldId, { timelineId, recipientId: infoRecipient,
-        topic: infoTopic.trim(), content: infoContent.trim(), commandId: crypto.randomUUID(), expectedVersion: state.version })
+        topic: infoTopic.trim(), content: infoContent.trim(), commandId, expectedVersion: state.version })
       onMilestone?.('change-condition')
-      setInfoNotice(`对方已听到这条消息（v${result.version}）；它仍是传闻，不会自动变成世界事实。`)
+      setInfoReceiptId(result.receipt?.receiptId ?? null)
+      setInfoRecipientId(infoRecipient)
+      setInfoNotice(result.receipt
+        ? `对方已听到这条消息（v${result.version}）；它仍是传闻，不会自动变成世界事实。`
+        : `传话已提交（v${result.version}），但接收回执暂时不可用；请查询来源后再作判断。`)
       setInfoContent('')
-    } catch (e) { setInfoNotice(e instanceof Error ? e.message : '传递失败') }
+    } catch (e) {
+      try {
+        const prior = await worldsApi.commandStatus(worldId, commandId)
+        if (prior.timelineId === timelineId && prior.receipt) {
+          setInfoReceiptId(prior.receipt.receiptId)
+          setInfoRecipientId(prior.receipt.recipient.personId)
+          setInfoNotice(decideInformRecovery('committed').message)
+        } else setInfoNotice(decideInformRecovery('not_found').message)
+      } catch { setInfoNotice(decideInformRecovery('unknown').message) }
+    }
     finally { setInfoBusy(false) }
   }
 
@@ -482,7 +499,11 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
         const committed = await sceneApi.inform(worldId, { timelineId, recipientId: proposal.recipientId,
           topic: proposal.topic, content: proposal.content, commandId: result.requestId, expectedVersion: result.expectedVersion })
         onMilestone?.('change-condition')
-        setIntentNotice(`已确认并告诉${proposal.recipientName}（v${committed.version}）；这仍是一条传闻。`)
+        setInfoReceiptId(committed.receipt?.receiptId ?? null)
+        setInfoRecipientId(proposal.recipientId)
+        setIntentNotice(committed.receipt
+          ? `已确认并告诉${proposal.recipientName}（v${committed.version}）；这仍是一条传闻。`
+          : `已提交（v${committed.version}），但接收回执暂时不可用；请查询来源后再作判断。`)
       }
       clearPendingIntentProposal(storageKey)
       setIntentProposal(null)
@@ -730,6 +751,8 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
             />
 
             <SceneActionSection
+              worldId={worldId}
+              timelineId={timelineId}
               persona={persona}
               location={location}
               actionLocations={actionLocations}
@@ -744,6 +767,8 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
               setInfoContent={setInfoContent}
               infoBusy={infoBusy}
               infoNotice={infoNotice}
+              infoReceiptId={infoReceiptId}
+              infoRecipientId={infoRecipientId}
               handleInform={handleInform}
               intentText={intentText}
               onIntentTextChange={handleIntentTextChange}

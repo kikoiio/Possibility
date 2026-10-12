@@ -144,6 +144,53 @@ export interface ChatRequestState {
   reply: Pick<Message, 'id' | 'role' | 'content' | 'createdAt'> | null
 }
 
+export type ProvenanceCompleteness = 'complete' | 'partial' | 'unavailable'
+export type ProvenanceSourceView =
+  | { status: 'visible'; sourceRef: string; label: string; content: string; simTime: string | null }
+  | { status: 'missing' | 'restricted'; reason: string }
+export interface ProvenanceRecord {
+  evidenceId: string
+  topicKey: string
+  topic: string
+  content: string
+  simTime: string | null
+  version: number | null
+  originTimelineId: string
+  sender: { personId: string | null; name: string } | null
+  recipientId: string
+  reception: { state: 'established' | 'unresolved'; status: 'complete' | 'missing' | 'conflicting'; refs: unknown[] }
+  assertion: { state: 'unverified' | 'verified'; status: 'complete' | 'missing' | 'conflicting'; refs: unknown[] }
+  sourceViews: ProvenanceSourceView[]
+  repairItemId: string | null
+}
+export interface ProvenanceSnapshot {
+  snapshotId: string
+  schemaVersion: 1
+  scope: { worldId: string; timelineId: string; residentId: string; simNow: string; revisionVersion: number }
+  records: ProvenanceRecord[]
+  groups: { topicKey: string; label: string; evidenceIds: string[]; relation: 'single_account' | 'multiple_accounts' | 'documented_conflict'; completeness: ProvenanceCompleteness }[]
+  completeness: ProvenanceCompleteness
+  gaps: string[]
+  nextCursor: string | null
+}
+export interface MessageReceipt {
+  receiptId: string
+  commandId: string
+  factRef: { kind: string; id: string; timelineId: string }
+  worldId: string
+  timelineId: string
+  version: number
+  simTime: string
+  sender: { personId: string | null; name: string } | null
+  recipient: { personId: string | null; name: string }
+  topic: string
+  content: string
+}
+export type ProvenanceAttempt =
+  | { status: 'pending'; responseId: string; attemptId: string; stage: 'reading' | 'generating' | 'validating' | 'saving' }
+  | { status: 'completed'; responseId: string; attemptId: string; response: { snapshotId: string; body: string; mode: 'grounded' | 'fallback'; canRetry: boolean } }
+  | { status: 'failed'; responseId: string; attemptId: string; reason: string; canRetry: boolean }
+
 export interface TimelineEvent {
   id: string
   timelineId: string
@@ -572,6 +619,7 @@ export interface ReturnBrief {
   timelineId: string; simNow: string; firstVisit: boolean; cursor: number
   eventCursor: number; revisionVersion: number; nextEventCursor: number; nextRevisionVersion: number; hasMore: boolean
   summary: string; changes: ReturnChange[]
+  provenance?: ProvenanceSnapshot | null
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
 }
 export interface EventEvidenceDetail {

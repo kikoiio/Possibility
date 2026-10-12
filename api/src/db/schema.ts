@@ -279,6 +279,105 @@ export const residentMemoryRepairItems = sqliteTable('resident_memory_repair_ite
   createdAt: text('created_at').notNull(),
 }, t => [uniqueIndex('resident_memory_repair_source').on(t.runId, t.sourceMemoryId)])
 
+/** Phase 2A: immutable source snapshots captured before a phone answer is generated. */
+export const provenanceResponseSnapshots = sqliteTable('provenance_response_snapshots', {
+  responseId: text('response_id').primaryKey(),
+  chatRequestId: text('chat_request_id').notNull().unique().references(() => chatRequests.requestId),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  residentId: text('resident_id').notNull().references(() => persons.id),
+  userId: text('user_id').notNull().references(() => users.id),
+  question: text('question').notNull(),
+  questionHash: text('question_hash').notNull(),
+  snapshotId: text('snapshot_id').notNull(),
+  schemaVersion: integer('schema_version').notNull().default(1),
+  snapshotJson: text('snapshot_json').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [index('provenance_response_snapshot_scope').on(t.worldId, t.timelineId, t.residentId, t.createdAt)])
+
+export const provenanceResponseAttempts = sqliteTable('provenance_response_attempts', {
+  attemptId: text('attempt_id').primaryKey(),
+  responseId: text('response_id').notNull().references(() => provenanceResponseSnapshots.responseId),
+  status: text('status').notNull().default('pending'),
+  stage: text('stage').notNull().default('reading'),
+  outputJson: text('output_json'),
+  errorCode: text('error_code'),
+  leaseToken: text('lease_token'),
+  leaseGeneration: integer('lease_generation').notNull().default(0),
+  leaseExpiresAt: text('lease_expires_at'),
+  createdAt: text('created_at').notNull(),
+  finishedAt: text('finished_at'),
+}, t => [index('provenance_response_attempt_response').on(t.responseId, t.createdAt)])
+
+export const provenanceRepairRuns = sqliteTable('provenance_repair_runs', {
+  runId: text('run_id').primaryKey(),
+  scopeHash: text('scope_hash').notNull().unique(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  residentId: text('resident_id').notNull().references(() => persons.id),
+  ruleVersion: text('rule_version').notNull(),
+  scopeJson: text('scope_json').notNull(),
+  frozenBoundsJson: text('frozen_bounds_json').notNull(),
+  cursorJson: text('cursor_json'),
+  status: text('status').notNull().default('pending'),
+  batchSize: integer('batch_size').notNull().default(20),
+  scanned: integer('scanned').notNull().default(0),
+  linked: integer('linked').notNull().default(0),
+  alreadyValid: integer('already_valid').notNull().default(0),
+  insufficientEvidence: integer('insufficient_evidence').notNull().default(0),
+  conflictingEvidence: integer('conflicting_evidence').notNull().default(0),
+  lastError: text('last_error'),
+  leaseToken: text('lease_token'),
+  leaseGeneration: integer('lease_generation').notNull().default(0),
+  leaseExpiresAt: text('lease_expires_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [index('provenance_repair_run_status').on(t.status, t.updatedAt)])
+
+export const provenanceRepairItems = sqliteTable('provenance_repair_items', {
+  itemId: text('item_id').primaryKey(),
+  runId: text('run_id').notNull().references(() => provenanceRepairRuns.runId),
+  recordKind: text('record_kind').notNull(),
+  recordId: text('record_id').notNull(),
+  originTimelineId: text('origin_timeline_id').notNull(),
+  originalDigest: text('original_digest').notNull(),
+  originalExcerpt: text('original_excerpt').notNull(),
+  status: text('status').notNull(),
+  sourceRefsJson: text('source_refs_json').notNull().default('[]'),
+  linkIdsJson: text('link_ids_json').notNull().default('[]'),
+  reason: text('reason').notNull(),
+  committedSequence: integer('committed_sequence').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('provenance_repair_item_target').on(t.runId, t.recordKind, t.recordId),
+  index('provenance_repair_item_sequence').on(t.runId, t.committedSequence),
+])
+
+export const provenanceSourceLinks = sqliteTable('provenance_source_links', {
+  linkId: text('link_id').primaryKey(),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  residentId: text('resident_id').notNull().references(() => persons.id),
+  recordKind: text('record_kind').notNull(),
+  recordId: text('record_id').notNull(),
+  sourceKind: text('source_kind').notNull(),
+  sourceId: text('source_id').notNull(),
+  sourceTimelineId: text('source_timeline_id').notNull(),
+  relation: text('relation').notNull(),
+  ruleVersion: text('rule_version').notNull(),
+  originalDigest: text('original_digest').notNull(),
+  sourceDigest: text('source_digest').notNull(),
+  repairItemId: text('repair_item_id').references(() => provenanceRepairItems.itemId),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('provenance_source_link_unique').on(
+    t.worldId, t.timelineId, t.residentId, t.recordKind, t.recordId,
+    t.sourceKind, t.sourceId, t.relation, t.ruleVersion,
+  ),
+  index('provenance_source_link_target').on(t.worldId, t.timelineId, t.residentId, t.recordKind, t.recordId),
+])
+
 /** ForkSnapshot 正文外置存储(0028):timelines.forkSnapshotJson 只留 $ref 指针;旧行内 v1 永久可读 */
 export const forkSnapshots = sqliteTable('fork_snapshots', {
   timelineId: text('timeline_id')

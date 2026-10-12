@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming'
 import type { SSEStreamingApi } from 'hono/streaming'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { createDb, type Db } from '../db/client'
-import { memories, personaMessages, personStates, persons, timelines, worlds, worldCommands, worldPersons, dialogues, dialogueTurns, sceneRequests, sceneIntentProposals, universeRevisions } from '../db/schema'
+import { memories, personaMessages, personStates, persons, timelines, worlds, worldCommands, worldFacts, worldPersons, dialogues, dialogueTurns, sceneRequests, sceneIntentProposals, universeRevisions } from '../db/schema'
 import type { AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
 import { buildWorldSnapshot, buildEngineContext } from '../agent/engine-context'
@@ -25,6 +25,7 @@ import { recoverDialogueLock } from '../world-state/system'
 import { WorldStateError, type WorldAction } from '../world-state/types'
 import { alternativesFor, buildIntentMessages, resolveIntentOutput } from '../world-actions/resolve'
 import { validateWorldAction } from '../world-state/rules'
+import { messageReceiptFromCommand } from '../provenance/receipts'
 import type { Env } from '../index'
 
 type World = typeof worlds.$inferSelect
@@ -470,7 +471,10 @@ sceneRoutes.post('/worlds/:id/scene/inform', async (c) => {
       eq(sceneIntentProposals.requestId, body.commandId), eq(sceneIntentProposals.status, 'pending'),
     ))
     await touchWorldActivity(db, world.id)
-    return c.json({ ...result, certainty: 'rumor' })
+    const command = await db.select().from(worldCommands).where(eq(worldCommands.id, result.commandId)).get()
+    const fact = await db.select().from(worldFacts).where(eq(worldFacts.id, result.factId)).get()
+    const receipt = command && fact ? await messageReceiptFromCommand(db, command, fact) : null
+    return c.json({ ...result, certainty: 'rumor', receipt })
   } catch (error) {
     if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
     throw error

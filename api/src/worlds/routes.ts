@@ -32,6 +32,7 @@ import { createRootProjectionBaseline, ensureUniverseRevision, readPinnedWorldMo
 import { readWorldState } from '../world-state/query'
 import { effectiveTimeZone, isValidTimeZone } from './time-zone'
 import { WorldStateError, type WorldAction } from '../world-state/types'
+import { messageReceiptFromCommand } from '../provenance/receipts'
 import type { ForkScenario } from '../agent/types'
 import { normalizeForkFields } from '../life/fork-fields'
 import type { Env } from '../index'
@@ -360,7 +361,9 @@ worldsRoutes.get('/:id/actions/:commandId', async (c) => {
     eq(worldCommands.id, c.req.param('commandId')), eq(worldCommands.worldId, world.id),
   )).get()
   if (!command) return c.json({ error: '命令不存在' }, 404)
-  return c.json({ id: command.id, timelineId: command.timelineId, resultVersion: command.resultVersion })
+  const fact = await db.select().from(worldFacts).where(eq(worldFacts.sourceCommandId, command.id)).get()
+  const receipt = fact ? await messageReceiptFromCommand(db, command, fact) : null
+  return c.json({ id: command.id, timelineId: command.timelineId, resultVersion: command.resultVersion, receipt })
 })
 
 worldsRoutes.post('/:id/actions', async (c) => {

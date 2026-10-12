@@ -1,4 +1,5 @@
 import type { Persona } from '../../../api/types'
+import MessageSourceDetail from '../MessageSourceDetail'
 
 export interface IntentProposalData {
   status: string
@@ -19,6 +20,8 @@ export interface IntentProposalData {
 }
 
 export interface SceneActionSectionProps {
+  worldId: string
+  timelineId: string
   persona: Persona
   location: string
   actionLocations: { name: string; description: string }[]
@@ -35,6 +38,8 @@ export interface SceneActionSectionProps {
   setInfoContent: (v: string) => void
   infoBusy: boolean
   infoNotice: string
+  infoReceiptId?: string | null
+  infoRecipientId?: string | null
   handleInform: () => Promise<void>
 
   // Intent state & handlers
@@ -54,6 +59,8 @@ export interface SceneActionSectionProps {
 }
 
 export default function SceneActionSection({
+  worldId,
+  timelineId,
   persona,
   location,
   actionLocations,
@@ -68,6 +75,8 @@ export default function SceneActionSection({
   setInfoContent,
   infoBusy,
   infoNotice,
+  infoReceiptId,
+  infoRecipientId,
   handleInform,
   intentText,
   onIntentTextChange,
@@ -136,6 +145,7 @@ export default function SceneActionSection({
           </button>
         </div>
         {infoNotice && <p className="mt-2 text-xs text-ink-soft">{infoNotice}</p>}
+        {infoReceiptId && infoRecipientId && <MessageSourceDetail worldId={worldId} timelineId={timelineId} residentId={infoRecipientId} receiptId={infoReceiptId} topic={infoTopic.trim() || undefined} />}
       </details>
 
       <details className="max-h-[45vh] shrink-0 overflow-y-auto border-t border-ink-line/60 px-4 py-2">

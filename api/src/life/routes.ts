@@ -3,6 +3,8 @@ import { and, desc, eq, lte, sql } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { commitments, events, personaMessages, persons, timelines, worldFacts, worldPersons, worldVisits, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
+import { buildEvidenceSnapshot } from '../provenance/read'
+import { resolveEvidenceScope } from '../provenance/scope'
 import type { Env } from '../index'
 import { canFulfill, nextCommitmentStatus, transitionCommitment, type LifeAction } from './service'
 import { touchWorldActivity } from '../engine/budget'
@@ -43,10 +45,22 @@ lifeRoutes.get('/worlds/:id/return', async c => {
   const summary = page.changes.length
     ? `新增 ${page.changes.length} 项记录${highlightCount ? `，其中 ${highlightCount} 项状态或约定变化` : ''}。`
     : '这段时间没有新的记录。'
+  let provenance = null
+  if (visitor) {
+    try {
+      const access = { kind: 'user' as const, userId: c.get('user').id, ownerId: c.get('user').id,
+        username: c.get('user').username, role: c.get('user').role }
+      const evidenceScope = await resolveEvidenceScope(db, access, {
+        worldId: s.world.id, timelineId: s.tl.id, residentId: visitor.id,
+        simNow: s.tl.simNow,
+      })
+      provenance = await buildEvidenceSnapshot(db, access, evidenceScope, { limit: 100 })
+    } catch { provenance = null }
+  }
   return c.json({ timelineId: s.tl.id, simNow: s.tl.simNow, firstVisit: !visit, cursor: page.nextEventCursor,
     revisionVersion: page.nextRevisionVersion, eventCursor: page.nextEventCursor, nextEventCursor: page.nextEventCursor,
     nextRevisionVersion: page.nextRevisionVersion, hasMore: page.hasMoreEvents || page.hasMoreFacts,
-    summary, changes: page.changes,
+    summary, changes: page.changes, provenance,
     events: page.events.map(e => ({ ...e, actorName: e.actorName ?? (e.actorPersonId ? nameOf.get(e.actorPersonId) ?? null : null) })),
     commitments: promises.map(p => ({ ...p, personName: nameOf.get(p.personId) ?? '某人' })), unread: inbox.length,
     // 回顾只展示数据库中的事实，不让模型臆测离开时发生的事。

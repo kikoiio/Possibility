@@ -295,6 +295,7 @@ import type {
   ReturnBrief,
   TimelineComparison,
 } from './types'
+import type { MessageReceipt } from './types'
 import type { SceneHistoryRevision, SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, SceneScope, VoxelSceneDraftResponse } from './types'
 import type {
   ConfirmSceneCompatibilityParams,
@@ -361,7 +362,7 @@ export const worldsApi = {
   state: (worldId: string, timelineId: string) =>
     apiFetch<WorldState>(`/api/worlds/${worldId}/state?timelineId=${encodeURIComponent(timelineId)}`),
   commandStatus: (worldId: string, commandId: string) =>
-    apiFetch<{ id: string; timelineId: string; resultVersion: number }>(`/api/worlds/${worldId}/actions/${encodeURIComponent(commandId)}`),
+    apiFetch<{ id: string; timelineId: string; resultVersion: number; receipt: MessageReceipt | null }>(`/api/worlds/${worldId}/actions/${encodeURIComponent(commandId)}`),
   command: (worldId: string, body: { id: string; timelineId: string; expectedVersion: number; action: { type: 'environment'; location: string | null; condition: string; value: string } | { type: 'inform'; recipientId: string; topic: string; content: string; sourceFactId?: string } }) =>
     apiFetch<{ commandId: string; factId: string; version: number }>(`/api/worlds/${worldId}/actions`, { method: 'POST', body: JSON.stringify(body) }),
   pause: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
@@ -686,7 +687,7 @@ export const sceneApi = {
   position: (worldId: string, body: { timelineId: string; location: string; commandId: string; expectedVersion: number }) =>
     apiFetch<{ commandId: string; version: number; location: string }>(`/api/worlds/${worldId}/scene/position`, { method: 'POST', body: JSON.stringify(body) }),
   inform: (worldId: string, body: { timelineId: string; recipientId: string; topic: string; content: string; commandId: string; expectedVersion: number }) =>
-    apiFetch<{ commandId: string; version: number; certainty: 'rumor' }>(`/api/worlds/${worldId}/scene/inform`, { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<{ commandId: string; version: number; certainty: 'rumor'; receipt: MessageReceipt | null }>(`/api/worlds/${worldId}/scene/inform`, { method: 'POST', body: JSON.stringify(body) }),
 }
 
 export const lifeApi = {

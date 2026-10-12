@@ -21,6 +21,7 @@ export const LLM_CONTRACT_VERSIONS = {
   sceneResponse: 'scene-response/v2',
   chapter: 'chapter/v1',
   voxelDistill: 'voxel-distill/v1',
+  messageProvenance: 'message-provenance/v1',
 } as const
 
 export type LlmContractName = keyof typeof LLM_CONTRACT_VERSIONS

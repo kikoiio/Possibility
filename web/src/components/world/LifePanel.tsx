@@ -3,6 +3,7 @@ import { lifeApi } from '../../api/client'
 import type { CommitmentView, ReturnBrief, ReturnChange } from '../../api/types'
 import { formatWorldTime } from '../../lib/world-time'
 import EventEvidenceDetail from './EventEvidenceDetail'
+import MessageSourceDetail from './MessageSourceDetail'
 
 interface Props {
   worldId: string
@@ -130,6 +131,11 @@ export default function LifePanel({ worldId, timelineId, timeZone, onClose, onFo
           <p className="font-story text-sm text-ink">{brief.summary}</p>
           <p className="mt-1 text-[11px] text-ink-faint">模拟时间截至 {formatWorldTime(brief.simNow, timeZone)}{highlightedCount ? ' · ' + highlightedCount + ' 项重点变化' : ''}</p>
         </div>
+        {brief.provenance && <div className="mb-4 rounded-xl border border-ink-line bg-sheet px-3 py-2.5">
+          <p className="text-xs font-medium text-ink">传话来源</p>
+          <p className="mt-1 text-[11px] text-ink-faint">{brief.provenance.records.length ? `本次回顾包含 ${brief.provenance.records.length} 条居民接收记录。` : '本次回顾没有找到可确认的传话记录。'}{brief.provenance.completeness === 'complete' ? '' : ' 来源范围不完整，不能据此断言从未听过。'}</p>
+          <MessageSourceDetail worldId={worldId} timelineId={timelineId} residentId={brief.provenance.scope.residentId} />
+        </div>}
 
         {!changes.length && <p className="rounded-xl border border-dashed border-ink-line p-5 text-center text-sm text-ink-faint">你离开后，暂时没有新的动静。</p>}
         <div className="space-y-2">
