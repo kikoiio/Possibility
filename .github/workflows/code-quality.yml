@@ -51,13 +51,13 @@ jobs:
       - name: Install Chromium
         working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: Run phase 2B, split view, and scene history journeys
+      - name: Run focused product and stream journeys
         working-directory: web
         env:
           PLAYWRIGHT_API_PORT: '18787'
           PLAYWRIGHT_WEB_PORT: '15173'
           PLAYWRIGHT_TRACE: 'on'
-        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/phase2b-time-status.spec.ts e2e/split-view.spec.ts e2e/scene-history-recovery.spec.ts
+        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/phase2b-time-status.spec.ts e2e/split-view.spec.ts e2e/scene-history-recovery.spec.ts e2e/chat-stream-callback.spec.ts
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7

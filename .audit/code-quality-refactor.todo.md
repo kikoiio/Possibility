@@ -30,22 +30,34 @@
 - [x] U3b. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, archived, no-timeline, and large home fixtures; assert query count is bounded independently of timeline count.
 - [x] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
 - [x] U5. Split timeline-scoped scene revision storage from legacy world-scene operations. Keep canonical exports or migrate all callers in one unit. Verify scene repository, history, fork, and migration tests.
-- [ ] U6. Reduce route mount-order coupling by moving auth to explicit path-owning routers or middleware. Add overlap/auth tests. Verify protected and public route behavior.
+- [x] U6. Reduce route mount-order coupling by moving auth to explicit path-owning routers or middleware. Add overlap/auth tests. Verify protected and public route behavior.
 - [ ] U7. Run the full new GitHub Actions gate, inspect the run and artifacts, perform a diff review, and record unverified product acceptance cases honestly.
 - [ ] U8. Review the current diff for comments and style, audit the decision trail, and report branch/push status.
 
 ## U8 comment findings shape
 
-- [ ] Architect: Ground
-- [ ] Architect: Sketch
-- [ ] Architect: Agree
-- [ ] Architect: Implement
-- [ ] Architect: Scrap
-- [ ] Arena: Frame
-- [ ] Arena: Fan out
-- [ ] Arena: Cross-judge
-- [ ] Arena: Pick
-- [ ] Arena: Graft
+- [x] U8 architect: Ground, sketch, and agree completed in `.audit/code-quality-u8/`.
+- [x] U8 arena: Frame, fan out, cross-judge, pick, and graft completed in `.audit/code-quality-u8/`.
+- [ ] U8 implementation reconciliation and cloud verification remain open until the callback finding and full Actions gate pass.
+
+## ChatStream callback finding
+
+- [x] Architect: Ground the initial-load effect, both state callback call sites, and its consumer.
+- [x] Architect: Sketch two callback freshness shapes in `.audit/code-quality-u8/design.md`.
+- [x] Architect: Agree after the candidate review.
+- [x] Architect: Implement the selected shape and remove the dependency suppression.
+- [x] Architect: Scrap assessment against the caller and stream lifecycle contract.
+- [x] Add a controlled Playwright harness for callback replacement during active catchup and send streams without callback-triggered reloads.
+- [x] Arena: Frame two distinct callback freshness candidates and a concrete rubric in `.audit/code-quality-u8/callback-frame.md`.
+- [x] Arena: Fan out independent sketches to separate audit files.
+- [x] Arena: Cross-judge both candidates.
+- [x] Arena: Pick and graft the smallest coherent shape.
+- [ ] Arena: Verify the artifact and record the cloud gate result.
+- [x] Arena: Frame
+- [x] Arena: Fan out
+- [x] Arena: Cross-judge
+- [x] Arena: Pick
+- [x] Arena: Graft
 - [ ] Arena: Verify
 
 ## Definition of done
@@ -101,4 +113,6 @@
 - U5 passed on commit `0fb7ae4` in Actions run `38813972293`: API 982 passed/1 skipped, Web 754 passed, and all 19 browser journeys passed. The successful artifact `12009558323` is 46,585,024 bytes and contains 19 traces; the camera-link trace confirms the journey passed after `openSplit()` waited for both viewports to finish loading and then crossed two animation frames. The repair work itself measured 9,802 ms against the unchanged 10,000 ms bound; retain the runner-speed sensitivity as a residual risk.
 - U6 starts from the verified U5 state. The authorization overlap surface includes global `use('*')` routers mounted at `/api`, `/api/worlds` middleware that can catch scene/map paths, and scene-specific middleware that overlaps the same URLs. Convert protections to handler registrations and prove behavior with reversed mount order before marking U6 verified.
 - U6 implementation now attaches auth/access middleware to the routes that own it across worlds, scenes, chat, timelines, life, comparison, memory, map, provenance, and persons. The route-order test mounts the real routers in normal and reverse order and covers owner/foreign owner, public, guest, expired guest, anonymous, Bearer plus guest precedence, unknown paths, and denied visit writes; Actions verification is pending.
+- U6's first retry, run `38817202602` at `6c17e7c`, passed the shared contracts and API type check, and ran 985 API tests successfully with one skip. The only failed API assertion was the existing Mist Manor repair: 19,197,242 work units measured 10,026 ms against the unchanged 10,000 ms deadline. The runner started with 14 GiB available, zero swap I/O, and zero memory PSI; a same-SHA full rerun is the next discriminator.
+- U6 verified on the same-SHA rerun of `6c17e7c` in Actions run `38817202602`, attempt 2: API 986 passed/1 skipped, Web 754 passed, and all 19 browser journeys passed. The unchanged Mist Manor repair measured 9,618 ms; the 10-second limit remains a runner-speed risk.
 - No merge, release, or deployment is authorized by this task.

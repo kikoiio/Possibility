@@ -179,11 +179,16 @@ export default function Native2dSamplePage() {
       if (action === 'chat') {
         if (!chatDraft.trim()) return
         const chunks: string[] = []
+        let streamError: string | null = null
         await session.chat(chatDraft.trim(), crypto.randomUUID(), event => {
-          const text = event.text ?? event.content ?? event.delta
-          chunks.push(typeof text === 'string' ? text : JSON.stringify(event))
-          setInteractionResult(chunks.join(''))
+          if (event.type === 'utterance') {
+            chunks.push(`${event.name}：${event.text}`)
+            setInteractionResult(chunks.join('\n'))
+          } else if (event.type === 'error') {
+            streamError = event.message
+          }
         })
+        if (streamError) throw new Error(streamError)
         setChatDraft('')
         controller.refresh()
         setInteractionMessage('对话已完成，正在刷新世界事实。')

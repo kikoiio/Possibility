@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, personaApi, sceneApi, worldsApi } from '../../api/client'
-import type { Persona, PersonaMention, PersonaMessage, SceneEvent, WorldSummary } from '../../api/types'
+import type { Persona, PersonaMention, PersonaMessage, WorldSummary } from '../../api/types'
 import { resolveSceneEntryLocation } from '../../scene/entry-location'
 import { actionAvailability, actionExample, refreshedActionLocation } from '../../scene/action-guidance'
 import { decideInformRecovery } from '../../lib/informRecovery'
@@ -554,8 +554,7 @@ export default function ScenePanel({ worldId, timelineId, timeZone, worldStatus 
     let transportError = ''
     try {
       try {
-        await sceneApi.send(worldId, { timelineId, location: location || undefined, content, dialogueId: dialogueId ?? undefined, requestId: request.id }, (raw) => {
-          const ev = raw as SceneEvent
+        await sceneApi.send(worldId, { timelineId, location: location || undefined, content, dialogueId: dialogueId ?? undefined, requestId: request.id }, (ev) => {
           if (ev.type === 'scene_start') {
             setDialogueId(ev.dialogueId)
             setMessages((prev) => [...prev, { role: 'system', name: '', text: `在${ev.location}——${ev.participants.join('、')} 在场` }])

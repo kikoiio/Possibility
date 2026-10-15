@@ -214,17 +214,12 @@ export function createNative2dInteractions(options: Native2dInteractionOptions):
     try {
       await options.session.chat(text, requestId, (event) => {
         if (disposed || epoch !== dialogueEpoch) return
-        const type = typeof event.type === 'string' ? event.type : ''
-        if (type === 'text') {
-          const delta = typeof event.delta === 'string' ? event.delta : ''
-          updateDialogue({ text: state.dialogue.text + delta })
-        } else if (type === 'utterance') {
-          const delta = typeof event.text === 'string' ? event.text : ''
-          updateDialogue({ text: state.dialogue.text + delta })
-        } else if (type === 'error') {
+        if (event.type === 'utterance') {
+          updateDialogue({ text: state.dialogue.text + event.text })
+        } else if (event.type === 'error') {
           dialogueError = true
-          updateDialogue({ error: typeof event.message === 'string' ? event.message : '对话失败' })
-        } else if (type === 'done') {
+          updateDialogue({ error: event.message })
+        } else if (event.type === 'done') {
           dialogueDone = true
         }
       }, controller.signal)

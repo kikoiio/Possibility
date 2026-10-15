@@ -242,16 +242,32 @@ export interface HomeData {
   }[]
 }
 
-/** SSE 事件（后端 agent 事件 + 路由级事件） */
 export type AgentStreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'event'; id: string; simTime: string; title: string; description: string }
   | { type: 'state'; state: PersonState }
   | { type: 'memory'; id: string; content: string }
-  | { type: 'timeline'; timelineId: string }
+  | { type: 'done'; llmCalls?: number; error?: string }
+
+export type StreamFailureEvent = { type: 'error'; message: string; requestId?: string; errorCode?: string }
+
+export type ChatMessageEvent =
+  | { type: 'text'; delta: string; replayed?: true }
+  | Extract<AgentStreamEvent, { type: 'event' | 'state' | 'memory' }>
+  | { type: 'done'; llmCalls?: number; error?: string; requestId?: string; replayed?: true }
+  | StreamFailureEvent
+  | { type: 'pending'; requestId: string }
+
+export type CatchupEvent =
+  | Extract<AgentStreamEvent, { type: 'text' | 'event' | 'state' | 'done' }>
+  | StreamFailureEvent
   | { type: 'skipped' }
-  | { type: 'error'; message: string }
-  | { type: 'done'; llmCalls?: number; fork?: ForkResult; error?: string }
+
+export type PersonTimelineForkEvent =
+  | Exclude<AgentStreamEvent, { type: 'done' | 'memory' }>
+  | { type: 'timeline'; timelineId: string }
+  | { type: 'done'; llmCalls?: number; error?: string; fork?: ForkResult }
+  | StreamFailureEvent
 
 /* ===== 阶段二：活的世界 ===== */
 
@@ -583,6 +599,14 @@ export type SceneEvent =
   | { type: 'utterance'; personId: string; name: string; text: string }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+export interface SceneSendInput {
+  timelineId: string
+  location?: string
+  content: string
+  dialogueId?: string
+  requestId?: string
+}
 
 /* ===== 世界记得你：留言与与你有关的动静 ===== */
 

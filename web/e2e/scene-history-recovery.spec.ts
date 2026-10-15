@@ -194,6 +194,112 @@ test('an invalid history target opens the repair preview journey instead of rest
   expect(restoreCalls).toBe(0)
 })
 
+test('compatibility entry read failures show a safe retry and continue the same history check', async ({ page }) => {
+  await openWorld(page)
+  let entryReadFails = false
+  await page.route(/\/api\/worlds\/world-1\/scene(?:\?|$)/, route => entryReadFails
+    ? route.fulfill({ status: 503, json: { error: 'private scene database detail' } })
+    : route.fallback())
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
+
+  await page.getByRole('button', { name: '历史' }).click()
+  const history = page.getByRole('dialog', { name: '场景历史' })
+  await expect(history.getByText(/v1 · 开始生活时的场景/)).toBeVisible()
+  entryReadFails = true
+  await history.getByRole('button', { name: '恢复到此版本' }).click()
+
+  const entryAlert = page.getByRole('alert').filter({ hasText: '暂时无法读取当前场景。' })
+  await expect(entryAlert).toBeVisible()
+  await expect(entryAlert).not.toContainText('private scene database detail')
+  entryReadFails = false
+  await entryAlert.getByRole('button', { name: '重试' }).click()
+
+  const compatibility = page.getByRole('dialog', { name: '场景兼容检查' })
+  await expect(compatibility).toContainText('恢复历史场景')
+  await expect(compatibility).toContainText('发现阻断问题')
+  await expect(entryAlert).toHaveCount(0)
+})
+
+test('passive compatibility attachment failures stay quiet until open and can retry', async ({ page }) => {
+  await openWorld(page)
+  let failedAuthMeRequests = 0
+  await page.route('**/api/auth/me', route => {
+    if (route.request().headers().authorization === 'Bearer e2e-token-rotated' && failedAuthMeRequests === 0) {
+      failedAuthMeRequests += 1
+      return route.fulfill({ status: 503, json: { error: 'private auth detail' } })
+    }
+    return route.fallback()
+  })
+  await page.evaluate(() => {
+    const oldValue = localStorage.getItem('possibility_token')
+    const newValue = 'e2e-token-rotated'
+    localStorage.setItem('possibility_token', newValue)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'possibility_token', oldValue, newValue }))
+  })
+  await expect.poll(() => failedAuthMeRequests).toBe(1)
+  await expect(page.getByText('暂时无法连接场景修复服务。')).toHaveCount(0)
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
+
+  await page.getByRole('button', { name: '历史' }).click()
+  const history = page.getByRole('dialog', { name: '场景历史' })
+  await expect(history.getByText(/v1 · 开始生活时的场景/)).toBeVisible()
+  await history.getByRole('button', { name: '恢复到此版本' }).click()
+
+  const entryAlert = page.getByRole('alert').filter({ hasText: '暂时无法连接场景修复服务。' })
+  await expect(entryAlert).toBeVisible()
+  await expect(entryAlert).not.toContainText('private auth detail')
+  await entryAlert.getByRole('button', { name: '重试' }).click()
+
+  const compatibility = page.getByRole('dialog', { name: '场景兼容检查' })
+  await expect(compatibility).toContainText('恢复历史场景')
+  await expect(compatibility).toContainText('发现阻断问题')
+  await expect(entryAlert).toHaveCount(0)
+})
+
+test('a compatibility entry response from the previous timeline is ignored', async ({ page }) => {
+  await openWorld(page)
+  let releaseEntryRead!: () => void
+  let markEntryReadStarted!: () => void
+  const entryReadGate = new Promise<void>(resolve => { releaseEntryRead = resolve })
+  const entryReadStarted = new Promise<void>(resolve => { markEntryReadStarted = resolve })
+  let holdEntryRead = false
+  let entryReadFinished = false
+  await page.route(/\/api\/worlds\/world-1\/scene(?:\?|$)/, async route => {
+    if (holdEntryRead) {
+      holdEntryRead = false
+      markEntryReadStarted()
+      await entryReadGate
+      await route.fulfill({ json: readyScene })
+      entryReadFinished = true
+      return
+    }
+    await route.fallback()
+  })
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
+  await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
+
+  await page.getByRole('button', { name: '历史' }).click()
+  const history = page.getByRole('dialog', { name: '场景历史' })
+  await expect(history.getByText(/v1 · 开始生活时的场景/)).toBeVisible()
+  holdEntryRead = true
+  await history.getByRole('button', { name: '恢复到此版本' }).click()
+  await entryReadStarted
+
+  await page.evaluate(() => {
+    const query = new URLSearchParams(location.search)
+    query.set('timeline', 'timeline-2')
+    history.pushState({}, '', `${location.pathname}?${query.toString()}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect.poll(() => new URL(page.url()).searchParams.get('timeline')).toBe('timeline-2')
+  releaseEntryRead()
+  await expect.poll(() => entryReadFinished).toBe(true)
+  await expect(page.getByText('暂时无法读取当前场景。')).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '场景兼容检查' })).toHaveCount(0)
+})
+
 test('an incomplete history target check stays in the history panel with a retryable message', async ({ page }) => {
   await openWorld(page)
   let restoreCalls = 0
