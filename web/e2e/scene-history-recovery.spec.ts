@@ -216,24 +216,53 @@ test('closing history ignores a delayed response from the previous open request'
   await openWorld(page)
   let sceneReads = 0
   let revisionReads = 0
+  let resolveFirstSceneStarted!: () => void
+  let resolveFirstRevisionStarted!: () => void
+  let releaseFirstSceneResponse!: () => void
+  let releaseFirstRevisionResponse!: () => void
+  const firstSceneStarted = new Promise<void>(resolve => { resolveFirstSceneStarted = resolve })
+  const firstRevisionStarted = new Promise<void>(resolve => { resolveFirstRevisionStarted = resolve })
+  const firstSceneGate = new Promise<void>(resolve => { releaseFirstSceneResponse = resolve })
+  const firstRevisionGate = new Promise<void>(resolve => { releaseFirstRevisionResponse = resolve })
   await page.route('**/api/worlds/world-1/scene**', async route => {
-    sceneReads += 1
-    if (sceneReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
-    return route.fulfill({ json: { ...readyScene, version: sceneReads === 1 ? 1 : 2, revisionId: sceneReads === 1 ? 'revision-v1' : 'revision-v2' } })
+    const sceneRead = ++sceneReads
+    if (sceneRead === 1) {
+      resolveFirstSceneStarted()
+      await firstSceneGate
+    }
+    return route.fulfill({ json: { ...readyScene, version: sceneRead === 1 ? 1 : 2, revisionId: sceneRead === 1 ? 'revision-v1' : 'revision-v2' } })
   })
   await page.route('**/api/worlds/world-1/scene/revisions**', async route => {
-    revisionReads += 1
-    if (revisionReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
-    return route.fulfill({ json: { scope: sceneScope, revisions: revisionReads === 1 ? revisions.slice(1) : revisions, nextCursor: null, hasMore: false, boundaries: [] } })
+    const revisionRead = ++revisionReads
+    if (revisionRead === 1) {
+      resolveFirstRevisionStarted()
+      await firstRevisionGate
+    }
+    return route.fulfill({ json: { scope: sceneScope, revisions: revisionRead === 1 ? revisions.slice(1) : revisions, nextCursor: null, hasMore: false, boundaries: [] } })
   })
 
   await page.getByRole('button', { name: '历史' }).click()
   const dialog = page.getByRole('dialog', { name: '场景历史' })
+  await Promise.all([firstSceneStarted, firstRevisionStarted])
   await expect(dialog.getByRole('status')).toBeVisible()
   await page.getByRole('button', { name: '关闭历史' }).click()
   await page.getByRole('button', { name: '历史' }).click()
   await expect(dialog.getByText(/v2 · 庭院加入石灯 · 当前版本/)).toBeVisible()
-  await page.waitForTimeout(800)
+
+  const delayedSceneResponse = page.waitForResponse(async response => {
+    if (!response.url().includes('/api/worlds/world-1/scene')) return false
+    return (await response.json()).version === 1
+  })
+  const delayedRevisionResponse = page.waitForResponse(async response => {
+    if (!response.url().includes('/api/worlds/world-1/scene/revisions')) return false
+    const body = await response.json()
+    return body.revisions.length === 1 && body.revisions[0].revisionId === 'revision-v1'
+  })
+  releaseFirstSceneResponse()
+  releaseFirstRevisionResponse()
+  await Promise.all([delayedSceneResponse, delayedRevisionResponse])
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await expect(dialog.getByText(/v2 · 庭院加入石灯 · 当前版本/)).toBeVisible()
+  await expect(dialog.getByRole('listitem')).toHaveCount(2)
   await expect(dialog.getByText(/v1 · 开始生活时的场景/)).toBeVisible()
 })
