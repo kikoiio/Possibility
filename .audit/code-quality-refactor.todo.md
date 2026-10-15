@@ -22,7 +22,7 @@
 
 - [x] U1. Add a pull-request quality workflow and a manual dispatch entry for the same checks, plus a `codex/**` push trigger so the baseline can run before any PR. Include all workspaces and one targeted browser journey. Run it on GitHub Actions before structural changes.
 - [x] U2. Move world/time status contracts and pure status descriptions into a shared package. Update server and client imports. Verify workspace resolution and focused contract/API/UI tests.
-- [ ] U3a. Authorize visit targets before session reads or writes. Prove enter, replay, leave, and no-session leave reject a real foreign-owned world without database side effects.
+- [x] U3a. Authorize visit targets before session reads or writes. Prove enter, replay, leave, and no-session leave reject a real foreign-owned world without database side effects.
 - [ ] U3b. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, archived, no-timeline, and large home fixtures; assert query count is bounded independently of timeline count.
 - [ ] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
 - [ ] U5. Split timeline-scoped scene revision storage from legacy world-scene operations. Keep canonical exports or migrate all callers in one unit. Verify scene repository, history, fork, and migration tests.
@@ -48,5 +48,6 @@
 - U1 passed on run `38783539070`: 978 API tests, 754 Web tests, 200 shared-contract tests, one browser journey, and an uploaded Playwright trace artifact.
 - The stage 0 product acceptance listed in `docs/PLAN.md`, including phase 2B AC8 and AC12, remains a separate product check. CI does not close it by itself.
 - U2 moved the world/time contract into `@possibility/world-contract` and passed on run `38784920480` at commit `5109f2a`; package, API, Web, and phase 2B browser checks are green.
-- U3a authorizes visit targets before any session lookup and returns only `{ principal, context }`. The first Actions run showed that the query assertion included the test's later state reads; the assertion now snapshots request queries before those reads, and the retry is pending.
+- U3a passed at `c50f2d4` on Actions run `38787190687`; the visit-service suite contains four passing tests, including foreign-world no-read/no-write coverage.
+- U3b baseline tests now cover owner, guest, archived, no-timeline, and large-home contexts; the first Actions run will record the existing per-target query growth before production changes.
 - No merge, release, or deployment is authorized by this task.
