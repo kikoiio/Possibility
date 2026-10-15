@@ -40,9 +40,9 @@ useWorldVisit({
 const repair = useWorldSceneCompatibility({
   worldId, timelineId: activeTimelineId, guest,
   canEdit: canEditScene && !readonly,
+  archived,
   timeZone: snapshot?.world.timeZone,
-  onCommitted: () => { void read(); void loadRevisionList() },
-  onError: setError,
+  closeSceneHistory,
 })
 // Existing save/history/AI-edit paths invoke one operation:
 await repair.open('restore-history', {
@@ -52,7 +52,7 @@ await repair.open('restore-history', {
 <WorldModalsContainer {...existingProps} compatPanel={repair.panel} />
 ```
 
-The exact existing close-after-commit refresh behavior must be copied into the callback; the example shows responsibility, not permission to add refreshes. The compatibility owner does not receive snapshot setters or search-parameter setters.
+Source review found no post-commit refresh callback in `WorldCanvasPage` or `SceneCompatibilityPanel`. The panel remains open in its completed state, and closing it resets the session. Preserve that behavior. `closeSceneHistory` stays owned by the page and runs whenever compatibility opens or rechecks. The compatibility owner does not receive snapshot setters or search-parameter setters.
 
 Scene callers keep canonical domain operations; their storage implementation moves behind the existing entrypoint:
 
@@ -205,10 +205,9 @@ interface WorldVisitOptions {
 export function useWorldVisit(options: WorldVisitOptions): void
 
 interface WorldSceneCompatibilityOptions {
-  worldId: string; timelineId: string; guest: boolean; canEdit: boolean
+  worldId: string; timelineId: string; guest: boolean; canEdit: boolean; archived: boolean
   timeZone?: string
-  onCommitted(): void
-  onError(message: string): void
+  closeSceneHistory(): void
 }
 export function useWorldSceneCompatibility(options: WorldSceneCompatibilityOptions): {
   open(purpose: CompatibilityPurpose, target: SceneTarget): Promise<void>
@@ -218,7 +217,7 @@ export function useWorldSceneCompatibility(options: WorldSceneCompatibilityOptio
 
 Visit owns sessionStorage identity, enter/leave request ids, lifecycle generations, hidden-document cleanup behavior, and late-enter leave. It keeps latest callback refs so render-created callbacks do not trigger leave/enter cycles. Dependencies are target scalars, not target object identity. Page application additionally checks returned world/timeline; old results never overwrite the new target. Preserve current storage key/reload semantics rather than introducing a new principal migration during extraction.
 
-Compatibility owns authorized attach, actor identity epoch/token fencing, deferred open, persistence/recovery, polling, preview loaders and panel callbacks. The existing headless `CompatibilitySession` remains the only state-machine owner. The hook owns React integration, not a second copy of session state transitions. This removes approximately 200+ cohesive lines, in addition to visits, without touching shared `right` URL semantics or merging two rendering systems. The page keeps scene history, save revision refs, bootstrap/SSE, URL, comparison and composition for this unit. If extraction leaves it just above the requested size limit, extract the cohesive history integration next, not unrelated render fragments.
+Compatibility owns authorized attach, actor identity epoch/token fencing, deferred open, persistence/recovery, polling, preview loaders and panel callbacks. The existing headless `CompatibilitySession` remains the only state-machine owner. The hook owns React integration, not a second copy of session state transitions. This removes approximately 200+ cohesive lines, in addition to visits, without touching shared `right` URL semantics or merging two rendering systems. The page keeps scene history, save revision refs, bootstrap/SSE, URL, and composition. The comparison hook receives the current snapshot, access mode, and page search parameters/setter. It returns read states, retry/selection actions, aligned comparison data, and split event projection while preserving unrelated URL parameters.
 
 ### Scene repository ownership and atomic bridge
 
@@ -283,7 +282,7 @@ Handler-local middleware and a checked storage import boundary make the safe pat
 
 Candidate A is the selected base. The cross-judge found it more explicit about private authorization provenance, fixed-query home reads, exact visit mutation ordering, and preserving the D1 scene-write batch. Candidate B is accepted for a public-versus-guest route matrix and a focused import-boundary check for scene storage internals.
 
-For U4, extract the visit lifecycle and compatibility workflow. Those are the two boundaries named by this design and should reduce `WorldCanvasPage` below the 1,000-line predicate. Keep comparison/right-pane URL and presentation state in the page unless the measured result remains at or above 1,000 lines; if it does, extract that cohesive owner in a separately verified U4 step. Do not create a general canvas controller.
+For U4, extract the visit lifecycle and compatibility workflow. The first extraction left `WorldCanvasPage` at 1,033 lines, above the design predicate, so U4 also extracts the cohesive comparison workflow: right snapshot and comparison reads, request fencing, right-side SSE, scrub alignment, and legacy `mode`/`right` URL synchronization. Keep camera, event selection, and split layout state in the page. Do not create a general canvas controller or mix the native presentation workspace into the legacy comparison owner.
 
 For U6, put middleware on each handler that owns an overlapping `/api` path, then test protected, public, guest, and cross-router overlap behavior with more than one mount order. Route order is not the authorization policy. For U5, add a focused check that production callers import scene storage only through the public repository barrel or same-directory siblings.
 
