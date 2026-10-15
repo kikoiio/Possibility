@@ -49,5 +49,5 @@
 - The stage 0 product acceptance listed in `docs/PLAN.md`, including phase 2B AC8 and AC12, remains a separate product check. CI does not close it by itself.
 - U2 moved the world/time contract into `@possibility/world-contract` and passed on run `38784920480` at commit `5109f2a`; package, API, Web, and phase 2B browser checks are green.
 - U3a passed at `c50f2d4` on Actions run `38787190687`; the visit-service suite contains four passing tests, including foreign-world no-read/no-write coverage.
-- U3b's first Actions run stopped during fixture setup because a 50-row insert exceeded the CI SQLite parameter limit. The seed now uses 20-row inserts, and its baseline probe calls the current per-timeline context path directly; the final test will exercise the full home read with 1,007 timelines after batching.
+- U3b's first two Actions runs stopped during fixture setup because 50-row and 20-row inserts exceeded the CI SQLite parameter limit. The seed now uses one prepared five-parameter insert per row; its baseline probe calls the current per-timeline context path directly, and the final test will exercise the full home read with 1,007 timelines after batching.
 - No merge, release, or deployment is authorized by this task.
