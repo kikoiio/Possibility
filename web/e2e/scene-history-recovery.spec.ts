@@ -3,6 +3,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 const voxelDoc = JSON.parse(readFileSync(new URL('./fixtures/voxel-scene.json', import.meta.url), 'utf8'))
 const now = '2026-10-01T00:00:00.000Z'
+const sceneScope = { worldId: 'world-1', timelineId: 'timeline-1', representation: 'voxel' }
+const readyScene = { status: 'ready', scope: sceneScope, version: 2, revisionId: 'revision-v2', document: voxelDoc }
 const snapshot = {
   world: { id: 'world-1', name: '雾影庄', description: '白雾町的旧宅。', status: 'paused', pauseReason: 'manual', isDemo: false, callsToday: 0, timeZone: 'UTC', locations: [{ name: '主楼', description: '旧宅' }] },
   timelines: [{ id: 'timeline-1', parentTimelineId: null, simNow: now }], currentTimelineId: 'timeline-1', simNow: now,
@@ -10,8 +12,8 @@ const snapshot = {
   currentFacts: [], locationBoard: [{ location: '主楼', persons: [{ id: 'person-1', name: 'Ada', activity: '正在安顿' }] }], events: [],
 }
 const revisions = [
-  { version: 2, parentVersion: 1, summary: '庭院加入石灯', kind: 'voxel-edit', createdAt: '2026-10-01T01:00:00.000Z' },
-  { version: 1, parentVersion: null, summary: '开始生活时的场景', kind: 'initial', createdAt: '2026-10-01T00:00:00.000Z' },
+  { revisionId: 'revision-v2', version: 2, timelineId: 'timeline-1', originTimelineId: 'timeline-1', origin: 'current', parentRevisionId: 'revision-v1', contentHash: 'hash-v2', summary: '庭院加入石灯', kind: 'voxel-edit', createdAt: '2026-10-01T01:00:00.000Z' },
+  { revisionId: 'revision-v1', version: 1, timelineId: 'timeline-1', originTimelineId: 'timeline-1', origin: 'current', parentRevisionId: null, contentHash: 'hash-v1', summary: '开始生活时的场景', kind: 'initial', createdAt: '2026-10-01T00:00:00.000Z' },
 ]
 
 /** A1(W46):历史恢复前的真实 precheck——有效目标走原快速通道。 */
@@ -57,7 +59,7 @@ const inspectionInvalid = {
 async function openWorld(page: Page) {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'user-1', username: 'tester', role: 'user' } } }))
-  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: readyScene }))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
     world: snapshot, scene: { status: 'ready', document: voxelDoc },
@@ -90,8 +92,8 @@ async function openWorld(page: Page) {
 test('scene history opens as a modal and distinguishes an empty list from saved versions', async ({ page }) => {
   await openWorld(page)
   let revisionRows = revisions
-  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions: revisionRows } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: readyScene }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions: revisionRows, nextCursor: null, hasMore: false, boundaries: [] } }))
 
   await page.getByRole('button', { name: '历史' }).click()
   const dialog = page.getByRole('dialog', { name: '场景历史' })
@@ -146,8 +148,8 @@ test('history read failures stay in the panel, can retry, and close without leak
 test('restore failures are identified separately from history read failures', async ({ page }) => {
   await openWorld(page)
   let restoreFails = true
-  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: readyScene }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionValid }))
   await page.route('**/api/worlds/world-1/scene/restore', route => restoreFails
     ? route.fulfill({ status: 500, json: { error: 'internal restore detail' } })
@@ -167,8 +169,8 @@ test('restore failures are identified separately from history read failures', as
 test('an invalid history target opens the repair preview journey instead of restoring directly', async ({ page }) => {
   await openWorld(page)
   let restoreCalls = 0
-  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: readyScene }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
   await page.route('**/api/worlds/world-1/scene/restore', route => { restoreCalls += 1; return route.fulfill({ json: { version: 3 } }) })
 
@@ -195,8 +197,8 @@ test('an invalid history target opens the repair preview journey instead of rest
 test('an incomplete history target check stays in the history panel with a retryable message', async ({ page }) => {
   await openWorld(page)
   let restoreCalls = 0
-  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: readyScene }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { scope: sceneScope, revisions, nextCursor: null, hasMore: false, boundaries: [] } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: {
     ...inspectionValid,
     report: { ...inspectionValid.report, status: 'incomplete', pendingSpaceIds: ['greenhouse'] },
@@ -217,12 +219,12 @@ test('closing history ignores a delayed response from the previous open request'
   await page.route('**/api/worlds/world-1/scene**', async route => {
     sceneReads += 1
     if (sceneReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
-    return route.fulfill({ json: { status: 'ready', version: sceneReads === 1 ? 1 : 2, document: voxelDoc } })
+    return route.fulfill({ json: { ...readyScene, version: sceneReads === 1 ? 1 : 2, revisionId: sceneReads === 1 ? 'revision-v1' : 'revision-v2' } })
   })
   await page.route('**/api/worlds/world-1/scene/revisions**', async route => {
     revisionReads += 1
     if (revisionReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
-    return route.fulfill({ json: { revisions: revisionReads === 1 ? revisions.slice(1) : revisions } })
+    return route.fulfill({ json: { scope: sceneScope, revisions: revisionReads === 1 ? revisions.slice(1) : revisions, nextCursor: null, hasMore: false, boundaries: [] } })
   })
 
   await page.getByRole('button', { name: '历史' }).click()

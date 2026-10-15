@@ -156,13 +156,14 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await stubSplitApis(page)
     let snapshotCalls = 0
     let compareCalls = 0
+    let retryRequested = false
     await page.route('**/api/worlds/world-1?*', async (route) => {
       snapshotCalls++
       return route.fallback()
     })
     await page.route('**/api/worlds/world-1/compare?*', async (route) => {
       compareCalls++
-      if (compareCalls <= 2) return route.fulfill({ status: 502, json: { error: 'internal provider detail' } })
+      if (!retryRequested) return route.fulfill({ status: 502, json: { error: 'internal provider detail' } })
       return route.fulfill({ json: comparisonFor('timeline-main', 'timeline-fork') })
     })
     await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
@@ -170,11 +171,13 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
     await expect(page.getByTestId('split-compare-error')).toContainText('时间线对照暂时无法读取')
     await expect(page.getByTestId('split-compare-error')).not.toContainText('internal provider detail')
+    const compareCallsBeforeRetry = compareCalls
     const snapshotCallsBeforeRetry = snapshotCalls
+    retryRequested = true
     await page.getByTestId('split-compare-retry').click()
     await expect(page.getByTestId('split-compare-summary')).toBeVisible()
     await expect(page.getByTestId('split-compare-error')).toHaveCount(0)
-    expect(compareCalls).toBe(3)
+    expect(compareCalls).toBe(compareCallsBeforeRetry + 1)
     expect(snapshotCalls).toBe(snapshotCallsBeforeRetry)
     expect(errors.filter((e) => !e.includes('502'))).toEqual([])
   })
