@@ -1,5 +1,8 @@
 /** 与后端对齐的数据类型 */
 
+import type { TimelineStatus, VisitContext, WorldStatus, WorldTimeContext } from '@possibility/world-contract'
+export type { StatusView, TimelineStatus, VisitContext, VisitPhase, WorldStatus, WorldStatusReason, WorldTimeContext } from '@possibility/world-contract'
+
 export type Provenance = 'known' | 'inferred'
 
 export interface ModelItem {
@@ -31,36 +34,6 @@ export interface DistillDraft {
   worldName: string
   worldDescription: string
   initialState: InitialState
-}
-
-export type WorldStatus = 'running' | 'paused' | 'capped' | 'archived'
-export type TimelineStatus = 'active' | 'archived'
-export type VisitPhase = 'first_visit' | 'returning' | 'unknown'
-export interface StatusView {
-  key: string
-  label: string
-  description: string
-  frozen: boolean
-  nextStep: string | null
-}
-export interface VisitContext {
-  phase: VisitPhase
-  sessionId: string | null
-  enteredSimTime: string | null
-  previousExitedSimTime: string | null
-  hasValidPreviousWatermark: boolean
-}
-export interface WorldTimeContext {
-  worldId: string
-  timelineId: string
-  simNow: string
-  timeZone: string
-  stateVersion: number
-  revisionVersion: number
-  world: { status: WorldStatus; reason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null; view: StatusView }
-  timeline: { status: TimelineStatus; view: StatusView }
-  access: { identity: 'owner' | 'guest' | 'readonly'; capabilities: Readonly<Record<'read' | 'write' | 'advance' | 'fork' | 'archive' | 'reactivate', boolean>> }
-  visit: VisitContext
 }
 
 export interface PersonState extends InitialState {

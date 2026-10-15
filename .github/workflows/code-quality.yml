@@ -38,6 +38,8 @@ jobs:
           npm --workspace @possibility/scene-contract test -- --maxWorkers=1 --no-file-parallelism
           npm --workspace @possibility/voxel-contract run build
           npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 --no-file-parallelism
+          npm --workspace @possibility/world-contract run build
+          npm --workspace @possibility/world-contract test -- --maxWorkers=1 --no-file-parallelism
       - name: Check API types and run API tests
         run: |
           npm --workspace api run build

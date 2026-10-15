@@ -7,7 +7,7 @@ import { worlds } from '../db/schema'
 import { readGuestMapResume, readMapResume } from './resume'
 import type { AccessContext } from '../access/types'
 import { resolveWorldScope } from '../access/world-scope'
-import type { WorldTimeContext } from '../worlds/status'
+import type { WorldTimeContext } from '@possibility/world-contract'
 
 export interface WorldCapabilities {
   observe: boolean; participate: boolean; editScene: boolean; fork: boolean; compare: boolean; persist: boolean; resetDemo: boolean

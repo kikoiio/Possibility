@@ -2,8 +2,8 @@ import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { timelines, worldVisitSessions, worldVisits } from '../db/schema'
 import type { AccessContext } from '../access/types'
+import type { VisitContext, WorldTimeContext } from '@possibility/world-contract'
 import { readWorldTimeContext } from '../worlds/time-context'
-import type { VisitContext, WorldTimeContext } from '../worlds/status'
 
 export interface VisitRequest {
   worldId: string

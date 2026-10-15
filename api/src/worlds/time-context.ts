@@ -3,7 +3,16 @@ import type { Db } from '../db/client'
 import { timelines, universeEvidence, universeRevisions, worlds } from '../db/schema'
 import type { AccessContext } from '../access/types'
 import { effectiveTimeZone } from './time-zone'
-import { capabilityView, normalizeTimelineStatus, normalizeWorldStatus, normalizeWorldStatusReason, timelineStatusView, worldStatusView, type VisitContext, type WorldTimeContext } from './status'
+import {
+  describeTimelineStatus,
+  describeWorldStatus,
+  normalizeTimelineStatus,
+  normalizeWorldStatus,
+  normalizeWorldStatusReason,
+  type VisitContext,
+  type WorldTimeContext,
+} from '@possibility/world-contract'
+import { capabilityView } from './status'
 
 export interface TimeContextTarget {
   worldId: string
@@ -41,8 +50,8 @@ export async function readWorldTimeContext(
     timeZone: effectiveTimeZone(world.timeZone),
     stateVersion: revision?.version ?? 0,
     revisionVersion: revision?.version ?? 0,
-    world: { status: worldStatus, reason: worldReason, view: worldStatusView(worldStatus, worldReason) },
-    timeline: { status: timelineStatus, view: timelineStatusView(timelineStatus) },
+    world: { status: worldStatus, reason: worldReason, view: describeWorldStatus(worldStatus, worldReason) },
+    timeline: { status: timelineStatus, view: describeTimelineStatus(timelineStatus) },
     access: capabilityView({ access, ownsWorld, worldStatus, timelineStatus, evidenceComplete: evidence?.level === 'complete' }),
     visit: target.visit ?? { phase: 'unknown', sessionId: null, enteredSimTime: null, previousExitedSimTime: null, hasValidPreviousWatermark: false },
   }

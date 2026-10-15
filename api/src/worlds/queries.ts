@@ -13,7 +13,7 @@ import { effectiveTimeZone } from './time-zone'
 import type { AccessContext } from '../access/types'
 import { readWorldTimeContext } from './time-context'
 import { readVisitContext } from '../life/visit-sessions'
-import type { WorldTimeContext } from './status'
+import type { WorldTimeContext } from '@possibility/world-contract'
 
 type World = typeof worlds.$inferSelect
 
