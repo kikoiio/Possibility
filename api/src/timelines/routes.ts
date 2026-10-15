@@ -26,7 +26,6 @@ import { readVisitContext } from '../life/visit-context'
 const MAX_ACTIVE_TIMELINES = 3
 
 export const timelineRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-timelineRoutes.use('*', authMiddleware)
 
 const PREVIEW_SYSTEM = `你是「可能性设定师」。用户要为一个人物创建 what-if 分叉时间线。
 根据人物背景与用户的 what-if，给出明确的分叉场景设定。
@@ -64,7 +63,7 @@ export function normalizeScenario(raw: unknown, whatIf: string, fallbackStart: s
 }
 
 /** Fork 预览：主线 context + whatIf → 场景设定草稿（不落库）；LLM 调用走护栏记账 */
-timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
+timelineRoutes.post('/persons/:id/fork/preview', authMiddleware, async (c) => {
   const body = await c.req.json<{ whatIf?: string }>().catch(() => ({}) as { whatIf?: string })
   const whatIf = body.whatIf?.trim()
   if (!whatIf) return c.json({ error: '请提供 what-if' }, 400)
@@ -121,7 +120,7 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
 })
 
 /** Fork 确认：建时间线 → 拷贝主线状态 → simulate 推演，事件逐条流出 */
-timelineRoutes.post('/persons/:id/fork', async (c) => {
+timelineRoutes.post('/persons/:id/fork', authMiddleware, async (c) => {
   const body = await c.req.json<{ scenario?: Partial<ForkScenario> }>().catch(() => null)
   const s = body?.scenario
   const fields = s && normalizeForkFields(s as Record<string, unknown>)
@@ -218,7 +217,7 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
 })
 
 /** 归档时间线（F9）：引擎停止推进该线（数据保留）；世界至少保留一条活跃线 */
-timelineRoutes.post('/timelines/:id/archive', async (c) => {
+timelineRoutes.post('/timelines/:id/archive', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const timeline = await db
@@ -249,7 +248,7 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
 })
 
 /** 重新激活只恢复调度资格，不修补历史；证据不完整时保持只读。 */
-timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
+timelineRoutes.post('/timelines/:id/reactivate', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const timeline = await db.select().from(timelines).where(eq(timelines.id, c.req.param('id'))).get()
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
@@ -277,7 +276,7 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
 })
 
 /** 时间线详情：timeline + events（按 sim_time 排序）+ 该线人物状态 */
-timelineRoutes.get('/timelines/:id', async (c) => {
+timelineRoutes.get('/timelines/:id', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const timelineRow = await db

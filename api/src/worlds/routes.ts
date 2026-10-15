@@ -44,11 +44,11 @@ import { readWorldTimeContext } from './time-context'
 type World = typeof worlds.$inferSelect
 
 export const worldsRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-worldsRoutes.use('*', scopedUserMiddleware((method, path, worldId) => {
+const worldAccess = scopedUserMiddleware((method, path, worldId) => {
   const base = `/api/worlds/${encodeURIComponent(worldId)}`
   return (method === 'GET' && (path === `${base}/state` || path === `${base}/time-zone` || new RegExp(`^${base}/actions/[^/]+$`).test(path)))
     || (method === 'POST' && new RegExp(`^${base}/visits/(enter|leave)$`).test(path))
-}))
+})
 
 function routeAccess(c: { get: (key: 'access' | 'user') => unknown }): AccessContext {
   const access = c.get('access') as AccessContext | undefined
@@ -106,7 +106,7 @@ async function readCreateReplay(db: Db, worldId: string, timelineId: string, use
 }
 
 /** Quick World 骨架：一句话 → LLM 生成（不落库）；预世界调用，按用户当日限额设防 */
-worldsRoutes.post('/draft', async (c) => {
+worldsRoutes.post('/draft', worldAccess, async (c) => {
   const body = await c.req.json<{ prompt?: string }>().catch(() => ({}) as { prompt?: string })
   const prompt = body.prompt?.trim()
   if (!prompt) return c.json({ error: '请提供一句话描述' }, 400)
@@ -121,7 +121,7 @@ worldsRoutes.post('/draft', async (c) => {
 })
 
 /** 确认创建世界：骨架 + 选定 1-6 人物 → 世界/关联/主线/初始状态，直接开跑 */
-worldsRoutes.post('/', async (c) => {
+worldsRoutes.post('/', worldAccess, async (c) => {
   const body = await c.req
     .json<{ name?: string; description?: string; locations?: LocationDef[]; personIds?: string[]; timeZone?: string; scene?: SerializedVoxelDocument; sceneRequestId?: string; sceneSource?: 'generated' | 'fallback'; sceneFallback?: boolean }>()
     .catch(() => null)
@@ -294,7 +294,7 @@ worldsRoutes.post('/', async (c) => {
 })
 
 /** 本人世界列表 */
-worldsRoutes.get('/', async (c) => {
+worldsRoutes.get('/', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const access = routeAccess(c)
@@ -338,7 +338,7 @@ worldsRoutes.get('/', async (c) => {
 })
 
 /** 对话逐句展开（注意：注册在 /:id 之前，否则 "dialogues" 会被当成世界 id） */
-worldsRoutes.get('/dialogues/:id', async (c) => {
+worldsRoutes.get('/dialogues/:id', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const detail = await dialogueDetail(db, c.req.param('id'), c.req.query('timelineId'))
   if (!detail) return c.json({ error: '对话不存在' }, 404)
@@ -350,7 +350,7 @@ worldsRoutes.get('/dialogues/:id', async (c) => {
 })
 
 /** 世界快照（世界视图首屏） */
-worldsRoutes.get('/:id/state', async (c) => {
+worldsRoutes.get('/:id/state', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -363,14 +363,14 @@ worldsRoutes.get('/:id/state', async (c) => {
   }
 })
 
-worldsRoutes.get('/:id/time-zone', async (c) => {
+worldsRoutes.get('/:id/time-zone', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   return c.json({ timeZone: effectiveTimeZone(world.timeZone) })
 })
 
-worldsRoutes.post('/:id/visits/enter', async (c) => {
+worldsRoutes.post('/:id/visits/enter', worldAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: unknown; clientSessionId?: unknown; requestId?: unknown }>().catch(() => null)
   if (!body || typeof body.timelineId !== 'string' || typeof body.clientSessionId !== 'string' || typeof body.requestId !== 'string') {
     return c.json({ error: 'timelineId、clientSessionId 和 requestId 必填' }, 400)
@@ -387,7 +387,7 @@ worldsRoutes.post('/:id/visits/enter', async (c) => {
   }
 })
 
-worldsRoutes.post('/:id/visits/leave', async (c) => {
+worldsRoutes.post('/:id/visits/leave', worldAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: unknown; clientSessionId?: unknown; requestId?: unknown }>().catch(() => null)
   if (!body || typeof body.timelineId !== 'string' || typeof body.clientSessionId !== 'string' || typeof body.requestId !== 'string') {
     return c.json({ error: 'timelineId、clientSessionId 和 requestId 必填' }, 400)
@@ -404,7 +404,7 @@ worldsRoutes.post('/:id/visits/leave', async (c) => {
   }
 })
 
-worldsRoutes.put('/:id/time-zone', async (c) => {
+worldsRoutes.put('/:id/time-zone', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -415,7 +415,7 @@ worldsRoutes.put('/:id/time-zone', async (c) => {
   return c.json({ timeZone: body.timeZone })
 })
 
-worldsRoutes.get('/:id/actions/:commandId', async (c) => {
+worldsRoutes.get('/:id/actions/:commandId', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -428,7 +428,7 @@ worldsRoutes.get('/:id/actions/:commandId', async (c) => {
   return c.json({ id: command.id, timelineId: command.timelineId, resultVersion: command.resultVersion, receipt })
 })
 
-worldsRoutes.post('/:id/actions', async (c) => {
+worldsRoutes.post('/:id/actions', worldAccess, async (c) => {
   const body = await c.req.json<{ id?: string; timelineId?: string; expectedVersion?: number; action?: WorldAction }>().catch(() => null)
   if (!body || typeof body.id !== 'string' || typeof body.timelineId !== 'string'
     || !Number.isSafeInteger(body.expectedVersion) || !body.action || typeof body.action !== 'object') {
@@ -469,7 +469,7 @@ function maskedWorldLlmConfig(raw: string | null) {
   }
 }
 
-worldsRoutes.get('/:id', async (c) => {
+worldsRoutes.get('/:id', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -484,14 +484,14 @@ worldsRoutes.get('/:id', async (c) => {
 })
 
 /** 世界级 BYOK 覆盖(F5/S3):掩码读取,永不回显明文 Key(N4)。 */
-worldsRoutes.get('/:id/llm-config', async (c) => {
+worldsRoutes.get('/:id/llm-config', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   return c.json(maskedWorldLlmConfig(world.llmConfigJson))
 })
 
-worldsRoutes.patch('/:id', async (c) => {
+worldsRoutes.patch('/:id', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -515,7 +515,7 @@ worldsRoutes.patch('/:id', async (c) => {
 })
 
 /** SSE 增量推送（N2：新事件/新想法/新对话 2 秒内出现在打开的页面） */
-worldsRoutes.get('/:id/stream', async (c) => {
+worldsRoutes.get('/:id/stream', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -533,7 +533,7 @@ worldsRoutes.get('/:id/stream', async (c) => {
 })
 
 /** 人物详情（状态/想法流/当日日程/近期记忆） */
-worldsRoutes.get('/:id/persons/:pid', async (c) => {
+worldsRoutes.get('/:id/persons/:pid', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -545,7 +545,7 @@ worldsRoutes.get('/:id/persons/:pid', async (c) => {
 })
 
 /** 暂停（手动）：时钟停走、不再产生 LLM 调用 */
-worldsRoutes.post('/:id/pause', async (c) => {
+worldsRoutes.post('/:id/pause', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -555,7 +555,7 @@ worldsRoutes.post('/:id/pause', async (c) => {
 
 /** 继续：只改状态，不清零当日用量（清零曾让 pause→resume 无限刷日限额；
  *  触顶的 capped 世界由 tick 在换天时自动恢复，resume 仅用于手动暂停的世界） */
-worldsRoutes.post('/:id/resume', async (c) => {
+worldsRoutes.post('/:id/resume', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -573,7 +573,7 @@ worldsRoutes.post('/:id/resume', async (c) => {
 })
 
 /** 归档（冻结可读）：引擎停止推进、不再产生 LLM 调用；数据完整保留，可随时 resume 解冻 */
-worldsRoutes.post('/:id/archive', async (c) => {
+worldsRoutes.post('/:id/archive', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -594,7 +594,7 @@ worldsRoutes.post('/:id/archive', async (c) => {
 })
 
 /** 注入事件：写 kind='injected' 事件，当前线的人物于下一拍感知并反应（F7） */
-worldsRoutes.post('/:id/inject', async (c) => {
+worldsRoutes.post('/:id/inject', worldAccess, async (c) => {
   const body = await c.req.json<{ text?: string; timelineId?: string; requestId?: string; expectedVersion?: number }>().catch(() => null)
   const text = body?.text?.trim()
   if (!text) return c.json({ error: '事件内容不能为空' }, 400)
@@ -636,7 +636,7 @@ worldsRoutes.post('/:id/inject', async (c) => {
 const historyRejectStatus = (code: HistoryRejectCode): 400 | 404 | 409 =>
   code === 'future_time' || code === 'before_history_start' ? 400 : code === 'timeline_not_active' ? 404 : 409
 
-worldsRoutes.get('/:id/timelines/:tid/history', async (c) => {
+worldsRoutes.get('/:id/timelines/:tid/history', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -646,7 +646,7 @@ worldsRoutes.get('/:id/timelines/:tid/history', async (c) => {
 })
 
 /** S4/F6:单点可重建性判定——可 → 吸附后的有效时刻;不可 → 原因文案 */
-worldsRoutes.post('/:id/timelines/:tid/history/check', async (c) => {
+worldsRoutes.post('/:id/timelines/:tid/history/check', worldAccess, async (c) => {
   const body = await c.req.json<{ at?: string }>().catch(() => null)
   if (!body?.at || typeof body.at !== 'string') return c.json({ error: '请提供要检验的时刻' }, 400)
   const db = createDb(c.env.DB)
@@ -658,7 +658,7 @@ worldsRoutes.post('/:id/timelines/:tid/history/check', async (c) => {
 })
 
 /** 世界级 Fork 预览（S2/F2）：以世界为上下文 LLM 起草五字段场景；不落库，走护栏记账 */
-worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
+worldsRoutes.post('/:id/timelines/:tid/fork/preview', worldAccess, async (c) => {
   const body = await c.req.json<{ whatIf?: string; startTime?: string }>().catch(() => ({}) as { whatIf?: string; startTime?: string })
   const whatIf = body.whatIf?.trim()
   if (!whatIf || whatIf.length > 500) return c.json({ error: '请提供有效的 what-if（500 字以内）' }, 400)
@@ -746,7 +746,7 @@ worldsRoutes.post('/:id/timelines/:tid/fork/preview', async (c) => {
 })
 
 /** 世界级 Fork（F9）：复制世界设定与全部人物状态/当日日程到新线；记忆经可见性规则自然继承 */
-worldsRoutes.post('/:id/timelines/:tid/fork', async (c) => {
+worldsRoutes.post('/:id/timelines/:tid/fork', worldAccess, async (c) => {
   try {
   const body = await c.req.json<{ requestId?: string; scenario?: unknown; expectedSourceVersion?: number; initialAction?: unknown }>().catch(() => null)
   const requestId = body?.requestId

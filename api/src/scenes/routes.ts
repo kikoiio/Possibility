@@ -50,18 +50,9 @@ import { SceneCompatibilityServiceError, validateStoredSceneCandidate } from './
 import { reportView } from './compatibility/http'
 
 export const scenesRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-scenesRoutes.use('*', async (c, next) => {
-  const path = c.req.path
+const sceneRootReadAccess = scopedUserMiddleware((method, path, worldId) => {
   const apiPrefix = path.startsWith('/api/') ? '/api' : ''
-  const sceneRoot = path.match(/^(?:\/api)?\/worlds\/([^/]+)\/scene$/)
-  if (sceneRoot && c.req.method === 'GET') {
-    return scopedUserMiddleware((method, requestPath, scopedId) => method === 'GET' && requestPath === `${apiPrefix}/worlds/${encodeURIComponent(scopedId)}/scene`)(c, next)
-  }
-  const loginOnly = path === '/api/scene-drafts' || path.startsWith('/api/scene-drafts/')
-    || path === '/scene-drafts' || path.startsWith('/scene-drafts/')
-    || /^(?:\/api)?\/worlds\/[^/]+\/scene\/(?:voxel-revision|restore|repair-context|repair-draft|revisions)(?:\/|$)/.test(path)
-  if (loginOnly) return authMiddleware(c, next)
-  await next()
+  return method === 'GET' && path === `${apiPrefix}/worlds/${encodeURIComponent(worldId)}/scene`
 })
 
 async function ownedWorld(db: ReturnType<typeof createDb>, worldId: string, userId: string) {
@@ -89,7 +80,7 @@ function validationSpaceId(document: unknown, publicSpaceId: string | undefined)
   return isSerializedVoxelSpaces(document) ? publicSpaceId : 'single'
 }
 
-scenesRoutes.post('/scene-drafts/voxel', async c => {
+scenesRoutes.post('/scene-drafts/voxel', authMiddleware, async c => {
   const body = await c.req.json<{ requestId?: string; prompt?: string; personIds?: string[] }>().catch(() => null)
   if (!body || !body.requestId || !body.prompt?.trim() || !Array.isArray(body.personIds)) return c.json({ error: '请提供 requestId、场景描述和居民' }, 400)
   const db = createDb(c.env.DB)
@@ -116,7 +107,7 @@ scenesRoutes.post('/scene-drafts/voxel', async c => {
   }
 })
 
-scenesRoutes.get('/worlds/:worldId/scene/repair-context', async c => {
+scenesRoutes.get('/worlds/:worldId/scene/repair-context', authMiddleware, async c => {
   const db = createDb(c.env.DB)
   try {
     const context = await readSceneRepairContext(db, c.get('user').id, c.req.param('worldId'), {
@@ -127,7 +118,7 @@ scenesRoutes.get('/worlds/:worldId/scene/repair-context', async c => {
   } catch (error) { return err(c, error) }
 })
 
-scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
+scenesRoutes.post('/worlds/:worldId/scene/repair-draft', authMiddleware, async c => {
   const body = await c.req.json<{ requestId?: string; prompt?: string; timelineId?: string; representation?: string }>().catch(() => null)
   if (!body?.requestId || !body.prompt?.trim()) return c.json({ error: '请提供场景描述和请求标识', errorCode: 'invalid_request' }, 400)
   const db = createDb(c.env.DB)
@@ -152,7 +143,7 @@ scenesRoutes.post('/worlds/:worldId/scene/repair-draft', async c => {
   }
 })
 
-scenesRoutes.get('/worlds/:worldId/scene', async c => {
+scenesRoutes.get('/worlds/:worldId/scene', sceneRootReadAccess, async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   try {
@@ -167,7 +158,7 @@ scenesRoutes.get('/worlds/:worldId/scene', async c => {
   } catch (error) { return err(c, error) }
 })
 
-scenesRoutes.get('/worlds/:worldId/scene/revisions', async c => {
+scenesRoutes.get('/worlds/:worldId/scene/revisions', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   try {
@@ -215,7 +206,7 @@ scenesRoutes.get('/worlds/:worldId/scene/revisions', async c => {
   } catch (error) { return err(c, error) }
 })
 
-scenesRoutes.get('/worlds/:worldId/scene/revisions/:revisionId', async c => {
+scenesRoutes.get('/worlds/:worldId/scene/revisions/:revisionId', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownedWorld(db, c.req.param('worldId'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   try {
@@ -233,7 +224,7 @@ scenesRoutes.get('/worlds/:worldId/scene/revisions/:revisionId', async c => {
   } catch (error) { return err(c, error) }
 })
 
-scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
+scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', authMiddleware, async c => {
   const db = createDb(c.env.DB); const user = c.get('user')
   const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -318,7 +309,7 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-revision', async c => {
   } catch (error) { return err(c, error) }
 })
 
-scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
+scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', authMiddleware, async c => {
   const db = createDb(c.env.DB); const user = c.get('user')
   const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world || !world.isDemo || user.role !== 'admin') return c.json({ error: '仅演示世界管理员可重新生成' }, 404)
@@ -373,7 +364,7 @@ scenesRoutes.post('/worlds/:worldId/scene/voxel-regenerate', async c => {
   }
 })
 
-scenesRoutes.post('/worlds/:worldId/scene/restore', async c => {
+scenesRoutes.post('/worlds/:worldId/scene/restore', authMiddleware, async c => {
   const db = createDb(c.env.DB); const user = c.get('user'); const world = await ownedWorld(db, c.req.param('worldId'), user.id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   const body = await c.req.json<{ requestId?: string; expectedVersion?: number; targetVersion?: number; targetRevisionId?: string; timelineId?: string; representation?: string; spaceId?: string }>().catch(() => null)

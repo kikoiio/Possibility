@@ -12,10 +12,9 @@ import { readVisitContext } from '../life/visit-context'
 import { effectiveTimeZone } from '../worlds/time-zone'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-personRoutes.use('*', authMiddleware)
 
 /** 蒸馏：描述 → 人物模型草稿（不落库）；预世界调用，按用户当日限额设防 */
-personRoutes.post('/distill', async (c) => {
+personRoutes.post('/distill', authMiddleware, async (c) => {
   const body = await c.req.json<{ description?: string }>().catch(() => ({}) as { description?: string })
   const description = body.description?.trim()
   if (!description) return c.json({ error: '请提供人物描述' }, 400)
@@ -30,7 +29,7 @@ personRoutes.post('/distill', async (c) => {
 })
 
 /** 创建人物；worldName、worldDescription 和 initialState 为兼容旧客户端而忽略 */
-personRoutes.post('/', async (c) => {
+personRoutes.post('/', authMiddleware, async (c) => {
   const body = await c.req
     .json<{
       name?: string
@@ -58,7 +57,7 @@ personRoutes.post('/', async (c) => {
   return c.json({ id: personId })
 })
 
-personRoutes.get('/', async (c) => {
+personRoutes.get('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const list = await db
     .select()
@@ -72,7 +71,7 @@ personRoutes.get('/', async (c) => {
 })
 
 /** 详情：person + 主线 state + world + timelines */
-personRoutes.get('/:id', async (c) => {
+personRoutes.get('/:id', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const person = await db
     .select()
@@ -131,7 +130,7 @@ personRoutes.get('/:id', async (c) => {
 })
 
 /** 校正人物（F5）：更新 name 与 model */
-personRoutes.put('/:id', async (c) => {
+personRoutes.put('/:id', authMiddleware, async (c) => {
   const body = await c.req.json<{ name?: string; model?: unknown }>().catch(() => null)
   if (!body) return c.json({ error: '请求体无效' }, 400)
   const db = createDb(c.env.DB)

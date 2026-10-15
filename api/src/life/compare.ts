@@ -240,8 +240,7 @@ export async function compareTimelines(
 
 /** Mount at / (or the application's shared API prefix). GET performs no writes or LLM calls. */
 export const comparisonRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-comparisonRoutes.use('*', authMiddleware)
-comparisonRoutes.get('/worlds/:id/compare', async (c) => {
+comparisonRoutes.get('/worlds/:id/compare', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const world = await db.select({ id: worlds.id }).from(worlds)
     .where(and(eq(worlds.id, c.req.param('id')), eq(worlds.userId, c.get('user').id))).get()

@@ -82,16 +82,13 @@ app.get('/api/health', (c) => c.json({ ok: true }))
 app.route('/api/auth', authRoutes)
 app.route('/api/dev', devRoutes)
 app.route('/api/persons', personRoutes)
-// Public sub-app has its own 404 fallback; mount before all /api-wide auth middleware.
 app.route('/api/public', publicRoutes)
 app.route('/api/demo', demoRoutes)
-// 注意：chat/timeline 两个子应用挂在 /api 且带全局 authMiddleware，
-// 后续新路由必须注册在它们之前，否则会被拦成 401
 app.route('/api/engine', engineRoutes)
 app.route('/api', voxelRoutes) // /api/voxel/*：体素 AI 编辑规划
 app.route('/api', mapRoutes)
 app.route('/api', native2dRoutes)
-app.route('/api', scenesRoutes) // 世界画布：路由必须在 /worlds/:id 通用快照之前
+app.route('/api', scenesRoutes)
 app.route('/api', compatibilityRoutes) // 场景兼容性检查、草稿与确认
 // These routes accept either a login or a tightly scoped guest sandbox token.
 app.route('/api', personaRoutes)
@@ -101,7 +98,7 @@ app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
 app.route('/api', lifeRoutes) // 归来回顾与承诺
 app.route('/api', comparisonRoutes) // 时间线证据对照
-app.route('/api/settings', settingsRoutes) // BYOK 与全局预算(F5/S3);须在 chat/timeline 全局鉴权之前
+app.route('/api/settings', settingsRoutes) // BYOK 与全局预算(F5/S3)
 app.route('/api/admin', memoryRepairRoutes) // 管理员限定的居民记忆重建维护入口
 app.route('/api/admin', provenanceRepairRoutes) // 2A 来源历史修复维护入口
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
