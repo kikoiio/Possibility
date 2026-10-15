@@ -15,7 +15,7 @@ test('active catchup and send streams call the latest state callback without res
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
   await page.route('**/__e2e/chat-stream-callback', route => route.fulfill({
     contentType: 'text/html',
-    body: '<!doctype html><html><body><div id="root"></div><script type="module">import { mountChatStreamCallbackHarness } from "/e2e/fixtures/chat-stream-callback-harness.tsx"; mountChatStreamCallbackHarness(document.getElementById("root"));</script></body></html>',
+    body: '<!doctype html><html><body><div id="root"></div><script type="module">import RefreshRuntime from "/@react-refresh"; RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window.__vite_plugin_react_preamble_installed__ = true;</script><script type="module">import { mountChatStreamCallbackHarness } from "/e2e/fixtures/chat-stream-callback-harness.tsx"; mountChatStreamCallbackHarness(document.getElementById("root"));</script></body></html>',
   }))
 
   let catchupRequests = 0
