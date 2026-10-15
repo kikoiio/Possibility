@@ -750,6 +750,29 @@ export const worldVisits = sqliteTable('world_visits', {
   seenAt: text('seen_at').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.timelineId] })])
 
+/** Explicit world entry/exit sessions. This is visit metadata, not a world fact. */
+export const worldVisitSessions = sqliteTable('world_visit_sessions', {
+  id: text('id').primaryKey(),
+  principalKey: text('principal_key').notNull(),
+  userId: text('user_id').references(() => users.id),
+  guestSessionId: text('guest_session_id').references(() => guestSessions.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  clientSessionId: text('client_session_id').notNull(),
+  status: text('status').notNull().default('open'),
+  enteredSimTime: text('entered_sim_time').notNull(),
+  enteredAt: text('entered_at').notNull(),
+  exitedSimTime: text('exited_sim_time'),
+  exitedAt: text('exited_at'),
+  lastRequestId: text('last_request_id').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('world_visit_session_client').on(t.principalKey, t.worldId, t.timelineId, t.clientSessionId),
+  index('world_visit_session_scope').on(t.principalKey, t.worldId, t.timelineId, t.updatedAt),
+  index('world_visit_session_status').on(t.status, t.updatedAt),
+])
+
 /** A frozen world definition. Existing worlds receive their first version on first state access. */
 export const worldModelVersions = sqliteTable('world_model_versions', {
   worldId: text('world_id').notNull().references(() => worlds.id),

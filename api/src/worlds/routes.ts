@@ -20,6 +20,7 @@ import { byokFailureHint, resolveLlmConfig } from '../llm/resolve'
 import { extractJson, normalizeScenario } from '../timelines/routes'
 import type { AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'
+import type { AccessContext } from '../access/types'
 import type { LocationDef } from '../agent/engine-context'
 import { dialogueDetail, personFocus, worldSnapshot } from './queries'
 import { streamWorld } from './stream'
@@ -36,14 +37,34 @@ import { messageReceiptFromCommand } from '../provenance/receipts'
 import type { ForkScenario } from '../agent/types'
 import { normalizeForkFields } from '../life/fork-fields'
 import type { Env } from '../index'
+import { enterVisit, leaveVisit, readVisitContext, VisitServiceError } from '../life/visit-sessions'
+import { readWorldTimeContext } from './time-context'
 
 type World = typeof worlds.$inferSelect
 
 export const worldsRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 worldsRoutes.use('*', scopedUserMiddleware((method, path, worldId) => {
   const base = `/api/worlds/${encodeURIComponent(worldId)}`
-  return method === 'GET' && (path === `${base}/state` || path === `${base}/time-zone` || new RegExp(`^${base}/actions/[^/]+$`).test(path))
+  return (method === 'GET' && (path === `${base}/state` || path === `${base}/time-zone` || new RegExp(`^${base}/actions/[^/]+$`).test(path)))
+    || (method === 'POST' && new RegExp(`^${base}/visits/(enter|leave)$`).test(path))
 }))
+
+function routeAccess(c: { get: (key: 'access' | 'user') => unknown }): AccessContext {
+  const access = c.get('access') as AccessContext | undefined
+  if (access) return access
+  const user = c.get('user') as { id: string; username: string; role: 'admin' | 'user' }
+  return { kind: 'user', userId: user.id, username: user.username, role: user.role, ownerId: user.id }
+}
+
+async function currentWorldTimeContext(db: Db, access: AccessContext, worldId: string) {
+  const timeline = await db.select().from(timelines).where(and(eq(timelines.worldId, worldId), isNull(timelines.parentTimelineId))).get()
+  if (!timeline) return null
+  return readWorldTimeContext(db, access, {
+    worldId,
+    timelineId: timeline.id,
+    visit: await readVisitContext(db, access, { worldId, timelineId: timeline.id }),
+  })
+}
 
 async function loadOwnedWorld(db: Db, worldId: string, userId: string): Promise<World | null> {
   const w = await db
@@ -275,6 +296,7 @@ worldsRoutes.post('/', async (c) => {
 worldsRoutes.get('/', async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
+  const access = routeAccess(c)
   const list = await db.select({ world: worlds, sceneWorldId: worldScenes.worldId })
     .from(worlds)
     .leftJoin(worldScenes, eq(worldScenes.worldId, worlds.id))
@@ -303,6 +325,11 @@ worldsRoutes.get('/', async (c) => {
       simNow: main?.simNow ?? null,
       timeZone: effectiveTimeZone(w.timeZone),
       createdAt: w.createdAt,
+      timeContext: main ? await readWorldTimeContext(db, access, {
+        worldId: w.id,
+        timelineId: main.id,
+        visit: await readVisitContext(db, access, { worldId: w.id, timelineId: main.id }),
+      }) : undefined,
     })
   }
   out.sort((a, b) => (b.simNow ?? '').localeCompare(a.simNow ?? ''))
@@ -340,6 +367,40 @@ worldsRoutes.get('/:id/time-zone', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   return c.json({ timeZone: effectiveTimeZone(world.timeZone) })
+})
+
+worldsRoutes.post('/:id/visits/enter', async (c) => {
+  const body = await c.req.json<{ timelineId?: unknown; clientSessionId?: unknown; requestId?: unknown }>().catch(() => null)
+  if (!body || typeof body.timelineId !== 'string' || typeof body.clientSessionId !== 'string' || typeof body.requestId !== 'string') {
+    return c.json({ error: 'timelineId、clientSessionId 和 requestId 必填' }, 400)
+  }
+  try {
+    const result = await enterVisit(createDb(c.env.DB), routeAccess(c), {
+      worldId: c.req.param('id'), timelineId: body.timelineId,
+      clientSessionId: body.clientSessionId.trim(), requestId: body.requestId.trim(),
+    })
+    return c.json({ ...result.context, requestId: result.requestId })
+  } catch (error) {
+    if (error instanceof VisitServiceError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
+})
+
+worldsRoutes.post('/:id/visits/leave', async (c) => {
+  const body = await c.req.json<{ timelineId?: unknown; clientSessionId?: unknown; requestId?: unknown }>().catch(() => null)
+  if (!body || typeof body.timelineId !== 'string' || typeof body.clientSessionId !== 'string' || typeof body.requestId !== 'string') {
+    return c.json({ error: 'timelineId、clientSessionId 和 requestId 必填' }, 400)
+  }
+  try {
+    const result = await leaveVisit(createDb(c.env.DB), routeAccess(c), {
+      worldId: c.req.param('id'), timelineId: body.timelineId,
+      clientSessionId: body.clientSessionId.trim(), requestId: body.requestId.trim(),
+    })
+    return c.json({ ...result.context, requestId: result.requestId })
+  } catch (error) {
+    if (error instanceof VisitServiceError) return c.json({ error: error.message }, error.status)
+    throw error
+  }
 })
 
 worldsRoutes.put('/:id/time-zone', async (c) => {
@@ -412,7 +473,7 @@ worldsRoutes.get('/:id', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   let snapshot
-  try { snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId')) }
+  try { snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId'), routeAccess(c)) }
   catch (error) {
     if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
     throw error
@@ -488,7 +549,7 @@ worldsRoutes.post('/:id/pause', async (c) => {
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
   await db.update(worlds).set({ status: 'paused', pauseReason: 'manual' }).where(eq(worlds.id, world.id))
-  return c.json({ ok: true, status: 'paused' })
+  return c.json({ ok: true, status: 'paused', timeContext: await currentWorldTimeContext(db, routeAccess(c), world.id) })
 })
 
 /** 继续：只改状态，不清零当日用量（清零曾让 pause→resume 无限刷日限额；
@@ -507,7 +568,7 @@ worldsRoutes.post('/:id/resume', async (c) => {
   }
   await db.update(worlds).set({ status: 'running', pauseReason: null }).where(eq(worlds.id, world.id))
   await touchWorldActivity(db, world.id)
-  return c.json({ ok: true, status: 'running' })
+  return c.json({ ok: true, status: 'running', timeContext: await currentWorldTimeContext(db, routeAccess(c), world.id) })
 })
 
 /** 归档（冻结可读）：引擎停止推进、不再产生 LLM 调用；数据完整保留，可随时 resume 解冻 */
@@ -528,7 +589,7 @@ worldsRoutes.post('/:id/archive', async (c) => {
     status: 'archived',
     pauseReason: body?.pauseReason ?? null,
   }).where(eq(worlds.id, world.id))
-  return c.json({ ok: true, status: 'archived' })
+  return c.json({ ok: true, status: 'archived', timeContext: await currentWorldTimeContext(db, routeAccess(c), world.id) })
 })
 
 /** 注入事件：写 kind='injected' 事件，当前线的人物于下一拍感知并反应（F7） */

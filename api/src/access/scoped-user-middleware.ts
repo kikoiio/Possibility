@@ -12,6 +12,7 @@ export function scopedUserMiddleware(guestRouteAllowed: (method: string, path: s
       guestToken: c.req.header('X-Possibility-Guest'),
     }).catch(() => null)
     if (!access || access.kind === 'anonymous') return c.json({ error: '未登录或访客体验已失效' }, 401)
+    c.set('access', access)
     if (access.kind === 'user') {
       c.set('user', { id: access.userId, username: access.username, role: access.role })
       await next()

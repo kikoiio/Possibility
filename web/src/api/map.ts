@@ -1,5 +1,5 @@
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
-import type { WorldSnapshot } from './types'
+import type { WorldSnapshot, WorldTimeContext } from './types'
 
 export interface WorldCapabilities {
   observe: boolean
@@ -23,6 +23,7 @@ export interface WorldPresentation {
 export type MapScene = { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version?: number } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
 export interface MapBootstrap {
   access: WorldCapabilities
+  timeContext?: WorldTimeContext
   world: WorldSnapshot
   scene: MapScene
   presentation: WorldPresentation

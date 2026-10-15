@@ -25,6 +25,7 @@ import GlobalCapBanner from '../components/GlobalCapBanner'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 import MapSelectionCard from '../components/map/MapSelectionCard'
 import { formatWorldTime } from '../lib/world-time'
+import { visitStageLabel } from '../lib/visit-stage'
 import { timelineOptionLabel } from '../world/timeline-display'
 import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
 import WorldHeader from '../components/world/shell/WorldHeader'
@@ -54,6 +55,19 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
+  const visitClientSessionId = useMemo(() => {
+    if (typeof window === 'undefined' || !activeTimelineId) return ''
+    const key = `possibility:visit:${worldId}:${activeTimelineId}`
+    try {
+      const existing = window.sessionStorage.getItem(key)
+      if (existing) return existing
+      const created = crypto.randomUUID()
+      window.sessionStorage.setItem(key, created)
+      return created
+    } catch {
+      return `${worldId}:${activeTimelineId}`
+    }
+  }, [worldId, activeTimelineId])
   const archived = snapshot?.world.status === 'archived' || snapshot?.timelines.find(item => item.id === activeTimelineId)?.status === 'archived'
   const sceneTimelineRef = useRef(activeTimelineId); sceneTimelineRef.current = activeTimelineId
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
@@ -330,6 +344,28 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     finally { request.controller.abort(); if (scopedRequest !== request) scopedRequest.controller.abort() }
   }, [worldId, timelineId, readonly, guest])
   useEffect(() => { void read() }, [read])
+
+  useEffect(() => {
+    if (readonly || !snapshot || !activeTimelineId || !visitClientSessionId) return
+    let active = true
+    const input = { timelineId: activeTimelineId, clientSessionId: visitClientSessionId, requestId: crypto.randomUUID() }
+    void worldsApi.enterVisit(worldId, input).then(context => {
+      if (active) setSnapshot(current => current ? { ...current, timeContext: context } : current)
+      else if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        void worldsApi.leaveVisit(worldId, { ...input, requestId: crypto.randomUUID() }).catch(() => {})
+      }
+    }).catch(error => {
+      if (active) setError(error instanceof Error ? error.message : '到场状态暂时无法确认。')
+    })
+    return () => {
+      active = false
+      // A browser reload/unload keeps the explicit session open so the next
+      // mount can reuse it; visible route changes still close the old target.
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        void worldsApi.leaveVisit(worldId, { ...input, requestId: crypto.randomUUID() }).catch(() => {})
+      }
+    }
+  }, [readonly, guest, snapshot !== null, activeTimelineId, visitClientSessionId, worldId])
 
   useEffect(() => {
     if (readonly || guest) return
@@ -845,6 +881,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       />
     : null
   const worldStatus = snapshot.world.status
+  const statusView = snapshot.timeContext?.world.view
   const running = !archived && worldStatus === 'running'
   const capped = !archived && worldStatus === 'capped'
   const evidenceReadonly = snapshot.evidence.level !== 'complete'
@@ -1076,14 +1113,25 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       onArchiveWorld={() => void handleArchiveWorld()}
     />
     {canInteract && !snapshot.world.isDemo && <WorldTimeZoneSetting worldId={worldId} timeZone={snapshot.world.timeZone} onSaved={zone => {
-      setSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
-      setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: { ...current.value, world: { ...current.value.world, timeZone: zone }, timelines: current.value.timelines.map(t => ({ ...t, timeZone: zone })) } } : current)
+      setSnapshot(current => current ? {
+        ...current,
+        world: { ...current.world, timeZone: zone },
+        timelines: current.timelines.map(t => ({ ...t, timeZone: zone })),
+        timeContext: current.timeContext ? { ...current.timeContext, timeZone: zone } : current.timeContext,
+      } : current)
+      setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: {
+        ...current.value,
+        world: { ...current.value.world, timeZone: zone },
+        timelines: current.value.timelines.map(t => ({ ...t, timeZone: zone })),
+        timeContext: current.value.timeContext ? { ...current.value.timeContext, timeZone: zone } : current.value.timeContext,
+      } } : current)
     }} />}
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
-        {running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停'}
+        {statusView?.label ?? (running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停')}
       </span>
-      <span className="text-ink-faint">世界时间 {formatWorldTime(snapshot.simNow, snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
+      <span className="text-ink-faint">世界时间 {formatWorldTime(snapshot.timeContext?.simNow ?? snapshot.simNow, snapshot.timeContext?.timeZone ?? snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
+      {snapshot.timeContext?.visit.phase && <span className="text-ink-faint">· {visitStageLabel(snapshot.timeContext.visit.phase)}</span>}
     </div>
     {capped && snapshot.world.pauseReason === 'global_daily_cap' && <GlobalCapBanner />}
     {capped && snapshot.world.pauseReason !== 'global_daily_cap' && (

@@ -4,7 +4,7 @@ import type { Db } from '../db/client'
 import {
   chapters, commitments, conversations, dialogueTurns, dialogues, events, forkSnapshots, memories, messages, personaMessages,
   persons, personStates, schedules, timelines, universeEvidence, universeRevisions, voxelEventProjections, worldCommands, worldFacts,
-  worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits,
+  worldModelVersions, worldPersons, worlds, worldSceneRevisions, worldScenes, worldVisits, worldVisitSessions,
   timelineSceneHeads, timelineSceneRevisions,
   native2dLayoutHeads, native2dLayoutRevisions,
 } from '../db/schema'
@@ -356,6 +356,7 @@ export async function deleteClonedWorldGraph(db: Db, cloned: CloneWorldGraphResu
   del(timelineIdList.length > 0, db.delete(conversations).where(inArray(conversations.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(dialogues).where(inArray(dialogues.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(worldVisits).where(inArray(worldVisits.timelineId, timelineIdList)))
+  del(true, db.delete(worldVisitSessions).where(eq(worldVisitSessions.worldId, worldId)))
   del(timelineIdList.length > 0, db.delete(schedules).where(inArray(schedules.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(personStates).where(inArray(personStates.timelineId, timelineIdList)))
   del(timelineIdList.length > 0, db.delete(universeEvidence).where(inArray(universeEvidence.timelineId, timelineIdList)))

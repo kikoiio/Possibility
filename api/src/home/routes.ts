@@ -5,6 +5,8 @@ import { conversations, events, messages, persons, timelines, worldPersons, worl
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import type { Env } from '../index'
 import { effectiveTimeZone } from '../worlds/time-zone'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-sessions'
 
 export const homeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 homeRoutes.use('*', authMiddleware)
@@ -13,6 +15,7 @@ homeRoutes.use('*', authMiddleware)
 homeRoutes.get('/', async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
+  const access = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
 
   const personList = await db.select().from(persons).where(eq(persons.userId, userId)).all()
 
@@ -85,8 +88,7 @@ homeRoutes.get('/', async (c) => {
   for (const row of wpRows) {
     if (!firstPersonByWorld.has(row.worldId)) firstPersonByWorld.set(row.worldId, row.personId)
   }
-  const timelinesOut = worldRows
-    .map((r) => {
+  const timelinesOut = (await Promise.all(worldRows.map(async (r) => {
       const pid = firstPersonByWorld.get(r.world.id) ?? ''
       return {
         id: r.timeline.id,
@@ -98,8 +100,13 @@ homeRoutes.get('/', async (c) => {
         simNow: r.timeline.simNow,
         timeZone: effectiveTimeZone(r.world.timeZone),
         eventCount: countMap.get(r.timeline.id) ?? 0,
+        timeContext: await readWorldTimeContext(db, access, {
+          worldId: r.world.id,
+          timelineId: r.timeline.id,
+          visit: await readVisitContext(db, access, { worldId: r.world.id, timelineId: r.timeline.id }),
+        }),
       }
-    })
+    })))
     .sort((a, b) => b.simNow.localeCompare(a.simNow))
 
   // 「运行中的世界」区块：本人世界（含演示世界）的引擎状态一览
@@ -123,6 +130,11 @@ homeRoutes.get('/', async (c) => {
       timeZone: effectiveTimeZone(w.timeZone),
       personCount: personCountByWorld.get(w.id) ?? 0,
       todayEventCount: todayEvents,
+      timeContext: mainTl ? await readWorldTimeContext(db, access, {
+        worldId: w.id,
+        timelineId: mainTl.id,
+        visit: await readVisitContext(db, access, { worldId: w.id, timelineId: mainTl.id }),
+      }) : undefined,
     })
   }
   worldsOut.sort((a, b) => (b.simNow ?? '').localeCompare(a.simNow ?? ''))

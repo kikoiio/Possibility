@@ -33,6 +33,36 @@ export interface DistillDraft {
   initialState: InitialState
 }
 
+export type WorldStatus = 'running' | 'paused' | 'capped' | 'archived'
+export type TimelineStatus = 'active' | 'archived'
+export type VisitPhase = 'first_visit' | 'returning' | 'unknown'
+export interface StatusView {
+  key: string
+  label: string
+  description: string
+  frozen: boolean
+  nextStep: string | null
+}
+export interface VisitContext {
+  phase: VisitPhase
+  sessionId: string | null
+  enteredSimTime: string | null
+  previousExitedSimTime: string | null
+  hasValidPreviousWatermark: boolean
+}
+export interface WorldTimeContext {
+  worldId: string
+  timelineId: string
+  simNow: string
+  timeZone: string
+  stateVersion: number
+  revisionVersion: number
+  world: { status: WorldStatus; reason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null; view: StatusView }
+  timeline: { status: TimelineStatus; view: StatusView }
+  access: { identity: 'owner' | 'guest' | 'readonly'; capabilities: Readonly<Record<'read' | 'write' | 'advance' | 'fork' | 'archive' | 'reactivate', boolean>> }
+  visit: VisitContext
+}
+
 export interface PersonState extends InitialState {
   simTime: string
 }
@@ -98,7 +128,9 @@ export interface TimelineSummary {
   forkScenario: ForkScenario | null
   simNow: string
   createdAt: string
+  status?: TimelineStatus
   timeZone?: string
+  timeContext?: WorldTimeContext
 }
 
 export interface PersonDetail {
@@ -206,6 +238,7 @@ export interface TimelineDetail {
   events: TimelineEvent[]
   state: PersonState | null
   evidence: PublicUniverseEvidence
+  timeContext?: WorldTimeContext
 }
 
 export interface HomeData {
@@ -220,17 +253,19 @@ export interface HomeData {
     simNow: string
     timeZone?: string
     eventCount: number
+    timeContext?: WorldTimeContext
   }[]
   worlds: {
     id: string
     name: string
-    status: 'running' | 'paused' | 'capped'
+    status: WorldStatus
     pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
     isDemo: boolean
     simNow: string | null
     timeZone?: string
     personCount: number
     todayEventCount: number
+    timeContext?: WorldTimeContext
   }[]
 }
 
@@ -256,7 +291,7 @@ export interface WorldSummary {
   id: string
   name: string
   description: string
-  status: 'running' | 'paused' | 'capped' | 'archived'
+  status: WorldStatus
   pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
   isDemo: boolean
   hasScene: boolean
@@ -266,6 +301,7 @@ export interface WorldSummary {
   simNow: string | null
   timeZone?: string
   createdAt: string
+  timeContext?: WorldTimeContext
 }
 
 export interface WorldDraft {
@@ -282,6 +318,7 @@ export interface TimelineInfo {
   createdAt: string
   forkScenario: ForkScenario | null
   timeZone?: string
+  timeContext?: WorldTimeContext
 }
 
 export interface WorldEventItem {
@@ -338,6 +375,7 @@ export interface TimelineComparison {
     events: { shared: ComparisonEvent[]; leftOnly: ComparisonEvent[]; rightOnly: ComparisonEvent[] }
   }
   limitations: string[]
+  timeContext?: { left: WorldTimeContext | null; right: WorldTimeContext | null }
 }
 
 export interface WorldSnapshot {
@@ -356,6 +394,7 @@ export interface WorldSnapshot {
   currentTimelineId: string
   simNow: string
   timeZone?: string
+  timeContext?: WorldTimeContext
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'
@@ -621,6 +660,8 @@ export interface ReturnBrief {
   summary: string; changes: ReturnChange[]
   provenance?: ProvenanceSnapshot | null
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
+  visit?: VisitContext
+  timeContext?: WorldTimeContext
 }
 export interface EventEvidenceDetail {
   timelineId: string

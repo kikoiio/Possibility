@@ -3,6 +3,7 @@ import type { Db } from '../db/client'
 import { persons, personStates, timelines, worldPersons, worlds } from '../db/schema'
 import { visibleMemories, type Memory } from './memory'
 import type { AgentMode, CommunicationContext, PersonModel } from './types'
+import { normalizePersonModel } from './person-model'
 import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
@@ -107,7 +108,7 @@ export async function buildAgentContext(
 
   return {
     person: recorded ? { ...person, name: recorded.name } : person,
-    model: (recorded?.model ?? JSON.parse(person.modelJson)) as PersonModel,
+    model: normalizePersonModel(recorded?.model ?? JSON.parse(person.modelJson)),
     world: pinned ? { ...world, name: pinned.name, description: pinned.description } : world,
     timeline: residentTimeline(timeline),
     mainTimelineId: mainTimeline.id,

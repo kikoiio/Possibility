@@ -294,6 +294,7 @@ import type {
   EventEvidenceDetail,
   ReturnBrief,
   TimelineComparison,
+  WorldTimeContext,
 } from './types'
 import type { MessageReceipt } from './types'
 import type { SceneHistoryRevision, SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, SceneScope, VoxelSceneDraftResponse } from './types'
@@ -357,6 +358,10 @@ export const worldsApi = {
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
   timeZone: (worldId: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`),
   updateTimeZone: (worldId: string, timeZone: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`, { method: 'PUT', body: JSON.stringify({ timeZone }) }),
+  enterVisit: (worldId: string, input: { timelineId: string; clientSessionId: string; requestId: string }) =>
+    apiFetch<WorldTimeContext & { requestId: string }>(`/api/worlds/${encodeURIComponent(worldId)}/visits/enter`, { method: 'POST', body: JSON.stringify(input) }),
+  leaveVisit: (worldId: string, input: { timelineId: string; clientSessionId: string; requestId: string }) =>
+    apiFetch<WorldTimeContext & { requestId: string }>(`/api/worlds/${encodeURIComponent(worldId)}/visits/leave`, { method: 'POST', body: JSON.stringify(input) }),
   snapshot: (worldId: string, timelineId?: string) =>
     apiFetch<WorldSnapshot>(`/api/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
   state: (worldId: string, timelineId: string) =>
@@ -365,9 +370,9 @@ export const worldsApi = {
     apiFetch<{ id: string; timelineId: string; resultVersion: number; receipt: MessageReceipt | null }>(`/api/worlds/${worldId}/actions/${encodeURIComponent(commandId)}`),
   command: (worldId: string, body: { id: string; timelineId: string; expectedVersion: number; action: { type: 'environment'; location: string | null; condition: string; value: string } | { type: 'inform'; recipientId: string; topic: string; content: string; sourceFactId?: string } }) =>
     apiFetch<{ commandId: string; factId: string; version: number }>(`/api/worlds/${worldId}/actions`, { method: 'POST', body: JSON.stringify(body) }),
-  pause: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
-  resume: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
-  archive: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
+  pause: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
+  resume: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
+  archive: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
   inject: (worldId: string, text: string, timelineId: string, requestId: string, expectedVersion: number) =>
     apiFetch<{ id: string; timelineId: string; simTime: string; version: number; replayed: boolean }>(`/api/worlds/${worldId}/inject`, {
       method: 'POST',
@@ -393,7 +398,8 @@ export const worldsApi = {
       method: 'POST',
       body: JSON.stringify({ at }),
     }),
-  archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
+  archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
+  reactivateTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/timelines/${timelineId}/reactivate`, { method: 'POST' }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
   dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(

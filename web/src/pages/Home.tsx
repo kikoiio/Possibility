@@ -4,6 +4,7 @@ import { apiFetch } from '../api/client'
 import type { HomeData } from '../api/types'
 import GlobalCapBanner from '../components/GlobalCapBanner'
 import { formatWorldTime } from '../lib/world-time'
+import { worldStatusView } from '../lib/world-status'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -66,6 +67,7 @@ export default function Home() {
                     }`}
                   />
                   <span className="font-medium text-ink">{w.name}</span>
+                  <span className="text-xs text-ink-soft">{worldStatusView(w.status, w.timeContext?.world.view).label}</span>
                   {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
                   <span className="ml-auto text-xs text-ink-faint">{w.personCount} 人</span>
                 </div>

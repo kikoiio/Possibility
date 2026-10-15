@@ -19,6 +19,8 @@ import type { Env } from '../index'
 import { readPublicUniverseEvidence } from '../world-state/evidence-status'
 import { normalizeForkFields } from '../life/fork-fields'
 import { effectiveTimeZone } from '../worlds/time-zone'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-sessions'
 
 /** 活跃时间线上限（与世界级 fork 一致）：超出需先归档 */
 const MAX_ACTIVE_TIMELINES = 3
@@ -231,7 +233,8 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
     .where(and(eq(worlds.id, timeline.worldId), eq(worlds.userId, userId)))
     .get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
-  if (timeline.status === 'archived') return c.json({ ok: true, status: 'archived' })
+  const access = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
+  if (timeline.status === 'archived') return c.json({ ok: true, status: 'archived', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 
   const active = await db
     .select({ id: timelines.id })
@@ -242,7 +245,7 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
     return c.json({ error: '每个世界至少保留一条活跃时间线' }, 400)
   }
   await db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, timeline.id))
-  return c.json({ ok: true, status: 'archived' })
+  return c.json({ ok: true, status: 'archived', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 })
 
 /** 重新激活只恢复调度资格，不修补历史；证据不完整时保持只读。 */
@@ -254,7 +257,8 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
     eq(worlds.id, timeline.worldId), eq(worlds.userId, c.get('user').id),
   )).get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
-  if (timeline.status === 'active') return c.json({ ok: true, status: 'active' })
+  const access = { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id }
+  if (timeline.status === 'active') return c.json({ ok: true, status: 'active', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
   const evidence = await db.select().from(universeEvidence)
     .where(eq(universeEvidence.timelineId, timeline.id)).get()
   if (evidence?.level !== 'complete') {
@@ -269,7 +273,7 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
     if (conflict) return c.json({ error: conflict.message }, conflict.status)
     throw error
   }
-  return c.json({ ok: true, status: 'active' })
+  return c.json({ ok: true, status: 'active', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 })
 
 /** 时间线详情：timeline + events（按 sim_time 排序）+ 该线人物状态 */
@@ -290,6 +294,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
     .where(and(eq(worlds.id, timeline.worldId), eq(worlds.userId, userId)))
     .get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
+  const access = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
 
   // 该世界的首个成员（阶段一视图为单人物世界设计，多人物世界的观察在世界视图进行）
   const wp = await db
@@ -319,6 +324,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
   return c.json({
     timeline: {
       id: timeline.id,
+      status: timeline.status,
       timeZone: effectiveTimeZone(world.timeZone),
       worldId: timeline.worldId,
       parentTimelineId: timeline.parentTimelineId,
@@ -339,5 +345,10 @@ timelineRoutes.get('/timelines/:id', async (c) => {
     events: eventList,
     state: state ?? null,
     evidence: await readPublicUniverseEvidence(db, timeline.id),
+    timeContext: await readWorldTimeContext(db, access, {
+      worldId: world.id,
+      timelineId: timeline.id,
+      visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }),
+    }),
   })
 })

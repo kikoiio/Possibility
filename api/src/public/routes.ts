@@ -36,7 +36,7 @@ publicRoutes.get('/worlds/:id', async (c) => {
   const world = await loadDemoWorld(db, c.req.param('id'))
   if (!world) return c.json({ error: '世界不存在' }, 404)
   let snapshot
-  try { snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId')) }
+  try { snapshot = await worldSnapshot(db, world.id, c.req.query('timelineId'), { kind: 'anonymous' }) }
   catch (error) {
     if (error instanceof WorldStateError) return c.json({ error: error.message }, error.status)
     throw error

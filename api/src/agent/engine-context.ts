@@ -10,6 +10,7 @@ import { readWorldState } from '../world-state/query'
 import { visibleKnowledgeForPerson, type VisibleKnowledgeFact } from './knowledge'
 import { residentTimeline, type ResidentTimeline } from './resident-context'
 import { buildResidentEvidence, type ResidentEvidence } from './resident-evidence'
+import { normalizePersonModel } from './person-model'
 
 type World = typeof worlds.$inferSelect
 type Timeline = typeof timelines.$inferSelect
@@ -167,7 +168,7 @@ export async function buildWorldSnapshot(db: Db, worldId: string, timelineId: st
   for (const p of personList) {
     try {
       const recorded = pinned?.residents.find(r => r.id === p.id)
-      models.set(p.id, (recorded?.model ?? JSON.parse(p.modelJson)) as PersonModel)
+      models.set(p.id, normalizePersonModel(recorded?.model ?? JSON.parse(p.modelJson)))
     } catch {
       // 模型损坏的人物保留在 persons 清单中，但无模型——step 执行会失败并跳过
     }

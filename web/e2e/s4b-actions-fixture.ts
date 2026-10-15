@@ -37,6 +37,15 @@ async function fixture(page: Page, options: Options = {}) {
     theme: { id: 'mist-manor', assetVersion: 'e2e' }, resume: { worldId: 'world-1', timelineId: 'timeline-main', spaceId: 'exterior', mode: 'life', updatedAt: snapshot().simNow },
   } }))
   await page.route('**/api/worlds/world-1/map/resume', route => route.fulfill({ json: { ok: true } }))
+  const visitContext = () => ({
+    worldId: 'world-1', timelineId: 'timeline-main', simNow: '2026-09-19T12:00:00.000Z', timeZone: 'UTC', stateVersion: version, revisionVersion: version,
+    world: { status: options.status ?? 'running', reason: null, view: { key: options.status ?? 'running', label: options.status === 'paused' ? '暂时不可用' : '正在运行', description: '测试状态', frozen: options.status === 'paused', nextStep: null } },
+    timeline: { status: 'active', view: { key: 'timeline_active', label: '时间线活跃', description: '测试时间线', frozen: false, nextStep: null } },
+    access: { identity: 'owner', capabilities: { read: true, write: options.status !== 'paused', advance: options.status !== 'paused', fork: options.status !== 'paused', archive: true, reactivate: false } },
+    visit: { phase: 'first_visit', sessionId: 'e2e-visit', enteredSimTime: '2026-09-19T12:00:00.000Z', previousExitedSimTime: null, hasValidPreviousWatermark: false },
+  })
+  await page.route('**/api/worlds/world-1/visits/enter', route => route.fulfill({ json: { ...visitContext(), requestId: 'e2e-enter' } }))
+  await page.route('**/api/worlds/world-1/visits/leave', route => route.fulfill({ json: { ...visitContext(), requestId: 'e2e-leave' } }))
   await page.route('**/api/worlds/world-1/persona?**', route => {
     if (failRefresh) return route.fulfill({ status: 503, json: { error: '暂不可用' } })
     return route.fulfill({ json: { persona: { id: 'visitor', name: '访客', description: '旅人', location: counters.intents > 0 && version > 1 ? '庭院' : '主楼' }, unread: 0 } })
@@ -82,7 +91,15 @@ async function fixture(page: Page, options: Options = {}) {
     counters.commands++
     counters.effects++
     const { commandId } = route.request().postDataJSON() as { commandId: string }
-    return route.fulfill({ json: { commandId, version: ++version, replayed: false } })
+    return route.fulfill({ json: {
+      commandId, version: ++version, replayed: false,
+      receipt: {
+        receiptId: `receipt-${commandId}`, commandId, factRef: { kind: 'inform', id: `fact-${commandId}`, timelineId: 'timeline-main' },
+        worldId: 'world-1', timelineId: 'timeline-main', version, simTime: '2026-09-19T12:00:00.000Z',
+        sender: { personId: 'visitor', name: '访客' }, recipient: { personId: 'resident', name: '小夜' },
+        topic: '天气', content: '暴雨开始了',
+      },
+    } })
   })
   await page.route('**/api/worlds/world-1/scene/position', route => {
     counters.commands++

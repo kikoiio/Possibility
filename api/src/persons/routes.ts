@@ -3,9 +3,13 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { persons, personStates, timelines, universeEvidence, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
-import { distillPerson, normalizeModel } from '../agent/distill'
+import { distillPerson } from '../agent/distill'
+import { normalizePersonModel } from '../agent/person-model'
 import { BudgetRefusal } from '../engine/guard'
 import type { Env } from '../index'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-sessions'
+import { effectiveTimeZone } from '../worlds/time-zone'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 personRoutes.use('*', authMiddleware)
@@ -38,7 +42,7 @@ personRoutes.post('/', async (c) => {
     .catch(() => null)
   const name = body?.name?.trim()
   if (!body || !name || !body.model) return c.json({ error: 'name 与 model 必填' }, 400)
-  const model = normalizeModel(body.model)
+  const model = normalizePersonModel(body.model)
 
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
@@ -98,12 +102,13 @@ personRoutes.get('/:id', async (c) => {
         .where(and(eq(personStates.personId, person.id), eq(personStates.timelineId, mainTimeline.id)))
         .get()
     : null
+  const access = world ? { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id } : null
 
   return c.json({
     person: {
       id: person.id,
       name: person.name,
-      model: JSON.parse(person.modelJson) as unknown,
+      model: normalizePersonModel(JSON.parse(person.modelJson) as unknown),
       createdAt: person.createdAt,
     },
     world: world ?? null,
@@ -114,8 +119,14 @@ personRoutes.get('/:id', async (c) => {
       forkScenario: t.forkScenarioJson ? (JSON.parse(t.forkScenarioJson) as unknown) : null,
       simNow: t.simNow,
       createdAt: t.createdAt,
-      timeZone: world?.timeZone ?? 'UTC',
+      status: t.status,
+      timeZone: effectiveTimeZone(world?.timeZone),
     })),
+    timeContext: world && mainTimeline && access ? await readWorldTimeContext(db, access, {
+      worldId: world.id,
+      timelineId: mainTimeline.id,
+      visit: await readVisitContext(db, access, { worldId: world.id, timelineId: mainTimeline.id }),
+    }) : undefined,
   })
 })
 
@@ -132,7 +143,9 @@ personRoutes.put('/:id', async (c) => {
   if (!person) return c.json({ error: '人物不存在' }, 404)
 
   const name = body.name?.trim() || person.name
-  const model = body.model ? normalizeModel(body.model) : (JSON.parse(person.modelJson) as unknown)
+  const model = body.model
+    ? normalizePersonModel(body.model)
+    : normalizePersonModel(JSON.parse(person.modelJson) as unknown)
   await db
     .update(persons)
     .set({ name, modelJson: JSON.stringify(model) })

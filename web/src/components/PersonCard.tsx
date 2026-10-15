@@ -53,7 +53,7 @@ export default function PersonCard({ draft, onChange, errors = {}, onFieldChange
     patchModel({ [key]: draft.model[key].filter((_, j) => j !== i) } as Partial<PersonModel>)
   }
   const addItem = (key: keyof Omit<PersonModel, 'unknowns'>) => {
-    patchModel({ [key]: [...draft.model[key], { text: '', provenance: 'inferred' }] } as Partial<PersonModel>)
+    patchModel({ [key]: [...draft.model[key], { text: '', provenance: 'known' }] } as Partial<PersonModel>)
   }
 
   return (
