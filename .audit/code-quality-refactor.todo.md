@@ -34,6 +34,20 @@
 - [ ] U7. Run the full new GitHub Actions gate, inspect the run and artifacts, perform a diff review, and record unverified product acceptance cases honestly.
 - [ ] U8. Review the current diff for comments and style, audit the decision trail, and report branch/push status.
 
+## U8 comment findings shape
+
+- [ ] Architect: Ground
+- [ ] Architect: Sketch
+- [ ] Architect: Agree
+- [ ] Architect: Implement
+- [ ] Architect: Scrap
+- [ ] Arena: Frame
+- [ ] Arena: Fan out
+- [ ] Arena: Cross-judge
+- [ ] Arena: Pick
+- [ ] Arena: Graft
+- [ ] Arena: Verify
+
 ## Definition of done
 
 - A GitHub Actions workflow runs on `pull_request` to `main` and `workflow_dispatch`, and passes on the task branch.

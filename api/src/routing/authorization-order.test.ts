@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { guestSessions, persons, worldPersons, worldVisitSessions, worlds } from '../db/schema'
+import { guestSessions, persons, users, worldPersons, worldVisitSessions, worlds } from '../db/schema'
 import type { Env } from '../index'
 import { chatRoutes } from '../chat/routes'
 import { hashGuestToken } from '../access/middleware'
@@ -54,6 +54,9 @@ for (const [order, reverse] of [['normal', false], ['reversed', true]] as const)
       fixture = await createWorldFixture()
       app = createOrderedApp(reverse)
       await fixture.db.update(worlds).set({ isDemo: true }).where(eq(worlds.id, 'home-world'))
+      await fixture.db.insert(users).values({
+        id: 'expired-owner', username: 'expired-owner', passwordHash: 'unused', createdAt: WORLD_TIME,
+      })
       await fixture.db.insert(persons).values({
         id: 'resident', userId: 'owner', name: 'Resident', modelJson: JSON.stringify({
           identity: [], behavior: [], speech: [], skills: [], memories: [], relationships: [], boundaries: [], unknowns: [],
@@ -72,8 +75,8 @@ for (const [order, reverse] of [['normal', false], ['reversed', true]] as const)
           createdAt: WORLD_TIME, updatedAt: WORLD_TIME,
         },
         {
-          id: 'guest-expired', tokenHash: await hashGuestToken('guest-expired-token'), ownerUserId: 'owner',
-          currentSandboxWorldId: 'home-world', generation: 0, status: 'active', expiresAt: '2000-01-01T00:00:00.000Z',
+          id: 'guest-expired', tokenHash: await hashGuestToken('guest-expired-token'), ownerUserId: 'expired-owner',
+          currentSandboxWorldId: null, generation: 0, status: 'active', expiresAt: '2000-01-01T00:00:00.000Z',
           createdAt: WORLD_TIME, updatedAt: WORLD_TIME,
         },
       ])
