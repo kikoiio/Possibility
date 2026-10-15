@@ -29,6 +29,17 @@ async function openSplit(page: Page) {
     const w = window as unknown as ProbeWindow
     return Boolean(w.__voxelEngines?.left && w.__voxelEngines?.right)
   }), { timeout: 30000 }).toBe(true)
+  await expect.poll(() => page.evaluate(() => ['left', 'right'].map(instanceId => {
+    const viewport = document.querySelector(`[data-voxel-instance="${instanceId}"]`)
+    if (!viewport) return `${instanceId}:missing`
+    if (viewport.querySelector('[data-testid="voxel-viewport-error"]')) return `${instanceId}:error`
+    return viewport.querySelector('[data-testid="voxel-viewport-loading"]')
+      ? `${instanceId}:loading`
+      : `${instanceId}:ready`
+  }).join(',')), { timeout: 30000 }).toBe('left:ready,right:ready')
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
 }
 
 test.describe('S1 分屏平行视口(AC1/AC2)', () => {
