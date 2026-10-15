@@ -12,7 +12,7 @@ import { WorldStateError } from '../world-state/types'
 import { gateUniverseWrite } from '../engine/guard'
 import { getEventEvidenceDetail, getReturnPage } from './evidence'
 import { readWorldTimeContext } from '../worlds/time-context'
-import { readVisitContext } from './visit-sessions'
+import { readVisitContext } from './visit-context'
 
 export const lifeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
 lifeRoutes.use('*', authMiddleware)

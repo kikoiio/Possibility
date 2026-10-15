@@ -8,7 +8,7 @@ import { events, personStates, timelines, universeEvidence, universeRevisions, w
 import type { Env } from '../index'
 import { publicUniverseEvidence } from '../world-state/evidence-status'
 import { readWorldTimeContext } from '../worlds/time-context'
-import { readVisitContext } from './visit-sessions'
+import { readVisitContext } from './visit-context'
 
 /** Keep compare responses bounded while allowing callers to request a smaller view. */
 export const DEFAULT_COMPARE_LIMIT = 100

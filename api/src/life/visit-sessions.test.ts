@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { timelines, universeEvidence, universeRevisions, users, worldFacts, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
-import { enterVisit, leaveVisit, readVisitContext } from './visit-sessions'
+import { enterVisit, leaveVisit } from './visit-sessions'
+import { readVisitContext } from './visit-context'
 
 const NOW = '2026-10-01T00:00:00.000Z'
 const owner = { kind: 'user' as const, userId: 'owner', username: 'owner', role: 'user' as const, ownerId: 'owner' }

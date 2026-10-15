@@ -1,9 +1,10 @@
 import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import { worldVisitSessions, worldVisits } from '../db/schema'
+import { worldVisitSessions } from '../db/schema'
 import type { AccessContext } from '../access/types'
 import type { VisitContext, WorldTimeContext } from '@possibility/world-contract'
 import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from './visit-context'
 
 export interface VisitRequest {
   worldId: string
@@ -42,37 +43,6 @@ async function readSessions(db: Db, principal: Principal, input: VisitRequest) {
     eq(worldVisitSessions.worldId, input.worldId),
     eq(worldVisitSessions.timelineId, input.timelineId),
   )).orderBy(desc(worldVisitSessions.updatedAt)).all()
-}
-
-/** Read visit phase without creating a session or advancing a return watermark. */
-export async function readVisitContext(
-  db: Db,
-  access: AccessContext,
-  input: Pick<VisitRequest, 'worldId' | 'timelineId'> & { sessionId?: string | null },
-): Promise<VisitContext> {
-  const principal = principalFor(access)
-  if (!principal) return { phase: 'unknown', sessionId: null, enteredSimTime: null, previousExitedSimTime: null, hasValidPreviousWatermark: false }
-  const rows = await db.select().from(worldVisitSessions).where(and(
-    eq(worldVisitSessions.principalKey, principal.key),
-    eq(worldVisitSessions.worldId, input.worldId),
-    eq(worldVisitSessions.timelineId, input.timelineId),
-  )).orderBy(desc(worldVisitSessions.updatedAt)).all()
-  const current = input.sessionId ? rows.find(row => row.id === input.sessionId) : rows.find(row => row.status === 'open')
-  const previous = rows.find(row => row.id !== current?.id && row.exitedAt)
-  const watermark = principal.userId
-    ? await db.select().from(worldVisits).where(and(eq(worldVisits.userId, principal.userId), eq(worldVisits.timelineId, input.timelineId))).get()
-    : null
-  const hasValidPreviousWatermark = !!previous?.exitedAt || !!watermark
-  const phase = current?.status === 'open'
-    ? (hasValidPreviousWatermark ? 'returning' : 'first_visit')
-    : hasValidPreviousWatermark ? 'returning' : 'unknown'
-  return {
-    phase,
-    sessionId: current?.id ?? null,
-    enteredSimTime: current?.enteredSimTime ?? null,
-    previousExitedSimTime: previous?.exitedSimTime ?? (current?.status === 'closed' ? current.exitedSimTime : null) ?? null,
-    hasValidPreviousWatermark,
-  }
 }
 
 export class VisitServiceError extends Error {

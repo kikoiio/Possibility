@@ -37,7 +37,8 @@ import { messageReceiptFromCommand } from '../provenance/receipts'
 import type { ForkScenario } from '../agent/types'
 import { normalizeForkFields } from '../life/fork-fields'
 import type { Env } from '../index'
-import { enterVisit, leaveVisit, readVisitContext, VisitServiceError } from '../life/visit-sessions'
+import { enterVisit, leaveVisit, VisitServiceError } from '../life/visit-sessions'
+import { readVisitContext } from '../life/visit-context'
 import { readWorldTimeContext } from './time-context'
 
 type World = typeof worlds.$inferSelect

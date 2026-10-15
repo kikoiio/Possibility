@@ -20,7 +20,7 @@ import { readPublicUniverseEvidence } from '../world-state/evidence-status'
 import { normalizeForkFields } from '../life/fork-fields'
 import { effectiveTimeZone } from '../worlds/time-zone'
 import { readWorldTimeContext } from '../worlds/time-context'
-import { readVisitContext } from '../life/visit-sessions'
+import { readVisitContext } from '../life/visit-context'
 
 /** 活跃时间线上限（与世界级 fork 一致）：超出需先归档 */
 const MAX_ACTIVE_TIMELINES = 3

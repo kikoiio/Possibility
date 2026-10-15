@@ -8,7 +8,7 @@ import { normalizePersonModel } from '../agent/person-model'
 import { BudgetRefusal } from '../engine/guard'
 import type { Env } from '../index'
 import { readWorldTimeContext } from '../worlds/time-context'
-import { readVisitContext } from '../life/visit-sessions'
+import { readVisitContext } from '../life/visit-context'
 import { effectiveTimeZone } from '../worlds/time-zone'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
