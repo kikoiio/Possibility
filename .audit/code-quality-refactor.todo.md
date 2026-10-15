@@ -15,12 +15,14 @@
 - [x] Throughput checkpoint: Independent workstreams. `n/a`, the remaining units share one task branch and depend on the preceding unit's verified state.
 - [x] Throughput checkpoint: Shared mutable state. Keep edits serialized on this branch and preserve the existing evidence directories.
 - [x] Throughput checkpoint: Smallest safe decomposition. One owner is appropriate because each unit builds on the same branch and U5/U6 move overlapping API ownership boundaries.
-- [ ] Phase C: Run the loop. Each unit is an experiment. State the hypothesis, make the smallest change, measure against the predicate on the real artifact, keep it if it advanced, revert it if it didn't. Apply the **sequence-verifiable-units** principle, verifying each unit before starting the next instead of batching checks at the end.
-  - [ ] Verify by inspecting the artifact, never a self-report. When something passes too easily, suspect the observation method before the system.
-  - [ ] Pair delegated work with a judge. If a worker games the gate, reset and harden the contract. If the gate itself is wrong, fix it in its own change rather than routing around it.
-  - [ ] A verdict is VERIFIED, NOT VERIFIED, or INCONCLUSIVE. Inconclusive is not a pass. Don't hide a negative.
-- [ ] Phase D: Keep the audit trail. Log the run via the **show-me-your-work** skill. figure-it-out's work is usually ambitious enough that a reviewer needs the trail to trust the result. The trail plus the diff is what lets the human come back to it later.
-- [ ] Phase E: Verify and hand back. Check the whole against the Phase A predicate on the real product, not just the harness. Encode any recurring correction as a gate, a lint rule, a check, or a script (the **encode-lessons-in-structure** principle).
+- [x] Phase C: Run the loop. Each unit is an experiment. State the hypothesis, make the smallest change, measure against the predicate on the real artifact, keep it if it advanced, revert it if it didn't. Apply the **sequence-verifiable-units** principle, verifying each unit before starting the next instead of batching checks at the end.
+  - [x] Verify by inspecting the artifact, never a self-report. When something passes too easily, suspect the observation method before the system.
+  - [x] Pair delegated work with a judge. If a worker games the gate, reset and harden the contract. If the gate itself is wrong, fix it in its own change rather than routing around it.
+  - [x] A verdict is VERIFIED, NOT VERIFIED, or INCONCLUSIVE. Inconclusive is not a pass. Don't hide a negative.
+- [x] Phase D: Keep the audit trail. Log the run via the **show-me-your-work** skill. figure-it-out's work is usually ambitious enough that a reviewer needs the trail to trust the result. The trail plus the diff is what lets the human come back to it later.
+  - [x] Cross-model trail review completed by `gpt-5.6-sol`; the two findings were appended without rewriting history, and the remaining current-run evidence was confirmed.
+- [x] Phase E: Verify and hand back. Check the whole against the Phase A predicate on the real product, not just the harness. Encode any recurring correction as a gate, a lint rule, a check, or a script (the **encode-lessons-in-structure** principle).
+  - [x] The pushed task branch passed the full GitHub Actions gate, the callback trace was inspected, and the route-order, query-bound, typed-event, and browser journey checks remain in the workflow. Uninvoked PR and manual-dispatch events and unverified AC8/AC12 remain listed below.
 
 ## Designed units
 
@@ -31,14 +33,14 @@
 - [x] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
 - [x] U5. Split timeline-scoped scene revision storage from legacy world-scene operations. Keep canonical exports or migrate all callers in one unit. Verify scene repository, history, fork, and migration tests.
 - [x] U6. Reduce route mount-order coupling by moving auth to explicit path-owning routers or middleware. Add overlap/auth tests. Verify protected and public route behavior.
-- [ ] U7. Run the full new GitHub Actions gate, inspect the run and artifacts, perform a diff review, and record unverified product acceptance cases honestly.
-- [ ] U8. Review the current diff for comments and style, audit the decision trail, and report branch/push status.
+- [x] U7. Run the full new GitHub Actions gate, inspect the run and artifacts, perform a diff review, and record unverified product acceptance cases honestly.
+- [x] U8. Review the current diff for comments and style, audit the decision trail, and report branch/push status.
 
 ## U8 comment findings shape
 
 - [x] U8 architect: Ground, sketch, and agree completed in `.audit/code-quality-u8/`.
 - [x] U8 arena: Frame, fan out, cross-judge, pick, and graft completed in `.audit/code-quality-u8/`.
-- [ ] U8 implementation reconciliation and cloud verification remain open until the callback finding and full Actions gate pass.
+- [x] U8 implementation reconciliation and cloud verification passed on Actions run `38823940837`.
 
 ## ChatStream callback finding
 
@@ -52,13 +54,13 @@
 - [x] Arena: Fan out independent sketches to separate audit files.
 - [x] Arena: Cross-judge both candidates.
 - [x] Arena: Pick and graft the smallest coherent shape.
-- [ ] Arena: Verify the artifact and record the cloud gate result.
+- [x] Arena: Verify the artifact and record the cloud gate result.
 - [x] Arena: Frame
 - [x] Arena: Fan out
 - [x] Arena: Cross-judge
 - [x] Arena: Pick
 - [x] Arena: Graft
-- [ ] Arena: Verify
+- [x] Arena: Verify
 
 ## Definition of done
 
@@ -116,4 +118,6 @@
 - U6's first retry, run `38817202602` at `6c17e7c`, passed the shared contracts and API type check, and ran 985 API tests successfully with one skip. The only failed API assertion was the existing Mist Manor repair: 19,197,242 work units measured 10,026 ms against the unchanged 10,000 ms deadline. The runner started with 14 GiB available, zero swap I/O, and zero memory PSI; a same-SHA full rerun is the next discriminator.
 - U6 verified on the same-SHA rerun of `6c17e7c` in Actions run `38817202602`, attempt 2: API 986 passed/1 skipped, Web 754 passed, and all 19 browser journeys passed. The unchanged Mist Manor repair measured 9,618 ms; the 10-second limit remains a runner-speed risk.
 - U7 run `38823129850` passed contracts, API, and Web checks, then failed the callback browser journey before its component mounted. The custom route HTML omitted Vite's React Refresh preamble; the trace recorded `@vitejs/plugin-react can't detect preamble`, and 22 of 23 journeys passed. The trace and blank screenshot are preserved in `artifacts/u8-failed-browser-38823129850`; U7 remains unverified until the fixture is corrected and Actions passes.
+- U7 passed on commit `28f20bb` in Actions run `38823940837`: shared contracts 204 passed, API 986 passed/1 skipped, Web 757 passed, and all 23 Chromium journeys passed. Artifact `12014039600` contains 23 traces. The callback trace shows `@react-refresh` and the harness loaded with status 200, catchup and send POSTs returned 200, and the final DOM contains both replacement callback results.
+- The phase 2B manifest marks AC8 and AC12 unverified. AC8's delayed A/B response and full write-audit journey did not run; AC12's complete timezone, review, advance, fork/split, pause/archive, and refresh journey did not run. This CI gate passed on push. The pull-request and manual-dispatch event paths are configured but were not invoked, and no PR was opened.
 - No merge, release, or deployment is authorized by this task.
