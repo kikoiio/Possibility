@@ -34,4 +34,4 @@ No tests, builds, services, or cloud actions were run, as instructed. This verdi
 
 ## Authorization update
 
-On 2026-10-15, the user explicitly authorized GitHub Actions for this implementation run. The earlier permission note records the review-time state and remains accurate for that review. The coordinator may now push the dedicated task branch and dispatch the quality workflow; the authorization does not include merging, releasing, or deploying.
+On 2026-10-15, the user explicitly authorized GitHub Actions for this implementation run. The earlier permission note records the review-time state and remains accurate for that review. The coordinator may push the task branch and run its quality workflow; the authorization does not include merging, releasing, or deploying. GitHub rejected manual dispatch while the workflow was absent from the default branch, so the workflow also runs on `codex/**` pushes to verify the baseline without opening a PR.

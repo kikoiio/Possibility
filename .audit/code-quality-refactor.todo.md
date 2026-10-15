@@ -20,7 +20,7 @@
 
 ## Designed units
 
-- [ ] U1. Add a pull-request quality workflow and a manual dispatch entry for the same checks. Include all workspaces and one targeted browser journey. Run it on GitHub Actions before structural changes.
+- [ ] U1. Add a pull-request quality workflow and a manual dispatch entry for the same checks, plus a `codex/**` push trigger so the baseline can run before any PR. Include all workspaces and one targeted browser journey. Run it on GitHub Actions before structural changes.
 - [ ] U2. Move world/time status contracts and pure status descriptions into a shared package. Update server and client imports. Verify workspace resolution and focused contract/API/UI tests.
 - [ ] U3. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, and archived contexts. First fix visit authorization before mutation and assert there is no database side effect for foreign worlds.
 - [ ] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
@@ -43,6 +43,6 @@
 
 - The architecture review selected candidate A. Candidate B's route matrix and storage import-boundary check are grafted into the final design.
 - The local pre-refactor worktree contains 58 paths: 34 modified and 24 untracked. They include phase 2B work and evidence and remain user work to preserve.
-- The user explicitly authorized GitHub Actions. The U1 baseline is not verified until a run for this task branch completes and its logs are inspected.
+- The user explicitly authorized GitHub Actions. Manual dispatch returned 404 because the workflow is not on the default branch; the `codex/**` push trigger is the no-PR route to the same baseline check. U1 remains unverified until that run completes and its logs are inspected.
 - The stage 0 product acceptance listed in `docs/PLAN.md`, including phase 2B AC8 and AC12, remains a separate product check. CI does not close it by itself.
 - No merge, release, or deployment is authorized by this task.
