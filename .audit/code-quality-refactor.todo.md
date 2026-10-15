@@ -22,7 +22,7 @@
 - [x] Phase D: Keep the audit trail. Log the run via the **show-me-your-work** skill. figure-it-out's work is usually ambitious enough that a reviewer needs the trail to trust the result. The trail plus the diff is what lets the human come back to it later.
   - [x] Cross-model trail review completed by `gpt-5.6-sol`; the two findings were appended without rewriting history, and the remaining current-run evidence was confirmed.
 - [x] Phase E: Verify and hand back. Check the whole against the Phase A predicate on the real product, not just the harness. Encode any recurring correction as a gate, a lint rule, a check, or a script (the **encode-lessons-in-structure** principle).
-  - [x] The pushed task branch passed the full GitHub Actions gate, the callback trace was inspected, and the route-order, query-bound, typed-event, and browser journey checks remain in the workflow. Uninvoked PR and manual-dispatch events and unverified AC8/AC12 remain listed below.
+  - [x] Audit commit `eb79ba0` passed the full GitHub Actions gate: shared 204, API 986 passed/1 skipped, Web 757, and Chromium 23/23. Its callback trace was inspected. The route-order, query-bound, typed-event, and browser journey checks remain in the workflow. Uninvoked PR and manual-dispatch events and unverified AC8/AC12 remain listed below.
 
 ## Designed units
 
