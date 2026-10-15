@@ -1,11 +1,12 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
+import { decodeSceneCompatibility } from '@possibility/voxel-contract'
 import type { Db } from '../../db/client'
 import { demoBaselines, sceneCompatibilityRequests, timelineSceneHeads, timelineSceneRevisions, timelines } from '../../db/schema'
 import { buildCommitWriteProof, buildTimelineCommitGuardStatement, type SceneWriteAuthority, type SceneWriteProofRequest } from '../compatibility/write-proof'
 import { hashStoredDocument, hashText, readTimelineRevisionRow } from './document'
 import { scopedMainLegacyStatements } from './main-line-bridge'
-import { SceneConflict, TimelineSceneConflict, TimelineSceneIntegrityError, type RestoreTimelineSceneInput, type TimelineSceneCommitInput, type TimelineSceneForkStatementsInput, type TimelineSceneHistoryOptions, type TimelineSceneHistoryPage, type TimelineSceneHistoryRevision, type TimelineSceneRevisionRead, type TimelineSceneScope } from './types'
+import { SceneConflict, TimelineSceneConflict, TimelineSceneIntegrityError, type RestoreTimelineSceneInput, type StoredSceneDocument, type TimelineSceneCommitInput, type TimelineSceneForkStatementsInput, type TimelineSceneHistoryBoundary, type TimelineSceneHistoryOptions, type TimelineSceneHistoryPage, type TimelineSceneHistoryRevision, type TimelineSceneRevisionRead, type TimelineSceneScope } from './types'
 
 function auditNamespace(compatibilityJson: string | null | undefined): { purpose: string | null; draftId: string | null } {
   if (!compatibilityJson) return { purpose: null, draftId: null }

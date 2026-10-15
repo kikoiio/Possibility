@@ -79,4 +79,5 @@
   - [x] Graft. Apply only useful details that preserve one coherent shape.
   - [x] Verify. Compare the sketch with the existing U5 ownership and batch contracts.
 - U5 no-comments review passed with no additional deletions or unresolved `MUST KILL` findings; the reviewer checked the seven U5 source/test files and found 26 existing comment blocks removed (43 lines).
+- U5 run `38807919483` stopped in the API type check: the split timeline file lacked three imports, and TypeScript 7's package root no longer exposes the Compiler API used by the AST boundary test. The test now uses a test-only TypeScript 5.9 alias; the full gate must pass before U6.
 - No merge, release, or deployment is authorized by this task.

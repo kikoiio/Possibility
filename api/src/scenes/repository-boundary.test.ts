@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import * as ts from 'typescript'
+import * as ts from 'typescript-compiler-api'
 import { expect, it } from 'vitest'
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
