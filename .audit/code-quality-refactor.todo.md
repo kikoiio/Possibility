@@ -21,8 +21,9 @@
 ## Designed units
 
 - [x] U1. Add a pull-request quality workflow and a manual dispatch entry for the same checks, plus a `codex/**` push trigger so the baseline can run before any PR. Include all workspaces and one targeted browser journey. Run it on GitHub Actions before structural changes.
-- [ ] U2. Move world/time status contracts and pure status descriptions into a shared package. Update server and client imports. Verify workspace resolution and focused contract/API/UI tests.
-- [ ] U3. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, and archived contexts. First fix visit authorization before mutation and assert there is no database side effect for foreign worlds.
+- [x] U2. Move world/time status contracts and pure status descriptions into a shared package. Update server and client imports. Verify workspace resolution and focused contract/API/UI tests.
+- [ ] U3a. Authorize visit targets before session reads or writes. Prove enter, replay, leave, and no-session leave reject a real foreign-owned world without database side effects.
+- [ ] U3b. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, archived, no-timeline, and large home fixtures; assert query count is bounded independently of timeline count.
 - [ ] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
 - [ ] U5. Split timeline-scoped scene revision storage from legacy world-scene operations. Keep canonical exports or migrate all callers in one unit. Verify scene repository, history, fork, and migration tests.
 - [ ] U6. Reduce route mount-order coupling by moving auth to explicit path-owning routers or middleware. Add overlap/auth tests. Verify protected and public route behavior.
@@ -46,5 +47,6 @@
 - The user explicitly authorized GitHub Actions. Manual dispatch returned 404 because the workflow is not on the default branch; the `codex/**` push trigger verified the same checks at commit `4d6b32e` without opening a PR. The PR and manual dispatch event paths are configured but not yet invoked.
 - U1 passed on run `38783539070`: 978 API tests, 754 Web tests, 200 shared-contract tests, one browser journey, and an uploaded Playwright trace artifact.
 - The stage 0 product acceptance listed in `docs/PLAN.md`, including phase 2B AC8 and AC12, remains a separate product check. CI does not close it by itself.
-- U2 has moved the world/time contract into `@possibility/world-contract`; package/API/Web build and behavior checks are pending Actions.
+- U2 moved the world/time contract into `@possibility/world-contract` and passed on run `38784920480` at commit `5109f2a`; package, API, Web, and phase 2B browser checks are green.
+- U3a authorizes visit targets before any session lookup and returns only `{ principal, context }`; the implementation is ready for push and Actions verification is pending.
 - No merge, release, or deployment is authorized by this task.

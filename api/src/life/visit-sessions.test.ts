@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { timelines, users, universeEvidence, worldVisitSessions, worldVisits, worlds } from '../db/schema'
+import { timelines, universeEvidence, universeRevisions, users, worldFacts, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 import { enterVisit, leaveVisit, readVisitContext } from './visit-sessions'
 
@@ -59,5 +59,42 @@ describe('visit session service', () => {
     expect(result.phase).toBe('unknown')
     await expect(enterVisit(f.db, owner, { worldId: 'missing', timelineId: 'main', clientSessionId: 'browser-1', requestId: 'x' })).rejects.toMatchObject({ status: 404 })
     expect(await f.db.select().from(worldVisitSessions).all()).toHaveLength(0)
+  })
+
+  it('authorizes a foreign-owned world before enter, replay, or leave session lookups', async () => {
+    const f = await setup()
+    await f.db.insert(users).values({ id: 'other-owner', username: 'other-owner', passwordHash: 'x', createdAt: NOW })
+    await f.db.insert(worlds).values({ id: 'foreign-world', userId: 'other-owner', name: 'Foreign', description: '', status: 'running' })
+    await f.db.insert(timelines).values({ id: 'foreign-main', worldId: 'foreign-world', simNow: NOW, createdAt: NOW })
+    await f.db.insert(worldVisitSessions).values({
+      id: 'foreign-session', principalKey: 'user:owner', userId: 'owner', guestSessionId: null,
+      worldId: 'foreign-world', timelineId: 'foreign-main', clientSessionId: 'browser-old', status: 'open',
+      enteredSimTime: NOW, enteredAt: NOW, exitedSimTime: null, exitedAt: null,
+      lastRequestId: 'repeat-enter', createdAt: NOW, updatedAt: NOW,
+    })
+
+    const before = {
+      sessions: await f.db.select().from(worldVisitSessions).all(),
+      visits: await f.db.select().from(worldVisits).all(),
+      timelines: await f.db.select().from(timelines).all(),
+      revisions: await f.db.select().from(universeRevisions).all(),
+      facts: await f.db.select().from(worldFacts).all(),
+    }
+    const queryStart = f.queryLog.length
+    const foreignTarget = { worldId: 'foreign-world', timelineId: 'foreign-main' }
+
+    await expect(enterVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-new', requestId: 'new-enter' })).rejects.toMatchObject({ status: 404 })
+    await expect(enterVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-old', requestId: 'repeat-enter' })).rejects.toMatchObject({ status: 404 })
+    await expect(leaveVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-old', requestId: 'leave-existing' })).rejects.toMatchObject({ status: 404 })
+    await expect(leaveVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-missing', requestId: 'leave-missing' })).rejects.toMatchObject({ status: 404 })
+
+    expect({
+      sessions: await f.db.select().from(worldVisitSessions).all(),
+      visits: await f.db.select().from(worldVisits).all(),
+      timelines: await f.db.select().from(timelines).all(),
+      revisions: await f.db.select().from(universeRevisions).all(),
+      facts: await f.db.select().from(worldFacts).all(),
+    }).toEqual(before)
+    expect(f.queryLog.slice(queryStart).some(({ query }) => /world_visit_sessions|world_visits/.test(query))).toBe(false)
   })
 })
