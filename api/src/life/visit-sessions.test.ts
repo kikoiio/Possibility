@@ -87,6 +87,7 @@ describe('visit session service', () => {
     await expect(enterVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-old', requestId: 'repeat-enter' })).rejects.toMatchObject({ status: 404 })
     await expect(leaveVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-old', requestId: 'leave-existing' })).rejects.toMatchObject({ status: 404 })
     await expect(leaveVisit(f.db, owner, { ...foreignTarget, clientSessionId: 'browser-missing', requestId: 'leave-missing' })).rejects.toMatchObject({ status: 404 })
+    const rejectedVisitQueries = f.queryLog.slice(queryStart).filter(({ query }) => /world_visit_sessions|world_visits/.test(query))
 
     expect({
       sessions: await f.db.select().from(worldVisitSessions).all(),
@@ -95,6 +96,6 @@ describe('visit session service', () => {
       revisions: await f.db.select().from(universeRevisions).all(),
       facts: await f.db.select().from(worldFacts).all(),
     }).toEqual(before)
-    expect(f.queryLog.slice(queryStart).some(({ query }) => /world_visit_sessions|world_visits/.test(query))).toBe(false)
+    expect(rejectedVisitQueries).toEqual([])
   })
 })

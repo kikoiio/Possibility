@@ -48,5 +48,5 @@
 - U1 passed on run `38783539070`: 978 API tests, 754 Web tests, 200 shared-contract tests, one browser journey, and an uploaded Playwright trace artifact.
 - The stage 0 product acceptance listed in `docs/PLAN.md`, including phase 2B AC8 and AC12, remains a separate product check. CI does not close it by itself.
 - U2 moved the world/time contract into `@possibility/world-contract` and passed on run `38784920480` at commit `5109f2a`; package, API, Web, and phase 2B browser checks are green.
-- U3a authorizes visit targets before any session lookup and returns only `{ principal, context }`; the implementation is ready for push and Actions verification is pending.
+- U3a authorizes visit targets before any session lookup and returns only `{ principal, context }`. The first Actions run showed that the query assertion included the test's later state reads; the assertion now snapshots request queries before those reads, and the retry is pending.
 - No merge, release, or deployment is authorized by this task.
