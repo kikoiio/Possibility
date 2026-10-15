@@ -113,10 +113,10 @@ describe('home time contexts', () => {
       createdAt: NOW,
     }))
     const insertTimeline = f.sqlite.prepare(
-      'INSERT INTO timelines (id, world_id, parent_timeline_id, sim_now, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO timelines (id, world_id, parent_timeline_id, sim_now, created_at, status) VALUES (?, ?, ?, ?, ?, ?)',
     )
     for (const timeline of additionalTimelines) {
-      insertTimeline.run(timeline.id, timeline.worldId, timeline.parentTimelineId, timeline.simNow, timeline.createdAt)
+      insertTimeline.run(timeline.id, timeline.worldId, timeline.parentTimelineId, timeline.simNow, timeline.createdAt, 'archived')
     }
     const largeCount = await readContextsLikeCurrentHome()
 

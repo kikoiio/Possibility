@@ -50,4 +50,5 @@
 - U2 moved the world/time contract into `@possibility/world-contract` and passed on run `38784920480` at commit `5109f2a`; package, API, Web, and phase 2B browser checks are green.
 - U3a passed at `c50f2d4` on Actions run `38787190687`; the visit-service suite contains four passing tests, including foreign-world no-read/no-write coverage.
 - U3b's first two Actions runs stopped during fixture setup because 50-row and 20-row inserts exceeded the CI SQLite parameter limit. The seed now uses one prepared five-parameter insert per row; its baseline probe calls the current per-timeline context path directly, and the final test will exercise the full home read with 1,007 timelines after batching.
+- U3b run `38789663094` still failed before recording the baseline because its 1,005 added timelines defaulted to active and tripped the three-active-timeline guard. The same run exposed a separate `original-sample-diagnostics` deadline miss at 10.256 seconds against its 10-second budget; inspect that behavior if it recurs, without widening the budget to hide it.
 - No merge, release, or deployment is authorized by this task.
