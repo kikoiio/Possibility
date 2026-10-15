@@ -11,6 +11,10 @@
   - [x] For one-way-door design decisions, run the **architect** skill (it runs **arena**). Skip it for mechanical work whose shape is already concrete. A second arena over a settled design is over-engineering (the **laziness-protocol** principle).
   - [x] Decide what fans out. Parallelize only across seams, and give each worker its own worktree or branch (the **separate-before-serializing-shared-state** principle). Don't over-fan.
   - [x] Write the designed phase list down. That list is what the human reviews.
+- [x] Throughput checkpoint: Blocking first steps. U4 must pass the cloud gate before U5 starts.
+- [x] Throughput checkpoint: Independent workstreams. `n/a`, the remaining units share one task branch and depend on the preceding unit's verified state.
+- [x] Throughput checkpoint: Shared mutable state. Keep edits serialized on this branch and preserve the existing evidence directories.
+- [x] Throughput checkpoint: Smallest safe decomposition. One owner is appropriate because each unit builds on the same branch and U5/U6 move overlapping API ownership boundaries.
 - [ ] Phase C: Run the loop. Each unit is an experiment. State the hypothesis, make the smallest change, measure against the predicate on the real artifact, keep it if it advanced, revert it if it didn't. Apply the **sequence-verifiable-units** principle, verifying each unit before starting the next instead of batching checks at the end.
   - [ ] Verify by inspecting the artifact, never a self-report. When something passes too easily, suspect the observation method before the system.
   - [ ] Pair delegated work with a judge. If a worker games the gate, reset and harden the contract. If the gate itself is wrong, fix it in its own change rather than routing around it.
@@ -56,4 +60,5 @@
 - Corrected profile run `38794278701` passed and recorded the repair worker at 9,489 ms for 19,197,242 work units. Its samples cover voxel walkability checks including `getBlock`, `isStandableAt`, lighting, and stair checks. This is diagnostic evidence, not an A/B result; keep the 10-second budget and make no speedup claim. The temporary profile workflow has been removed after this capture; both downloaded artifacts remain preserved.
 - U4 now includes the measured follow-up comparison extraction because the visit and compatibility hooks alone left the page above the 1,000-line design predicate. The cloud gate is being extended with the existing split-view and scene-history recovery journeys before U4 is considered verified.
 - U4 run `38796366977` passed shared contracts and API checks but failed the Web build before unit or browser tests. The extraction missed the scene-history timeline ref and left a timezone update reaching into comparison-owned state; both are corrected in the follow-up commit, and the complete cloud gate must pass before U5.
+- U4 run `38797024210` passed contracts, API/Web type checks and unit tests, then failed browser journeys. Trace inspection found that split-view and phase 2B scene stubs missed `/scene?...` requests, while scene-history recovery did not stub visit enter/leave and redirected after a real API 401. Both fixture causes are corrected locally; U4 remains unverified until a full Actions rerun passes.
 - No merge, release, or deployment is authorized by this task.

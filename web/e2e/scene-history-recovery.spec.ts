@@ -57,7 +57,7 @@ const inspectionInvalid = {
 async function openWorld(page: Page) {
   await page.addInitScript(() => localStorage.setItem('possibility_token', 'e2e-token'))
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'user-1', username: 'tester', role: 'user' } } }))
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
   await page.route('**/api/worlds/world-1/map/bootstrap**', route => route.fulfill({ json: {
     access: { observe: true, participate: true, editScene: true, fork: true, compare: true, persist: true, resetDemo: false },
     world: snapshot, scene: { status: 'ready', document: voxelDoc },
@@ -66,6 +66,21 @@ async function openWorld(page: Page) {
     resume: { worldId: 'world-1', timelineId: 'timeline-1', spaceId: 'exterior', mode: 'life', updatedAt: now },
   } }))
   await page.route('**/api/worlds/world-1/map/resume', route => route.fulfill({ json: { ok: true } }))
+  const visitContext = () => ({
+    worldId: 'world-1', timelineId: 'timeline-1', simNow: now, timeZone: 'UTC', stateVersion: 1, revisionVersion: 1,
+    world: { status: 'paused', reason: 'manual', view: { key: 'paused', label: '手动暂停', description: '世界暂时冻结，已有记录仍可查看。', frozen: true, nextStep: '恢复世界后继续运行' } },
+    timeline: { status: 'active', view: { key: 'timeline_active', label: '时间线活跃', description: '这条时间线可以在世界运行时继续推进。', frozen: false, nextStep: null } },
+    access: { identity: 'owner', capabilities: { read: true, write: false, advance: false, fork: false, archive: true, reactivate: false } },
+    visit: { phase: 'first_visit', sessionId: 'e2e-visit', enteredSimTime: now, previousExitedSimTime: null, hasValidPreviousWatermark: false },
+  })
+  await page.route('**/api/worlds/world-1/visits/enter', route => {
+    const body = route.request().postDataJSON() as { requestId?: string }
+    return route.fulfill({ json: { ...visitContext(), requestId: body.requestId ?? 'e2e-enter' } })
+  })
+  await page.route('**/api/worlds/world-1/visits/leave', route => {
+    const body = route.request().postDataJSON() as { requestId?: string }
+    return route.fulfill({ json: { ...visitContext(), requestId: body.requestId ?? 'e2e-leave' } })
+  })
   await page.route('**/api/worlds/world-1/stream**', route => route.fulfill({ contentType: 'text/event-stream', body: 'event: ping\ndata: {}\n\n' }))
   await page.route('**/api/worlds', route => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄', hasScene: true }] } }))
   await page.goto('/worlds/world-1')
