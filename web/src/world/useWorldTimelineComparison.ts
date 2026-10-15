@@ -99,6 +99,15 @@ export function useWorldTimelineComparison({
     if (currentId && targetId) void readComparison(currentId, targetId)
   }, [snapshot, rightTimelineId, readComparison])
 
+  const updateRightTimeZone = useCallback((timeZone: string) => {
+    setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: {
+      ...current.value,
+      world: { ...current.value.world, timeZone },
+      timelines: current.value.timelines.map(timeline => ({ ...timeline, timeZone })),
+      timeContext: current.value.timeContext ? { ...current.value.timeContext, timeZone } : current.value.timeContext,
+    } } : current)
+  }, [])
+
   useEffect(() => {
     if (mode !== 'possibility' || !otherSnapshot || guest) return
     const rightId = otherSnapshot.currentTimelineId
@@ -210,6 +219,7 @@ export function useWorldTimelineComparison({
     retryRightScene,
     comparisonRead,
     retryComparison,
+    updateRightTimeZone,
     otherSnapshot,
     comparison,
     compareSummary,

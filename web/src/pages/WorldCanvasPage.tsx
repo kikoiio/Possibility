@@ -48,6 +48,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
+  const sceneTimelineRef = useRef(activeTimelineId); sceneTimelineRef.current = activeTimelineId
   const archived = snapshot?.world.status === 'archived' || snapshot?.timelines.find(item => item.id === activeTimelineId)?.status === 'archived'
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
   const [sceneMissing, setSceneMissing] = useState(false)
@@ -78,7 +79,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const timelineComparison = useWorldTimelineComparison({ worldId, snapshot, readonly, guest, search, setSearch })
   const {
     mode, setMode, rightTimelineId, setRightTimelineId, rightSceneRead, retryRightScene,
-    comparisonRead, retryComparison, otherSnapshot, comparison, compareSummary,
+    comparisonRead, retryComparison, otherSnapshot, comparison, compareSummary, updateRightTimeZone,
     scrubAt, setScrubAt, axis, alignedComparison, splitEvents, swapSplit, closeSplit,
   } = timelineComparison
   useEffect(() => {
@@ -802,12 +803,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
         timelines: current.timelines.map(t => ({ ...t, timeZone: zone })),
         timeContext: current.timeContext ? { ...current.timeContext, timeZone: zone } : current.timeContext,
       } : current)
-      setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: {
-        ...current.value,
-        world: { ...current.value.world, timeZone: zone },
-        timelines: current.value.timelines.map(t => ({ ...t, timeZone: zone })),
-        timeContext: current.value.timeContext ? { ...current.value.timeContext, timeZone: zone } : current.value.timeContext,
-      } } : current)
+      updateRightTimeZone(zone)
     }} />}
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
