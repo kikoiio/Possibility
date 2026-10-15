@@ -90,8 +90,8 @@ async function openWorld(page: Page) {
 test('scene history opens as a modal and distinguishes an empty list from saved versions', async ({ page }) => {
   await openWorld(page)
   let revisionRows = revisions
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions: revisionRows } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions: revisionRows } }))
 
   await page.getByRole('button', { name: '历史' }).click()
   const dialog = page.getByRole('dialog', { name: '场景历史' })
@@ -111,10 +111,10 @@ test('history read failures stay in the panel, can retry, and close without leak
   await openWorld(page)
   let sceneFails = true
   let historyFails = false
-  await page.route('**/api/worlds/world-1/scene', route => sceneFails
+  await page.route('**/api/worlds/world-1/scene**', route => sceneFails
     ? route.fulfill({ status: 500, json: { error: 'private database detail' } })
     : route.fulfill({ json: { status: 'missing' } }))
-  await page.route('**/api/worlds/world-1/scene/revisions', route => historyFails
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => historyFails
     ? route.fulfill({ status: 500, json: { error: 'private database detail' } })
     : route.fulfill({ json: { revisions: [] } }))
 
@@ -146,8 +146,8 @@ test('history read failures stay in the panel, can retry, and close without leak
 test('restore failures are identified separately from history read failures', async ({ page }) => {
   await openWorld(page)
   let restoreFails = true
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionValid }))
   await page.route('**/api/worlds/world-1/scene/restore', route => restoreFails
     ? route.fulfill({ status: 500, json: { error: 'internal restore detail' } })
@@ -167,8 +167,8 @@ test('restore failures are identified separately from history read failures', as
 test('an invalid history target opens the repair preview journey instead of restoring directly', async ({ page }) => {
   await openWorld(page)
   let restoreCalls = 0
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: inspectionInvalid }))
   await page.route('**/api/worlds/world-1/scene/restore', route => { restoreCalls += 1; return route.fulfill({ json: { version: 3 } }) })
 
@@ -195,8 +195,8 @@ test('an invalid history target opens the repair preview journey instead of rest
 test('an incomplete history target check stays in the history panel with a retryable message', async ({ page }) => {
   await openWorld(page)
   let restoreCalls = 0
-  await page.route('**/api/worlds/world-1/scene', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
-  await page.route('**/api/worlds/world-1/scene/revisions', route => route.fulfill({ json: { revisions } }))
+  await page.route('**/api/worlds/world-1/scene**', route => route.fulfill({ json: { status: 'ready', version: 2, document: voxelDoc } }))
+  await page.route('**/api/worlds/world-1/scene/revisions**', route => route.fulfill({ json: { revisions } }))
   await page.route('**/api/worlds/world-1/scene/compatibility/inspection**', route => route.fulfill({ json: {
     ...inspectionValid,
     report: { ...inspectionValid.report, status: 'incomplete', pendingSpaceIds: ['greenhouse'] },
@@ -214,12 +214,12 @@ test('closing history ignores a delayed response from the previous open request'
   await openWorld(page)
   let sceneReads = 0
   let revisionReads = 0
-  await page.route('**/api/worlds/world-1/scene', async route => {
+  await page.route('**/api/worlds/world-1/scene**', async route => {
     sceneReads += 1
     if (sceneReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
     return route.fulfill({ json: { status: 'ready', version: sceneReads === 1 ? 1 : 2, document: voxelDoc } })
   })
-  await page.route('**/api/worlds/world-1/scene/revisions', async route => {
+  await page.route('**/api/worlds/world-1/scene/revisions**', async route => {
     revisionReads += 1
     if (revisionReads === 1) await new Promise(resolve => setTimeout(resolve, 700))
     return route.fulfill({ json: { revisions: revisionReads === 1 ? revisions.slice(1) : revisions } })

@@ -120,11 +120,12 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await stubSplitApis(page)
     let snapshotCalls = 0
     let compareCalls = 0
+    let rightRetryRequested = false
     await page.route('**/api/worlds/world-1?*', async (route) => {
       const url = new URL(route.request().url())
       if (url.searchParams.get('timelineId') !== 'timeline-fork') return route.fallback()
       snapshotCalls++
-      if (snapshotCalls <= 2) return route.fulfill({ status: 503, json: { error: 'internal database detail' } })
+      if (!rightRetryRequested) return route.fulfill({ status: 503, json: { error: 'internal database detail' } })
       return route.fulfill({ json: snapshotFor('timeline-fork') })
     })
     await page.route('**/api/worlds/world-1/compare?*', async (route) => {
@@ -138,12 +139,14 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await expect(page.getByTestId('split-compare-summary')).toBeVisible()
     await expect(page.getByTestId('world-canvas-error')).toHaveCount(0)
     const compareCallsBeforeRetry = compareCalls
+    const snapshotCallsBeforeRetry = snapshotCalls
 
+    rightRetryRequested = true
     await page.getByTestId('split-right-retry').click()
-    await expect.poll(() => snapshotCalls, { timeout: 5000 }).toBe(3)
+    await expect.poll(() => snapshotCalls, { timeout: 5000 }).toBe(snapshotCallsBeforeRetry + 1)
     await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
     await expect(page.getByTestId('split-right-error')).toHaveCount(0)
-    expect(snapshotCalls).toBe(3)
+    expect(snapshotCalls).toBe(snapshotCallsBeforeRetry + 1)
     expect(compareCalls).toBe(compareCallsBeforeRetry)
     expect(errors.filter((e) => !e.includes('503'))).toEqual([])
   })
