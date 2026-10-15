@@ -28,10 +28,13 @@ jobs:
         working-directory: api
         env:
           A1_RESOURCE_EVIDENCE_PATH: ${{ runner.temp }}/repair-profile/metrics.json
-          NODE_OPTIONS: --cpu-prof --cpu-prof-interval=10000 --cpu-prof-dir=${{ runner.temp }}/repair-profile
         run: |
           mkdir -p "$RUNNER_TEMP/repair-profile"
-          npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism src/demo/original-sample-diagnostics.test.ts
+          npm test -- --pool=forks --maxWorkers=1 --no-file-parallelism \
+            --execArgv=--cpu-prof \
+            --execArgv=--cpu-prof-interval=10000 \
+            --execArgv=--cpu-prof-dir="$RUNNER_TEMP/repair-profile" \
+            src/demo/original-sample-diagnostics.test.ts
       - uses: actions/upload-artifact@v7
         if: always()
         with:
