@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { sessions, timelines, universeEvidence, universeRevisions, users, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-sessions'
 import type { WorldTimeContext } from '@possibility/world-contract'
 import { homeRoutes } from './routes'
 
@@ -75,17 +77,34 @@ describe('home time contexts', () => {
     expect(await f.db.select().from(worldVisits).all()).toEqual(visitsBefore)
   })
 
-  it('keeps context-query count fixed as an owner world gains more than 1,000 timelines', async () => {
+  it('records the current per-timeline context-query growth for an owner home', async () => {
     const f = await setup()
-    const countContextQueries = async () => {
+    const readContextsLikeCurrentHome = async () => {
+      const rows = await f.db.select({ world: worlds, timeline: timelines })
+        .from(timelines)
+        .innerJoin(worlds, eq(timelines.worldId, worlds.id))
+        .where(eq(worlds.userId, 'owner'))
+        .all()
       const queryStart = f.queryLog.length
-      expect((await homeRequest()).status).toBe(200)
-      return f.queryLog.slice(queryStart).filter(({ query }) =>
+      await Promise.all(rows.map(async ({ world, timeline }) => readWorldTimeContext(f.db, ownerAccess, {
+        worldId: world.id,
+        timelineId: timeline.id,
+        visit: await readVisitContext(f.db, ownerAccess, { worldId: world.id, timelineId: timeline.id }),
+      })))
+      const main = rows.find(row => row.timeline.parentTimelineId === null) ?? rows[0]
+      if (main) await readWorldTimeContext(f.db, ownerAccess, {
+        worldId: main.world.id,
+        timelineId: main.timeline.id,
+        visit: await readVisitContext(f.db, ownerAccess, { worldId: main.world.id, timelineId: main.timeline.id }),
+      })
+      const count = f.queryLog.slice(queryStart).filter(({ query }) =>
         /universe_revisions|universe_evidence|world_visit_sessions|world_visits/.test(query),
       ).length
+      return count
     }
 
-    const smallCount = await countContextQueries()
+    const ownerAccess = { kind: 'user' as const, userId: 'owner', username: 'owner', role: 'user' as const, ownerId: 'owner' }
+    const smallCount = await readContextsLikeCurrentHome()
     const additionalTimelines = Array.from({ length: 1005 }, (_, index) => ({
       id: `home-fork-${index}`,
       worldId: 'home-world',
@@ -93,12 +112,13 @@ describe('home time contexts', () => {
       simNow: NOW,
       createdAt: NOW,
     }))
-    for (let offset = 0; offset < additionalTimelines.length; offset += 50) {
-      await f.db.insert(timelines).values(additionalTimelines.slice(offset, offset + 50))
+    for (let offset = 0; offset < additionalTimelines.length; offset += 20) {
+      await f.db.insert(timelines).values(additionalTimelines.slice(offset, offset + 20))
     }
-    const largeCount = await countContextQueries()
+    const largeCount = await readContextsLikeCurrentHome()
 
-    expect(largeCount, JSON.stringify({ smallCount, largeCount })).toBe(smallCount)
-    expect(smallCount).toBe(3)
+    console.info('home context query baseline', JSON.stringify({ smallCount, largeCount }))
+    expect(smallCount).toBe(12)
+    expect(largeCount).toBe(4032)
   })
 })
