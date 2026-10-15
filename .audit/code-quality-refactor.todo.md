@@ -28,7 +28,7 @@
 - [x] U2. Move world/time status contracts and pure status descriptions into a shared package. Update server and client imports. Verify workspace resolution and focused contract/API/UI tests.
 - [x] U3a. Authorize visit targets before session reads or writes. Prove enter, replay, leave, and no-session leave reject a real foreign-owned world without database side effects.
 - [x] U3b. Add a batch world-time context loader and batch visit-context loader. Use them for the home response and preserve single-target reads elsewhere. Verify values for owner, guest, archived, no-timeline, and large home fixtures; assert query count is bounded independently of timeline count.
-- [ ] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
+- [x] U4. Extract visit lifecycle from `WorldCanvasPage`, then separate one additional cohesive world-canvas workflow to reduce page orchestration without creating a controller god-object. Verify the page and targeted journey.
 - [ ] U5. Split timeline-scoped scene revision storage from legacy world-scene operations. Keep canonical exports or migrate all callers in one unit. Verify scene repository, history, fork, and migration tests.
 - [ ] U6. Reduce route mount-order coupling by moving auth to explicit path-owning routers or middleware. Add overlap/auth tests. Verify protected and public route behavior.
 - [ ] U7. Run the full new GitHub Actions gate, inspect the run and artifacts, perform a diff review, and record unverified product acceptance cases honestly.
@@ -63,4 +63,20 @@
 - U4 run `38797024210` passed contracts, API/Web type checks and unit tests, then failed browser journeys. Trace inspection found that split-view and phase 2B scene stubs missed `/scene?...` requests, while scene-history recovery did not stub visit enter/leave and redirected after a real API 401. Both fixture causes are corrected locally; U4 remains unverified until a full Actions rerun passes.
 - U4 run `38799312652` passed contracts, API/Web builds and tests, then failed seven browser journeys. Scene-history routes missed query strings and the fallback scene route returned the wrong shape, crashing `SceneHistoryPanel`; the split retry trace showed one initial request plus one retry, while its test expected two initial failures. Both test fixtures now match the observed request sequence; U4 remains unverified pending another Actions run.
 - U4 run `38801047457` passed API/Web checks and most browser journeys, then failed three scene-history cases and the split comparison-retry case. The scene-history trace showed every row marked current because both scene and history fixtures omitted `revisionId`; the split trace showed one initial compare request and the retry still received the injected 502 because the fixture failed the first two calls. Fixtures now use the API revision identifiers and retry-stage behavior; U4 remains unverified pending a full Actions rerun.
+- U4 passed on commit `6abfcda` in Actions run `38803261174`: API 981 passed/1 skipped, Web 754 passed, shared contracts 204 passed, and all 19 phase 2B, split-view, and scene-history browser journeys passed. Inspected the uploaded 45,541,991-byte artifact `code-quality-38803261174`: history response contains distinct v1/v2 revision IDs and the v1 inspection request; split compare trace records the initial 502 followed by a successful 200 retry. `WorldCanvasPage.tsx` is 888 lines.
+- U5 starts from verified commit `6abfcda`; `repository.ts` is 1,187 lines and currently combines timeline revision/CAS operations, legacy world-scene reads/writes, shared stored-document validation, and both directions of root-timeline mirroring. Preserve transaction statement order while extracting five owners, remove unused timeline aliases, add a TypeScript AST import-boundary test with configured path resolution, and verify API repository/history/fork/migration coverage on Actions before U6.
+- U5 no-comments shape gate:
+  - [x] Ground. Re-read the selected scene-storage design, U5 source, and independent comment-review findings.
+  - [x] Sketch. Compare two small helper/type shapes for the six named hash, namespace, and guard findings.
+  - [x] Agree. Select a shape that preserves U5 ownership and transaction contracts.
+  - [x] Implement. Apply the selected names and helpers, then remove internal narration comments.
+  - [x] Scrap. Check the result against the selected design and keep unresolved friction visible.
+- U5 architect arena:
+  - [x] Frame. Both candidates propose local names, types, and helpers; score behavior preservation, ownership, explicit hash and baseline semantics, call depth, and public exports.
+  - [x] Fan out. Candidate A and candidate B wrote independent sketches in separate audit files.
+  - [x] Cross-judge. Score both sketches against the frame before selecting a base.
+  - [x] Pick. Record the selected shape and rejected alternatives.
+  - [x] Graft. Apply only useful details that preserve one coherent shape.
+  - [x] Verify. Compare the sketch with the existing U5 ownership and batch contracts.
+- U5 no-comments review passed with no additional deletions or unresolved `MUST KILL` findings; the reviewer checked the seven U5 source/test files and found 26 existing comment blocks removed (43 lines).
 - No merge, release, or deployment is authorized by this task.
