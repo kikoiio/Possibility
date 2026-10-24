@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wispiva · 如果，故事还有另一种可能</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="masthead">
+  <a class="wordmark" href="/">wispiva<span class="wordmark-dot">✳</span></a>
+  <p class="tagline">如果，故事还有另一种可能。</p>
+  <div class="header-actions">
+    <span id="mode-badge" class="badge">连接中</span>
+    <button id="open-settings" class="quiet">推演设置</button>
+    <a class="quiet" href="/api/export" download>导出世界</a>
+  </div>
+</header>
+<main class="workspace">
+  <nav class="rail" aria-label="世界线">
+    <div class="rail-heading"><span>你的世界线</span><button id="new-world" class="icon-button" aria-label="新建世界">＋</button></div>
+    <div id="line-list"></div>
+    <button id="open-multiverse" class="universe-button"><span>⌘</span> 多元宇宙 <span id="line-count">1</span></button>
+    <div class="rail-foot"><span class="pulse"></span> 关闭网页，世界依然运行。<br>退出本机服务后冻结。</div>
+  </nav>
+  <section class="world-panel" aria-labelledby="world-title">
+    <div class="world-heading">
+      <div><p class="eyebrow">A STORY IN MOTION</p><h1 id="world-title">临江</h1><p id="premise" class="premise"></p></div>
+      <button id="what-if" class="primary what-if">如果… <span>↗</span></button>
+    </div>
+    <div class="controls">
+      <div class="clock"><span id="clock">第1天 08:00</span><small id="status">已暂停</small></div>
+      <div class="time-controls">
+        <label>倍速 <input id="speed" type="number" min="1" max="86400" value="24" aria-label="世界时间倍速">×</label>
+        <button id="pause" class="dark">开始</button>
+      </div>
+      <p class="time-explainer" id="time-explainer">1 真实小时 = 24 世界小时</p>
+    </div>
+    <div class="stage-toolbar">
+      <div class="view-switch" role="group" aria-label="画面模式">
+        <button data-view="2d">2D 俯视</button><button data-view="3d">3D 空间</button><button data-view="split" class="selected">并排对照</button>
+      </div>
+      <span class="subtle">同一世界，同一时刻</span>
+    </div>
+    <div id="stages" class="stages split">
+      <div class="stage-shell" id="shell-2d"><div id="stage-2d" class="stage"></div></div>
+      <div class="stage-shell" id="shell-3d"><div id="stage-3d" class="stage"></div></div>
+    </div>
+    <div id="cast" class="cast"></div>
+    <p id="world-error" class="error" role="status"></p>
+    <div class="world-footer"><span id="horizon">未来尚待推演</span><span id="revision"></span></div>
+  </section>
+  <aside class="journal">
+    <div class="journal-heading"><p class="eyebrow">THE WORLD REMEMBERS</p><h2>正在发生</h2></div>
+    <div class="journal-tabs" role="group" aria-label="故事记录">
+      <button data-tab="log" class="selected">事件日志</button><button data-tab="memory">长期记忆</button><button data-tab="calls">调用记录</button>
+    </div>
+    <label class="search"><span>⌕</span><input id="log-search" type="search" placeholder="查找你错过的故事" aria-label="搜索日志和记忆"></label>
+    <div id="journal-content" class="journal-content" aria-live="polite"></div>
+    <p class="journal-note" id="journal-note">故事的变化会留下记录。</p>
+  </aside>
+</main>
+
+<dialog id="editor" class="editor-dialog">
+  <div class="dialog-heading"><div><p class="eyebrow">WHAT IF</p><h2 id="editor-title">如果…</h2></div><button data-close="editor" class="icon-button" aria-label="关闭编辑器">×</button></div>
+  <p id="draft-anchor" class="anchor-note"></p>
+  <div class="editor-body">
+    <section class="editor-request">
+      <h3>把你的想法告诉世界</h3>
+      <textarea id="edit-instruction" rows="4" placeholder="如果老周愿意说出真相，沈青梧决定保护他，戏台也没有被封闭……"></textarea>
+      <button id="ask-llm" class="dark">让 LLM 帮我修改</button>
+      <p id="edit-explanation" class="subtle" role="status"></p>
+      <div class="edit-guide"><span>01</span> 可以一次改变很多事。<br><span>02</span> 修改只保留在草稿中。<br><span>03</span> 点击确认，才产生新的世界线。</div>
+    </section>
+    <section class="editor-fields">
+      <label>世界线名称<input id="draft-name" maxlength="80"></label>
+      <label>世界设定<textarea id="edit-premise" rows="4"></textarea></label>
+      <div id="entity-fields"></div>
+      <details class="advanced"><summary>完整设定 · 添加或修改任意字段</summary><p class="subtle">人物、关系、物品、法则和长期记忆都在这里。保留 entities 对象即可；自定义字段会完整进入推演。</p><textarea id="world-json" spellcheck="false" rows="15" aria-label="完整世界 JSON"></textarea><button id="apply-json" class="quiet">更新上面的编辑项</button></details>
+    </section>
+  </div>
+  <div class="dialog-footer"><p id="edit-error" class="error" role="alert"></p><button data-close="editor" class="quiet">取消</button><button id="confirm-edit" class="primary">确认</button></div>
+</dialog>
+
+<dialog id="settings" class="settings-dialog">
+  <div class="dialog-heading"><div><p class="eyebrow">ENGINE SETTINGS</p><h2>让世界如何运行</h2></div><button data-close="settings" class="icon-button" aria-label="关闭设置">×</button></div>
+  <form id="settings-form">
+    <label>推演方式<select id="setting-mode"><option value="demo">演示模式 · 模板事件，仅用于试操作</option><option value="live">真实 LLM · Groq</option></select></label>
+    <label>服务地址<input id="setting-base" value="https://api.groq.com/openai/v1" type="url"></label>
+    <label>API key<input id="setting-key" type="password" autocomplete="off" placeholder="未填写；已有密钥可留空保留"></label>
+    <p id="key-status" class="subtle">密钥保存在本机服务，网页不保存密钥。</p>
+    <label>主模型<select id="setting-model"></select></label>
+    <label>备用模型<input id="setting-fallbacks" placeholder="多个模型以逗号分隔"></label>
+    <div class="field-grid">
+      <label>每段世界分钟<input id="setting-beat" type="number" min="1" max="1440"></label>
+      <label>输出 token 上限<input id="setting-tokens" type="number" min="256" max="6000"></label>
+      <label>每小时调用上限<input id="setting-hour" type="number" min="1" max="1000"></label>
+      <label>每日调用上限<input id="setting-day" type="number" min="1" max="10000"></label>
+      <label>最短调用间隔（秒）<input id="setting-interval" type="number" min="0" max="3600"></label>
+      <label>输出格式<select id="setting-strict"><option value="true">严格 JSON Schema（Groq 推荐模型）</option><option value="false">JSON Object（其他兼容模型）</option></select></label>
+    </div>
+    <p class="anchor-note">24× 是真实时间的 24 倍。推演未完成、超时或到达额度时，世界会等待，不会悄悄跳过剧情。服务退出期间也不会补算离线时间。</p>
+    <div class="dialog-footer"><p id="settings-error" class="error"></p><button type="button" data-close="settings" class="quiet">取消</button><button type="submit" class="primary">确认</button></div>
+  </form>
+</dialog>
+
+<dialog id="multiverse" class="multiverse-dialog">
+  <div class="dialog-heading"><div><p class="eyebrow">YOUR MULTIVERSE</p><h2>多元宇宙</h2></div><button data-close="multiverse" class="icon-button" aria-label="关闭多元宇宙">×</button></div>
+  <p class="anchor-note">连线表示共享的历史。所有世界线独立运行，可以各自暂停；差异也可能来自 LLM 的随机性。</p>
+  <div id="universe-map" class="universe-map"></div>
+  <div class="compare-controls"><label>对照世界线 <select id="compare-a"></select></label><span>与</span><select id="compare-b" aria-label="另一条世界线"></select></div>
+  <p id="shared-history" class="subtle"></p>
+  <div id="comparison" class="comparison"></div>
+</dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
+
