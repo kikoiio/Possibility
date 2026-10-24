@@ -35,7 +35,6 @@ function normalizeUnknowns(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
 }
 
-/** Converts stored or generated data to the current person model shape. */
 export function normalizePersonModel(value: unknown): PersonModel {
   const record = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

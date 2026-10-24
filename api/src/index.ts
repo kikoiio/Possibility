@@ -98,7 +98,7 @@ app.route('/api', chapterRoutes) // /worlds/:id/chapters、/chapters/:id
 app.route('/api', memoryRoutes) // /memories/:id（校正/删除）
 app.route('/api', lifeRoutes) // 归来回顾与承诺
 app.route('/api', comparisonRoutes) // 时间线证据对照
-app.route('/api/settings', settingsRoutes) // BYOK 与全局预算(F5/S3)
+app.route('/api/settings', settingsRoutes)
 app.route('/api/admin', memoryRepairRoutes) // 管理员限定的居民记忆重建维护入口
 app.route('/api/admin', provenanceRepairRoutes) // 2A 来源历史修复维护入口
 app.route('/api', chatRoutes) // /persons/:id/conversations、/conversations/*
