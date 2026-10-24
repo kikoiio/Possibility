@@ -18,7 +18,7 @@ export function projectVisitContext(
   sessionId?: string | null,
 ): VisitContext {
   const current = sessionId ? rows.find(row => row.id === sessionId) : rows.find(row => row.status === 'open')
-  const previous = rows.find(row => row.id !== current?.id && row.exitedAt)
+  const previous = rows.find(row => row.id !== current?.id && row.exitedAt) ?? (current?.exitedAt ? current : undefined)
   const hasValidPreviousWatermark = !!previous?.exitedAt || !!watermark
   const phase = current?.status === 'open'
     ? (hasValidPreviousWatermark ? 'returning' : 'first_visit')
@@ -82,7 +82,7 @@ export async function readOwnedVisitContexts(db: Db, access: UserAccess): Promis
 export async function readVisitContext(
   db: Db,
   access: AccessContext,
-  input: { worldId: string; timelineId: string; sessionId?: string | null },
+  input: { worldId: string; timelineId: string; sessionId?: string | null; clientSessionId?: string },
 ): Promise<VisitContext> {
   const principal = access.kind === 'user'
     ? { key: `user:${access.userId}`, userId: access.userId }
@@ -102,5 +102,8 @@ export async function readVisitContext(
       eq(worldVisits.timelineId, input.timelineId),
     )).get() ?? null
     : null
-  return projectVisitContext(rows, watermark, input.sessionId)
+  const sessionId = input.clientSessionId === undefined
+    ? input.sessionId
+    : rows.find(row => row.clientSessionId === input.clientSessionId)?.id ?? null
+  return projectVisitContext(rows, watermark, sessionId)
 }

@@ -302,6 +302,20 @@
       "when": 1791832800000,
       "tag": "0041_message_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1792086708000,
+      "tag": "0042_time_status_semantics",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1792132577450,
+      "tag": "0043_visit_request_receipts",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { timelines, universeEvidence, universeRevisions, users, worldFacts, worldVisitSessions, worldVisits, worlds } from '../db/schema'
+import { timelines, universeEvidence, universeRevisions, users, worldFacts, worldVisitRequests, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 import { enterVisit, leaveVisit } from './visit-sessions'
 import { readVisitContext } from './visit-context'
@@ -59,6 +59,31 @@ describe('visit session service', () => {
     const result = await readVisitContext(f.db, owner, { worldId: 'missing', timelineId: 'main' })
     expect(result.phase).toBe('unknown')
     await expect(enterVisit(f.db, owner, { worldId: 'missing', timelineId: 'main', clientSessionId: 'browser-1', requestId: 'x' })).rejects.toMatchObject({ status: 404 })
+    expect(await f.db.select().from(worldVisitSessions).all()).toHaveLength(0)
+  })
+
+  it('rejects reusing a request id for a different operation or target with 409', async () => {
+    const f = await setup()
+    const input = { worldId: 'world', timelineId: 'main', clientSessionId: 'browser-1', requestId: 'enter-1' }
+    await enterVisit(f.db, owner, input, new Date('2026-10-01T01:00:00.000Z'))
+
+    await expect(leaveVisit(f.db, owner, input, new Date('2026-10-01T01:30:00.000Z'))).rejects.toMatchObject({ status: 409 })
+    await expect(enterVisit(f.db, owner, { ...input, clientSessionId: 'browser-2' }, new Date('2026-10-01T01:31:00.000Z'))).rejects.toMatchObject({ status: 409 })
+
+    expect(await f.db.select().from(worldVisitSessions).all()).toMatchObject([{ status: 'open', lastRequestId: 'enter-1' }])
+    expect(await f.db.select().from(worldVisitRequests).all()).toMatchObject([{ principalKey: 'user:owner', requestId: 'enter-1', operation: 'enter' }])
+  })
+
+  it('records a leave without any session and replays it without side effects', async () => {
+    const f = await setup()
+    const input = { worldId: 'world', timelineId: 'main', clientSessionId: 'browser-9', requestId: 'late-leave-1' }
+    const left = await leaveVisit(f.db, owner, input, new Date('2026-10-01T01:00:00.000Z'))
+    expect(left.context.visit.phase).toBe('unknown')
+    expect(await f.db.select().from(worldVisitRequests).all()).toMatchObject([{ principalKey: 'user:owner', requestId: 'late-leave-1', kind: 'request', operation: 'leave' }])
+
+    const replay = await leaveVisit(f.db, owner, input, new Date('2026-10-01T01:01:00.000Z'))
+    expect(replay.context.visit.phase).toBe('unknown')
+    expect(await f.db.select().from(worldVisitRequests).all()).toHaveLength(1)
     expect(await f.db.select().from(worldVisitSessions).all()).toHaveLength(0)
   })
 

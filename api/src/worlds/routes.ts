@@ -39,7 +39,7 @@ import { normalizeForkFields } from '../life/fork-fields'
 import type { Env } from '../index'
 import { enterVisit, leaveVisit, VisitServiceError } from '../life/visit-sessions'
 import { readVisitContext } from '../life/visit-context'
-import { readWorldTimeContext } from './time-context'
+import { readOwnedWorldContexts, readWorldTimeContext } from './time-context'
 
 type World = typeof worlds.$inferSelect
 
@@ -297,22 +297,35 @@ worldsRoutes.post('/', worldAccess, async (c) => {
 worldsRoutes.get('/', worldAccess, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
-  const access = routeAccess(c)
-  const list = await db.select({ world: worlds, sceneWorldId: worldScenes.worldId })
-    .from(worlds)
-    .leftJoin(worldScenes, eq(worldScenes.worldId, worlds.id))
-    .where(eq(worlds.userId, userId))
-    .all()
-  const out = []
-  for (const { world: w, sceneWorldId } of list) {
-    const main = await db
-      .select()
-      .from(timelines)
-      .where(and(eq(timelines.worldId, w.id), isNull(timelines.parentTimelineId)))
-      .get()
-    const pc = await db.select({ personId: worldPersons.personId }).from(worldPersons)
-      .where(eq(worldPersons.worldId, w.id)).all()
-    out.push({
+  const ownerAccess = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
+  const [list, contexts, memberRows] = await Promise.all([
+    db.select({ world: worlds, sceneWorldId: worldScenes.worldId })
+      .from(worlds)
+      .leftJoin(worldScenes, eq(worldScenes.worldId, worlds.id))
+      .where(eq(worlds.userId, userId))
+      .all(),
+    readOwnedWorldContexts(db, ownerAccess),
+    db.select({ worldId: worldPersons.worldId, personId: worldPersons.personId })
+      .from(worldPersons)
+      .innerJoin(worlds, eq(worldPersons.worldId, worlds.id))
+      .where(eq(worlds.userId, userId))
+      .orderBy(asc(worldPersons.joinedAt))
+      .all(),
+  ])
+  const mainTimelineByWorld = new Map<string, (typeof contexts.timelines)[number]>()
+  for (const timeline of contexts.timelines) {
+    if (!timeline.parentTimelineId) mainTimelineByWorld.set(timeline.worldId, timeline)
+  }
+  const personIdsByWorld = new Map<string, string[]>()
+  for (const row of memberRows) {
+    const ids = personIdsByWorld.get(row.worldId) ?? []
+    ids.push(row.personId)
+    personIdsByWorld.set(row.worldId, ids)
+  }
+  const out = list.map(({ world: w, sceneWorldId }) => {
+    const main = mainTimelineByWorld.get(w.id)
+    const personIds = personIdsByWorld.get(w.id) ?? []
+    return {
       id: w.id,
       name: w.name,
       description: w.description,
@@ -320,19 +333,15 @@ worldsRoutes.get('/', worldAccess, async (c) => {
       pauseReason: w.pauseReason,
       isDemo: w.isDemo,
       callsToday: w.callsToday,
-      personCount: pc.length,
-      personIds: pc.map(person => person.personId),
+      personCount: personIds.length,
+      personIds,
       hasScene: sceneWorldId !== null,
       simNow: main?.simNow ?? null,
       timeZone: effectiveTimeZone(w.timeZone),
       createdAt: w.createdAt,
-      timeContext: main ? await readWorldTimeContext(db, access, {
-        worldId: w.id,
-        timelineId: main.id,
-        visit: await readVisitContext(db, access, { worldId: w.id, timelineId: main.id }),
-      }) : undefined,
-    })
-  }
+      timeContext: main ? contexts.byTimeline.get(main.id) : undefined,
+    }
+  })
   out.sort((a, b) => (b.simNow ?? '').localeCompare(a.simNow ?? ''))
   return c.json({ worlds: out })
 })

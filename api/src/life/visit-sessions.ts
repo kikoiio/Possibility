@@ -1,8 +1,9 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
-import { worldVisitSessions } from '../db/schema'
+import { worldVisitRequests, worldVisitSessions } from '../db/schema'
 import type { AccessContext } from '../access/types'
-import type { VisitContext, WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@possibility/world-contract'
 import { readWorldTimeContext } from '../worlds/time-context'
 import { readVisitContext } from './visit-context'
 
@@ -18,6 +19,9 @@ interface Principal {
   userId: string | null
   guestSessionId: string | null
 }
+
+type VisitOperation = 'enter' | 'leave'
+type VisitReceipt = typeof worldVisitRequests.$inferSelect
 
 export interface VisitResult {
   context: WorldTimeContext
@@ -35,14 +39,6 @@ function validateRequest(input: VisitRequest): string | null {
   if (!input.clientSessionId || input.clientSessionId.length > 200) return 'clientSessionId 无效'
   if (!input.requestId || input.requestId.length > 200) return 'requestId 无效'
   return null
-}
-
-async function readSessions(db: Db, principal: Principal, input: VisitRequest) {
-  return db.select().from(worldVisitSessions).where(and(
-    eq(worldVisitSessions.principalKey, principal.key),
-    eq(worldVisitSessions.worldId, input.worldId),
-    eq(worldVisitSessions.timelineId, input.timelineId),
-  )).orderBy(desc(worldVisitSessions.updatedAt)).all()
 }
 
 export class VisitServiceError extends Error {
@@ -67,76 +63,118 @@ async function requireVisitTarget(db: Db, access: AccessContext, input: VisitReq
   return { principal, context }
 }
 
-/** Explicitly establish or reuse a visit session. This does not write world facts. */
-export async function enterVisit(db: Db, access: AccessContext, input: VisitRequest, now = new Date()): Promise<VisitResult> {
+async function readReceipt(db: Db, principalKey: string, requestId: string): Promise<VisitReceipt | null> {
+  return await db.select().from(worldVisitRequests).where(and(
+    eq(worldVisitRequests.principalKey, principalKey),
+    eq(worldVisitRequests.requestId, requestId),
+  )).get() ?? null
+}
+
+function receiptMatches(
+  receipt: VisitReceipt,
+  principal: Principal,
+  input: VisitRequest,
+  operation: VisitOperation,
+): boolean {
+  return receipt.kind === 'request'
+    && receipt.operation === operation
+    && receipt.worldId === input.worldId
+    && receipt.timelineId === input.timelineId
+    && receipt.clientSessionId === input.clientSessionId
+    && receipt.principalKey === principal.key
+}
+
+async function applyVisit(
+  db: Db,
+  access: AccessContext,
+  input: VisitRequest,
+  operation: VisitOperation,
+  now: Date,
+): Promise<VisitResult> {
   const { principal, context } = await requireVisitTarget(db, access, input)
   const nowIso = now.toISOString()
-  const rows = await readSessions(db, principal, input)
-  const existing = rows.find(row => row.clientSessionId === input.clientSessionId)
-  if (existing?.lastRequestId === input.requestId) {
-    const visit = await readVisitContext(db, access, { ...input, sessionId: existing.id })
-    return { context: { ...context, visit }, requestId: input.requestId }
+  const requestReceipt = db.insert(worldVisitRequests).values({
+    principalKey: principal.key,
+    requestId: input.requestId,
+    kind: 'request',
+    operation,
+    worldId: input.worldId,
+    timelineId: input.timelineId,
+    clientSessionId: input.clientSessionId,
+    acceptedAt: nowIso,
+  })
+
+  const sessionTransition = operation === 'enter'
+    ? db.insert(worldVisitSessions).values({
+      id: crypto.randomUUID(),
+      principalKey: principal.key,
+      userId: principal.userId,
+      guestSessionId: principal.guestSessionId,
+      worldId: input.worldId,
+      timelineId: input.timelineId,
+      clientSessionId: input.clientSessionId,
+      status: 'open',
+      enteredSimTime: context.simNow,
+      enteredAt: nowIso,
+      exitedSimTime: null,
+      exitedAt: null,
+      lastRequestId: input.requestId,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }).onConflictDoUpdate({
+      target: [
+        worldVisitSessions.principalKey,
+        worldVisitSessions.worldId,
+        worldVisitSessions.timelineId,
+        worldVisitSessions.clientSessionId,
+      ],
+      set: {
+        status: 'open',
+        enteredSimTime: context.simNow,
+        enteredAt: nowIso,
+        lastRequestId: input.requestId,
+        updatedAt: nowIso,
+      },
+    })
+    : db.update(worldVisitSessions).set({
+      status: 'closed',
+      exitedSimTime: context.simNow,
+      exitedAt: nowIso,
+      lastRequestId: input.requestId,
+      updatedAt: nowIso,
+    }).where(and(
+      eq(worldVisitSessions.principalKey, principal.key),
+      eq(worldVisitSessions.worldId, input.worldId),
+      eq(worldVisitSessions.timelineId, input.timelineId),
+      eq(worldVisitSessions.clientSessionId, input.clientSessionId),
+      eq(worldVisitSessions.status, 'open'),
+    ))
+
+  const writes: [BatchItem<'sqlite'>, BatchItem<'sqlite'>] = [requestReceipt, sessionTransition]
+  try {
+    await db.batch(writes)
+  } catch (error) {
+    const prior = await readReceipt(db, principal.key, input.requestId)
+    if (!prior) throw error
+    if (!receiptMatches(prior, principal, input, operation)) {
+      throw new VisitServiceError('requestId 已用于其他访问操作', 409)
+    }
   }
 
-  let sessionId = existing?.id ?? crypto.randomUUID()
-  let enteredSimTime = context.simNow
-  let previousExitedSimTime = existing?.exitedSimTime ?? rows.find(row => row.exitedAt)?.exitedSimTime ?? null
-  let phase: VisitContext['phase'] = existing?.status === 'closed' || !!previousExitedSimTime ? 'returning' : 'first_visit'
-  if (existing) {
-    await db.update(worldVisitSessions).set({
-      status: 'open', enteredSimTime: context.simNow, enteredAt: nowIso,
-      lastRequestId: input.requestId, updatedAt: nowIso,
-    }).where(eq(worldVisitSessions.id, existing.id))
-  } else {
-    await db.insert(worldVisitSessions).values({
-      id: sessionId, principalKey: principal.key, userId: principal.userId,
-      guestSessionId: principal.guestSessionId, worldId: input.worldId, timelineId: input.timelineId,
-      clientSessionId: input.clientSessionId, status: 'open', enteredSimTime: context.simNow,
-      enteredAt: nowIso, exitedSimTime: null, exitedAt: null, lastRequestId: input.requestId,
-      createdAt: nowIso, updatedAt: nowIso,
-    }).onConflictDoNothing().run()
-    const raced = await db.select().from(worldVisitSessions).where(and(
-      eq(worldVisitSessions.principalKey, principal.key), eq(worldVisitSessions.worldId, input.worldId),
-      eq(worldVisitSessions.timelineId, input.timelineId), eq(worldVisitSessions.clientSessionId, input.clientSessionId),
-    )).get()
-    if (!raced) throw new VisitServiceError('访问会话暂时无法建立', 409)
-    const insertedSessionId = sessionId
-    sessionId = raced.id
-    if (raced.id !== insertedSessionId) phase = raced.status === 'closed' || !!raced.exitedAt ? 'returning' : 'first_visit'
-    enteredSimTime = raced.enteredSimTime
-    previousExitedSimTime = raced.exitedSimTime
-  }
-  const visit: VisitContext = {
-    phase,
-    sessionId,
-    enteredSimTime,
-    previousExitedSimTime,
-    hasValidPreviousWatermark: phase === 'returning',
-  }
+  const visit = await readVisitContext(db, access, {
+    worldId: input.worldId,
+    timelineId: input.timelineId,
+    clientSessionId: input.clientSessionId,
+  })
   return { context: { ...context, visit }, requestId: input.requestId }
+}
+
+/** Explicitly establish or reuse a visit session. This does not write world facts. */
+export async function enterVisit(db: Db, access: AccessContext, input: VisitRequest, now = new Date()): Promise<VisitResult> {
+  return applyVisit(db, access, input, 'enter', now)
 }
 
 /** Close the current session idempotently; no simulation or history write occurs. */
 export async function leaveVisit(db: Db, access: AccessContext, input: VisitRequest, now = new Date()): Promise<VisitResult> {
-  const { principal, context } = await requireVisitTarget(db, access, input)
-  const existing = (await readSessions(db, principal, input)).find(row => row.clientSessionId === input.clientSessionId)
-  if (!existing) {
-    const visit = await readVisitContext(db, access, { ...input, sessionId: null })
-    return { context: { ...context, visit }, requestId: input.requestId }
-  }
-  if (existing.status === 'open' && existing.lastRequestId !== input.requestId) {
-    const nowIso = now.toISOString()
-    await db.update(worldVisitSessions).set({
-      status: 'closed', exitedSimTime: context.simNow, exitedAt: nowIso,
-      lastRequestId: input.requestId, updatedAt: nowIso,
-    }).where(and(eq(worldVisitSessions.id, existing.id), eq(worldVisitSessions.status, 'open')))
-  }
-  const closed = await db.select().from(worldVisitSessions).where(eq(worldVisitSessions.id, existing.id)).get()
-  const visit: VisitContext = {
-    phase: 'returning', sessionId: closed?.id ?? existing.id,
-    enteredSimTime: closed?.enteredSimTime ?? existing.enteredSimTime,
-    previousExitedSimTime: closed?.exitedSimTime ?? existing.exitedSimTime,
-    hasValidPreviousWatermark: true,
-  }
-  return { context: { ...context, visit }, requestId: input.requestId }
+  return applyVisit(db, access, input, 'leave', now)
 }
