@@ -50,6 +50,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.journal-entry').length >= 2);
   await page.screenshot({ path: join(artifacts, 'desktop-split-running.png'), fullPage: true });
   await page.locator('#what-if').click();
+  await page.locator('#editor').waitFor({ state: 'visible' });
   const anchor = await page.locator('#draft-anchor').textContent();
   const base = JSON.parse(await page.locator('#world-json').inputValue());
   base.entities.lu.goal = '帮助老周公开全部真相';
@@ -102,4 +103,3 @@ try {
   if (browser) await browser.close();
   await app.close();
 }
-

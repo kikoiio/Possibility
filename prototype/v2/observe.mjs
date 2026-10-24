@@ -139,4 +139,3 @@ try {
 const report = { observedAt: new Date().toISOString(), observations, realLlmVerified: false, note: '本脚本验证机制与模拟HTTP传输；真实Groq推演由live-groq.mjs单独记录。' };
 writeFileSync(join(here, 'artifacts', 'observations.json'), JSON.stringify(report, null, 2));
 console.log(`OBSERVATIONS_COMPLETE ${observations.length}`);
-

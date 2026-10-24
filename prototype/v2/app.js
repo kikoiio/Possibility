@@ -55,18 +55,18 @@ function render() {
   $('time-explainer').textContent = `1 真实小时 = ${line.speed} 世界小时 · 每段推演 ${config.beatMinutes} 世界分钟`;
   $('world-error').textContent = line.error || '';
   $('horizon').textContent = line.horizon > line.worldTime ? `故事已生成至 ${time(line.horizon)} · 还有 ${line.pendingEvents} 件事等待发生` : '未来尚待推演 · 等待期间世界时间保持不变';
-  $('revision').textContent = `世界版本 ${line.head.slice(0, 8)}`;
+  $('revision').textContent = '世界与历史已保存';
   $('line-count').textContent = state.data.lines.length;
   const buttons = state.data.lines.map(l => `<button class="line-button ${l.id === line.id ? 'selected' : ''}" data-line="${escape(l.id)}"><strong>${escape(l.name)}</strong><small><span class="line-running ${l.paused ? 'paused' : ''}"></span>${escape(statusNames[l.status])} · ${time(l.worldTime).replace('第', 'D')}</small></button>`).join('');
   if ($('line-list').innerHTML !== buttons) $('line-list').innerHTML = buttons;
-  const sceneKey = `${line.id}:${line.head}`;
+  const sceneKey = `${line.id}:${line.head}:${Math.floor(line.worldTime)}`;
   if (state.sceneKey !== sceneKey) {
     for (const stage of Object.values(stages)) stage.update(line.scene);
     state.sceneKey = sceneKey;
   }
-  if (state.castKey !== sceneKey) {
+  if (state.castKey !== `${line.id}:${line.head}`) {
     $('cast').innerHTML = Object.values(line.world.entities).filter(e => e.kind === 'character').map(c => `<div class="cast-card" style="border-color:${safeColor(c.color)}"><strong>${escape(c.name)}</strong><p>${escape(c.state || '')}</p><p>${escape(c.goal || '')}</p></div>`).join('');
-    state.castKey = sceneKey;
+    state.castKey = `${line.id}:${line.head}`;
   }
   renderJournal();
 }
@@ -224,4 +224,3 @@ $('log-search').oninput = () => { state.journalKey = ''; renderJournal(); };
 window.addEventListener('pagehide', () => { for (const stage of Object.values(stages)) stage.dispose(); });
 await refresh();
 setInterval(refresh, 1000);
-

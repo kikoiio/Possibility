@@ -12,6 +12,7 @@ export function createStage(host, mode) {
   let bounds = getBounds(scene);
   let geometryDirty = true;
   let labels = [];
+  let occupied = [];
   let yaw = -0.65;
   let elevation = 0.75;
   let zoom = 1;
@@ -102,7 +103,10 @@ export function createStage(host, mode) {
     };
     bounds = getBounds(scene);
     geometryDirty = true;
-    badge.textContent = `${mode === '2d' ? '2D · 俯视' : '3D · WebGL'}\n修订 ${scene.revisionId || '—'} · 时间 ${scene.worldTime}`;
+    root.dataset.revisionId = scene.revisionId;
+    root.dataset.worldTime = String(scene.worldTime);
+    const minutes = Math.floor(scene.worldTime);
+    badge.textContent = `${mode === '2d' ? '2D · 俯视' : '3D · 空间'} · 第${Math.floor(minutes / 1440) + 1}天 ${String(Math.floor(minutes % 1440 / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     labelLayer.replaceChildren();
     labels = [];
     const lines = [];
@@ -118,7 +122,7 @@ export function createStage(host, mode) {
         title.style.fontWeight = kind === 'character' ? '700' : '600';
         const position = node('div', label);
         position.textContent = `${format(x)}, ${format(z)}`;
-        position.style.cssText = 'font-size:9px;opacity:.72;';
+        position.style.cssText = 'display:none;';
         labels.push({ el: label, x, z, y: kind === 'location' ? buildingHeight(item) + 1 : 7.7, kind });
         lines.push(`${kind === 'location' ? '建筑' : '角色'} · ${name} — X ${format(x)}, Z ${format(z)}${kind === 'location' ? ` · 高 ${format(buildingHeight(item))}` : ''}`);
       }
@@ -138,6 +142,7 @@ export function createStage(host, mode) {
     width = rect.width;
     height = rect.height;
     if (width <= 0 || height <= 0) return;
+    occupied = [];
     const dpr = Math.min(win.devicePixelRatio || 1, 2);
     const maxSize = gl && !contextLost ? Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096, 4096) : 4096;
     const ratio = Math.min(dpr, maxSize / width, maxSize / height);
@@ -238,6 +243,16 @@ export function createStage(host, mode) {
 
   function placeLabel(label, x, y, visible) {
     label.el.style.display = visible && x > 0 && x < width && y > 0 && y < height ? 'block' : 'none';
+    if (label.el.style.display === 'none') return;
+    const w = label.el.offsetWidth, h = label.el.offsetHeight;
+    x = clamp(x, w / 2 + 3, width - w / 2 - 3);
+    for (let n = 0; n < 12; n++) {
+      const box = { left: x - w / 2, right: x + w / 2, top: y - h, bottom: y };
+      if (!occupied.some(b => box.left < b.right + 3 && box.right > b.left - 3 && box.top < b.bottom + 3 && box.bottom > b.top - 3)) break;
+      y -= h + 3;
+      if (y < 55) { x = clamp(x + w + 4, w / 2 + 3, width - w / 2 - 3); y = 90 + n * 3; }
+    }
+    occupied.push({ left: x - w / 2, right: x + w / 2, top: y - h, bottom: y });
     label.el.style.left = `${x}px`;
     label.el.style.top = `${y}px`;
     label.el.style.zIndex = label.kind === 'character' ? '2' : '1';

@@ -105,4 +105,3 @@ export async function proposeEdit(settings, world, instruction, request, worldTi
   const result = await complete(settings, messages, 'edit', request);
   return { ...result, world: applyOps(world, result.payload.ops), explanation: result.payload.explanation, messages, mode: 'live' };
 }
-
