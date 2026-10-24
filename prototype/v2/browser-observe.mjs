@@ -57,6 +57,7 @@ try {
   base.rules.push('白薇主动保护戏台，不让测绘队封闭它');
   base.entities.bai.goal = '保护镇民和戏台';
   await page.locator('#draft-name').fill('如果真相被说出来');
+  await page.locator('.advanced summary').click();
   await page.locator('#world-json').fill(JSON.stringify(base, null, 2));
   await page.locator('#apply-json').click();
   await page.screenshot({ path: join(artifacts, 'editor.png'), fullPage: true });
