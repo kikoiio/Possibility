@@ -8,7 +8,7 @@ const attempt = process.env.GITHUB_RUN_ATTEMPT
 const mode = process.argv[2]
 
 if (!accountId || !apiToken || !workerName || !runId || !attempt
-  || workerName !== `possibility-p2a-${runId}-${attempt}`) {
+  || workerName !== `wispiva-p2a-${runId}-${attempt}`) {
   throw new Error('Temporary Worker marker inputs do not match this Actions run')
 }
 

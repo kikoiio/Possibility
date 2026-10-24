@@ -12,7 +12,7 @@ const evidencePath = process.env.PHASE2_CLEANUP_EVIDENCE_PATH
 if (!accountId || !apiToken || !workerName || !databaseName || !runId || !attempt) {
   throw new Error('Cloudflare resource ownership guard inputs are incomplete')
 }
-if (workerName !== `possibility-p2a-${runId}-${attempt}` || databaseName !== workerName) {
+if (workerName !== `wispiva-p2a-${runId}-${attempt}` || databaseName !== workerName) {
   throw new Error('Resource names are not the exact temporary names for this Actions run')
 }
 if (!['before-create', 'before-cleanup', 'after-cleanup'].includes(mode)) {
@@ -65,7 +65,7 @@ if (mode === 'before-create') {
   process.exit(0)
 }
 
-const isRunScoped = workerName === `possibility-p2a-${runId}-${attempt}`
+const isRunScoped = workerName === `wispiva-p2a-${runId}-${attempt}`
 const workerDeleteVerified = isRunScoped && process.env.PHASE2_TEMP_WORKER_DEPLOYED === 'true'
   && process.env.PHASE2_TEMP_WORKER_MARKER_VERIFIED === 'true'
   && workerPresent

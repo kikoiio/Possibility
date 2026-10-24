@@ -97,6 +97,6 @@ const TOWER_BOXES: Box[] = [
 
 const dir = resolve('out/voxel-assets')
 mkdirSync(dir, { recursive: true })
-writeFileSync(resolve(dir, 'bld-hut-a.glb'), buildMultiMatGlb('possibility-building-generator', HUT_COLORS, HUT_BOXES))
-writeFileSync(resolve(dir, 'bld-tower-a.glb'), buildMultiMatGlb('possibility-building-generator', TOWER_COLORS, TOWER_BOXES))
+writeFileSync(resolve(dir, 'bld-hut-a.glb'), buildMultiMatGlb('wispiva-building-generator', HUT_COLORS, HUT_BOXES))
+writeFileSync(resolve(dir, 'bld-tower-a.glb'), buildMultiMatGlb('wispiva-building-generator', TOWER_COLORS, TOWER_BOXES))
 console.log('[building] generated 2 deterministic GLBs →', dir)

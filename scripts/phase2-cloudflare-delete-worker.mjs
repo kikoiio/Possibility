@@ -7,7 +7,7 @@ const attempt = process.env.GITHUB_RUN_ATTEMPT
 if (!accountId || !apiToken || !workerName || !runId || !attempt) {
   throw new Error('Temporary Worker deletion inputs are incomplete')
 }
-if (workerName !== `possibility-p2a-${runId}-${attempt}`) {
+if (workerName !== `wispiva-p2a-${runId}-${attempt}`) {
   throw new Error('Refusing Worker deletion because the name is not this run exact name')
 }
 if (process.env.PHASE2_TEMP_WORKER_DEPLOYED !== 'true'

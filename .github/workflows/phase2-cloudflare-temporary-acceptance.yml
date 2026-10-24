@@ -30,8 +30,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          worker_name="possibility-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          database_name="possibility-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          worker_name="wispiva-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          database_name="wispiva-p2a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "PHASE2_TEMP_WORKER_NAME=$worker_name" >> "$GITHUB_ENV"
           echo "PHASE2_TEMP_DATABASE_NAME=$database_name" >> "$GITHUB_ENV"
           echo "Temporary Worker and D1 names are scoped to Actions run ${GITHUB_RUN_ID}, attempt ${GITHUB_RUN_ATTEMPT}."

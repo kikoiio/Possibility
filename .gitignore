@@ -20,3 +20,7 @@ api/wrangler.staging-test.toml
 out/
 .worktrees/
 .cache/
+
+# 本地下载的 CI 浏览器验收产物
+/artifacts/u*-browser-*/
+/artifacts/u*-rerun-*/

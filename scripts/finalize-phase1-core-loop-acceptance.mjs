@@ -78,7 +78,7 @@ const responsiveCases = ['narrow-485', 'narrow-390'].map(name => {
 const gui = { status: 'unverified', reason: 'Phase 1 is a browser based web flow; the repository has no native GUI target for this acceptance stage.' }
 
 const compatibilityTempPath = process.env.PLAYWRIGHT_COMPAT_PERSIST_TO
-const compatibilityOutputDir = '/tmp/possibility-a1-compatibility-playwright-results'
+const compatibilityOutputDir = '/tmp/wispiva-a1-compatibility-playwright-results'
 if (existsSync(compatibilityOutputDir)) {
   try { cpSync(compatibilityOutputDir, join(runDir, 'compatibility-playwright-output'), { recursive: true }) }
   catch (error) { errors.push(`Could not preserve compatibility browser diagnostics: ${error instanceof Error ? error.message : String(error)}`) }
@@ -88,7 +88,7 @@ for (const port of [15173, 18787, 15198, 18798]) if (await canConnect(port)) act
 if (activePorts.length) errors.push(`Acceptance services still listening on ports ${activePorts.join(', ')}`)
 
 if (activePorts.length === 0) {
-  const tempNames = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'possibility-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
+  const tempNames = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'wispiva-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
   for (const name of tempNames) {
     try { rmSync(join('/tmp', name), { recursive: true, force: true }) }
     catch (error) { errors.push(`Could not remove /tmp/${name}: ${error instanceof Error ? error.message : String(error)}`) }
@@ -99,7 +99,7 @@ if (activePorts.length === 0) {
   }
 }
 
-const remainingTemps = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'possibility-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
+const remainingTemps = readdirSync('/tmp').filter(name => name === 's02-playwright-results' || name === 'wispiva-a1-compatibility-playwright-results' || name.startsWith('s02-wrangler-e2e-'))
 if (remainingTemps.length) errors.push(`Temporary paths remain: ${remainingTemps.join(', ')}`)
 if (compatibilityTempPath && existsSync(compatibilityTempPath)) errors.push('Compatibility fixture directory remains.')
 matrix.cleanup = {

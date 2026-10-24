@@ -1,9 +1,9 @@
-name = "possibility-s02-e2e"
+name = "wispiva-s02-e2e"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
-database_name = "possibility-s02-e2e"
+database_name = "wispiva-s02-e2e"
 database_id = "00000000-0000-0000-0000-000000000002"
 migrations_dir = "drizzle"
 
