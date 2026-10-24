@@ -369,7 +369,6 @@ describe('scene compatibility service', () => {
     expect(await f.db.select().from(sceneCompatibilityRequests)).toHaveLength(0)
   })
 
-  // 尚未实现(TDD 红):confirm 前不重检当前版本/内容,过期草稿会用旧 expectedCurrentVersion 之外的新版本号直接覆盖提交
   it('7. current version conflict: 草稿后场景已推进,confirm 应拒绝且不产生修订', async () => {
     const f = await seedWorld()
     await seedScene(f, 'w1', collisionDocument('veg-flower-a'))
@@ -402,7 +401,6 @@ describe('scene compatibility service', () => {
     expect(current?.contentHash).toBe(advanced.contentHash)
   })
 
-  // 尚未实现(TDD 红):confirm 完全不使用 access/bindings,绑定上下文变化后仍能直接提交
   it('8. basis conflict: 绑定上下文变化后 confirm 应拒绝且不产生修订', async () => {
     const f = await seedWorld()
     await seedScene(f, 'w1', collisionDocument('veg-flower-a'))

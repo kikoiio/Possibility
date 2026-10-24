@@ -1,25 +1,21 @@
 # Wispiva
 
-Wispiva 是一个探索生成式平行世界的项目。你可以创建人物与世界，进入其中探索地点、与居民交流，并观察事件、关系与记忆如何随时间发展。
-
-通过改变条件、创建时间线分叉，可以从同一段过去出发，观察和比较不同的未来。
-
-项目目前处于开发阶段，目标是让世界持续存在，让行动留下后果，让不同的可能性可以被探索。
+Wispiva 的需求正在重新评估。仓库保留了世界、人物、时间线分叉、对话和场景展示等现有实现，供后续评估与开发使用；这些实现不构成新一轮产品范围或交付承诺。
 
 仓库：https://github.com/kikoiio/Wispiva
 
-## 当前维护边界
+## 开发入口
 
-需求正在重新评估；现有实现与历史阶段计划不等于新一轮的范围承诺。当前没有 GitHub Actions 工作流，旧阶段通过记录不代表当前验证通过。
+项目使用 npm workspaces：`web` 为 React/Vite 客户端，`api` 为 Hono/Cloudflare Worker 服务，`packages/*` 为共享契约。
 
-开发、资产与保留的历史验收工具见[脚本入口与保留边界](scripts/README.md)。`docs/` 是本地忽略的阅读资料，不随仓库克隆获得。
+- `npm run dev`：启动 Web、API 与模拟节拍进程。
+- `npm run db:migrate`：应用本地 D1 迁移。
+- 各工作区的构建和测试命令见对应 `package.json`；工具用途见[脚本说明](scripts/README.md)。
 
-## 从 Possibility 更名
+当前没有 GitHub Actions 工作流。源码、配置和测试文件的存在不代表部署可用或功能验证通过。`docs/` 是被 Git 忽略的本地代码导航，不随仓库克隆获得，也不上传。
 
-产品名称为 **Wispiva**，npm 根项目名称为 `wispiva`，内部工作区包统一使用 `@wispiva/*`。
+## 兼容标识
 
-为避免更名造成登录失效或本地草稿丢失，浏览器存储、IndexedDB、事件与 DOM 标识中的 `possibility` 前缀，以及 `X-Possibility-Guest` 请求头、访客哈希和幂等键命名空间保持兼容。
+项目和内部包使用 `wispiva` / `@wispiva/*`。浏览器存储、IndexedDB、事件、DOM 标识中的 `possibility` 前缀，以及 `X-Possibility-Guest` 请求头、访客哈希和幂等键命名空间仍用于兼容现有数据与请求。
 
-本地 Wrangler 配置使用 `wispiva` 名称。仓库中的配置不代表云端资源已经创建或仍然存在；旧阶段工作流及其专用临时资源清理脚本已退役。
-
-`mode=possibility` 表示“另一种可能”这一产品模式，不是品牌名称，保持不变。Git 历史中的验收记录保留原始名称与证据链接，不代表对应远端产物仍可访问。
+`mode=possibility` 是现有产品模式值。修改这些标识前，需要核对读写双方及迁移方式。

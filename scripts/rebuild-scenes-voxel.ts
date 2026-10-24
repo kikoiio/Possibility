@@ -1,5 +1,5 @@
 /**
- * T34 批量重建：现有场景描述 → WorldGenerator（AI 重新生成，不做数据转换，F3）
+ * 批量重建：现有场景描述 → WorldGenerator（AI 重新生成，不做数据转换）
  * → 契约校验 → 落盘 out/voxel-scenes/（每空间一份信封 + 一份多空间包）。
  * 用法：`node --import tsx scripts/rebuild-scenes-voxel.ts`
  * 凭据读 api/.dev.vars（LLM_BASE_URL / LLM_API_KEY / LLM_MODEL，gitignored，勿外泄）。
@@ -84,7 +84,7 @@ async function main() {
     console.log(`[rebuild] ${space.name} 落盘：${Object.keys(doc.sections).length} 节、${doc.objects.length} 物体、地点 ${doc.locations.map((l) => l.name).join('/')}`)
   }
 
-  // 多空间包始终从磁盘上的单空间文件重组（支持 --only 单空间重建后拼装）
+  // 多空间包始终从磁盘上的单空间文件重组（支持按位置参数重建单空间后拼装）
   const bundleSpaces: SerializedVoxelSpaces['spaces'] = MIST_MANOR.spaces.map((spec) => ({
     id: spec.id,
     name: spec.name,
@@ -95,7 +95,7 @@ async function main() {
   }
   writeFileSync(resolve(outDir, `${MIST_MANOR.worldId}.json`), JSON.stringify(bundle))
   console.log(`[rebuild] 多空间包落盘：${resolve(outDir, `${MIST_MANOR.worldId}.json`)}`)
-  console.log('[rebuild] 完成。下一步：T35 开发页逐一打开产物，对照 AC3 人工验收后入库。')
+  console.log('[rebuild] 完成。产物位于 out/voxel-scenes/，尚未导入数据库。')
 }
 
 await main()
