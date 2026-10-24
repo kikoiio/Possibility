@@ -45,7 +45,8 @@ export function applyOps(world, ops) {
       } else delete obj[last];
     } else {
       const value = JSON.parse(op.valueJson);
-      if (Array.isArray(obj) && !/^\d+$/.test(last)) throw new Error('请用数字下标或整体替换数组');
+      if (Array.isArray(obj) && last === '-') { obj.push(value); continue; }
+      if (Array.isArray(obj) && (!/^\d+$/.test(last) || Number(last) > obj.length)) throw new Error('数组请用有效数字下标、- 追加，或整体替换');
       obj[last] = value;
     }
   }

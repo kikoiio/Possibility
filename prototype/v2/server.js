@@ -174,7 +174,8 @@ export function createPrototype({ dataDir = process.env.WISPIVA_DATA_DIR || join
         const draft = experiment.data.drafts[draftId];
         if (!draft) throw new Error('编辑草稿不存在');
         validateWorld(world);
-        const call = draft.lineId ? experiment.begin(draft.lineId, 'edit', { mode: settings.mode, draftId }) : { id: draftId, mode: settings.mode, kind: 'edit', status: 'pending' };
+        const call = draft.lineId ? experiment.begin(draft.lineId, 'edit', { mode: settings.mode, draftId, baseRevision: draft.head, startTime: draft.worldTime }) : { id: draftId, mode: settings.mode, kind: 'edit', status: 'pending', startedAt: Date.now(), startTime: draft.worldTime };
+        if (!draft.lineId) experiment.data.calls.push(call);
         try {
           const result = await proposeEdit(resumedSettings(draft.nextModel), world, instruction, meteredFetch, draft.worldTime);
           draft.nextModel = null;

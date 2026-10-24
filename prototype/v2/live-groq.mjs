@@ -37,8 +37,9 @@ for (const candidate of GROQ_MODELS) {
   e.control(line.id, { paused: false });
   const call = e.begin(line.id, 'beat', { mode: 'live' });
   const messages = messagesFor(e.world(line.id), e.history(line.id), { span: 60, time: line.worldTime });
+  let result;
   try {
-    const result = await complete({ ...settings, model: candidate.id }, messages, 'beat', pacedRequest);
+    result = await complete({ ...settings, model: candidate.id }, messages, 'beat', pacedRequest);
     if (!result.payload.events?.length) throw new Error('没有产生事件，无法观察叙事质量');
     e.accept(line.id, call, result.payload, 60);
     now = 150000; e.tick();
@@ -53,13 +54,13 @@ for (const candidate of GROQ_MODELS) {
     usable.push({ candidate, e, line, advance: minutes => { now += minutes / line.speed * 60000; e.tick(); } });
     console.log(`${candidate.id}: accepted ${record.events.length} events, ${record.factChangeCount} fact changes`);
   } catch (error) {
-    report.models.push({ model: candidate.id, ok: false, error: error.message });
+    report.models.push({ model: candidate.id, ok: false, error: error.message, payload: result?.payload, providerAttempts: error.attempts || result?.attempts });
     console.log(`${candidate.id}: ${error.message}`);
   }
   save();
 }
 if (!usable.length) {
-  report.realLlm = false; save();
+  report.validWorldTransition = false; save();
   throw new Error('三个候选均未产生可提交的真实事件，请查看无密钥的观察报告');
 }
 const selected = usable[0];
