@@ -9,6 +9,7 @@ api/wrangler.staging-test.toml
 .playwright-mcp
 # 项目文档仅保留在本地，不提交到 GitHub
 /docs/
+/development-docs/
 .agents
 .codex
 .claude
