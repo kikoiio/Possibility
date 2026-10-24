@@ -48,7 +48,7 @@ test.describe('phase1b explicit identity and persistent source', () => {
   test('AC3 ordinary login does not claim without a save intent', async ({ page, request }) => {
     await seed(page, request)
     await page.goto('/login')
-    await expect(page.getByText('Possibility')).toBeVisible()
+    await expect(page.getByText('Wispiva')).toBeVisible()
   })
 })
 test.describe('phase1b recovery and switching', () => {

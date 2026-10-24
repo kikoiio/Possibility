@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 import type { Assets } from './assets'
 import type { WorldModel } from './world-model'
 

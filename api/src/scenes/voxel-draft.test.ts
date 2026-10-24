@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, type EditOperation, type VoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, type EditOperation, type VoxelDocument } from '@wispiva/voxel-contract'
 import { createTestDb } from '../test/db'
 import { llmCallLog, persons, users, worlds } from '../db/schema'
 import { buildVoxelSceneDescription, createFixedWorldVoxelSceneDraft, createVoxelSceneDraft } from './voxel-draft'

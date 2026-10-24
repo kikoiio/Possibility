@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { timelines, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import type { AccessContext } from '../access/types'
-import type { VisitContext } from '@possibility/world-contract'
+import type { VisitContext } from '@wispiva/world-contract'
 
 type UserAccess = Extract<AccessContext, { kind: 'user' }>
 type VisitSession = typeof worldVisitSessions.$inferSelect

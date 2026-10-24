@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyEdits, createEmptyWorld, getBlock, validateWalkability } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, getBlock, validateWalkability } from '@wispiva/voxel-contract'
 import { normalizePayloadSize, normalizeWorldDocument } from './normalize'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })

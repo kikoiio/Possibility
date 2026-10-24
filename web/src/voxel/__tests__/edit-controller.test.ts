@@ -6,8 +6,8 @@ import {
   writeTerrainCells,
   type EditOperation, type SceneEditPreflightResult, type SceneIssue, type SceneValidationReport,
   type SceneValidationContext, type VoxelDocument,
-} from '@possibility/voxel-contract'
-import type { AssetManifest } from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
+import type { AssetManifest } from '@wispiva/voxel-contract'
 import type { AtlasJson } from '../engine/atlas'
 import { VoxelEngine } from '../engine'
 import { EditController, type PreflightBasis, type PreflightBlocked } from '../bridge/edit-controller'

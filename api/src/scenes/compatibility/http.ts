@@ -6,7 +6,7 @@ import type {
   SceneCommitReceipt,
   SceneInspectionResult,
   SceneValidationReport,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 /** Convert a validation report to the paged, bounded shape used by HTTP clients. */
 export function reportView(report: SceneValidationReport | null) {

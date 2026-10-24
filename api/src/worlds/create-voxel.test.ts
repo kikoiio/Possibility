@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, serialize, type EditOperation, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, isSerializedVoxelDocument, serialize, type EditOperation, type SerializedVoxelDocument, type VoxelDocument } from '@wispiva/voxel-contract'
 import { createTestDb } from '../test/db'
 import { persons, sessions, timelines, users, worldPersons, worldScenes, worldSceneRevisions, worlds } from '../db/schema'
 import { initialSceneStatements } from '../scenes/repository'

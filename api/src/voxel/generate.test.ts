@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getBlock, validateDocument, validateWalkability } from '@possibility/voxel-contract'
+import { getBlock, validateDocument, validateWalkability } from '@wispiva/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { parseEditOperations } from './edit-planner'
 import { assembleWorld, generateWorld, WorldGeneratorError } from './generate'

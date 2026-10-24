@@ -4,7 +4,7 @@ import {
   serialize,
   type EditOperation,
   type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 const locations = [
   ['河畔住区', '安静的居民街巷'],

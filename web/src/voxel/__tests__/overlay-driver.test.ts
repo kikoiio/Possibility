@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SceneLifeOverlay } from '@possibility/scene-contract'
+import type { SceneLifeOverlay } from '@wispiva/scene-contract'
 import { mapSimTime, mapWeather, OverlayDriver, type OverlayEngineSink } from '../bridge/overlay-driver'
 import type { ResidentRenderState } from '../engine'
 

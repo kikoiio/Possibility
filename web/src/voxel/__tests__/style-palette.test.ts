@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { STYLE_PRESETS } from '@possibility/voxel-contract'
+import { STYLE_PRESETS } from '@wispiva/voxel-contract'
 import { applyStyleTweaks, loadPalette, samplePalette } from '../engine/palette'
 import { resolvePalette, STYLE_PRESET_DATA } from '../engine/palettes/style-presets'
 

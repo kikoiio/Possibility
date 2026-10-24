@@ -1,4 +1,4 @@
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 
 /**
  * S4 世界模拟 · 环境漫步(F5,确定性 ambient)。

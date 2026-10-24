@@ -4,7 +4,7 @@ import {
   describeWorldStatus,
   normalizeTimelineStatus,
   normalizeWorldStatus,
-} from '@possibility/world-contract'
+} from '@wispiva/world-contract'
 import { capabilityView } from './status'
 
 const owner = { kind: 'user' as const, userId: 'owner', username: 'owner', role: 'user' as const, ownerId: 'owner' }

@@ -7,8 +7,8 @@ import { dialogues, persons, personStates, timelines, universeEvidence, universe
 import {
   deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, serialize, validateDocument, validateWalkability,
   type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
-import type { SceneAction } from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
+import type { SceneAction } from '@wispiva/voxel-contract'
 import { libraryManifest } from '../voxel/library-manifest'
 import { initialSceneStatements } from '../scenes/repository'
 import { forkConflict, forkTimeline } from '../life/fork'

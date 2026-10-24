@@ -9,7 +9,7 @@ import {
   validateSceneEnvelope,
   type SceneWorkControl,
   type SerializedVoxelSpaces,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { initialSceneStatements, isVoxelScenePayload, readCurrentScene } from '../scenes/repository'
 import { deriveSceneBindings, loadSceneValidationContext } from '../scenes/compatibility/context'
 // A1 P27/B55：新初始化只用经验证副本；原始 mist-manor-voxel-spaces.json 保留为原始失败 fixture

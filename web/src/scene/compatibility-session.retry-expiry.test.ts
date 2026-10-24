@@ -4,7 +4,7 @@ import type {
   SceneCompatibilityRequestResponse,
   SceneInspectionResult,
   SceneValidationBasis,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { createCompatibilitySession, type CompatibilitySessionClient } from './compatibility-session'
 
 const scope = { actorKey: 'retry-actor', worldId: 'retry-world' }

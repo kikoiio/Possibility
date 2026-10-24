@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld } from '@wispiva/voxel-contract'
 import { computeUV, TextureAtlas, type AtlasJson } from '../engine/atlas'
 import { LightingEngine } from '../engine/lighting'
 import { DEFAULT_BAKE_ENV, Mesher } from '../engine/mesher'

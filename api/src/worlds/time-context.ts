@@ -11,7 +11,7 @@ import {
   normalizeWorldStatusReason,
   type VisitContext,
   type WorldTimeContext,
-} from '@possibility/world-contract'
+} from '@wispiva/world-contract'
 import { readOwnedVisitContexts, UNKNOWN_VISIT_CONTEXT } from '../life/visit-context'
 import { capabilityView } from './status'
 

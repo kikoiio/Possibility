@@ -9,7 +9,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { isSerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { isSerializedVoxelSpaces } from '@wispiva/voxel-contract'
 
 const WORLD_ID = process.argv[2] ?? '8ff1a23f-f784-44d9-af6d-7a53d6d8dde6'
 const BUNDLE_PATH = resolve('out/voxel-scenes/mist-manor.json')

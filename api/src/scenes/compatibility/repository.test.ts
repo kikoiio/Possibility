@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { applyEdits, createEmptyWorld, serialize } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize } from '@wispiva/voxel-contract'
 import type {
   SceneRepairAudit,
   SceneValidationBasis,
   SceneValidationReport,
   SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import {
   cancelSceneCompatibilityDraft,
   claimSceneCompatibilityDraftBuild,

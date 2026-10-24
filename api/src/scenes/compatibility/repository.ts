@@ -23,8 +23,8 @@ import type {
   SceneValidationReport,
   SceneValidationReportView,
   StoredSceneDocument,
-} from '@possibility/voxel-contract'
-import { isSerializedVoxelDocument, isSerializedVoxelSpaces } from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
+import { isSerializedVoxelDocument, isSerializedVoxelSpaces } from '@wispiva/voxel-contract'
 
 export const COMPATIBILITY_LEASE_MS = 30_000
 export const COMPATIBILITY_DRAFT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000

@@ -18,7 +18,7 @@ import {
   validateStoredSceneCandidate,
 } from './compatibility/service'
 import { deriveSceneBindings } from './compatibility/context'
-import { isSerializedVoxelDocument, isSerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { isSerializedVoxelDocument, isSerializedVoxelSpaces } from '@wispiva/voxel-contract'
 
 export type SceneRepresentation = 'voxel' | 'native2d'
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { applyEdits, deserialize, serialize, type EditOperation, type StylePackRef, type TerrainParams, type ValidationIssue } from '@possibility/voxel-contract'
+import { applyEdits, deserialize, serialize, type EditOperation, type StylePackRef, type TerrainParams, type ValidationIssue } from '@wispiva/voxel-contract'
 import { VoxelEngine, WebGL2UnavailableError } from './engine'
 import { EditController } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'

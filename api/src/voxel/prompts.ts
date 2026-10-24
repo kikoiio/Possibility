@@ -1,7 +1,7 @@
 import {
   createBlockRegistry, listObjectTemplates, STYLE_PRESETS,
   type AssetManifest, type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 
 /** 世界摘要：供 LLM 理解当前世界（编辑规划用） */

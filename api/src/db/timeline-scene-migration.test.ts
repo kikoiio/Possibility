@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { and, eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { createEmptyWorld, serialize } from '@possibility/voxel-contract'
+import { createEmptyWorld, serialize } from '@wispiva/voxel-contract'
 import { createTestDb } from '../test/db'
 import {
   timelineSceneHeads,

@@ -5,7 +5,7 @@ import type {
   SceneRuleNote,
   SceneValidationReport,
   SceneValidationReportView,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { CompatibilityContinuation } from '../../scene/compatibility-store'
 import type { SceneScope } from '../../api/types'
 import { sceneCompatibilityApi } from '../../api/client'

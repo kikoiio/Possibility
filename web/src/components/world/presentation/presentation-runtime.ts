@@ -1,4 +1,4 @@
-import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelDocument } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelDocument } from '@wispiva/voxel-contract'
 import { authApi, guestMapApi, mapApi, publicApi } from '../../../api/client'
 import type { MapScene } from '../../../api/map'
 import type { WorldSnapshot } from '../../../api/types'

@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { serialize, type SceneAction, type SceneRedactedSummary, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { serialize, type SceneAction, type SceneRedactedSummary, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import { complete } from '../llm/client'
 import { resolveLlmConfig } from '../llm/resolve'
 import { budgetFromEnv } from '../engine/budget'

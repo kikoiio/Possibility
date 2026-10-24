@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyEdits, createEmptyWorld, type VoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, type VoxelDocument } from '@wispiva/voxel-contract'
 import { EditPlannerError, parseEditOperations, planEdits } from '../src/voxel/edit-planner'
 import { assembleWorld, generateWorld, WorldGeneratorError } from '../src/voxel/generate'
 import { buildEditPlannerMessages, buildWorldGeneratorMessages, worldSummary } from '../src/voxel/prompts'

@@ -7,7 +7,7 @@ import {
   type SceneValidationReport,
   type SceneWorkControl,
   type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { Db } from '../../db/client'
 import { eq } from 'drizzle-orm'
 import { sceneCompatibilityDrafts, sceneCompatibilityRequests, users, worldSceneRevisions, worlds } from '../../db/schema'

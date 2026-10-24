@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
-import { applyEdits, createEmptyWorld, type VoxelCoord, type VoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, type VoxelCoord, type VoxelDocument } from '@wispiva/voxel-contract'
 import { Picker, WorldModel, type VoxelEngine } from '../engine'
 import { InteractionRouter, type InteractionHandlers } from '../bridge/interaction-router'
 

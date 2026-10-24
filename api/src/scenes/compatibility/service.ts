@@ -20,7 +20,7 @@ import {
   type SceneValidationContext,
   type SceneWorkBudget,
   type SceneWorkControl,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { Db } from '../../db/client'
 import { and, eq } from 'drizzle-orm'
 import { demoBaselines, sceneCompatibilityRequests } from '../../db/schema'

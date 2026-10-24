@@ -6,7 +6,7 @@ import {
   serialize,
   validateEdit,
   type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { createWorldFixture } from '../../test/world-fixture'
 import { commitScene } from '../repository'
 import { loadWorldSceneBindings } from './context'

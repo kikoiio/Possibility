@@ -3,8 +3,8 @@ import {
   getBlock, getObjectTemplate, serialize, validateDocument, validateWalkability, writeTerrainCells,
   type AssetManifest, type EditOperation, type LocationBinding, type SpaceEntry, type StylePackRef,
   type TerrainParams, type VoxelCoord, type VoxelDocument, type WorldTerrainMeta,
-} from '@possibility/voxel-contract'
-import type { DeterministicSceneProvider, DeterministicSceneProviderResult } from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
+import type { DeterministicSceneProvider, DeterministicSceneProviderResult } from '@wispiva/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { EditPlannerError, parseEditOperations, type CompleteFn } from './edit-planner'
 import { buildWorldGeneratorMessages } from './prompts'

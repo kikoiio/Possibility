@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ApiError, worldSceneApi, worldsApi } from '../api/client'
 import type { SceneRepairContext, SceneRepairDraftResponse } from '../api/types'
-import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
+import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@wispiva/voxel-contract'
 import VoxelViewport from '../voxel/VoxelViewport'
 import { planEditsViaApi } from '../voxel/plan-edits'
 
@@ -110,7 +110,7 @@ export default function WorldSceneRepair() {
     <div className="pointer-events-none absolute inset-0 z-10">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-[#172820]/80 via-[#172820]/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
         <div>
-          <p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p>
+          <p className="font-story text-xl font-semibold sm:text-2xl">Wispiva</p>
           <p className="mt-0.5 text-[10px] tracking-[.18em] text-white/75">{worldName} · 补建原世界场景</p>
         </div>
         <Link to={worldHref} className="rounded-full border border-white/35 bg-[#263a31]/55 px-4 py-2 text-xs backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:text-sm">返回原世界</Link>

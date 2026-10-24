@@ -1,4 +1,4 @@
-import { STYLE_PRESETS, type StylePackRef } from '@possibility/voxel-contract'
+import { STYLE_PRESETS, type StylePackRef } from '@wispiva/voxel-contract'
 import { loadPalette, type PaletteKeyframe, type RGB, type ThemePalette } from '../palette'
 import { MIST_MANOR_PALETTE } from './mist-manor'
 

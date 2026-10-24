@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import type { BlockRegistry, VoxelCoord, VoxelDocument } from '@possibility/voxel-contract'
-import { getBlock, getObjectTemplate, rotatedOffsets } from '@possibility/voxel-contract'
+import type { BlockRegistry, VoxelCoord, VoxelDocument } from '@wispiva/voxel-contract'
+import { getBlock, getObjectTemplate, rotatedOffsets } from '@wispiva/voxel-contract'
 import { findPath, nearestStandable } from './pathfinding'
 import type { WorldModel } from './world-model'
 

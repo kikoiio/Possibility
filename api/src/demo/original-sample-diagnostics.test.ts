@@ -6,7 +6,7 @@ import {
   repairSceneCompatibility,
   sceneBudget,
   validateSceneEnvelope,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { libraryManifest } from '../voxel/library-manifest'
 
 describe('A1 original Mist Manor sample diagnostics', () => {

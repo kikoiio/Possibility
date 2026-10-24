@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 import type { MotionPreference } from './motion-preference'
 import type { ShaderUniforms } from './renderer'
 

@@ -1,5 +1,5 @@
-import { serialize, type EditOperation, type SceneValidationBasis } from '@possibility/voxel-contract'
-import type { SceneValidationReportView } from '@possibility/voxel-contract'
+import { serialize, type EditOperation, type SceneValidationBasis } from '@wispiva/voxel-contract'
+import type { SceneValidationReportView } from '@wispiva/voxel-contract'
 import { getToken } from '../api/client'
 import type { SceneScope } from '../api/types'
 import type { VoxelEngine } from './engine'

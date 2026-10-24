@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { SECTION_SIZE, type BlockRegistry, type SectionKey } from '@possibility/voxel-contract'
+import { SECTION_SIZE, type BlockRegistry, type SectionKey } from '@wispiva/voxel-contract'
 import type { MotionPreference } from './motion-preference'
 import type { WorldModel } from './world-model'
 

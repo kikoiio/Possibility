@@ -2,7 +2,7 @@ import { and, asc, count, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { conversations, events, messages, persons, timelines, worldPersons, worlds } from '../db/schema'
 import type { AccessContext } from '../access/types'
-import type { WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@wispiva/world-contract'
 import { effectiveTimeZone } from '../worlds/time-zone'
 import { readOwnedWorldContexts } from '../worlds/time-context'
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { VoxelDocument } from '@possibility/voxel-contract'
+import type { VoxelDocument } from '@wispiva/voxel-contract'
 import { activePreviewDocument, previewViewportKey, readonlyPreviewViewportProps, SceneRepairPreviewLifecycle } from './scene-repair-preview-lifecycle'
 
 function deferred<T>() {

@@ -1,7 +1,7 @@
 /** 与后端对齐的数据类型 */
 
-import type { TimelineStatus, VisitContext, WorldStatus, WorldTimeContext } from '@possibility/world-contract'
-export type { StatusView, TimelineStatus, VisitContext, VisitPhase, WorldStatus, WorldStatusReason, WorldTimeContext } from '@possibility/world-contract'
+import type { TimelineStatus, VisitContext, WorldStatus, WorldTimeContext } from '@wispiva/world-contract'
+export type { StatusView, TimelineStatus, VisitContext, VisitPhase, WorldStatus, WorldStatusReason, WorldTimeContext } from '@wispiva/world-contract'
 
 export type Provenance = 'known' | 'inferred'
 
@@ -671,8 +671,8 @@ export interface EventEvidenceDetail {
   gaps: string[]
   forkAvailable: boolean
 }
-import type { SceneLifeOverlay } from '@possibility/scene-contract'
-import type { SerializedVoxelDocument, SerializedVoxelSpaces, WorldEvent as VoxelWorldEvent } from '@possibility/voxel-contract'
+import type { SceneLifeOverlay } from '@wispiva/scene-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, WorldEvent as VoxelWorldEvent } from '@wispiva/voxel-contract'
 
 /* ===== A1 场景兼容:共享 DTO 直接复用契约包,不再私有重复定义 ===== */
 
@@ -691,9 +691,9 @@ export type {
   SceneTarget,
   SceneValidationBasis,
   SceneValidationReportView,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
-import type { CompatibilityPurpose, SceneTarget, SceneValidationBasis } from '@possibility/voxel-contract'
+import type { CompatibilityPurpose, SceneTarget, SceneValidationBasis } from '@wispiva/voxel-contract'
 
 /** 创建兼容修复草稿的输入;actorKey/bindings/basis 均由服务端派生,客户端不得携带。 */
 export interface CreateSceneCompatibilityDraftParams {

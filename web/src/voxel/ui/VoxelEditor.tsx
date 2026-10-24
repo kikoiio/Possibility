@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validateEdit, type EditOperation, type VoxelCoord, type VoxelDocument } from '@possibility/voxel-contract'
+import { validateEdit, type EditOperation, type VoxelCoord, type VoxelDocument } from '@wispiva/voxel-contract'
 import type { VoxelEngine } from '../engine'
 import { Picker } from '../engine'
 import type { EditController, PreflightBasis } from '../bridge/edit-controller'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld } from '@wispiva/voxel-contract'
 import { mapTimeOfDay } from '../engine/day-night'
 import { collectSnowQuads, columnTopY, isSkyExposed, WeatherSystem } from '../engine/weather'
 import { MotionPreference } from '../engine/motion-preference'

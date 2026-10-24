@@ -4,7 +4,7 @@ import type {
   SceneCompatibilityRequestResponse,
   SceneInspectionResult,
   SceneValidationBasis,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import {
   COMPATIBILITY_STORE_KEY,
   createCompatibilityStore,

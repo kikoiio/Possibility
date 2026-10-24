@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SceneRepairChange, SceneRuleNote, VoxelDocument } from '@possibility/voxel-contract'
+import type { SceneRepairChange, SceneRuleNote, VoxelDocument } from '@wispiva/voxel-contract'
 import VoxelViewport from '../../voxel/VoxelViewport'
 import { parseVoxelDocument } from '../../voxel/flags'
 import { activePreviewDocument, previewViewportKey, readonlyPreviewViewportProps, SceneRepairPreviewLifecycle } from './scene-repair-preview-lifecycle'

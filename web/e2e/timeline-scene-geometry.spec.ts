@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { applyEdits, createEmptyWorld, serialize, type EditOperation } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type EditOperation } from '@wispiva/voxel-contract'
 
 const personModel = {
   identity: [{ text: '经营雾影庄', provenance: 'known' }],

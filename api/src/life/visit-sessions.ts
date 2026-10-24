@@ -3,7 +3,7 @@ import type { BatchItem } from 'drizzle-orm/batch'
 import type { Db } from '../db/client'
 import { worldVisitRequests, worldVisitSessions } from '../db/schema'
 import type { AccessContext } from '../access/types'
-import type { WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@wispiva/world-contract'
 import { readWorldTimeContext } from '../worlds/time-context'
 import { readVisitContext } from './visit-context'
 

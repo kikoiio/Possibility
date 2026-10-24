@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { validateDocument, validateWalkability } from '@possibility/voxel-contract'
+import { validateDocument, validateWalkability } from '@wispiva/voxel-contract'
 import { assembleWorld, WorldGeneratorError } from '../src/voxel/generate'
 import { normalizePayloadSize, normalizeWorldDocument } from '../src/voxel/normalize'
 import { libraryManifest } from '../src/voxel/library-manifest'

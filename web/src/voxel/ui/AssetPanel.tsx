@@ -1,4 +1,4 @@
-import type { AssetCategory, AssetManifest } from '@possibility/voxel-contract'
+import type { AssetCategory, AssetManifest } from '@wispiva/voxel-contract'
 
 export interface AssetPanelProps {
   manifest: AssetManifest

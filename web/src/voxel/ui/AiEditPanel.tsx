@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { EditOperation, SceneValidationReportView } from '@possibility/voxel-contract'
+import type { EditOperation, SceneValidationReportView } from '@wispiva/voxel-contract'
 import { EditPlanRequestError, type EditPlan } from '../plan-edits'
 import type { PreflightBasis } from '../bridge/edit-controller'
 

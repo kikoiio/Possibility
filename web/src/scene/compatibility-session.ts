@@ -8,7 +8,7 @@ import type {
   SceneCompatibilityRequestResponse,
   SceneInspectionResult,
   SceneTarget,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import {
   type CompatibilityContinuation,
   type CompatibilityScope,

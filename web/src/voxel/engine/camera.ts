@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { VoxelSize } from '@possibility/voxel-contract'
+import type { VoxelSize } from '@wispiva/voxel-contract'
 
 /** 相机策略接口：第一视角模式 = 新增策略实现(S2b) */
 export interface CameraStrategy {

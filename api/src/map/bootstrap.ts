@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import { readCurrentScene, readCurrentTimelineScene } from '../scenes/repository'
 import { worldSnapshot } from '../worlds/queries'
 import type { Db } from '../db/client'
@@ -7,7 +7,7 @@ import { worlds } from '../db/schema'
 import { readGuestMapResume, readMapResume } from './resume'
 import type { AccessContext } from '../access/types'
 import { resolveWorldScope } from '../access/world-scope'
-import type { WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@wispiva/world-contract'
 
 export interface WorldCapabilities {
   observe: boolean; participate: boolean; editScene: boolean; fork: boolean; compare: boolean; persist: boolean; resetDemo: boolean

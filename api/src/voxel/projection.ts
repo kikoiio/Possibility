@@ -10,7 +10,7 @@ import type { BudgetConfig } from '../engine/budget'
 import { llmConfigFor, type ResolvedLlmFields } from '../engine/steps/types'
 import { completeContract } from '../llm/client'
 import { LLM_CONTRACT_VERSIONS, parseContractObject, requireString } from '../llm/contracts'
-import type { VoxelCoord, WorldEvent } from '@possibility/voxel-contract'
+import type { VoxelCoord, WorldEvent } from '@wispiva/voxel-contract'
 import { distillVoxelEvents, type DistilledVoxelEvent } from './distill'
 
 /**

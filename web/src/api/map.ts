@@ -1,4 +1,4 @@
-import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import type { WorldSnapshot, WorldTimeContext } from './types'
 
 export interface WorldCapabilities {

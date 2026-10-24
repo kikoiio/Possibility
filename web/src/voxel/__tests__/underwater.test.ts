@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld } from '@wispiva/voxel-contract'
 import { isEyeUnderwater, smoothUnderwater, underwaterDepth, WATER_SURFACE_DROP } from '../engine/underwater'
 import { WorldModel } from '../engine/world-model'
 

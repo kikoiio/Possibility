@@ -8,7 +8,7 @@ import type {
   SceneSourceRef,
   SceneTarget,
   SceneValidationBasis,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 export const COMPATIBILITY_STORE_KEY = 'possibility:scene-compatibility:v1'
 export const COMPATIBILITY_STORE_VERSION = 1

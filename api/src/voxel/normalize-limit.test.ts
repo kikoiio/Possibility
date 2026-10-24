@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ValidationIssue, VoxelDocument } from '@possibility/voxel-contract'
+import type { ValidationIssue, VoxelDocument } from '@wispiva/voxel-contract'
 
 const contract = vi.hoisted(() => ({
   applyEdits: vi.fn(),
@@ -8,8 +8,8 @@ const contract = vi.hoisted(() => ({
   validateWalkability: vi.fn(),
 }))
 
-vi.mock('@possibility/voxel-contract', async importOriginal => {
-  const original = await importOriginal<typeof import('@possibility/voxel-contract')>()
+vi.mock('@wispiva/voxel-contract', async importOriginal => {
+  const original = await importOriginal<typeof import('@wispiva/voxel-contract')>()
   return {
     ...original,
     applyEdits: contract.applyEdits,

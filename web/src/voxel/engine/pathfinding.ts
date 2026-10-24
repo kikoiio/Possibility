@@ -1,4 +1,4 @@
-import type { BlockRegistry, VoxelCoord } from '@possibility/voxel-contract'
+import type { BlockRegistry, VoxelCoord } from '@wispiva/voxel-contract'
 import type { WorldModel } from './world-model'
 
 const key = (x: number, y: number, z: number) => `${x},${y},${z}`

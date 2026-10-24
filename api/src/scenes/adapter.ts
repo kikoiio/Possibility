@@ -10,7 +10,7 @@ import {
   type SerializedVoxelSpaces,
   type StoredSceneDocument,
   type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 export type SceneRepresentation = 'voxel' | 'native2d' | (string & {})
 export type SceneAdapterErrorCode = 'unsupported-representation' | 'unknown-space' | 'invalid-snapshot'

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { applyEdits, createEmptyWorld, serialize, type SceneIssue, type SceneRepairChange, type SceneValidationReport, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type SceneIssue, type SceneRepairChange, type SceneValidationReport, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import { compatibilityRoutes } from './routes'
 import { commitScene, readCurrentScene } from '../repository'
 import { createWorldFixture } from '../../test/world-fixture'

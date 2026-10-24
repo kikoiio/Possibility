@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import {
   resolveEventDisclosure, type DisclosureTier, type EventDisclosureState, type WorldEvent,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { FrameUpdatable } from './index'
 import { buildEventIconAtlas, iconCell, ICON_COLS } from './event-icons'
 

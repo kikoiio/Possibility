@@ -1,4 +1,4 @@
-import { listObjectTemplates } from '@possibility/voxel-contract'
+import { listObjectTemplates } from '@wispiva/voxel-contract'
 
 export interface WarehousePanelProps {
   /** 拖拽或点击选中模板（点击 = 进入放置模式） */

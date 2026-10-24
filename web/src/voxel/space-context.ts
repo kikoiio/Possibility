@@ -1,4 +1,4 @@
-import type { VoxelDocument } from '@possibility/voxel-contract'
+import type { VoxelDocument } from '@wispiva/voxel-contract'
 
 export type VoxelSpaceKind = 'exterior' | 'interior'
 export type VoxelFogMode = 'outdoor' | 'indoor'

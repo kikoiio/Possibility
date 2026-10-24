@@ -1,7 +1,7 @@
 import {
   getBlock as contractGetBlock, inBounds, setBlockMut,
   type EditResult, type SectionKey, type VoxelCoord, type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 export type WorldListener = (changed: SectionKey[]) => void
 

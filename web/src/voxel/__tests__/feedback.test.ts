@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import type { AssetManifest } from '@possibility/voxel-contract'
+import type { AssetManifest } from '@wispiva/voxel-contract'
 import { Assets } from '../engine/assets'
 import { BuildFeedback } from '../engine/feedback'
 import { MotionPreference } from '../engine/motion-preference'

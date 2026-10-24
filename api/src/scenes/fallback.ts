@@ -10,7 +10,7 @@ import {
   type SerializedVoxelDocument,
   type VoxelDocument,
   type VoxelObject,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 /** The small, server-owned input needed to make a fallback scene. */
 export interface FallbackLocation {

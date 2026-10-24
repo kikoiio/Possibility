@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { decodeSceneCompatibility } from '@possibility/voxel-contract'
+import { decodeSceneCompatibility } from '@wispiva/voxel-contract'
 import type { Db } from '../../db/client'
 import { demoBaselines, sceneCompatibilityRequests, timelineSceneHeads, timelineSceneRevisions, timelines } from '../../db/schema'
 import { buildCommitWriteProof, buildTimelineCommitGuardStatement, type SceneWriteAuthority, type SceneWriteProofRequest } from '../compatibility/write-proof'

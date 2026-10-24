@@ -1,5 +1,5 @@
 import type { AccessContext } from '../access/types'
-import type { TimelineStatus, WorldStatus, WorldTimeContext } from '@possibility/world-contract'
+import type { TimelineStatus, WorldStatus, WorldTimeContext } from '@wispiva/world-contract'
 
 function accessIdentity(access: AccessContext, ownsWorld: boolean): 'owner' | 'guest' | 'readonly' {
   if (access.kind === 'guest') return 'guest'

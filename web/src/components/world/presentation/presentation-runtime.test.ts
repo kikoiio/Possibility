@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import type { SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import type { SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import type { MapBootstrap, MapScene } from '../../../api/map'
 import type { WorldSnapshot } from '../../../api/types'
 

@@ -1,7 +1,7 @@
 import {
   parseSectionKey, SECTION_SIZE,
   type BlockRegistry, type SectionKey,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { DEFAULT_BAKE_ENV } from './palettes/mist-manor'
 import type { TextureAtlas } from './atlas'
 import type { LightingEngine } from './lighting'

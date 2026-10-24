@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import type { WorldEvent } from '@possibility/voxel-contract'
+import type { WorldEvent } from '@wispiva/voxel-contract'
 import { EventDisclosure } from '../engine/event-disclosure'
 import { iconCell } from '../engine/event-icons'
 

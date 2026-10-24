@@ -12,7 +12,7 @@ import { dirname, resolve } from 'node:path'
 import {
   ASSET_ID_PATTERN, ASSET_LIMITS, validateAssetManifest,
   type AssetCategory, type AssetEntry, type AssetManifest,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { inspectGlb } from './lib/glb-inspect'
 
 const LIBRARY_DIR = resolve('web/public/voxel-assets/library')

@@ -12,7 +12,7 @@ import { RequestScopeController } from '../world/requestScope'
 import VoxelViewport from '../voxel/VoxelViewport'
 import type { OrbitPose } from '../voxel/engine'
 import { parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
-import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
+import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@wispiva/voxel-contract'
 import { planEditsViaApi, EditPlanRequestError } from '../voxel/plan-edits'
 import type { VoxelEngine } from '../voxel/engine'
 import type { AxisMarker } from '../world/alignedTimeline'
@@ -750,7 +750,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     /> : <VoxelViewport document={voxelDoc} overlay={overlay} events={snapshot.voxelEvents ?? null} personNames={personNames} timeZone={snapshot.world.timeZone} cameraPose={legacyVoxelPose} onCameraChange={saveLegacyCameraPose} />}
     <div className="pointer-events-none absolute inset-0 z-stage">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-sage-900/65 to-transparent px-5 pb-8 pt-4 text-white sm:px-7">
-        <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Possibility</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
+        <div><p className="font-story text-xl font-semibold tracking-tight sm:text-2xl">Wispiva</p><p className="text-[10px] tracking-[.24em] text-white/70">{snapshot.world.name} · 正在生活</p></div>
         {!comparisonWorkspaceActive && <PresentationSwitcher paneId="single" value={presentationRoute.left.presentation} onChange={selectSinglePresentation} />}
         <a href="/login" className="rounded-full border border-white/35 bg-sheet-dark px-4 py-2 text-xs backdrop-blur-md transition hover:bg-sage-900/70 sm:text-sm">登录，创建你的世界</a>
       </header>

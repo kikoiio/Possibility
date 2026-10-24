@@ -8,7 +8,7 @@ import {
   type SerializedVoxelDocument,
   type SerializedVoxelSpaces,
   type SceneWorkControl,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { createTestDb } from '../../test/db'
 import {
   sceneCompatibilityDrafts,

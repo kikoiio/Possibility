@@ -1,4 +1,4 @@
-import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelDocument } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelDocument } from '@wispiva/voxel-contract'
 import type { WorldSnapshot } from '../../../api/types'
 import type { Camera } from '../../../native2d/projection'
 import type { WorldReadModel } from '../../../native2d/types'

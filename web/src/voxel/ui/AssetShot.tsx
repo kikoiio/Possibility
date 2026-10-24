@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { validateAssetManifest } from '@possibility/voxel-contract'
+import { validateAssetManifest } from '@wispiva/voxel-contract'
 
 declare global {
   interface Window { __assetShotReady?: boolean | 'error' }

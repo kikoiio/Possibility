@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import {
   applyEdits, createEmptyWorld, deserialize, serialize, type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { persons, worldPersons, worldSceneRevisions } from '../src/db/schema'
 import { createWorldFixture, WORLD_TIME } from '../src/test/world-fixture'
 import { commitScene, initialSceneStatements, readCurrentScene } from '../src/scenes/repository'

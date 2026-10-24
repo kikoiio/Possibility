@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BlockRegistry, VoxelCoord } from '@possibility/voxel-contract'
+import type { BlockRegistry, VoxelCoord } from '@wispiva/voxel-contract'
 import type { CameraStrategy } from './camera'
 import { isStandable } from './pathfinding'
 import { isSpawnClearOfObjects } from '../interior-closure'

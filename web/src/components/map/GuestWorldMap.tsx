@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type SceneLifeOverlay } from '@possibility/scene-contract'
-import { deserialize, serialize, type SceneCandidate, type SceneEditPreflightResult, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { type SceneLifeOverlay } from '@wispiva/scene-contract'
+import { deserialize, serialize, type SceneCandidate, type SceneEditPreflightResult, type SerializedVoxelDocument, type SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import type { ForkResult, ForkScenario, PersonListItem, SceneScope, WorldSnapshot } from '../../api/types'
 import { ApiError, apiFetch, clearToken, demoApi, guestMapApi, lifeApi, mapApi, worldSceneApi, worldsApi } from '../../api/client'
 import ScenePanel from '../world/ScenePanel'
@@ -129,7 +129,7 @@ export function GuestWorldMap({
   const [actionError, setActionError] = useState('')
   const [timelineBusy, setTimelineBusy] = useState(false)
   const timelinePending = useRef(false)
-  const [editDoc, setEditDoc] = useState<import('@possibility/voxel-contract').VoxelDocument | null>(null)
+  const [editDoc, setEditDoc] = useState<import('@wispiva/voxel-contract').VoxelDocument | null>(null)
   const [editVersion, setEditVersion] = useState<number | null>(null)
   const saveBusyRef = useRef(false)
   const onCompatibilityRequiredRef = useRef(onCompatibilityRequired)
@@ -150,7 +150,7 @@ export function GuestWorldMap({
     } catch (error) { setSaveError(error instanceof Error ? error.message : '重新生成失败') }
     finally { setRegenerating(false) }
   }
-  const saveSpace = useCallback(async (next: import('@possibility/voxel-contract').VoxelDocument) => {
+  const saveSpace = useCallback(async (next: import('@wispiva/voxel-contract').VoxelDocument) => {
     if (!editable || saveBusyRef.current) return
     const timelineId = liveSnapshot.currentTimelineId
     const scope = { timelineId, representation: 'voxel' as const }
@@ -362,7 +362,7 @@ export function GuestWorldMap({
         </div>}
     <div className="pointer-events-none absolute inset-0 z-stage">
       <header className="pointer-events-auto absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-sage-900/80 via-sage-900/30 to-transparent px-5 pb-10 pt-4 text-white sm:px-7">
-        <div><p className="font-story text-xl font-semibold sm:text-2xl">Possibility</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
+        <div><p className="font-story text-xl font-semibold sm:text-2xl">Wispiva</p><p className="mt-0.5 text-[10px] tracking-[.24em] text-white/75">{liveSnapshot.world.name} · {spaceName} · 正在生活</p></div>
         {guest ? <div className="flex items-center gap-2">{!claimPending && <button onClick={() => void reset()} disabled={busy} className="rounded-full border border-white/35 bg-sheet-dark px-3 py-2 text-xs backdrop-blur-md">{busy ? '重置中…' : '重新开始'}</button>}<a href="/login?claimDemo=1" onClick={event => { if (onClaimIntent && !onClaimIntent()) event.preventDefault() }} className="rounded-full border border-white/35 bg-sheet-dark px-4 py-2 text-xs backdrop-blur-md sm:text-sm">{claimPending ? '重试保存' : '登录并保存'}</a><button type="button" aria-label="设置" title="设置" onClick={() => setSettingsOpen(true)} className="rounded-full border border-white/35 bg-sheet-dark px-3 py-2 text-xs backdrop-blur-md">设置</button></div> : <div className="flex items-center gap-2">
           {canInteract && onInject && <button onClick={onInject} className="rounded-full border border-white/35 bg-sheet-dark px-3 py-2 text-xs backdrop-blur-md">干预</button>}
           {canInteract && onPresence && <button onClick={onPresence} className="rounded-full border border-white/35 bg-sheet-dark px-3 py-2 text-xs backdrop-blur-md">在场</button>}

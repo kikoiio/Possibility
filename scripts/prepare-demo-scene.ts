@@ -26,7 +26,7 @@ import {
   type SceneValidationContext,
   type SceneWorkControl,
   type StoredSceneDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { deriveSceneBindings } from '../api/src/scenes/compatibility/context'
 import { libraryManifest } from '../api/src/voxel/library-manifest'
 

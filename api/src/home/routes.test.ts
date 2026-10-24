@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { sessions, timelines, universeEvidence, universeRevisions, users, worldVisitSessions, worldVisits, worlds } from '../db/schema'
 import { createTestDb } from '../test/db'
 import { readWorldTimeContext } from '../worlds/time-context'
-import type { WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@wispiva/world-contract'
 import { homeRoutes } from './routes'
 
 const NOW = '2026-10-01T00:00:00.000Z'

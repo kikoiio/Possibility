@@ -4,7 +4,7 @@ import {
   type EditOperation, type EditResult, type SceneCandidate, type SceneEditPreflightResult,
   type SceneValidationBasis, type SceneValidationReport, type StylePackRef, type TerrainParams,
   type ValidationIssue, type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { VoxelEngine } from '../engine'
 
 export type EditOutcome = { ok: true; result: EditResult } | { ok: false; issues: ValidationIssue[] }

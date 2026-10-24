@@ -6,7 +6,7 @@ import {
   type SceneBindingContext,
   type SceneSourceRef,
   type SceneValidationContext,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { libraryManifest } from '../../voxel/library-manifest'
 import type { Db } from '../../db/client'
 import { sceneValidationPolicy, worlds, worldPersons } from '../../db/schema'

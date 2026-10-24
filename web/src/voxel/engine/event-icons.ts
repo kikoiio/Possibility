@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { WorldEventType } from '@possibility/voxel-contract'
+import type { WorldEventType } from '@wispiva/voxel-contract'
 
 /**
  * S3b 事件披露(F4):程序化 canvas 图标图集。

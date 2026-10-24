@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import { isSerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { isSerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import type { Db } from '../db/client'
 import { guestSessions, timelines, userWorldPreferences, worlds } from '../db/schema'
 import { readCurrentScene, type StoredSceneDocument } from '../scenes/repository'

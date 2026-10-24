@@ -4,7 +4,7 @@ import type { Context } from 'hono'
 import {
   deserialize, ensureAssetPlacementIds, isSerializedVoxelDocument, isSerializedVoxelSpaces, serialize, validateDocument, validateWalkability,
   type SerializedVoxelDocument, type SerializedVoxelSpaces,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { libraryManifest } from '../voxel/library-manifest'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { scopedUserMiddleware } from '../access/scoped-user-middleware'

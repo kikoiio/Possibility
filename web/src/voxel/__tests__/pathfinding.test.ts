@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld } from '@wispiva/voxel-contract'
 import { findPath, isStandable, nearestStandable } from '../engine/pathfinding'
 import { WorldModel } from '../engine/world-model'
 

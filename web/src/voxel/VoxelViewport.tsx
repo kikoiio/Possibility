@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SceneLifeOverlay } from '@possibility/scene-contract'
-import type { SceneCandidate, SceneEditPreflightResult, VoxelDocument, WorldEvent } from '@possibility/voxel-contract'
+import type { SceneLifeOverlay } from '@wispiva/scene-contract'
+import type { SceneCandidate, SceneEditPreflightResult, VoxelDocument, WorldEvent } from '@wispiva/voxel-contract'
 import { nearestStandable, VoxelEngine, WebGL2UnavailableError, type OrbitPose } from './engine'
 import { EditController, type PreflightBlocked } from './bridge/edit-controller'
 import { InteractionRouter } from './bridge/interaction-router'

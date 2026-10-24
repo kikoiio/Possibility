@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { objectFootprint, type EditOperation, type VoxelCoord } from '@possibility/voxel-contract'
+import { objectFootprint, type EditOperation, type VoxelCoord } from '@wispiva/voxel-contract'
 import type { Assets } from './assets'
 
 interface Effect { update(dt: number): boolean; dispose(): void }

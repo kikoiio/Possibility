@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import { createWorldFixture } from '../test/world-fixture'
 import { createDb } from '../db/client'
 import { sessions, timelineSceneHeads, timelineSceneRevisions, worldSceneRevisions, worlds } from '../db/schema'

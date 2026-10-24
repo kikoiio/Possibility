@@ -1,7 +1,7 @@
 import {
   parseSectionKey, SECTION_SIZE,
   type BlockRegistry, type SectionKey, type VoxelCoord,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { WorldModel } from './world-model'
 
 export interface LightVolume {

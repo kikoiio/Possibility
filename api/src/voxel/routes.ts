@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { and, eq, isNull } from 'drizzle-orm'
 import { timelines } from '../db/schema'
-import { applyEdits, deserialize, ensureAssetPlacementIds, isSerializedVoxelSpaces, serialize, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { applyEdits, deserialize, ensureAssetPlacementIds, isSerializedVoxelSpaces, serialize, type SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
 import { resolveWorldScope } from '../access/world-scope'
 import { createDb } from '../db/client'

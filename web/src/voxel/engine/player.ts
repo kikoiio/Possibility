@@ -1,4 +1,4 @@
-import type { BlockRegistry, VoxelCoord } from '@possibility/voxel-contract'
+import type { BlockRegistry, VoxelCoord } from '@wispiva/voxel-contract'
 import type { WorldModel } from './world-model'
 
 // ── S2b 第一视角玩家物理(F2/F3)─────────────────────────

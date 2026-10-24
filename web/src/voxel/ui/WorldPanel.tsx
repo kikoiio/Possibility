@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   STYLE_PRESETS, STYLE_TWEAK_RANGES, TERRAIN_QUOTAS,
   type StylePackRef, type TerrainParams, type ValidationIssue,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { VoxelEngine } from '../engine'
 import type { EditController } from '../bridge/edit-controller'
 

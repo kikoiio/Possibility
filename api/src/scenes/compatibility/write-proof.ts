@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
-import type { SceneBindingContext, SceneSourceRef } from '@possibility/voxel-contract'
+import type { SceneBindingContext, SceneSourceRef } from '@wispiva/voxel-contract'
 import type { Db } from '../../db/client'
 import { demoBaselines, sceneValidationPolicy, timelineSceneRevisions, worldSceneRevisions, worldScenes } from '../../db/schema'
 import { readCurrentTimelineScene, type TimelineSceneScope } from '../repository'

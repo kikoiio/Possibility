@@ -13,7 +13,7 @@ import { cloneWorldGraph, type CloneWorldGraphResult } from './world-graph-clone
 import { verifyClonedWorld } from './clone-verification'
 import type { SceneWriteProof } from '../scenes/compatibility/write-proof'
 import { buildTestPolicyActivationSql } from '../../scripts/prepare-scene-compatibility-fixture'
-import { createEmptyWorld, applyEdits, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { createEmptyWorld, applyEdits, serialize, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import { commitScene, readCurrentScene } from '../scenes/repository'
 import { native2dContentHash } from '../native2d/repository'
 import type { Native2dLayout } from '../native2d/schema'

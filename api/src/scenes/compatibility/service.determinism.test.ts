@@ -8,7 +8,7 @@ import {
   type SceneWorkControl,
   type SerializedVoxelDocument,
   type SerializedVoxelSpaces,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { createTestDb } from '../../test/db'
 import { users, worldSceneRevisions, worlds } from '../../db/schema'
 import { commitScene } from '../repository'

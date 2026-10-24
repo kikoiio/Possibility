@@ -1,4 +1,4 @@
-import type { WorldEvent } from '@possibility/voxel-contract'
+import type { WorldEvent } from '@wispiva/voxel-contract'
 import { formatWorldTime } from '../../lib/world-time'
 
 /**

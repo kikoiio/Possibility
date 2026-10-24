@@ -455,7 +455,7 @@ import type {
   SceneSendInput,
   StreamFailureEvent,
 } from './types'
-import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
 import { createWorldStreamGuard } from '../lib/streamGuard'
 

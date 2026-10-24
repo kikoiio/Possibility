@@ -1,7 +1,7 @@
 import {
   applyEdits, clampTerrainParams, createEmptyWorld, generateTerrain, getBlock, writeTerrainCells,
   type EditOperation, type VoxelDocument, type WorldEvent,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 /**
  * S3b 事件披露 fixture 的参考「现在」(F3):dev-harness 加载后下发,

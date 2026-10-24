@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { EventPhase } from '@possibility/voxel-contract'
+import type { EventPhase } from '@wispiva/voxel-contract'
 import type { VoxelEngine } from '../engine'
 
 /**

@@ -69,7 +69,7 @@ function Layout() {
       {/* 顶栏：品牌 + 桌面导航 + 退出 */}
       <header className="flex items-center justify-between border-b border-ink-line bg-sheet px-4 py-3">
         <Link to="/home" className="font-story text-lg font-semibold tracking-tight text-ink">
-          Possibility
+          Wispiva
         </Link>
         <nav className="hidden gap-5 text-sm text-ink-soft sm:flex">
           <NavLink to="/home" end className={({ isActive }) => (isActive ? 'font-medium text-ink' : '')}>

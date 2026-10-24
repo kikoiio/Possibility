@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SerializedVoxelDocument, VoxelDocument } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, VoxelDocument } from '@wispiva/voxel-contract'
 import type { WorldSnapshot } from '../../../api/types'
 import type { WorldReadModel } from '../../../native2d/types'
 import type {

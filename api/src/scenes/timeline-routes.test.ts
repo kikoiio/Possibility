@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import { eq } from 'drizzle-orm'
 import { commitTimelineScene } from './repository'
 import { scenesRoutes } from './routes'

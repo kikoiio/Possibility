@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, serialize, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import app from '../index'
 import { guestSessions, timelineSceneRevisions, timelines } from '../db/schema'
 import { hashGuestToken } from '../access/middleware'

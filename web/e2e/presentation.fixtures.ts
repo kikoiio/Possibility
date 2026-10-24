@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
-import type { SerializedVoxelDocument } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import type { MapBootstrap, WorldCapabilities } from '../src/api/map'
 import type { WorldSnapshot } from '../src/api/types'
 

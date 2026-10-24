@@ -6,7 +6,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { serialize, validateDocument, type SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import { serialize, validateDocument, type SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import { generateWorld } from '../api/src/voxel/generate'
 import { complete, configFromEnv } from '../api/src/llm/client'
 

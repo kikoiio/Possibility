@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { users, worlds, worldScenes, worldSceneRevisions } from '../../db/schema'
 import { createTestDb } from '../../test/db'
 import { loadSceneValidationContext, loadWorldSceneBindings } from './context'
-import type { SceneBindingContext } from '@possibility/voxel-contract'
+import type { SceneBindingContext } from '@wispiva/voxel-contract'
 
 const NOW = '2026-10-06T00:00:00.000Z'
 

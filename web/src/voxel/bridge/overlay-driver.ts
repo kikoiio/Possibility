@@ -1,5 +1,5 @@
-import type { SceneLifeOverlay } from '@possibility/scene-contract'
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { SceneLifeOverlay } from '@wispiva/scene-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 import type { ResidentRenderState } from '../engine'
 import type { TimelineEnvironmentProjection, EnvironmentValue } from '../../scene/life/environment'
 import { wanderDestination, wanderSlot, wanderWorldDay } from './wander'

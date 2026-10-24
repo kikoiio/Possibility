@@ -36,4 +36,4 @@ jobs:
       - name: Run complete Web unit regression
         run: npm --workspace web test -- --maxWorkers=1 --no-file-parallelism
       - name: Run voxel contract regression
-        run: npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 --no-file-parallelism
+        run: npm --workspace @wispiva/voxel-contract test -- --maxWorkers=1 --no-file-parallelism

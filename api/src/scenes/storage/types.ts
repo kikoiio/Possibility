@@ -1,4 +1,4 @@
-import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@wispiva/voxel-contract'
 import type { worldSceneRevisions, worldScenes } from '../../db/schema'
 import type { PendingSceneBindings, SceneWriteAuthority, SceneWriteProofRequest } from '../compatibility/write-proof'
 

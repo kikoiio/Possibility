@@ -1,4 +1,4 @@
-import type { BlockRegistry } from '@possibility/voxel-contract'
+import type { BlockRegistry } from '@wispiva/voxel-contract'
 import type { WorldModel } from './world-model'
 
 /** 水面视觉高度（mesher 下沉后的 py 面）：入水判定与视觉水面严格一致 */

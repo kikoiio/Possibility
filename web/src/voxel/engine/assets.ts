@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { validateAssetManifest, type AssetManifest, type AssetPlacement } from '@possibility/voxel-contract'
+import { validateAssetManifest, type AssetManifest, type AssetPlacement } from '@wispiva/voxel-contract'
 import type { MotionPreference } from './motion-preference'
 
 type InstanceGroup = { meshes: THREE.InstancedMesh[]; sway: number; seeds: Float32Array; base: THREE.Matrix4[] }

@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { dialogues, dialogueTurns, events, persons, personStates, schedules, timelines, universeRevisions, voxelEventProjections, worldPersons, worlds } from '../db/schema'
-import type { WorldEvent } from '@possibility/voxel-contract'
+import type { WorldEvent } from '@wispiva/voxel-contract'
 import { parseLocations, parseScheduleItems, worldDateOf, type LocationDef, type ScheduleItem } from '../agent/engine-context'
 import { visibleMemories } from '../agent/memory'
 import { ancestorCutoffs, readForkSnapshot, selectVisibleEvents } from '../agent/visibility'
@@ -13,7 +13,7 @@ import { effectiveTimeZone } from './time-zone'
 import type { AccessContext } from '../access/types'
 import { readWorldTimeContext } from './time-context'
 import { readVisitContext } from '../life/visit-context'
-import type { WorldTimeContext } from '@possibility/world-contract'
+import type { WorldTimeContext } from '@wispiva/world-contract'
 
 type World = typeof worlds.$inferSelect
 

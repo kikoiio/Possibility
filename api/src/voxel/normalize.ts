@@ -1,7 +1,7 @@
 import {
   applyEdits, createBlockRegistry, validateDocument, validateWalkability,
   type AssetManifest, type ValidationIssue, type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 
 const MIN_SIZE = { width: 8, height: 4, depth: 8 } as const
 const MAX_SIZE = { width: 256, height: 64, depth: 256 } as const

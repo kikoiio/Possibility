@@ -12,9 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@possibility/scene-contract": "^0.0.0",
-    "@possibility/world-contract": "^0.0.0",
-    "@possibility/voxel-contract": "^0.0.0",
+    "@wispiva/scene-contract": "^0.0.0",
+    "@wispiva/world-contract": "^0.0.0",
+    "@wispiva/voxel-contract": "^0.0.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5"
   },

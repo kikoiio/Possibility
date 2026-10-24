@@ -7,7 +7,7 @@ import {
   type SceneBindingContext,
   type SceneWorkControl,
   type SerializedVoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { createTestDb } from '../../test/db'
 import {
   sceneCompatibilityDrafts,

@@ -12,7 +12,7 @@
  *   保留为 unrepresented，不虚构位置。
  */
 
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 import { ASSET_MANIFEST, BUILDING_ENTRY_OFFSETS } from './assets'
 import { createInitialLayout } from './layout-validation'
 import { buildPresentation } from './presentation'

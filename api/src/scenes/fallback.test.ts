@@ -6,7 +6,7 @@ import {
   type SceneCompatibilityEnvelope,
   type SceneValidationContext,
   type SceneWorkBudget,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { buildFallbackScene, type FallbackSceneInput } from './fallback'
 
 const assets: AssetManifest = {

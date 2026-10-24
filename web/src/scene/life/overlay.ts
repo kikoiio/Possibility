@@ -1,4 +1,4 @@
-import type { SceneLifeOverlay } from '@possibility/scene-contract'
+import type { SceneLifeOverlay } from '@wispiva/scene-contract'
 import type { WorldSnapshot } from '../../api/types'
 import {
   environmentLocationVisuals,

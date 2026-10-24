@@ -4,7 +4,7 @@ import {
   isSerializedVoxelSpaces,
   type SerializedVoxelDocument,
   type SerializedVoxelSpaces,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import { timelineSceneRevisions } from '../../db/schema'
 import { TimelineSceneIntegrityError, type StoredSceneDocument, type TimelineSceneRevisionRead, type TimelineSceneScope } from './types'
 

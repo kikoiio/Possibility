@@ -4,7 +4,7 @@ import {
   type BlockRegistry,
   type VoxelCoord,
   type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { VoxelSpaceContext } from './space-context'
 
 export interface InteriorClosureReport {

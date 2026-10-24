@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld, setBlockMut } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld, setBlockMut } from '@wispiva/voxel-contract'
 import { CameraRig } from '../engine/camera'
 import { findSpawnNear, WalkCameraStrategy } from '../engine/camera-walk'
 import { PLAYER } from '../engine/player'

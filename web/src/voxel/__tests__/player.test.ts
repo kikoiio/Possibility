@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBlockRegistry, createEmptyWorld, setBlockMut } from '@possibility/voxel-contract'
+import { createBlockRegistry, createEmptyWorld, setBlockMut } from '@wispiva/voxel-contract'
 import { PlayerBody, PLAYER, type MoveInput } from '../engine/player'
 import { WorldModel } from '../engine/world-model'
 

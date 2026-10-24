@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { applyEdits, createEmptyWorld, deserialize, serialize, setBlockMut, type SerializedVoxelDocument } from '@possibility/voxel-contract'
+import { applyEdits, createEmptyWorld, deserialize, serialize, setBlockMut, type SerializedVoxelDocument } from '@wispiva/voxel-contract'
 import {
   native2dLayoutHeads, native2dLayoutRevisions, persons, timelineSceneHeads, timelineSceneRevisions,
   timelines, worldPersons, worldSceneRevisions, worlds,

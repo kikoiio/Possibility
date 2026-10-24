@@ -2,7 +2,7 @@ import {
   getObjectTemplate,
   validateEdit,
   type AssetManifest, type EditOperation, type ValidationIssue, type VoxelCoord, type VoxelDocument,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import type { ChatMessage } from '../llm/client'
 import { buildEditPlannerMessages as defaultBuildMessages } from './prompts'
 

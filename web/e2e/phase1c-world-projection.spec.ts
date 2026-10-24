@@ -261,7 +261,7 @@ test.describe('phase1c projection journeys', () => {
   test('AC1 mismatched reader output never reaches the presentation host (contract fixture)', async ({ page }) => {
     // 该验收项由 ComparisonPane 单元矩阵覆盖（注入 mismatch fixture）；此处登记证据来源。
     await page.goto('/login')
-    await expect(page.getByText('Possibility')).toBeVisible()
+    await expect(page.getByText('Wispiva')).toBeVisible()
     record('AC1', {
       kind: 'contract',
       status: 'passed',

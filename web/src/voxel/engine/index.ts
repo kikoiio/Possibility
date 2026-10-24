@@ -2,7 +2,7 @@ import {
   createBlockRegistry, ensureAssetPlacementIds,
   type BlockRegistry, type EditResult, type EventDisclosureState, type SectionKey, type StylePackRef,
   type VoxelDocument, type WorldEvent,
-} from '@possibility/voxel-contract'
+} from '@wispiva/voxel-contract'
 import * as THREE from 'three'
 import { AmbientAnimator } from './ambient'
 import { buildPlaceholderAtlas, TextureAtlas } from './atlas'
@@ -25,14 +25,14 @@ import {
   UNDERWATER_FOG_BASE, UNDERWATER_FOG_DEPTH,
 } from './underwater'
 import { Assets } from './assets'
-import type { AssetManifest } from '@possibility/voxel-contract'
+import type { AssetManifest } from '@wispiva/voxel-contract'
 import { VoxelRenderer, type EnvironmentState } from './renderer'
 import { WeatherSystem, type WeatherState } from './weather'
 import { WorldModel } from './world-model'
 import { Z_AFTER_LIFT, ZoomAxis } from './zoom-axis'
 import { ZoomInput } from './zoom-input'
 import { ZoomLod, type TierParams, type ZoomTier } from './zoom-lod'
-import type { VoxelCoord } from '@possibility/voxel-contract'
+import type { VoxelCoord } from '@wispiva/voxel-contract'
 import { inspectInteriorClosure, type InteriorClosureReport } from '../interior-closure'
 import { resolveSpaceContext, type VoxelSpaceContext } from '../space-context'
 

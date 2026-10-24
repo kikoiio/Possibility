@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelObject } from '@possibility/voxel-contract'
+import type { SerializedVoxelDocument, SerializedVoxelSpaces, VoxelObject } from '@wispiva/voxel-contract'
 import type { WorldReadModel } from '../types'
 import { projectVoxelSpaceScene } from '../voxel-scene-projection'
 

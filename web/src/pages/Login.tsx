@@ -102,7 +102,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-6">
       <div className="w-full max-w-sm rounded-2xl bg-sheet p-8 shadow-sm">
-        <h1 className="mb-1 text-2xl font-semibold text-ink">Possibility</h1>
+        <h1 className="mb-1 text-2xl font-semibold text-ink">Wispiva</h1>
         <p className="mb-6 text-sm text-ink-soft">What would you like to make possible?</p>
         {claiming && getGuestToken() && !currentUser && <div className="mb-4 rounded-lg bg-[#edf2ed] p-3 text-sm text-ink-soft">登录后会将当前访客副本保存到该账号。</div>}
         {claiming && currentUser && <div className="mb-4 rounded-lg bg-[#edf2ed] p-3 text-sm text-ink-soft">当前保存目标账号：<strong className="text-ink">{currentUser.username}</strong></div>}

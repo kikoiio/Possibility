@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BlockRegistry } from '@possibility/voxel-contract'
+import type { BlockRegistry } from '@wispiva/voxel-contract'
 
 // ── 帧表与 UV ─────────────────────────────────
 export interface AtlasFrame { x: number; y: number; w: number; h: number }

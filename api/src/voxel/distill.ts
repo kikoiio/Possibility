@@ -1,4 +1,4 @@
-import type { EventImportance, VoxelCoord, WorldEvent, WorldEventType } from '@possibility/voxel-contract'
+import type { EventImportance, VoxelCoord, WorldEvent, WorldEventType } from '@wispiva/voxel-contract'
 
 /**
  * S4 世界模拟 · 事件蒸馏(机械层,零 LLM)。

@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { SectionKey } from '@possibility/voxel-contract'
+import type { SectionKey } from '@wispiva/voxel-contract'
 import type { TextureAtlas } from './atlas'
 import type { SectionGeometry } from './mesher'
 import { isSoftwareGL, PostPipeline } from './post'
