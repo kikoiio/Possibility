@@ -12,7 +12,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@wispiva/scene-contract": "^0.0.0",
     "@wispiva/world-contract": "^0.0.0",
     "@wispiva/voxel-contract": "^0.0.0",
     "drizzle-orm": "^0.45.2",

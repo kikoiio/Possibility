@@ -3,17 +3,6 @@ import {
   type SerializedVoxelSpaces, type VoxelDocument,
 } from '@wispiva/voxel-contract'
 
-/** 体素渲染特性开关（T30）：?voxel=1 或 localStorage possibility:flag:voxel=1；S1 起产品页按文档形状直渲,本开关不再门控,仅留 dev 用途 */
-export function isVoxelEnabled(): boolean {
-  if (typeof window === 'undefined') return false
-  try {
-    if (new URLSearchParams(window.location.search).get('voxel') === '1') return true
-    return window.localStorage.getItem('possibility:flag:voxel') === '1'
-  } catch {
-    return false
-  }
-}
-
 /** 服务端文档是否为体素格式（序列化信封，与 2D SceneDocument 区分） */
 export function isVoxelPayload(doc: unknown): boolean {
   return isSerializedVoxelDocument(doc)
