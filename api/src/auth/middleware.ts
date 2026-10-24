@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { sessions, users } from '../db/schema'
 import type { Env } from '../index'
+import type { AccessContext } from '../access/types'
 
 function isTransientD1Contention(error: unknown): boolean {
   const messages: string[] = []
@@ -39,6 +40,8 @@ export interface AuthUser {
 
 export interface AuthVariables {
   user: AuthUser
+  /** Present on routes that accept both account and guest access. */
+  access?: AccessContext
 }
 
 /** 解析 Bearer token → 校验 session（含过期）→ 注入 user；失败一律 401 */

@@ -212,9 +212,8 @@ export async function streamWorld(
         await stream.writeSSE({ event: 'ping', data: '{}' })
         idleMs = 0
       }
-    } catch (e) {
+    } catch {
       // 单次轮询失败不断线（D1 抖动时下一拍自愈）
-      console.log(`[stream] pushDelta 失败：${e instanceof Error ? e.message : e}`)
     }
     await stream.sleep(2000)
   }

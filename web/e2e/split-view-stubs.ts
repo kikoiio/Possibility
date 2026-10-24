@@ -82,13 +82,20 @@ export function comparisonFor(leftId: string, rightId: string, simTime?: string 
 
 export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } = {}) {
   const timelineList = opts.timelines ?? timelines
+  const visitContext = (timelineId: string) => ({
+    worldId: 'world-1', timelineId, simNow: NOW, timeZone: 'UTC', stateVersion: 1, revisionVersion: 1,
+    world: { status: 'running', reason: null, view: { key: 'running', label: '正在运行', description: '世界会继续推进。', frozen: false, nextStep: null } },
+    timeline: { status: 'active', view: { key: 'timeline_active', label: '时间线活跃', description: '这条时间线可以继续推进。', frozen: false, nextStep: null } },
+    access: { identity: 'owner', capabilities: { read: true, write: true, advance: true, fork: true, archive: true, reactivate: false } },
+    visit: { phase: 'first_visit', sessionId: 'e2e-visit', enteredSimTime: NOW, previousExitedSimTime: null, hasValidPreviousWatermark: false },
+  })
   return Promise.all([
     page.addInitScript(() => {
       localStorage.setItem('possibility_token', 'e2e-token')
       localStorage.setItem('possibility:flag:voxel', '1')
     }),
     page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: { id: 'owner-1', username: 'owner' } } })),
-    page.route('**/api/worlds/world-1/scene', (route) => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDocument } })),
+    page.route('**/api/worlds/world-1/scene**', (route) => route.fulfill({ json: { status: 'ready', version: 1, document: voxelDocument } })),
     page.route('**/api/worlds', (route) => route.fulfill({ json: { worlds: [{ id: 'world-1', name: '雾影庄' }] } })),
     // 列表页和 owner 地图会并行读取人物；漏掉此 stub 会打到本机 API 401 并清除测试 token。
     page.route('**/api/persons', (route) => route.fulfill({ json: { persons: [] } })),
@@ -108,6 +115,14 @@ export function stubSplitApis(page: Page, opts: { timelines?: StubTimeline[] } =
       })
     }),
     page.route('**/api/worlds/world-1/map/resume', (route) => route.fulfill({ json: { ok: true } })),
+    page.route('**/api/worlds/world-1/visits/enter', (route) => {
+      const body = route.request().postDataJSON() as { timelineId?: string; requestId?: string }
+      return route.fulfill({ json: { ...visitContext(body.timelineId ?? 'timeline-main'), requestId: body.requestId ?? 'e2e-enter' } })
+    }),
+    page.route('**/api/worlds/world-1/visits/leave', (route) => {
+      const body = route.request().postDataJSON() as { timelineId?: string; requestId?: string }
+      return route.fulfill({ json: { ...visitContext(body.timelineId ?? 'timeline-main'), visit: { ...visitContext(body.timelineId ?? 'timeline-main').visit, phase: 'returning', hasValidPreviousWatermark: true }, requestId: body.requestId ?? 'e2e-leave' } })
+    }),
     // 文字视图挂载期请求(未 stub 会打到真实后端 401 跳登录页)
     page.route('**/api/worlds/world-1/persona**', (route) => route.fulfill({ json: { persona: null, unread: 0 } })),
     page.route('**/api/worlds/world-1/state**', (route) => route.fulfill({ json: { timelineId: 'timeline-main', version: 1, worldModelVersion: 1, evidenceStatus: 'structured', current: [], facts: [] } })),

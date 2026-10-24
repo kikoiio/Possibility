@@ -19,7 +19,6 @@ import { ProvenanceScopeError, resolveEvidenceScope, type ProvenanceAccess } fro
 import type { EvidenceQuery, EvidenceTarget } from './types'
 
 export const provenanceRoutes = new Hono<{ Bindings: Env; Variables: AccessVariables }>()
-provenanceRoutes.use('*', accessMiddleware)
 
 function accessOf(c: { get(name: 'access'): AccessVariables['access'] }): ProvenanceAccess {
   const access = c.get('access')
@@ -65,7 +64,7 @@ function errorResponse(c: any, error: unknown) {
   throw error
 }
 
-provenanceRoutes.get('/worlds/:id/provenance/receipts/:commandId', async c => {
+provenanceRoutes.get('/worlds/:id/provenance/receipts/:commandId', accessMiddleware, async c => {
   try {
     const db = createDb(c.env.DB)
     const access = accessOf(c)
@@ -76,7 +75,7 @@ provenanceRoutes.get('/worlds/:id/provenance/receipts/:commandId', async c => {
     return c.json(result)
   } catch (error) { return errorResponse(c, error) }
 })
-provenanceRoutes.get('/worlds/:id/provenance/receipts/by-id/:receiptId', async c => {
+provenanceRoutes.get('/worlds/:id/provenance/receipts/by-id/:receiptId', accessMiddleware, async c => {
   try {
     const db = createDb(c.env.DB)
     const access = accessOf(c)
@@ -85,7 +84,7 @@ provenanceRoutes.get('/worlds/:id/provenance/receipts/by-id/:receiptId', async c
     return c.json(await getMessageReceiptById(db, access, scope, c.req.param('receiptId')))
   } catch (error) { return errorResponse(c, error) }
 })
-provenanceRoutes.get('/worlds/:id/provenance/evidence', async c => {
+provenanceRoutes.get('/worlds/:id/provenance/evidence', accessMiddleware, async c => {
   try {
     const db = createDb(c.env.DB)
     const access = accessOf(c)
@@ -104,7 +103,7 @@ async function ownedResponse(db: ReturnType<typeof createDb>, responseId: string
   return row?.snapshot ?? null
 }
 
-provenanceRoutes.post('/conversations/:id/provenance/responses/:responseId/attempts', async c => {
+provenanceRoutes.post('/conversations/:id/provenance/responses/:responseId/attempts', accessMiddleware, async c => {
   try {
     const db = createDb(c.env.DB)
     const access = accessOf(c)
@@ -131,7 +130,7 @@ provenanceRoutes.post('/conversations/:id/provenance/responses/:responseId/attem
   } catch (error) { return errorResponse(c, error) }
 })
 
-provenanceRoutes.get('/conversations/:id/provenance/responses/:responseId/attempts/:attemptId', async c => {
+provenanceRoutes.get('/conversations/:id/provenance/responses/:responseId/attempts/:attemptId', accessMiddleware, async c => {
   try {
     const db = createDb(c.env.DB)
     const access = accessOf(c)

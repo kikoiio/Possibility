@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, chatApi, postSSE } from '../api/client'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ApiError, chatApi } from '../api/client'
 import type { Message, PersonState } from '../api/types'
 import { decideChatRecovery } from '../lib/chatRecovery'
 
@@ -63,6 +63,11 @@ export default function ChatStream({ conversationId, withCatchup = true, onState
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecovery | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const streamedRef = useRef('')
+  const onStateChangeRef = useRef<ChatStreamProps['onStateChange']>(onStateChange)
+
+  useLayoutEffect(() => {
+    onStateChangeRef.current = onStateChange
+  }, [onStateChange])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -83,13 +88,13 @@ export default function ChatStream({ conversationId, withCatchup = true, onState
 
     const load = async () => {
       if (withCatchup) {
-        await postSSE(`/api/conversations/${conversationId}/catchup`, {}, (ev) => {
+        await chatApi.catchup(conversationId, (ev) => {
           if (cancelled) return
           if (ev.type === 'text') {
             streamedRef.current += ev.delta
             setStreaming(streamedRef.current)
           } else if (ev.type === 'state') {
-            onStateChange?.(ev.state)
+            onStateChangeRef.current?.(ev.state)
           } else if (ev.type === 'error') {
             pushNote('error', ev.message)
           }
@@ -139,7 +144,7 @@ export default function ChatStream({ conversationId, withCatchup = true, onState
     return () => {
       cancelled = true
     }
-  }, [conversationId, withCatchup]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [conversationId, withCatchup])
 
   // SSE 已断开但请求仍 pending 时，使用同一 request ID 查询/回收，绝不重发模型请求。
   useEffect(() => {
@@ -199,7 +204,7 @@ export default function ChatStream({ conversationId, withCatchup = true, onState
           streamedRef.current += ev.delta
           setStreaming(streamedRef.current)
         } else if (ev.type === 'state') {
-          onStateChange?.(ev.state)
+          onStateChangeRef.current?.(ev.state)
         } else if (ev.type === 'memory') {
           pushNote('memory', `已记住：${ev.content}`)
         } else if (ev.type === 'error') {

@@ -324,10 +324,10 @@ describe('A1 legacy migration', () => {
 })
 
 describe('A1 schema', () => {
-  it('0041 为最大迁移编号，native2d DDL 与访客认领及来源链 schema 一致，唯一约束生效', async () => {
-    expect(migrationFiles().at(-1)).toBe('0041_message_provenance.sql')
+  it('0041 来源链迁移仍在 SQL 文件与 Drizzle journal 中，native2d DDL 与 schema 一致，唯一约束生效', async () => {
+    expect(migrationFiles()).toContain('0041_message_provenance.sql')
     const journal = JSON.parse(readFileSync(join(drizzleDir, 'meta/_journal.json'), 'utf8')) as { entries: Array<{ tag: string }> }
-    expect(journal.entries.at(-1)?.tag).toBe('0041_message_provenance')
+    expect(journal.entries.map(entry => entry.tag)).toContain('0041_message_provenance')
     expect(existsSync(join(drizzleDir, 'meta/0038_snapshot.json'))).toBe(true)
 
     const { db, sqlite, close } = createTestDb()

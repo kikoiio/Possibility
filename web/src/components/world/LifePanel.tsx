@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { lifeApi } from '../../api/client'
 import type { CommitmentView, ReturnBrief, ReturnChange } from '../../api/types'
 import { formatWorldTime } from '../../lib/world-time'
+import { visitStageDescription, visitStageLabel } from '../../lib/visit-stage'
 import EventEvidenceDetail from './EventEvidenceDetail'
 import MessageSourceDetail from './MessageSourceDetail'
 
@@ -130,6 +131,7 @@ export default function LifePanel({ worldId, timelineId, timeZone, onClose, onFo
         <div className="mb-4 rounded-xl bg-[#edf0e7] px-4 py-3">
           <p className="font-story text-sm text-ink">{brief.summary}</p>
           <p className="mt-1 text-[11px] text-ink-faint">模拟时间截至 {formatWorldTime(brief.simNow, timeZone)}{highlightedCount ? ' · ' + highlightedCount + ' 项重点变化' : ''}</p>
+          {brief.visit && <p className="mt-1 text-[11px] text-ink-faint">{visitStageLabel(brief.visit.phase)} · {visitStageDescription(brief.visit.phase)}</p>}
         </div>
         {brief.provenance && <div className="mb-4 rounded-xl border border-ink-line bg-sheet px-3 py-2.5">
           <p className="text-xs font-medium text-ink">传话来源</p>

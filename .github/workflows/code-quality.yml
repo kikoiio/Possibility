@@ -1,0 +1,68 @@
+name: Code quality
+
+on:
+  push:
+    branches: ['codex/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Record runner resources
+        run: |
+          free -h
+          vmstat 1 5
+          cat /proc/pressure/memory
+          cat /sys/fs/cgroup/memory.max 2>/dev/null || true
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build and test shared contracts
+        run: |
+          npm --workspace @possibility/scene-contract run build
+          npm --workspace @possibility/scene-contract test -- --maxWorkers=1 --no-file-parallelism
+          npm --workspace @possibility/voxel-contract run build
+          npm --workspace @possibility/voxel-contract test -- --maxWorkers=1 --no-file-parallelism
+          npm --workspace @possibility/world-contract run build
+          npm --workspace @possibility/world-contract test -- --maxWorkers=1 --no-file-parallelism
+      - name: Check API types and run API tests
+        run: |
+          npm --workspace api run build
+          npm --workspace api test -- --pool=forks --maxWorkers=1 --no-file-parallelism --exclude src/test/phase1-g0-provider.acceptance.test.ts
+      - name: Build Web and run Web unit tests
+        run: |
+          npm --workspace web run build
+          npm --workspace web test -- --maxWorkers=1 --no-file-parallelism
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run focused product and stream journeys
+        working-directory: web
+        env:
+          PLAYWRIGHT_API_PORT: '18787'
+          PLAYWRIGHT_WEB_PORT: '15173'
+          PLAYWRIGHT_TRACE: 'on'
+        run: npm run test:e2e -- --workers=1 --project=desktop-chromium e2e/phase2b-time-status.spec.ts e2e/split-view.spec.ts e2e/scene-history-recovery.spec.ts e2e/chat-stream-callback.spec.ts
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: code-quality-${{ github.run_id }}
+          if-no-files-found: warn
+          path: /tmp/s02-playwright-results/
+          retention-days: 14

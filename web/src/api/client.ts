@@ -199,18 +199,155 @@ async function apiFetchWithClaimIdentity<T>(path: string, options: RequestInit =
   return response.json() as Promise<T>
 }
 
-/** SSE 事件（后端 data: {...}\n\n 格式） */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SSEEvent = { type: string; [key: string]: any }
+type EventDecoder<T> = (payload: unknown) => T | null
 
-/**
- * POST 一个请求并按 SSE 逐事件回调（fetch + ReadableStream）。
- * 流结束（或收到 done 事件后连接关闭）时 resolve。
- */
-export async function postSSE(
+class SseProtocolError extends Error {
+  constructor(type: string) {
+    super(`Invalid SSE event: ${type}`)
+    this.name = 'SseProtocolError'
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function eventRecord(payload: unknown): Record<string, unknown> {
+  if (!isRecord(payload) || typeof payload.type !== 'string') throw new SseProtocolError('unknown')
+  return payload
+}
+
+function requiredString(record: Record<string, unknown>, key: string): string {
+  const value = record[key]
+  if (typeof value !== 'string') throw new SseProtocolError(String(record.type))
+  return value
+}
+
+function optionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') throw new SseProtocolError(String(record.type))
+  return value
+}
+
+function optionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new SseProtocolError(String(record.type))
+  return value
+}
+
+function decodeAgentEvent(payload: unknown): AgentStreamEvent | null {
+  const record = eventRecord(payload)
+  switch (record.type) {
+    case 'text': return { type: 'text', delta: requiredString(record, 'delta') }
+    case 'event': return {
+      type: 'event', id: requiredString(record, 'id'), simTime: requiredString(record, 'simTime'),
+      title: requiredString(record, 'title'), description: requiredString(record, 'description'),
+    }
+    case 'state': {
+      const state = record.state
+      if (!isRecord(state)
+        || typeof state.simTime !== 'string'
+        || typeof state.location !== 'string'
+        || typeof state.activity !== 'string'
+        || typeof state.mood !== 'string'
+        || typeof state.goal !== 'string') throw new SseProtocolError('state')
+      return { type: 'state', state: {
+        simTime: state.simTime,
+        location: state.location,
+        activity: state.activity,
+        mood: state.mood,
+        goal: state.goal,
+      } }
+    }
+    case 'memory': return { type: 'memory', id: requiredString(record, 'id'), content: requiredString(record, 'content') }
+    case 'done': {
+      const llmCalls = optionalNumber(record, 'llmCalls')
+      const error = optionalString(record, 'error')
+      return { type: 'done', ...(llmCalls !== undefined ? { llmCalls } : {}), ...(error !== undefined ? { error } : {}) }
+    }
+    default: return null
+  }
+}
+
+function decodeStreamFailure(record: Record<string, unknown>): StreamFailureEvent {
+  const requestId = optionalString(record, 'requestId')
+  const errorCode = optionalString(record, 'errorCode')
+  return {
+    type: 'error',
+    message: requiredString(record, 'message'),
+    ...(requestId !== undefined ? { requestId } : {}),
+    ...(errorCode !== undefined ? { errorCode } : {}),
+  }
+}
+
+function decodeChatMessageEvent(payload: unknown): ChatMessageEvent | null {
+  const record = eventRecord(payload)
+  const agentEvent = decodeAgentEvent(record)
+  if (agentEvent?.type === 'text') {
+    const replayed = record.replayed
+    if (replayed !== undefined && replayed !== true) throw new SseProtocolError('text')
+    return { ...agentEvent, ...(replayed === true ? { replayed: true } : {}) }
+  }
+  if (agentEvent?.type === 'done') {
+    const requestId = optionalString(record, 'requestId')
+    const replayed = record.replayed
+    if (replayed !== undefined && replayed !== true) throw new SseProtocolError('done')
+    return {
+      ...agentEvent,
+      ...(requestId !== undefined ? { requestId } : {}),
+      ...(replayed === true ? { replayed: true } : {}),
+    }
+  }
+  if (agentEvent) return agentEvent
+  if (record.type === 'error') return decodeStreamFailure(record)
+  if (record.type === 'pending') return { type: 'pending', requestId: requiredString(record, 'requestId') }
+  return null
+}
+
+function decodeCatchupEvent(payload: unknown): CatchupEvent | null {
+  const record = eventRecord(payload)
+  const agentEvent = decodeAgentEvent(record)
+  if (agentEvent?.type === 'memory') throw new SseProtocolError('memory')
+  if (agentEvent) return agentEvent
+  if (record.type === 'error') return decodeStreamFailure(record)
+  if (record.type === 'skipped') return { type: 'skipped' }
+  return null
+}
+
+function decodeSceneEvent(payload: unknown): SceneEvent | null {
+  const record = eventRecord(payload)
+  switch (record.type) {
+    case 'scene_start': {
+      if (!Array.isArray(record.participants)) throw new SseProtocolError('scene_start')
+      const participants: string[] = []
+      for (const participant of record.participants) {
+        if (typeof participant !== 'string') throw new SseProtocolError('scene_start')
+        participants.push(participant)
+      }
+      return {
+        type: 'scene_start',
+        dialogueId: requiredString(record, 'dialogueId'),
+        location: requiredString(record, 'location'),
+        participants,
+      }
+    }
+    case 'utterance': return {
+      type: 'utterance', personId: requiredString(record, 'personId'),
+      name: requiredString(record, 'name'), text: requiredString(record, 'text'),
+    }
+    case 'error': return { type: 'error', message: requiredString(record, 'message') }
+    case 'done': return { type: 'done' }
+    default: return null
+  }
+}
+
+async function postSSE<T>(
   path: string,
   body: unknown,
-  onEvent: (event: SSEEvent) => void,
+  decode: EventDecoder<T>,
+  onEvent: (event: T) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const token = guestRequestContext ? null : getToken()
@@ -256,11 +393,14 @@ export async function postSSE(
           .map((line) => line.slice(5).trimStart())
           .join('\n')
         if (data) {
+          let payload: unknown
           try {
-            onEvent(JSON.parse(data) as SSEEvent)
+            payload = JSON.parse(data)
           } catch {
-            // 忽略无法解析的心跳/注释行
+            continue
           }
+          const event = decode(payload)
+          if (event !== null) onEvent(event)
         }
       }
     }
@@ -272,6 +412,9 @@ export async function postSSE(
 /* ===== 阶段二：世界服务与公共只读接口 ===== */
 
 import type {
+  AgentStreamEvent,
+  CatchupEvent,
+  ChatMessageEvent,
   ChatRequestState,
   Chapter,
   ChapterSummary,
@@ -294,6 +437,7 @@ import type {
   EventEvidenceDetail,
   ReturnBrief,
   TimelineComparison,
+  WorldTimeContext,
 } from './types'
 import type { MessageReceipt } from './types'
 import type { SceneHistoryRevision, SceneReadResponse, SceneRepairContext, SceneRepairDraftResponse, SceneScope, VoxelSceneDraftResponse } from './types'
@@ -307,6 +451,9 @@ import type {
   SceneCompatibilityRequestResponse,
   SceneEditPreflightResult,
   SceneInspectionResultReady,
+  SceneEvent,
+  SceneSendInput,
+  StreamFailureEvent,
 } from './types'
 import type { SerializedVoxelDocument, SerializedVoxelSpaces } from '@possibility/voxel-contract'
 import { createSseParser } from '../lib/sseParser'
@@ -322,11 +469,23 @@ export const chatApi = {
     conversationId: string,
     content: string,
     requestId: string,
-    onEvent: (event: SSEEvent) => void,
+    onEvent: (event: ChatMessageEvent) => void,
     signal?: AbortSignal,
   ) => postSSE(
     `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
     { content, requestId },
+    decodeChatMessageEvent,
+    onEvent,
+    signal,
+  ),
+  catchup: (
+    conversationId: string,
+    onEvent: (event: CatchupEvent) => void,
+    signal?: AbortSignal,
+  ) => postSSE(
+    `/api/conversations/${encodeURIComponent(conversationId)}/catchup`,
+    {},
+    decodeCatchupEvent,
     onEvent,
     signal,
   ),
@@ -357,6 +516,10 @@ export const worldsApi = {
   list: () => apiFetch<{ worlds: WorldSummary[] }>('/api/worlds'),
   timeZone: (worldId: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`),
   updateTimeZone: (worldId: string, timeZone: string) => apiFetch<{ timeZone: string }>(`/api/worlds/${encodeURIComponent(worldId)}/time-zone`, { method: 'PUT', body: JSON.stringify({ timeZone }) }),
+  enterVisit: (worldId: string, input: { timelineId: string; clientSessionId: string; requestId: string }) =>
+    apiFetch<WorldTimeContext & { requestId: string }>(`/api/worlds/${encodeURIComponent(worldId)}/visits/enter`, { method: 'POST', body: JSON.stringify(input) }),
+  leaveVisit: (worldId: string, input: { timelineId: string; clientSessionId: string; requestId: string }) =>
+    apiFetch<WorldTimeContext & { requestId: string }>(`/api/worlds/${encodeURIComponent(worldId)}/visits/leave`, { method: 'POST', body: JSON.stringify(input) }),
   snapshot: (worldId: string, timelineId?: string) =>
     apiFetch<WorldSnapshot>(`/api/worlds/${worldId}${timelineId ? `?timelineId=${timelineId}` : ''}`),
   state: (worldId: string, timelineId: string) =>
@@ -365,9 +528,9 @@ export const worldsApi = {
     apiFetch<{ id: string; timelineId: string; resultVersion: number; receipt: MessageReceipt | null }>(`/api/worlds/${worldId}/actions/${encodeURIComponent(commandId)}`),
   command: (worldId: string, body: { id: string; timelineId: string; expectedVersion: number; action: { type: 'environment'; location: string | null; condition: string; value: string } | { type: 'inform'; recipientId: string; topic: string; content: string; sourceFactId?: string } }) =>
     apiFetch<{ commandId: string; factId: string; version: number }>(`/api/worlds/${worldId}/actions`, { method: 'POST', body: JSON.stringify(body) }),
-  pause: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
-  resume: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
-  archive: (worldId: string) => apiFetch<{ ok: true; status: string }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
+  pause: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/pause`, { method: 'POST' }),
+  resume: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/resume`, { method: 'POST' }),
+  archive: (worldId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/worlds/${worldId}/archive`, { method: 'POST' }),
   inject: (worldId: string, text: string, timelineId: string, requestId: string, expectedVersion: number) =>
     apiFetch<{ id: string; timelineId: string; simTime: string; version: number; replayed: boolean }>(`/api/worlds/${worldId}/inject`, {
       method: 'POST',
@@ -393,7 +556,8 @@ export const worldsApi = {
       method: 'POST',
       body: JSON.stringify({ at }),
     }),
-  archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
+  archiveTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/timelines/${timelineId}/archive`, { method: 'POST' }),
+  reactivateTimeline: (timelineId: string) => apiFetch<{ ok: true; status: string; timeContext?: WorldTimeContext }>(`/api/timelines/${timelineId}/reactivate`, { method: 'POST' }),
   personFocus: (worldId: string, personId: string, timelineId: string) =>
     apiFetch<PersonFocus>(`/api/worlds/${worldId}/persons/${personId}?timelineId=${timelineId}`),
   dialogueDetail: (dialogueId: string, timelineId?: string) => apiFetch<DialogueDetail>(
@@ -682,8 +846,8 @@ export const sceneApi = {
       `/api/worlds/${worldId}/scene/intent/pending?timelineId=${encodeURIComponent(timelineId)}`),
   cancelIntent: (worldId: string, requestId: string) =>
     apiFetch<{ status: 'cancelled' | 'missing' }>(`/api/worlds/${worldId}/scene/intent/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' }),
-  send: (worldId: string, body: { timelineId: string; location?: string; content: string; dialogueId?: string; requestId?: string }, onEvent: (event: SSEEvent) => void, signal?: AbortSignal) =>
-    postSSE(`/api/worlds/${worldId}/scene`, body, onEvent, signal),
+  send: (worldId: string, body: SceneSendInput, onEvent: (event: SceneEvent) => void, signal?: AbortSignal) =>
+    postSSE(`/api/worlds/${encodeURIComponent(worldId)}/scene`, body, decodeSceneEvent, onEvent, signal),
   position: (worldId: string, body: { timelineId: string; location: string; commandId: string; expectedVersion: number }) =>
     apiFetch<{ commandId: string; version: number; location: string }>(`/api/worlds/${worldId}/scene/position`, { method: 'POST', body: JSON.stringify(body) }),
   inform: (worldId: string, body: { timelineId: string; recipientId: string; topic: string; content: string; commandId: string; expectedVersion: number }) =>

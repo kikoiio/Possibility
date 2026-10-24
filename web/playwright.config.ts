@@ -11,7 +11,11 @@ export default defineConfig({
   reporter: 'list',
   retries: 0,
   timeout: 60_000,
-  use: { baseURL: `http://127.0.0.1:${webPort}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: {
+    baseURL: `http://127.0.0.1:${webPort}`,
+    trace: process.env.PLAYWRIGHT_TRACE === 'on' ? 'on' : 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
   projects: [
     { name: 'desktop-chromium', testIgnore: [/.*mobile\.spec\.ts/, /.*scene-compatibility\.spec\.ts/], use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--use-gl=swiftshader', '--no-sandbox'] } } },
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'], launchOptions: { args: ['--use-gl=swiftshader', '--no-sandbox'] } }, testMatch: /.*mobile\.spec\.ts/, testIgnore: /.*scene-compatibility\.mobile\.spec\.ts/ },

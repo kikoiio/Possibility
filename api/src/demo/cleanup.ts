@@ -7,7 +7,7 @@ import {
   schedules, sceneIntentProposals, sceneRequests, sessions, timelines, timelineSceneHeads, timelineSceneRevisions,
   native2dLayoutHeads, native2dLayoutRevisions, universeEvidence,
   universeRevisions, userWorldPreferences, worldCommands, worldFacts, worldModelVersions,
-  users, worldPersons, worldSceneRevisions, worldScenes, worldVisits, worlds,
+  users, worldPersons, worldSceneRevisions, worldScenes, worldVisits, worldVisitSessions, worlds,
 } from '../db/schema'
 
 export interface GuestCleanupSummary { sessions: number; sandboxes: number; worlds: number }
@@ -37,6 +37,7 @@ async function purgeSandbox(db: Db, sandboxId: string, worldId: string, ownerId:
   statements.push(db.delete(dialogues).where(timelineIds.length ? inArray(dialogues.timelineId, timelineIds) : eq(dialogues.id, '')))
   statements.push(db.delete(chapters).where(eq(chapters.worldId, worldId)))
   statements.push(db.delete(worldVisits).where(timelineIds.length ? inArray(worldVisits.timelineId, timelineIds) : eq(worldVisits.userId, ownerId)))
+  statements.push(db.delete(worldVisitSessions).where(eq(worldVisitSessions.worldId, worldId)))
   statements.push(db.delete(personStates).where(timelineIds.length ? inArray(personStates.timelineId, timelineIds) : eq(personStates.personId, '')))
   statements.push(db.delete(schedules).where(timelineIds.length ? inArray(schedules.timelineId, timelineIds) : eq(schedules.personId, '')))
   statements.push(db.delete(memories).where(personIds.length ? inArray(memories.personId, personIds) : eq(memories.id, '')))
@@ -88,6 +89,7 @@ export async function cleanupExpiredGuestData(db: Db, now = new Date()): Promise
       await db.delete(userWorldPreferences).where(eq(userWorldPreferences.userId, session.ownerUserId))
       await db.delete(persons).where(eq(persons.userId, session.ownerUserId))
       await db.delete(llmCallLog).where(eq(llmCallLog.userId, session.ownerUserId))
+      await db.delete(worldVisitSessions).where(eq(worldVisitSessions.guestSessionId, session.id))
       await db.delete(guestSessions).where(eq(guestSessions.id, session.id))
       await db.delete(worldVisits).where(eq(worldVisits.userId, session.ownerUserId))
       await db.delete(users).where(eq(users.id, session.ownerUserId))

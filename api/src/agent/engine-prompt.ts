@@ -1,5 +1,5 @@
 import type { ResidentEnginePromptContext, ScheduleItem } from './engine-context'
-import { renderModelItems } from './prompt'
+import { renderModelItem, renderModelItems } from './prompt'
 import type { Memory } from './memory'
 import type { ModelItem } from './types'
 import { formatWorldTime } from '../worlds/time-zone'
@@ -46,7 +46,7 @@ function buildEngineSystem(ctx: ResidentEnginePromptContext): string {
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
     : '- （暂无明确标注的未知项）'
-  const boundaryLines = model.boundaries.length ? model.boundaries.map((b) => `- ${b.text}`).join('\n') : ''
+  const boundaryLines = model.boundaries.map(renderModelItem).join('\n')
 
   const othersSection = ctx.others.length
     ? [

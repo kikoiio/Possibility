@@ -19,12 +19,13 @@ import type { Env } from '../index'
 import { readPublicUniverseEvidence } from '../world-state/evidence-status'
 import { normalizeForkFields } from '../life/fork-fields'
 import { effectiveTimeZone } from '../worlds/time-zone'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-context'
 
 /** 活跃时间线上限（与世界级 fork 一致）：超出需先归档 */
 const MAX_ACTIVE_TIMELINES = 3
 
 export const timelineRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-timelineRoutes.use('*', authMiddleware)
 
 const PREVIEW_SYSTEM = `你是「可能性设定师」。用户要为一个人物创建 what-if 分叉时间线。
 根据人物背景与用户的 what-if，给出明确的分叉场景设定。
@@ -62,7 +63,7 @@ export function normalizeScenario(raw: unknown, whatIf: string, fallbackStart: s
 }
 
 /** Fork 预览：主线 context + whatIf → 场景设定草稿（不落库）；LLM 调用走护栏记账 */
-timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
+timelineRoutes.post('/persons/:id/fork/preview', authMiddleware, async (c) => {
   const body = await c.req.json<{ whatIf?: string }>().catch(() => ({}) as { whatIf?: string })
   const whatIf = body.whatIf?.trim()
   if (!whatIf) return c.json({ error: '请提供 what-if' }, 400)
@@ -119,7 +120,7 @@ timelineRoutes.post('/persons/:id/fork/preview', async (c) => {
 })
 
 /** Fork 确认：建时间线 → 拷贝主线状态 → simulate 推演，事件逐条流出 */
-timelineRoutes.post('/persons/:id/fork', async (c) => {
+timelineRoutes.post('/persons/:id/fork', authMiddleware, async (c) => {
   const body = await c.req.json<{ scenario?: Partial<ForkScenario> }>().catch(() => null)
   const s = body?.scenario
   const fields = s && normalizeForkFields(s as Record<string, unknown>)
@@ -216,7 +217,7 @@ timelineRoutes.post('/persons/:id/fork', async (c) => {
 })
 
 /** 归档时间线（F9）：引擎停止推进该线（数据保留）；世界至少保留一条活跃线 */
-timelineRoutes.post('/timelines/:id/archive', async (c) => {
+timelineRoutes.post('/timelines/:id/archive', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const timeline = await db
@@ -231,7 +232,8 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
     .where(and(eq(worlds.id, timeline.worldId), eq(worlds.userId, userId)))
     .get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
-  if (timeline.status === 'archived') return c.json({ ok: true, status: 'archived' })
+  const access = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
+  if (timeline.status === 'archived') return c.json({ ok: true, status: 'archived', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 
   const active = await db
     .select({ id: timelines.id })
@@ -242,11 +244,11 @@ timelineRoutes.post('/timelines/:id/archive', async (c) => {
     return c.json({ error: '每个世界至少保留一条活跃时间线' }, 400)
   }
   await db.update(timelines).set({ status: 'archived' }).where(eq(timelines.id, timeline.id))
-  return c.json({ ok: true, status: 'archived' })
+  return c.json({ ok: true, status: 'archived', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 })
 
 /** 重新激活只恢复调度资格，不修补历史；证据不完整时保持只读。 */
-timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
+timelineRoutes.post('/timelines/:id/reactivate', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const timeline = await db.select().from(timelines).where(eq(timelines.id, c.req.param('id'))).get()
   if (!timeline) return c.json({ error: '时间线不存在' }, 404)
@@ -254,7 +256,8 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
     eq(worlds.id, timeline.worldId), eq(worlds.userId, c.get('user').id),
   )).get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
-  if (timeline.status === 'active') return c.json({ ok: true, status: 'active' })
+  const access = { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id }
+  if (timeline.status === 'active') return c.json({ ok: true, status: 'active', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
   const evidence = await db.select().from(universeEvidence)
     .where(eq(universeEvidence.timelineId, timeline.id)).get()
   if (evidence?.level !== 'complete') {
@@ -269,11 +272,11 @@ timelineRoutes.post('/timelines/:id/reactivate', async (c) => {
     if (conflict) return c.json({ error: conflict.message }, conflict.status)
     throw error
   }
-  return c.json({ ok: true, status: 'active' })
+  return c.json({ ok: true, status: 'active', timeContext: await readWorldTimeContext(db, access, { worldId: world.id, timelineId: timeline.id, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }) }) })
 })
 
 /** 时间线详情：timeline + events（按 sim_time 排序）+ 该线人物状态 */
-timelineRoutes.get('/timelines/:id', async (c) => {
+timelineRoutes.get('/timelines/:id', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const timelineRow = await db
@@ -290,6 +293,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
     .where(and(eq(worlds.id, timeline.worldId), eq(worlds.userId, userId)))
     .get()
   if (!world) return c.json({ error: '时间线不存在' }, 404)
+  const access = { kind: 'user' as const, userId, username: c.get('user').username, role: c.get('user').role, ownerId: userId }
 
   // 该世界的首个成员（阶段一视图为单人物世界设计，多人物世界的观察在世界视图进行）
   const wp = await db
@@ -319,6 +323,7 @@ timelineRoutes.get('/timelines/:id', async (c) => {
   return c.json({
     timeline: {
       id: timeline.id,
+      status: timeline.status,
       timeZone: effectiveTimeZone(world.timeZone),
       worldId: timeline.worldId,
       parentTimelineId: timeline.parentTimelineId,
@@ -339,5 +344,10 @@ timelineRoutes.get('/timelines/:id', async (c) => {
     events: eventList,
     state: state ?? null,
     evidence: await readPublicUniverseEvidence(db, timeline.id),
+    timeContext: await readWorldTimeContext(db, access, {
+      worldId: world.id,
+      timelineId: timeline.id,
+      visit: await readVisitContext(db, access, { worldId: world.id, timelineId: timeline.id }),
+    }),
   })
 })

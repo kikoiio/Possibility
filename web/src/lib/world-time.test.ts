@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { browserTimeZone, effectiveTimeZone, formatWorldTime } from './world-time'
+import { browserTimeZone, effectiveTimeZone, formatRelativeWorldTime, formatWorldTime } from './world-time'
 
 describe('world time formatting', () => {
   it('formats the same instant in an explicit zone across date boundaries and DST', () => {
@@ -22,5 +22,14 @@ describe('world time formatting', () => {
     expect(effectiveTimeZone('+08:00')).toBe('UTC')
     expect(formatWorldTime('2026-01-01T00:00:00.000Z', null)).toBe('2026-01-01 00:00 (UTC)')
     expect(formatWorldTime('invalid', 'Asia/Tokyo')).toBe('未知时间 (Asia/Tokyo)')
+  })
+
+  it('calculates relative copy from simulated instants only', () => {
+    const now = '2026-01-02T00:00:00.000Z'
+    expect(formatRelativeWorldTime('2026-01-01T23:59:30.000Z', now, 'UTC')).toBe('刚刚')
+    expect(formatRelativeWorldTime('2026-01-01T23:45:00.000Z', now, 'UTC')).toBe('15 分钟前')
+    expect(formatRelativeWorldTime('2026-01-01T22:00:00.000Z', now, 'UTC')).toBe('2 小时前')
+    expect(formatRelativeWorldTime('2026-01-01T00:00:00.000Z', now, 'Asia/Tokyo')).toBe('1 天前')
+    expect(formatRelativeWorldTime('2026-01-02T01:00:00.000Z', now, 'UTC')).toBe('1 小时后')
   })
 })

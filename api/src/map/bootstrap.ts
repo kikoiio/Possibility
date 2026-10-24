@@ -7,6 +7,7 @@ import { worlds } from '../db/schema'
 import { readGuestMapResume, readMapResume } from './resume'
 import type { AccessContext } from '../access/types'
 import { resolveWorldScope } from '../access/world-scope'
+import type { WorldTimeContext } from '@possibility/world-contract'
 
 export interface WorldCapabilities {
   observe: boolean; participate: boolean; editScene: boolean; fork: boolean; compare: boolean; persist: boolean; resetDemo: boolean
@@ -23,6 +24,7 @@ export interface WorldPresentation {
 }
 export interface MapBootstrap {
   access: WorldCapabilities
+  timeContext?: WorldTimeContext
   world: Awaited<ReturnType<typeof worldSnapshot>>
   scene: { status: 'ready'; document: SerializedVoxelDocument | SerializedVoxelSpaces; version: number } | { status: 'missing' } | { status: 'unavailable'; retryable: boolean }
   presentation: WorldPresentation
@@ -30,8 +32,10 @@ export interface MapBootstrap {
   resume: { worldId: string; timelineId: string; spaceId: string; mode: 'create' | 'life' | 'possibility'; updatedAt: string }
 }
 
-function timeOfDay(simNow: string): WorldPresentation['timeOfDay'] {
-  const hour = new Date(simNow).getUTCHours()
+function timeOfDay(simNow: string, timeZone: string): WorldPresentation['timeOfDay'] {
+  const hourPart = new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', hourCycle: 'h23' })
+    .formatToParts(Date.parse(simNow)).find(part => part.type === 'hour')?.value
+  const hour = hourPart ? Number(hourPart) : new Date(simNow).getUTCHours()
   if (hour < 6) return 'night'
   if (hour < 9) return 'dawn'
   if (hour < 17) return 'day'
@@ -49,8 +53,8 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
   if (!scope) return null
   const preference = access.kind === 'user' ? await readMapResume(db, access.userId, worldId)
     : access.kind === 'guest' ? await readGuestMapResume(db, access.sessionId) : null
-  let snapshot = await worldSnapshot(db, worldId, timelineId ?? preference?.timelineId)
-  if (!snapshot && !timelineId) snapshot = await worldSnapshot(db, worldId)
+  let snapshot = await worldSnapshot(db, worldId, timelineId ?? preference?.timelineId, access)
+  if (!snapshot && !timelineId) snapshot = await worldSnapshot(db, worldId, undefined, access)
   if (!snapshot) return null
   let scene: MapBootstrap['scene']
   try {
@@ -74,7 +78,7 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
     timelineId: snapshot.currentTimelineId,
     stateVersion: snapshot.stateVersion,
     simNow: snapshot.simNow,
-    timeOfDay: timeOfDay(snapshot.simNow),
+    timeOfDay: timeOfDay(snapshot.simNow, snapshot.timeContext?.timeZone ?? snapshot.world.timeZone ?? 'UTC'),
     weather: { kind: null, label: null },
     residents,
     locations: snapshot.world.locations.map(location => ({
@@ -95,6 +99,7 @@ export async function loadMapBootstrapForAccess(db: Db, worldId: string, access:
   const mode = preference?.mode === 'create' || preference?.mode === 'possibility' ? preference.mode : 'life'
   return {
     access: scope.capabilities,
+    timeContext: snapshot.timeContext,
     world: snapshot,
     scene,
     presentation,

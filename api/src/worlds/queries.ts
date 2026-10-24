@@ -10,6 +10,10 @@ import { readPinnedWorldModel } from '../world-state/model'
 import { readWorldState } from '../world-state/query'
 import { readPublicUniverseEvidence, type PublicUniverseEvidence } from '../world-state/evidence-status'
 import { effectiveTimeZone } from './time-zone'
+import type { AccessContext } from '../access/types'
+import { readWorldTimeContext } from './time-context'
+import { readVisitContext } from '../life/visit-context'
+import type { WorldTimeContext } from '@possibility/world-contract'
 
 type World = typeof worlds.$inferSelect
 
@@ -37,6 +41,7 @@ export interface WorldSnapshotDto {
   }[]
   currentTimelineId: string
   simNow: string
+  timeContext?: WorldTimeContext
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'
@@ -61,7 +66,7 @@ export interface WorldEventDto {
   dialoguePreview: { personName: string; utterance: string }[] | null
 }
 
-export async function worldSnapshot(db: Db, worldId: string, timelineId?: string): Promise<WorldSnapshotDto | null> {
+export async function worldSnapshot(db: Db, worldId: string, timelineId?: string, access?: AccessContext): Promise<WorldSnapshotDto | null> {
   const world = await db.select().from(worlds).where(eq(worlds.id, worldId)).get()
   if (!world) return null
 
@@ -73,6 +78,14 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     ? tls.find((t) => t.id === timelineId)
     : tls.find((t) => t.parentTimelineId === null) || tls[0]
   if (!current) return null
+  const timeContext = access
+    ? await readWorldTimeContext(db, access, {
+        worldId,
+        timelineId: current.id,
+        visit: await readVisitContext(db, access, { worldId, timelineId: current.id }),
+      })
+    : null
+  if (access && !timeContext) return null
   const revision = await db.select().from(universeRevisions).where(eq(universeRevisions.timelineId, current.id)).get()
   const pinned = revision ? await readPinnedWorldModel(db, worldId, current.id) : null
   const structuredState = await readWorldState(db, worldId, current.id)
@@ -181,6 +194,7 @@ export async function worldSnapshot(db: Db, worldId: string, timelineId?: string
     })),
     currentTimelineId: current.id,
     simNow: current.simNow,
+    timeContext: timeContext ?? undefined,
     stateVersion: revision?.version ?? 0,
     worldModelVersion: revision?.worldModelVersion ?? null,
     evidenceStatus: structuredState.evidenceStatus,

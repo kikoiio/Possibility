@@ -14,6 +14,7 @@
     "assets:thumbnails": "node scripts/run-scene-thumbnails.mjs"
   },
   "dependencies": {
+    "@possibility/world-contract": "^0.0.0",
     "@possibility/voxel-contract": "^0.0.0",
     "pixi.js": "8.22.0",
     "react": "^19.2.8",

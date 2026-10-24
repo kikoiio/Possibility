@@ -39,8 +39,6 @@ const sceneAccess = scopedUserMiddleware((method, path, worldId) => {
     || new RegExp(`^${base}/requests/[^/]+/(?:recover|cancel)$`).test(path)
     || new RegExp(`^${base}/intent/[^/]+/cancel$`).test(path)
 })
-sceneRoutes.use('/worlds/:id/scene', sceneAccess)
-sceneRoutes.use('/worlds/:id/scene/*', sceneAccess)
 
 /** 同一地点一场 scene 最多回应的人数（每人一次 LLM 调用） */
 export const MAX_SCENE_RESPONDERS = 3
@@ -77,7 +75,7 @@ function personaProfile(persona: Person): string {
 }
 
 /** 可交谈地点看板：各地点「清醒且空闲」的回应者人数（地点面板的人数含睡眠/对话中者，易扑空） */
-sceneRoutes.get('/worlds/:id/scene/board', async (c) => {
+sceneRoutes.get('/worlds/:id/scene/board', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
@@ -94,7 +92,7 @@ sceneRoutes.get('/worlds/:id/scene/board', async (c) => {
 })
 
 /** 最近一场连续交谈；读取不产生模型调用或写入。 */
-sceneRoutes.get('/worlds/:id/scene/history', async (c) => {
+sceneRoutes.get('/worlds/:id/scene/history', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -117,7 +115,7 @@ sceneRoutes.get('/worlds/:id/scene/history', async (c) => {
 })
 
 /** 本次场景提交状态：刷新/断流后只读查询，不重跑模型或改动世界。 */
-sceneRoutes.get('/worlds/:id/scene/requests/:requestId', async (c) => {
+sceneRoutes.get('/worlds/:id/scene/requests/:requestId', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
@@ -141,7 +139,7 @@ sceneRoutes.get('/worlds/:id/scene/requests/:requestId', async (c) => {
 })
 
 /** Release a crashed worker's expired reservation; the DB guard prevents that worker committing afterward. */
-sceneRoutes.post('/worlds/:id/scene/requests/:requestId/recover', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/requests/:requestId/recover', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -181,7 +179,7 @@ sceneRoutes.post('/worlds/:id/scene/requests/:requestId/recover', async (c) => {
 })
 
 /** Cancel a live visitor request when its panel closes; late workers are fenced by the DB trigger. */
-sceneRoutes.post('/worlds/:id/scene/requests/:requestId/cancel', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/requests/:requestId/cancel', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const world = await loadOwnedWorld(db, c.req.param('id'), userId)
@@ -225,7 +223,7 @@ sceneRoutes.post('/worlds/:id/scene/requests/:requestId/cancel', async (c) => {
   return c.json({ status: (latest?.status ?? 'missing') as 'failed' | 'pending' | 'completed' | 'missing' })
 })
 
-sceneRoutes.get('/worlds/:id/scene/intent/pending', async (c) => {
+sceneRoutes.get('/worlds/:id/scene/intent/pending', sceneAccess, async (c) => {
   const timelineId = c.req.query('timelineId')
   if (!timelineId) return c.json({ error: 'timelineId 必填' }, 400)
   const db = createDb(c.env.DB)
@@ -246,7 +244,7 @@ sceneRoutes.get('/worlds/:id/scene/intent/pending', async (c) => {
   return c.json({ text: row.content, result: JSON.parse(row.resolutionJson) })
 })
 
-sceneRoutes.post('/worlds/:id/scene/intent/:requestId/cancel', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/intent/:requestId/cancel', sceneAccess, async (c) => {
   const db = createDb(c.env.DB)
   const world = await loadOwnedWorld(db, c.req.param('id'), c.get('user').id)
   if (!world) return c.json({ error: '世界不存在' }, 404)
@@ -260,7 +258,7 @@ sceneRoutes.post('/worlds/:id/scene/intent/:requestId/cancel', async (c) => {
 })
 
 /** Resolve a visitor's natural-language intent to a bounded proposal; never executes it. */
-sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/intent', sceneAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: string; content?: string; requestId?: string }>().catch(() => null)
   const content = body?.content?.trim()
   const requestId = body?.requestId?.trim() || crypto.randomUUID()
@@ -382,7 +380,7 @@ sceneRoutes.post('/worlds/:id/scene/intent', async (c) => {
 })
 
 /** Enter once, then move explicitly. A location selector is never a teleport. */
-sceneRoutes.post('/worlds/:id/scene/position', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/position', sceneAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: string; location?: string; commandId?: string; expectedVersion?: number }>().catch(() => null)
   if (!body?.timelineId || !body.location || !body.commandId || !Number.isSafeInteger(body.expectedVersion)) {
     return c.json({ error: '地点、命令 ID 与状态版本必填' }, 400)
@@ -433,7 +431,7 @@ sceneRoutes.post('/worlds/:id/scene/position', async (c) => {
 })
 
 /** A deliberate, limited speech act: a co-located resident hears a claim as rumor. */
-sceneRoutes.post('/worlds/:id/scene/inform', async (c) => {
+sceneRoutes.post('/worlds/:id/scene/inform', sceneAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: string; recipientId?: string; topic?: string; content?: string; commandId?: string; expectedVersion?: number }>().catch(() => null)
   if (!body?.timelineId || !body.recipientId || !body.topic || !body.content || !body.commandId || !Number.isSafeInteger(body.expectedVersion)) {
     return c.json({ error: '传递消息的参数不完整' }, 400)
@@ -489,7 +487,7 @@ sceneRoutes.post('/worlds/:id/scene/inform', async (c) => {
  * 因此事件流里可像引擎对话一样逐句展开阅读，章节也会把对话内容织进小说；
  * 回应同时写入每个人的记忆流（想法 + 关系记忆），有留言则留给来访者下次收取。SSE 逐句推送。
  */
-sceneRoutes.post('/worlds/:id/scene', async (c) => {
+sceneRoutes.post('/worlds/:id/scene', sceneAccess, async (c) => {
   const body = await c.req.json<{ timelineId?: string; location?: string; content?: string; requestId?: string }>().catch(() => null)
   const content = body?.content?.trim()
   if (!content) return c.json({ error: '内容不能为空' }, 400)

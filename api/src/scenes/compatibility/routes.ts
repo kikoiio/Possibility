@@ -32,8 +32,6 @@ import {
 } from './http'
 
 export const compatibilityRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-// 只拦截兼容端点自身;挂到 /api 后 '*' 会把访客等其他请求一并 401(已发生过的回归)。
-compatibilityRoutes.use('/worlds/:worldId/scene/compatibility/*', authMiddleware)
 
 type RouteContext = Context<{ Bindings: Env; Variables: AuthVariables }>
 
@@ -151,7 +149,7 @@ function spaceDocument(document: StoredSceneDocument, spaceId: string): unknown 
   return spaceId === 'single' && isSerializedVoxelDocument(document) ? document : null
 }
 
-compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/inspection', async c => {
+compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/inspection', authMiddleware, async c => {
   const db = createDb(c.env.DB)
   const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
@@ -167,7 +165,7 @@ compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/inspection', async
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/preflight', async c => {
+compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/preflight', authMiddleware, async c => {
   const body = await c.req.json<{ candidate?: unknown; timelineId?: unknown; representation?: unknown; spaceId?: unknown }>().catch(() => null)
   if (!body || !isCandidate(body.candidate)) return c.json(errorBody('request-mismatch', '候选编辑格式无效'), 400)
   const db = createDb(c.env.DB)
@@ -181,7 +179,7 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/preflight', async
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts', async c => {
+compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts', authMiddleware, async c => {
   const body = await c.req.json<{ draftRequestId?: unknown; purpose?: unknown; target?: unknown; expectedCurrentVersion?: unknown; timelineId?: unknown; representation?: unknown; spaceId?: unknown }>().catch(() => null)
   const target = parseTarget(body?.target)
   if (!body || typeof body.draftRequestId !== 'string' || !body.draftRequestId || !isPurpose(body.purpose)
@@ -212,7 +210,7 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts', async c 
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId', async c => {
+compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId', authMiddleware, async c => {
   const page = parseDraftPageQuery({
     limit: c.req.query('limit'), offset: c.req.query('offset'),
     issuesOffset: c.req.query('issuesOffset'), changesOffset: c.req.query('changesOffset'),
@@ -228,7 +226,7 @@ compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId', 
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts/:draftId/cancel', async c => {
+compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts/:draftId/cancel', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
@@ -240,7 +238,7 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/drafts/:draftId/c
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/confirm', async c => {
+compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/confirm', authMiddleware, async c => {
   const body = await c.req.json<{ draftId?: unknown; requestId?: unknown; expectedCurrentVersion?: unknown; expectedAttempt?: unknown; timelineId?: unknown; representation?: unknown; spaceId?: unknown }>().catch(() => null)
   if (!body || typeof body.draftId !== 'string' || typeof body.requestId !== 'string' || !body.draftId || !body.requestId
     || !Number.isSafeInteger(body.expectedCurrentVersion) || !Number.isSafeInteger(body.expectedAttempt)) return c.json(errorBody('request-mismatch', '确认参数不完整'), 400)
@@ -276,7 +274,7 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/confirm', async c
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/requests/:requestId', async c => {
+compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/requests/:requestId', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
@@ -288,7 +286,7 @@ compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/requests/:requestI
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/requests/:requestId/recover', async c => {
+compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/requests/:requestId/recover', authMiddleware, async c => {
   const body = await c.req.json<{ draftId?: unknown; expectedCurrentVersion?: unknown; expectedAttempt?: unknown; timelineId?: unknown; representation?: unknown; spaceId?: unknown }>().catch(() => null)
   if (!body || typeof body.draftId !== 'string' || !body.draftId || !Number.isSafeInteger(body.expectedCurrentVersion) || !Number.isSafeInteger(body.expectedAttempt)) {
     return c.json(errorBody('request-mismatch', '恢复参数不完整'), 400)
@@ -312,7 +310,7 @@ compatibilityRoutes.post('/worlds/:worldId/scene/compatibility/requests/:request
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId/spaces/:spaceId', async c => {
+compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId/spaces/:spaceId', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   try {
@@ -325,7 +323,7 @@ compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/drafts/:draftId/sp
   } catch (error) { return fail(c, error) }
 })
 
-compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/source/:version/spaces/:spaceId', async c => {
+compatibilityRoutes.get('/worlds/:worldId/scene/compatibility/source/:version/spaces/:spaceId', authMiddleware, async c => {
   const db = createDb(c.env.DB); const world = await ownerOr404(c, db)
   if (!world) return c.json(errorBody('world-unavailable', '世界不存在'), 404)
   const version = Number(c.req.param('version'))

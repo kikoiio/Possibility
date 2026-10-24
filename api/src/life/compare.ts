@@ -7,6 +7,8 @@ import { createDb, type Db } from '../db/client'
 import { events, personStates, timelines, universeEvidence, universeRevisions, worldFacts, worlds } from '../db/schema'
 import type { Env } from '../index'
 import { publicUniverseEvidence } from '../world-state/evidence-status'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from './visit-context'
 
 /** Keep compare responses bounded while allowing callers to request a smaller view. */
 export const DEFAULT_COMPARE_LIMIT = 100
@@ -238,8 +240,7 @@ export async function compareTimelines(
 
 /** Mount at / (or the application's shared API prefix). GET performs no writes or LLM calls. */
 export const comparisonRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-comparisonRoutes.use('*', authMiddleware)
-comparisonRoutes.get('/worlds/:id/compare', async (c) => {
+comparisonRoutes.get('/worlds/:id/compare', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const world = await db.select({ id: worlds.id }).from(worlds)
     .where(and(eq(worlds.id, c.req.param('id')), eq(worlds.userId, c.get('user').id))).get()
@@ -265,5 +266,10 @@ comparisonRoutes.get('/worlds/:id/compare', async (c) => {
   }
   const comparison = await compareTimelines(db, world.id, left, right, at, limit)
   if (!comparison) return c.json({ error: '时间线不存在' }, 404)
-  return c.json(comparison)
+  const access = { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id }
+  const [leftTimeContext, rightTimeContext] = await Promise.all([
+    readWorldTimeContext(db, access, { worldId: world.id, timelineId: left, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: left }) }),
+    readWorldTimeContext(db, access, { worldId: world.id, timelineId: right, visit: await readVisitContext(db, access, { worldId: world.id, timelineId: right }) }),
+  ])
+  return c.json({ ...comparison, timeContext: { left: leftTimeContext, right: rightTimeContext } })
 })

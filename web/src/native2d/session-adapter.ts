@@ -10,11 +10,13 @@ import type {
   ForkInitialAction,
   ForkResult,
   ForkScenarioInput,
+  SceneEvent,
+  SceneSendInput,
   TimelineComparison,
   WorldSnapshot,
 } from '../api/types'
 import { effectiveTimeZone } from '../lib/world-time'
-import { apiFetch, postSSE } from '../api/client'
+import { apiFetch, sceneApi } from '../api/client'
 import type {
   SceneDefinition,
   WorldEnvironmentFact,
@@ -82,9 +84,8 @@ export class AccountSessionError extends Error {
 export interface AccountSessionRequestOptions {
   readonly request?: <T>(path: string, options?: RequestInit) => Promise<T>
   readonly stream?: (
-    path: string,
-    body: unknown,
-    onEvent: (event: Record<string, unknown>) => void,
+    body: SceneSendInput,
+    onEvent: (event: SceneEvent) => void,
     signal?: AbortSignal,
   ) => Promise<void>
   readonly identity?: AccountSessionIdentity
@@ -106,7 +107,7 @@ export interface AccountSessionAdapter extends WorldSource {
   readonly chat: (
     content: string,
     requestId: string,
-    onEvent: (event: Record<string, unknown>) => void,
+    onEvent: (event: SceneEvent) => void,
     signal?: AbortSignal,
   ) => Promise<void>
   /** Query/recover/cancel use the server's durable request state after SSE loss. */
@@ -234,8 +235,7 @@ export function createAccountSessionAdapter(
   const request = options.request ?? apiFetch
   const stream: NonNullable<AccountSessionRequestOptions['stream']> =
     options.stream ??
-    ((path, body, onEvent, signal) =>
-      postSSE(path, body, onEvent as Parameters<typeof postSSE>[2], signal))
+    ((body, onEvent, signal) => sceneApi.send(initial.worldId, body, onEvent, signal))
   const identity = options.identity ?? { kind: 'anonymous' as const }
   const capabilities = options.capabilities ?? READONLY_ACCOUNT_CAPABILITIES
   let pinnedTimelineId = initial.timelineId ?? null
@@ -303,7 +303,7 @@ export function createAccountSessionAdapter(
   async function chat(
     content: string,
     requestId: string,
-    onEvent: (event: Record<string, unknown>) => void,
+    onEvent: (event: SceneEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {
     requires(capabilities, 'chat')
@@ -312,12 +312,7 @@ export function createAccountSessionAdapter(
       throw new AccountSessionError('聊天需要已确定的 timelineId', 'invalid_scope')
     }
     try {
-      await stream(
-        `/api/worlds/${encodeURIComponent(initial.worldId)}/scene`,
-        { timelineId: currentTimelineId, content, requestId },
-        onEvent,
-        signal,
-      )
+      await stream({ timelineId: currentTimelineId, content, requestId }, onEvent, signal)
     } catch (error) {
       if (isAbortError(error, signal)) throw abortError()
       throw requestFailure(error)

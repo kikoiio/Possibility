@@ -10,7 +10,6 @@ import { gateUniverseWrite } from '../engine/guard'
 import { WorldStateError, type WorldAction } from '../world-state/types'
 
 export const memoryRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-memoryRoutes.use('*', authMiddleware)
 
 /** 归属校验：记忆 → 人物 → 本人 */
 async function loadOwnedMemory(db: ReturnType<typeof createDb>, memoryId: string, userId: string) {
@@ -29,7 +28,7 @@ type MemoryBody = { content?: string; importance?: number; timelineId?: string; 
   personId?: string;
   before?: { type: string; content: string; importance: number; simTime: string | null; createdAt: string; summarized: boolean } }
 
-memoryRoutes.patch('/memories/:id', async (c) => {
+memoryRoutes.patch('/memories/:id', authMiddleware, async (c) => {
   const body = await c.req.json<MemoryBody>().catch(() => null)
   if (!body || (body.content === undefined && body.importance === undefined)) {
     return c.json({ error: '没有要修改的字段' }, 400)
@@ -56,7 +55,7 @@ memoryRoutes.patch('/memories/:id', async (c) => {
 })
 
 /** 删除记忆（人物会立刻忘掉这件事） */
-memoryRoutes.delete('/memories/:id', async (c) => {
+memoryRoutes.delete('/memories/:id', authMiddleware, async (c) => {
   const body = await c.req.json<MemoryBody>().catch(() => null)
   const db = createDb(c.env.DB)
   const memory = await loadOwnedMemory(db, c.req.param('id'), c.get('user').id)

@@ -4,6 +4,7 @@ import { apiFetch, worldsApi } from '../api/client'
 import type { PersonListItem, WorldSummary } from '../api/types'
 import { formatWorldTime } from '../lib/world-time'
 import { buildWorldDisambiguationItems, worldPersonLabel, worldStatusLabel } from '../lib/world-disambiguation'
+import { worldStatusView } from '../lib/world-status'
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   running: { text: '运行中', cls: 'bg-emerald-100 text-emerald-700' },
@@ -60,7 +61,7 @@ export default function Worlds() {
                   <span className="font-medium text-ink">{w.name}</span>
                   {w.isDemo && <span className="rounded-full bg-cinnabar-soft px-2 py-0.5 text-xs text-cinnabar-deep">演示</span>}
                   <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>
-                    {worldStatusLabel(w)}
+                    {worldStatusView(w.status, w.timeContext?.world.view).label || worldStatusLabel(w)}
                   </span>
                   <span className="ml-auto text-xs text-ink-faint">{w.personCount} 个人物</span>
                 </div>

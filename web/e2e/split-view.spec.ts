@@ -29,6 +29,17 @@ async function openSplit(page: Page) {
     const w = window as unknown as ProbeWindow
     return Boolean(w.__voxelEngines?.left && w.__voxelEngines?.right)
   }), { timeout: 30000 }).toBe(true)
+  await expect.poll(() => page.evaluate(() => ['left', 'right'].map(instanceId => {
+    const viewport = document.querySelector(`[data-voxel-instance="${instanceId}"]`)
+    if (!viewport) return `${instanceId}:missing`
+    if (viewport.querySelector('[data-testid="voxel-viewport-error"]')) return `${instanceId}:error`
+    return viewport.querySelector('[data-testid="voxel-viewport-loading"]')
+      ? `${instanceId}:loading`
+      : `${instanceId}:ready`
+  }).join(',')), { timeout: 30000 }).toBe('left:ready,right:ready')
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
 }
 
 test.describe('S1 分屏平行视口(AC1/AC2)', () => {
@@ -120,11 +131,12 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await stubSplitApis(page)
     let snapshotCalls = 0
     let compareCalls = 0
+    let rightRetryRequested = false
     await page.route('**/api/worlds/world-1?*', async (route) => {
       const url = new URL(route.request().url())
       if (url.searchParams.get('timelineId') !== 'timeline-fork') return route.fallback()
       snapshotCalls++
-      if (snapshotCalls <= 2) return route.fulfill({ status: 503, json: { error: 'internal database detail' } })
+      if (!rightRetryRequested) return route.fulfill({ status: 503, json: { error: 'internal database detail' } })
       return route.fulfill({ json: snapshotFor('timeline-fork') })
     })
     await page.route('**/api/worlds/world-1/compare?*', async (route) => {
@@ -138,12 +150,14 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await expect(page.getByTestId('split-compare-summary')).toBeVisible()
     await expect(page.getByTestId('world-canvas-error')).toHaveCount(0)
     const compareCallsBeforeRetry = compareCalls
+    const snapshotCallsBeforeRetry = snapshotCalls
 
+    rightRetryRequested = true
     await page.getByTestId('split-right-retry').click()
-    await expect.poll(() => snapshotCalls, { timeout: 5000 }).toBe(3)
+    await expect.poll(() => snapshotCalls, { timeout: 5000 }).toBe(snapshotCallsBeforeRetry + 1)
     await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
     await expect(page.getByTestId('split-right-error')).toHaveCount(0)
-    expect(snapshotCalls).toBe(3)
+    expect(snapshotCalls).toBe(snapshotCallsBeforeRetry + 1)
     expect(compareCalls).toBe(compareCallsBeforeRetry)
     expect(errors.filter((e) => !e.includes('503'))).toEqual([])
   })
@@ -153,13 +167,14 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await stubSplitApis(page)
     let snapshotCalls = 0
     let compareCalls = 0
+    let retryRequested = false
     await page.route('**/api/worlds/world-1?*', async (route) => {
       snapshotCalls++
       return route.fallback()
     })
     await page.route('**/api/worlds/world-1/compare?*', async (route) => {
       compareCalls++
-      if (compareCalls <= 2) return route.fulfill({ status: 502, json: { error: 'internal provider detail' } })
+      if (!retryRequested) return route.fulfill({ status: 502, json: { error: 'internal provider detail' } })
       return route.fulfill({ json: comparisonFor('timeline-main', 'timeline-fork') })
     })
     await page.goto('/worlds/world-1?mode=possibility&timeline=timeline-main&right=timeline-fork')
@@ -167,11 +182,13 @@ test.describe('S1 分屏平行视口(AC1/AC2)', () => {
     await expect(rightCanvas(page)).toBeVisible({ timeout: 30000 })
     await expect(page.getByTestId('split-compare-error')).toContainText('时间线对照暂时无法读取')
     await expect(page.getByTestId('split-compare-error')).not.toContainText('internal provider detail')
+    const compareCallsBeforeRetry = compareCalls
     const snapshotCallsBeforeRetry = snapshotCalls
+    retryRequested = true
     await page.getByTestId('split-compare-retry').click()
     await expect(page.getByTestId('split-compare-summary')).toBeVisible()
     await expect(page.getByTestId('split-compare-error')).toHaveCount(0)
-    expect(compareCalls).toBe(3)
+    expect(compareCalls).toBe(compareCallsBeforeRetry + 1)
     expect(snapshotCalls).toBe(snapshotCallsBeforeRetry)
     expect(errors.filter((e) => !e.includes('502'))).toEqual([])
   })

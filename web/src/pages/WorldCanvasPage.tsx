@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError, authApi, getGuestToken, getToken, guestMapApi, lifeApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeAuthIdentityChange, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
+import { ApiError, getGuestToken, guestMapApi, mapApi, publicApi, sceneCompatibilityApi, setGuestRequestContext, subscribeWorldStream, worldSceneApi, worldsApi } from '../api/client'
 import type {
-  CompatibilityPurpose, ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneTarget, SceneHistoryRevision, SceneScope, TimelineComparison, WorldSnapshot,
+  ForkInitialAction, ForkScenario, ForkScenarioInput, ForkResult, HistoryRange, SceneCandidate, SceneHistoryRevision, SceneScope, WorldSnapshot,
 } from '../api/types'
 import type { SceneHistoryViewState } from '../components/scene/SceneHistoryPanel'
-import { SceneCompatibilityPanel } from '../components/scene/SceneCompatibilityPanel'
-import { SceneRepairPreview } from '../components/scene/SceneRepairPreview'
-import { createCompatibilitySession, type CompatibilitySession, type CompatibilitySessionClient } from '../scene/compatibility-session'
-import { startCompatibilityPolling } from '../scene/compatibility-polling'
-import type { CompatibilityContinuation } from '../scene/compatibility-store'
+import { useWorldSceneCompatibility } from '../scene/useWorldSceneCompatibility'
 import { buildSceneOverlay } from '../scene/life/overlay'
 import { SceneTimelineGuard } from '../scene/life/timelineGuard'
 import { RequestScopeController } from '../world/requestScope'
@@ -19,12 +15,15 @@ import { parseVoxelDocument, parseVoxelSpaces } from '../voxel/flags'
 import { deserialize, serialize, type SerializedVoxelDocument, type VoxelDocument } from '@possibility/voxel-contract'
 import { planEditsViaApi, EditPlanRequestError } from '../voxel/plan-edits'
 import type { VoxelEngine } from '../voxel/engine'
-import { buildAlignedAxis, filterAt, type AxisMarker } from '../world/alignedTimeline'
+import type { AxisMarker } from '../world/alignedTimeline'
+import { useWorldVisit } from '../world/useWorldVisit'
+import { useWorldTimelineComparison } from '../world/useWorldTimelineComparison'
 import EvidenceNotice from '../components/world/EvidenceNotice'
 import GlobalCapBanner from '../components/GlobalCapBanner'
 import { GuestWorldMap } from '../components/map/GuestWorldMap'
 import MapSelectionCard from '../components/map/MapSelectionCard'
 import { formatWorldTime } from '../lib/world-time'
+import { visitStageLabel } from '../lib/visit-stage'
 import { timelineOptionLabel } from '../world/timeline-display'
 import WorldTimeZoneSetting from '../components/world/WorldTimeZoneSetting'
 import WorldHeader from '../components/world/shell/WorldHeader'
@@ -36,11 +35,6 @@ import { createPresentationRuntime } from '../components/world/presentation/pres
 import { readPresentationRoute, updatePanePresentation, updatePaneSpace, updatePaneTimeline, updateRightPaneTarget } from '../components/world/presentation/presentation-route'
 import { createPresentationStateStore } from '../lib/presentation-state'
 import { createGuestClaimStore, createInitialGuestClaimContext } from '../guest/claim-store'
-
-type AsyncReadState<T> =
-  | { status: 'closed' | 'loading' }
-  | { status: 'ready'; value: T }
-  | { status: 'error'; message: string }
 
 /**
  * 世界画布页(S2 起唯一世界页):体素视口 + 全部世界能力(分叉/干预/在场/对照/LLM/生命周期)。
@@ -54,28 +48,20 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   const [worldChoices, setWorldChoices] = useState<{ id: string; name: string; hasScene: boolean }[]>([])
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
   const activeTimelineId = timelineId ?? snapshot?.currentTimelineId ?? ''
-  const archived = snapshot?.world.status === 'archived' || snapshot?.timelines.find(item => item.id === activeTimelineId)?.status === 'archived'
   const sceneTimelineRef = useRef(activeTimelineId); sceneTimelineRef.current = activeTimelineId
+  const archived = snapshot?.world.status === 'archived' || snapshot?.timelines.find(item => item.id === activeTimelineId)?.status === 'archived'
   const [sceneDoc, setSceneDoc] = useState<unknown>(null)
   const [sceneMissing, setSceneMissing] = useState(false)
   const [sceneUnsupported, setSceneUnsupported] = useState(false)
   const [canEditScene, setCanEditScene] = useState(false)
   const [resumeSpaceId, setResumeSpaceId] = useState('exterior')
   const [resumeMode, setResumeMode] = useState<'life' | 'possibility'>('life')
-  const [rightSceneRead, setRightSceneRead] = useState<AsyncReadState<WorldSnapshot>>({ status: 'closed' })
-  // S1 分屏:右线显式选择(URL ?right= 驱动)、完整对照数据、拖档对齐时刻、相机联动
-  const [rightTimelineId, setRightTimelineId] = useState<string | null>(() => search.get('right'))
-  const [comparisonRead, setComparisonRead] = useState<AsyncReadState<TimelineComparison>>({ status: 'closed' })
-  const rightSnapshotRequestId = useRef(0)
-  const comparisonRequestId = useRef(0)
-  const [scrubAt, setScrubAt] = useState<string | null>(null)
   const [cameraLinked, setCameraLinked] = useState(true)
   const [sharedPose, setSharedPose] = useState<OrbitPose | null>(null)
   const [splitWalk, setSplitWalk] = useState<{ left: boolean; right: boolean }>({ left: false, right: false })
   const [smallSide, setSmallSide] = useState<'left' | 'right'>('left')
   const [selectedSplitEvent, setSelectedSplitEvent] = useState<string | null>(null)
   const splitEventEls = useRef(new Map<string, HTMLElement>())
-  const [mode, setMode] = useState<'life' | 'possibility'>(() => search.get('mode') === 'possibility' ? 'possibility' : 'life')
   const [error, setError] = useState('')
   const persistClaimIntent = useCallback(() => {
     if (!guest || !guestSession) return true
@@ -90,6 +76,17 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     setGuestRequestContext(guest)
     return () => setGuestRequestContext(false)
   }, [guest])
+  const timelineComparison = useWorldTimelineComparison({ worldId, snapshot, readonly, guest, search, setSearch })
+  const {
+    mode, setMode, rightTimelineId, setRightTimelineId, rightSceneRead, retryRightScene,
+    comparisonRead, retryComparison, otherSnapshot, comparison, compareSummary, updateRightTimeZone,
+    scrubAt, setScrubAt, axis, alignedComparison, splitEvents, swapSplit, closeSplit,
+  } = timelineComparison
+  useEffect(() => {
+    if (mode !== 'possibility') {
+      setSplitWalk(current => current.left || current.right ? { left: false, right: false } : current)
+    }
+  }, [mode])
   const [regeneratingDemo, setRegeneratingDemo] = useState(false)
   const [regenerateError, setRegenerateError] = useState('')
   const [sceneHistoryState, setSceneHistoryState] = useState<SceneHistoryViewState | { status: 'closed' }>({ status: 'closed' })
@@ -107,102 +104,17 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     setRestoringRevision(false)
     setRestoreError('')
   }, [worldId, activeTimelineId])
-  // A1 场景兼容:诊断/修复草稿/确认/结果恢复全部经会话状态机驱动,面板只读展示 continuation。
-  const [compatContinuation, setCompatContinuation] = useState<CompatibilityContinuation | null>(null)
-  const [compatReadyScope, setCompatReadyScope] = useState<{ worldId: string; timelineId: string; authIdentityEpoch: number } | null>(null)
-  const [authIdentityEpoch, setAuthIdentityEpoch] = useState(0)
-  const authIdentityEpochRef = useRef(0)
-  const compatSessionRef = useRef<CompatibilitySession | null>(null)
-  const pendingCompatibilityRef = useRef<{ purpose: CompatibilityPurpose; target: SceneTarget } | null>(null)
-  useEffect(() => subscribeAuthIdentityChange(() => {
-    authIdentityEpochRef.current += 1
-    setAuthIdentityEpoch(authIdentityEpochRef.current)
-  }), [])
-  useEffect(() => {
-    let active = true
-    let unsubscribe: (() => void) | null = null
-    let session: CompatibilitySession | null = null
-    const identityEpoch = authIdentityEpoch
-    const identityToken = guest ? getGuestToken() : getToken()
-    if (!activeTimelineId) return
-    setCompatReadyScope(null)
-    setCompatContinuation(null)
-    const client: CompatibilitySessionClient = {
-      inspect: input => sceneCompatibilityApi.inspection(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.target.kind === 'history' ? {
-        version: input.target.version,
-        targetRevisionId: input.target.targetRevisionId,
-      } : {}),
-      createDraft: input => sceneCompatibilityApi.createDraft(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, {
-        draftRequestId: input.draftRequestId,
-        purpose: input.purpose,
-        target: input.target,
-        expectedCurrentVersion: input.expectedCurrentVersion,
-      }),
-      submit: input => sceneCompatibilityApi.confirm(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, {
-        draftId: input.draftId,
-        requestId: input.requestId,
-        expectedCurrentVersion: input.expectedCurrentVersion,
-        expectedAttempt: input.expectedAttempt,
-      }),
-      query: input => sceneCompatibilityApi.readRequest(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.requestId),
-      recover: input => sceneCompatibilityApi.recoverRequest(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, input.requestId, {
-        draftId: input.draftId,
-        expectedCurrentVersion: input.expectedCurrentVersion,
-        expectedAttempt: input.expectedAttempt,
-      }),
-    }
-    const attachAuthorizedSession = async () => {
-      try {
-        const actorKey = guest ? 'guest' : (await authApi.me({ redirectOnUnauthorized: false })).user.id
-        if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
-        // Do not load locally cached draft metadata until the server confirms this
-        // identity can read the requested world's current scene.
-        const current = await worldSceneApi.get(worldId, { timelineId: activeTimelineId, representation: 'voxel' }, { redirectOnUnauthorized: false })
-        if (!active || authIdentityEpochRef.current !== identityEpoch || (guest ? getGuestToken() : getToken()) !== identityToken) return
-        session = createCompatibilitySession({ scope: { actorKey: `${actorKey}\u001f${activeTimelineId}\u001fvoxel`, worldId }, client })
-        compatSessionRef.current = session
-        unsubscribe = session.subscribe(setCompatContinuation)
-        setCompatContinuation(session.snapshot())
-        setCompatReadyScope({ worldId, timelineId: activeTimelineId, authIdentityEpoch: identityEpoch })
-        const pending = pendingCompatibilityRef.current
-        if (pending) {
-          pendingCompatibilityRef.current = null
-          void session.check({
-            purpose: pending.purpose,
-            target: pending.target,
-            expectedCurrentVersion: current.status === 'ready' ? current.version : 0,
-          }).catch(() => undefined)
-        }
-      } catch {
-        if (active) {
-          setCompatContinuation(null)
-          setCompatReadyScope(null)
-        }
-      }
-    }
-    void attachAuthorizedSession()
-    return () => {
-      active = false
-      pendingCompatibilityRef.current = null
-      unsubscribe?.()
-      session?.dispose()
-      if (compatSessionRef.current === session) compatSessionRef.current = null
-    }
-  }, [worldId, guest, authIdentityEpoch, activeTimelineId])
-  useEffect(() => {
-    const continuation = compatReadyScope?.worldId === worldId && compatReadyScope.timelineId === activeTimelineId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
-      ? compatContinuation : null
-    const session = compatSessionRef.current
-    if (!session || continuation?.state !== 'submitting' || !continuation.requestId) return
-    return startCompatibilityPolling({
-      query: async () => { await session.queryResult() },
-      isVisible: () => document.visibilityState === 'visible',
-      subscribeVisibility: listener => {
-        document.addEventListener('visibilitychange', listener)
-        return () => document.removeEventListener('visibilitychange', listener)
-      },
-    })
-  }, [worldId, activeTimelineId, compatReadyScope, authIdentityEpoch, compatContinuation?.state, compatContinuation?.requestId])
+  const compatibility = useWorldSceneCompatibility({
+    worldId,
+    timelineId: activeTimelineId,
+    guest,
+    canEdit: canEditScene && !readonly,
+    archived: !!archived,
+    timeZone: snapshot?.world.timeZone,
+    closeSceneHistory,
+  })
+  const openCompatibility = compatibility.open
+  const compatPanel = compatibility.panel
   // S2 再安家:原文字视图能力的覆盖层开关
   const [lifeOpen, setLifeOpen] = useState(false)
   const [forkPrefill, setForkPrefill] = useState<{ key: string; whatIf: string; simTime: string } | null>(null)
@@ -279,14 +191,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (!activeTimelineId) return
     presentationStore.setCamera({ worldId, timelineId: activeTimelineId, spaceId: 'exterior', presentation: 'voxel3d' }, { kind: 'voxel3d', version: 1, pose })
   }, [activeTimelineId, presentationStore, worldId])
-  const otherSnapshot = rightSceneRead.status === 'ready' ? rightSceneRead.value : null
-  const comparison = comparisonRead.status === 'ready' ? comparisonRead.value : null
-  const compareSummary = comparison ? {
-    facts: comparison.differences.facts.length,
-    states: comparison.differences.states.length,
-    events: comparison.differences.events.leftOnly.length + comparison.differences.events.rightOnly.length,
-  } : null
-
   const read = useCallback(async () => {
     setError(''); setSceneMissing(false); setSceneUnsupported(false)
     const scopes = requestScope.current!
@@ -331,6 +235,16 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   }, [worldId, timelineId, readonly, guest])
   useEffect(() => { void read() }, [read])
 
+  useWorldVisit({
+    target: !readonly && snapshot && activeTimelineId ? { worldId, timelineId: activeTimelineId, guest } : null,
+    onContext: context => {
+      if (context.worldId !== worldId || context.timelineId !== activeTimelineId) return
+      setSnapshot(current => current?.world.id === worldId && current.currentTimelineId === activeTimelineId
+        ? { ...current, timeContext: context } : current)
+    },
+    onError: message => setError(message),
+  })
+
   useEffect(() => {
     if (readonly || guest) return
     let active = true
@@ -362,97 +276,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     return () => { active = false; unsubscribe() }
   }, [snapshot?.currentTimelineId, worldId, timelineId, readonly, guest])
 
-  const readRightScene = useCallback(async (targetId: string) => {
-    const requestId = ++rightSnapshotRequestId.current
-    setRightSceneRead({ status: 'loading' })
-    try {
-      const result = await worldsApi.snapshot(worldId, targetId)
-      if (requestId !== rightSnapshotRequestId.current || result.currentTimelineId !== targetId) return
-      setRightSceneRead({ status: 'ready', value: result })
-    } catch (error) {
-      if (requestId === rightSnapshotRequestId.current) setRightSceneRead({ status: 'error', message: '另一种发展暂时无法读取。请重试，或关闭分屏。' })
-    }
-  }, [worldId])
-
-  const readComparison = useCallback(async (currentId: string, targetId: string) => {
-    const requestId = ++comparisonRequestId.current
-    setComparisonRead({ status: 'loading' })
-    try {
-      const result = await lifeApi.compare(worldId, currentId, targetId)
-      if (requestId !== comparisonRequestId.current) return
-      setComparisonRead({ status: 'ready', value: result })
-    } catch {
-      if (requestId === comparisonRequestId.current) setComparisonRead({ status: 'error', message: '时间线对照暂时无法读取。请重试。' })
-    }
-  }, [worldId])
-
-  useEffect(() => {
-    const currentId = snapshot?.currentTimelineId
-    const target = snapshot?.timelines.find(item => item.id === rightTimelineId && item.id !== currentId)
-      ?? snapshot?.timelines.find(item => item.id !== currentId)
-    if (mode !== 'possibility' || !currentId || !target) {
-      ++rightSnapshotRequestId.current; ++comparisonRequestId.current
-      setRightSceneRead({ status: 'closed' }); setComparisonRead({ status: 'closed' })
-      if (mode !== 'possibility') { setScrubAt(null); setSplitWalk({ left: false, right: false }) }
-      return
-    }
-    if (target.id !== rightTimelineId) setRightTimelineId(target.id) // 缺省回退:第一条其他线
-    void readRightScene(target.id)
-    void readComparison(currentId, target.id)
-    return () => { ++rightSnapshotRequestId.current; ++comparisonRequestId.current }
-  }, [mode, snapshot?.currentTimelineId, snapshot?.timelines, rightTimelineId, readRightScene, readComparison])
-
-  const retryRightScene = () => {
-    const currentId = snapshot?.currentTimelineId
-    const targetId = rightTimelineId ?? snapshot?.timelines.find(item => item.id !== currentId)?.id
-    if (currentId && targetId) void readRightScene(targetId)
-  }
-  const retryComparison = () => {
-    const currentId = snapshot?.currentTimelineId
-    const targetId = rightTimelineId ?? snapshot?.timelines.find(item => item.id !== currentId)?.id
-    if (currentId && targetId) void readComparison(currentId, targetId)
-  }
-
-  // 右侧独立 SSE 订阅:右侧事件只驱动右侧 snapshot 刷新(F2 隔离)
-  useEffect(() => {
-    if (mode !== 'possibility' || !otherSnapshot || guest) return
-    const rightId = otherSnapshot.currentTimelineId
-    let active = true
-    let version = otherSnapshot.stateVersion
-    const unsubscribe = subscribeWorldStream(worldId, rightId, event => {
-      if (!active || event.timelineId !== rightId || event.stateVersion <= version) return
-      void worldsApi.snapshot(worldId, rightId).then(next => {
-        if (!active || next.currentTimelineId !== rightId) return
-        version = Math.max(version, next.stateVersion)
-        setRightSceneRead(current => current.status === 'ready' && current.value.currentTimelineId === rightId && current.value.stateVersion < next.stateVersion
-          ? { status: 'ready', value: next } : current)
-      }).catch(() => {})
-    }, { isPublic: readonly, onError: () => {} })
-    return () => { active = false; unsubscribe() }
-  }, [mode, otherSnapshot?.currentTimelineId, worldId, readonly, guest])
-
-  // URL 入口深链(同路由导航不重挂载):mode/right 从地址栏同步进状态
-  useEffect(() => {
-    if (search.get('mode') === 'possibility' && mode !== 'possibility') setMode('possibility')
-    const urlRight = search.get('right')
-    if (urlRight && urlRight !== rightTimelineId) setRightTimelineId(urlRight)
-  }, [search])
-
-  // URL 驱动:mode/right 状态同步回地址栏(入口深链 ?mode=possibility&right=<id>)
-  useEffect(() => {
-    const params = new URLSearchParams(search)
-    let changed = false
-    if (mode === 'possibility') {
-      if (params.get('mode') !== 'possibility') { params.set('mode', 'possibility'); changed = true }
-      if (rightTimelineId && params.get('right') !== rightTimelineId) { params.set('right', rightTimelineId); changed = true }
-    } else {
-      if (params.has('mode')) { params.delete('mode'); changed = true }
-      const presentationComparison = params.has('rightWorld') || params.has('rightPresentation') || params.get('presentation') === 'native2d'
-      if (params.has('right') && !presentationComparison) { params.delete('right'); changed = true }
-    }
-    if (changed) setSearch(params, { replace: true })
-  }, [mode, rightTimelineId, search, setSearch])
-
   const overlay = useMemo(() => snapshot ? buildSceneOverlay(snapshot, snapshot.currentTimelineId) : null, [snapshot])
   const otherOverlay = useMemo(() => otherSnapshot ? buildSceneOverlay(otherSnapshot, otherSnapshot.currentTimelineId) : null, [otherSnapshot])
   // S4 身份统一:事件面板参与者显示名(personId → 姓名,全地点板汇总)
@@ -482,32 +305,7 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     if (!space) return null
     try { return deserialize(JSON.stringify(space.document)) } catch { return null }
   }, [voxelDoc, voxelSpaces, resumeSpaceId])
-  const axis = useMemo(() => splitActive && comparison ? buildAlignedAxis(comparison) : null, [splitActive, comparison])
-  const scrubbed = useMemo(() => axis && scrubAt ? filterAt(axis, scrubAt) : null, [axis, scrubAt])
-  // 拖档对齐:带 simTime 重取对照(防抖),对齐 limitations(状态无历史表等)原文呈现
-  const [alignedComparison, setAlignedComparison] = useState<TimelineComparison | null>(null)
-  useEffect(() => {
-    if (!scrubAt || !snapshot || !otherSnapshot) { setAlignedComparison(null); return }
-    const leftId = snapshot.currentTimelineId
-    const rightId = otherSnapshot.currentTimelineId
-    let active = true
-    const timer = setTimeout(() => {
-      void lifeApi.compare(worldId, leftId, rightId, { simTime: scrubAt })
-        .then((result) => { if (active) setAlignedComparison(result) })
-        .catch(() => { if (active) setAlignedComparison(null) })
-    }, 300)
-    return () => { active = false; clearTimeout(timer) }
-  }, [scrubAt, snapshot, otherSnapshot, worldId])
   const linkActive = cameraLinked && !splitWalk.left && !splitWalk.right
-  const splitEvents = (side: 'left' | 'right', snap: WorldSnapshot | null) => {
-    if (!snap) return []
-    let list = snap.events
-    if (scrubbed) {
-      const ids = new Set([...scrubbed.shared, ...(side === 'left' ? scrubbed.left : scrubbed.right)].map(m => m.eventId))
-      list = list.filter(event => ids.has(event.id))
-    }
-    return list.slice(-5)
-  }
   const handleSelectMarker = useCallback((marker: AxisMarker) => {
     const side = marker.side === 'right' ? 'right' : 'left'
     const key = `${side}:${marker.eventId}`
@@ -515,21 +313,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
     const reduced = typeof window !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
     splitEventEls.current.get(key)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
   }, [])
-  const swapSplit = () => {
-    if (!otherSnapshot) return
-    setRightTimelineId(snapshot!.currentTimelineId)
-    const params = new URLSearchParams(search)
-    params.set('timeline', otherSnapshot.currentTimelineId)
-    setSearch(params)
-  }
-  const closeSplit = (side: 'left' | 'right') => {
-    const params = new URLSearchParams(search)
-    if (side === 'left' && otherSnapshot) params.set('timeline', otherSnapshot.currentTimelineId)
-    params.delete('mode'); params.delete('right')
-    setSearch(params)
-    setMode('life')
-  }
-
   // ── 时间线/世界生命周期(原文字视图顶栏能力,S2 再安家) ──
   const selectTimeline = useCallback(async (next: string | null): Promise<boolean> => {
     if (timelineSwitching.current) return false
@@ -676,34 +459,6 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       if (requestId === sceneHistoryRequestId.current) sceneHistoryLoading.current = false
     }
   }
-  // A1:打开兼容检查旅程(修复当前/恢复历史)。会话内已发布失败/未知状态,面板据此展示,此处不再重复报错。
-  async function openCompatibility(purpose: CompatibilityPurpose, target: SceneTarget) {
-    closeSceneHistory()
-    const session = compatSessionRef.current
-    if (!activeTimelineId || archived) return
-    if (!session) {
-      pendingCompatibilityRef.current = { purpose, target }
-      return
-    }
-    pendingCompatibilityRef.current = null
-    try {
-      const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
-      const current = await worldSceneApi.get(worldId, scope)
-      if (sceneTimelineRef.current !== scope.timelineId || session !== compatSessionRef.current) return
-      const expectedCurrentVersion = current.status === 'ready' ? current.version : 0
-      await session.check({ purpose, target, expectedCurrentVersion })
-    } catch {
-      // 会话已将检查失败/未知状态写入 continuation;提交结果未知时身份保留,可经面板恢复。
-    }
-  }
-  function closeCompatibility() {
-    const session = compatSessionRef.current
-    if (!session) { setCompatContinuation(null); return }
-    const state = session.snapshot().state
-    // A8.2:提交中/结果未知不 reset——恢复身份(requestId/draftId/attempt)必须保留,仅收起面板。
-    if (state === 'submitting' || state === 'unknown') setCompatContinuation(null)
-    else session.reset()
-  }
   async function restoreVersion(revision: SceneHistoryRevision) {
     if (sceneHistoryState.status !== 'ready' || restoringRevision) return
     const scope = { timelineId: activeTimelineId, representation: 'voxel' as const }
@@ -809,42 +564,8 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
   )
   if (!snapshot) return <div className="grid min-h-full place-items-center text-sm text-ink-faint">正在准备这方天地…</div>
 
-  // A1 兼容面板:单空间/多空间(GuestWorldMap)共用同一会话与同一面板,只读预览按草稿惰性加载。
-  const currentCompatContinuation = compatReadyScope?.worldId === worldId && compatReadyScope.timelineId === activeTimelineId && compatReadyScope.authIdentityEpoch === authIdentityEpoch
-    ? compatContinuation : null
-  const compatDraft = currentCompatContinuation?.draft ?? null
-  const compatSourceVersion = currentCompatContinuation?.source?.version ?? null
-  const compatPreview = currentCompatContinuation?.state === 'preview' && compatDraft && compatSourceVersion !== null
-    ? <SceneRepairPreview
-        key={compatDraft.id}
-        spaces={compatDraft.previewSpaces}
-        loadSourceSpace={(sid, signal) => sceneCompatibilityApi.readSourceSpace(worldId,
-          { timelineId: activeTimelineId, representation: 'voxel' }, compatSourceVersion, sid, signal,
-          currentCompatContinuation?.target?.kind === 'history'
-            ? { targetRevisionId: currentCompatContinuation.target.targetRevisionId } : undefined).then(res => res.document)}
-        loadCandidateSpace={(sid, signal) => sceneCompatibilityApi.readDraftSpace(worldId,
-          { timelineId: activeTimelineId, representation: 'voxel' }, compatDraft.id, sid, signal).then(res => res.document)}
-        changes={compatDraft.changes.items}
-        ruleNotes={compatDraft.report?.ruleNotes.items ?? []}
-        timeZone={snapshot.world.timeZone}
-      />
-    : undefined
-  const compatPanel = currentCompatContinuation && currentCompatContinuation.state !== 'idle'
-    ? <SceneCompatibilityPanel sceneScope={{ timelineId: activeTimelineId, representation: 'voxel' }}
-        continuation={currentCompatContinuation}
-        canEdit={canEditScene && !readonly}
-        preview={compatPreview}
-        onBuild={() => void compatSessionRef.current?.build().catch(() => undefined)}
-        onConfirm={() => void compatSessionRef.current?.submit().catch(() => undefined)}
-        onRecheck={() => {
-          const { purpose, target } = currentCompatContinuation
-          if (purpose && target) void openCompatibility(purpose, target)
-        }}
-        onQueryResult={() => void compatSessionRef.current?.queryResult().catch(() => undefined)}
-        onClose={closeCompatibility}
-      />
-    : null
   const worldStatus = snapshot.world.status
+  const statusView = snapshot.timeContext?.world.view
   const running = !archived && worldStatus === 'running'
   const capped = !archived && worldStatus === 'capped'
   const evidenceReadonly = snapshot.evidence.level !== 'complete'
@@ -1076,14 +797,20 @@ export default function WorldCanvasPage({ worldId, readonly = false, guest = fal
       onArchiveWorld={() => void handleArchiveWorld()}
     />
     {canInteract && !snapshot.world.isDemo && <WorldTimeZoneSetting worldId={worldId} timeZone={snapshot.world.timeZone} onSaved={zone => {
-      setSnapshot(current => current ? { ...current, world: { ...current.world, timeZone: zone }, timelines: current.timelines.map(t => ({ ...t, timeZone: zone })) } : current)
-      setRightSceneRead(current => current.status === 'ready' ? { status: 'ready', value: { ...current.value, world: { ...current.value.world, timeZone: zone }, timelines: current.value.timelines.map(t => ({ ...t, timeZone: zone })) } } : current)
+      setSnapshot(current => current ? {
+        ...current,
+        world: { ...current.world, timeZone: zone },
+        timelines: current.timelines.map(t => ({ ...t, timeZone: zone })),
+        timeContext: current.timeContext ? { ...current.timeContext, timeZone: zone } : current.timeContext,
+      } : current)
+      updateRightTimeZone(zone)
     }} />}
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className={`rounded-full px-2 py-0.5 ${running ? 'bg-emerald-100 text-emerald-700' : capped ? 'bg-red-100 text-red-700' : archived ? 'bg-paper-deep text-ink-faint' : 'bg-paper-deep text-ink-soft'}`} data-testid="world-status">
-        {running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停'}
+        {statusView?.label ?? (running ? '运行中' : capped ? '已达今日上限' : archived ? '已归档（冻结可读）' : '已暂停')}
       </span>
-      <span className="text-ink-faint">世界时间 {formatWorldTime(snapshot.simNow, snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
+      <span className="text-ink-faint">世界时间 {formatWorldTime(snapshot.timeContext?.simNow ?? snapshot.simNow, snapshot.timeContext?.timeZone ?? snapshot.world.timeZone)} · 今日调用 {snapshot.world.callsToday}</span>
+      {snapshot.timeContext?.visit.phase && <span className="text-ink-faint">· {visitStageLabel(snapshot.timeContext.visit.phase)}</span>}
     </div>
     {capped && snapshot.world.pauseReason === 'global_daily_cap' && <GlobalCapBanner />}
     {capped && snapshot.world.pauseReason !== 'global_daily_cap' && (

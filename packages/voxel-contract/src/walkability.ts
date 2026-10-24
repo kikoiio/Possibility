@@ -1,5 +1,5 @@
 import { createBlockRegistry } from './registry'
-import { getBlock, inBounds } from './sections'
+import { getBlockAt, inBounds } from './sections'
 import type { SceneWorkControl } from './scene-compatibility'
 import type { BlockRegistry, ValidationIssue, VoxelCoord, VoxelDocument } from './types'
 
@@ -133,9 +133,9 @@ function isStandableAt(ctx: WalkContext, at: VoxelCoord): boolean {
   const { doc, reg } = ctx
   let result = false
   if (inBounds(doc.size, at) && at.y >= 1) {
-    result = standableSurface(reg, getBlock(doc, { x: at.x, y: at.y - 1, z: at.z }))
-      && !blocksMovement(reg, getBlock(doc, at))
-      && !blocksMovement(reg, getBlock(doc, { x: at.x, y: at.y + 1, z: at.z }))
+    result = standableSurface(reg, getBlockAt(doc, at.x, at.y - 1, at.z))
+      && !blocksMovement(reg, getBlockAt(doc, at.x, at.y, at.z))
+      && !blocksMovement(reg, getBlockAt(doc, at.x, at.y + 1, at.z))
   }
   ctx.standableCache.set(k, result)
   return result
@@ -161,7 +161,7 @@ function walkNeighbors(ctx: WalkContext, from: VoxelCoord): WalkEdge[] {
     // 上 1 格台阶:自身头顶第 3 格需非实心(起跳空间)
     const up = { x: flat.x, y: from.y + 1, z: flat.z }
     if (inBounds(doc.size, up) && isStandableAt(ctx, up)
-        && !blocksMovement(reg, getBlock(doc, { x: from.x, y: from.y + 2, z: from.z }))) {
+        && !blocksMovement(reg, getBlockAt(doc, from.x, from.y + 2, from.z))) {
       edges.push({ to: up, kind: 'step' })
       continue
     }
@@ -172,8 +172,8 @@ function walkNeighbors(ctx: WalkContext, from: VoxelCoord): WalkEdge[] {
       continue
     }
     // 跳过同层 1 格间隙:中间格与其上方均可穿越,对面可站立
-    const gapOpen = !blocksMovement(reg, getBlock(doc, flat))
-      && !blocksMovement(reg, getBlock(doc, { x: flat.x, y: flat.y + 1, z: flat.z }))
+    const gapOpen = !blocksMovement(reg, getBlockAt(doc, flat.x, flat.y, flat.z))
+      && !blocksMovement(reg, getBlockAt(doc, flat.x, flat.y + 1, flat.z))
     if (gapOpen) {
       const across = { x: from.x + dx * 2, y: from.y, z: from.z + dz * 2 }
       if (inBounds(doc.size, across) && isStandableAt(ctx, across)) {
@@ -393,10 +393,10 @@ function checkClearance(ctx: WalkContext, flood: FloodResult): ValidationIssue[]
         addWork(ctx) // one voxel considered by the clearance scan
         const at = { x, y, z }
         if (isStandableAt(ctx, at)) continue                       // 正常通道格不管
-        if (blocksMovement(reg, getBlock(doc, at))) continue       // 实心不是通道
-        if (!blocksMovement(reg, getBlock(doc, { x, y: y + 1, z }))) continue // 净高 ≥2,合规
+        if (blocksMovement(reg, getBlockAt(doc, x, y, z))) continue       // 实心不是通道
+        if (!blocksMovement(reg, getBlockAt(doc, x, y + 1, z))) continue // 净高 ≥2,合规
         // 脚下须是真实地面,否则只是「某层的空气」,不是走得进去的矮门洞
-        if (!standableSurface(reg, getBlock(doc, { x, y: y - 1, z }))) continue
+        if (!standableSurface(reg, getBlockAt(doc, x, y - 1, z))) continue
         // 净高 1 格的通道格:仅当邻接可达集时才是「走得到的矮门洞」
         const touchesReached = DIRS.some(([dx, dz]) => {
           addWork(ctx) // one adjacent column checked for reachable clearance
@@ -461,7 +461,7 @@ function approxLighting(ctx: WalkContext) {
     for (let x = 0; x < width; x++) {
       for (let y = height - 1; y >= 0; y--) {
         addWork(ctx) // opaque-roof scan cell
-        const block = getBlock(doc, { x, y, z })
+        const block = getBlockAt(doc, x, y, z)
         if (isOpaque(reg, block)) { topOpaque[z * width + x] = y; break }
       }
     }
@@ -470,7 +470,7 @@ function approxLighting(ctx: WalkContext) {
     for (let z = 0; z < depth; z++) {
       for (let x = 0; x < width; x++) {
         addWork(ctx) // light-source scan cell
-        const emits = reg.get(getBlock(doc, { x, y, z }))?.emitsLight ?? 0
+        const emits = reg.get(getBlockAt(doc, x, y, z))?.emitsLight ?? 0
         if (emits > 0) sources.push({ at: { x, y, z }, level: emits })
       }
     }
@@ -491,7 +491,7 @@ function approxLighting(ctx: WalkContext) {
     for (const [dx, dy, dz] of SIX) {
       addWork(ctx) // one six-neighbor light propagation candidate
       const n = { x: at.x + dx, y: at.y + dy, z: at.z + dz }
-      if (!inBounds(doc.size, n) || isOpaque(reg, getBlock(doc, n))) continue
+      if (!inBounds(doc.size, n) || isOpaque(reg, getBlockAt(doc, n.x, n.y, n.z))) continue
       const nk = key(n)
       if ((blockLight.get(nk) ?? 0) >= level - 1) continue
       blockLight.set(nk, level - 1)
@@ -504,7 +504,7 @@ function approxLighting(ctx: WalkContext) {
   const roofedByStructure = (at: VoxelCoord) => {
     for (let y = at.y + 1; y < height; y++) {
       addWork(ctx) // one cell inspected above a reached cell for an indoor roof
-      const block = getBlock(doc, { x: at.x, y, z: at.z })
+      const block = getBlockAt(doc, at.x, y, at.z)
       if (isOpaque(reg, block)) return reg.get(block)?.category === 'structural'
     }
     return false
@@ -548,9 +548,9 @@ async function checkClearanceCooperatively(ctx: WalkContext, flood: FloodResult,
   for (let y = 1; y < height - 1; y++) for (let z = 0; z < depth; z++) for (let x = 0; x < width; x++) {
     addWork(ctx)
     const at = { x, y, z }
-    if (!isStandableAt(ctx, at) && !blocksMovement(reg, getBlock(doc, at))
-      && blocksMovement(reg, getBlock(doc, { x, y: y + 1, z }))
-      && standableSurface(reg, getBlock(doc, { x, y: y - 1, z }))) {
+    if (!isStandableAt(ctx, at) && !blocksMovement(reg, getBlockAt(doc, x, y, z))
+      && blocksMovement(reg, getBlockAt(doc, x, y + 1, z))
+      && standableSurface(reg, getBlockAt(doc, x, y - 1, z))) {
       const touchesReached = DIRS.some(([dx, dz]) => {
         addWork(ctx)
         return flood.reached.has(key({ x: x + dx, y, z: z + dz }))
@@ -656,7 +656,7 @@ async function checkLightingCooperatively(
   for (let z = 0; z < depth; z++) for (let x = 0; x < width; x++) {
     for (let y = height - 1; y >= 0; y--) {
       addWork(ctx)
-      const block = getBlock(doc, { x, y, z })
+      const block = getBlockAt(doc, x, y, z)
       if (isOpaque(reg, block)) { topOpaque[z * width + x] = y; break }
       if (!await work.tick()) return []
     }
@@ -664,7 +664,7 @@ async function checkLightingCooperatively(
   }
   for (let y = 0; y < height; y++) for (let z = 0; z < depth; z++) for (let x = 0; x < width; x++) {
     addWork(ctx)
-    const emits = reg.get(getBlock(doc, { x, y, z }))?.emitsLight ?? 0
+    const emits = reg.get(getBlockAt(doc, x, y, z))?.emitsLight ?? 0
     if (emits > 0) sources.push({ at: { x, y, z }, level: emits })
     if (!await work.tick()) return []
   }
@@ -681,7 +681,7 @@ async function checkLightingCooperatively(
     if (level > 1) for (const [dx, dy, dz] of SIX) {
       addWork(ctx)
       const next = { x: at.x + dx, y: at.y + dy, z: at.z + dz }
-      if (inBounds(doc.size, next) && !isOpaque(reg, getBlock(doc, next))) {
+      if (inBounds(doc.size, next) && !isOpaque(reg, getBlockAt(doc, next.x, next.y, next.z))) {
         const k = key(next)
         if ((blockLight.get(k) ?? 0) < level - 1) { blockLight.set(k, level - 1); queue.push({ at: next, level: level - 1 }) }
       }
@@ -696,7 +696,7 @@ async function checkLightingCooperatively(
     let indoorRoof = false
     for (let roofY = y + 1; roofY < height; roofY++) {
       addWork(ctx)
-      const block = getBlock(doc, { x, y: roofY, z })
+      const block = getBlockAt(doc, x, roofY, z)
       if (isOpaque(reg, block)) { indoorRoof = reg.get(block)?.category === 'structural'; break }
       if (!await work.tick()) return []
     }

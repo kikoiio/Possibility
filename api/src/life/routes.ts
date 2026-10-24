@@ -11,9 +11,10 @@ import { touchWorldActivity } from '../engine/budget'
 import { WorldStateError } from '../world-state/types'
 import { gateUniverseWrite } from '../engine/guard'
 import { getEventEvidenceDetail, getReturnPage } from './evidence'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from './visit-context'
 
 export const lifeRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-lifeRoutes.use('*', authMiddleware)
 
 async function scope(db: ReturnType<typeof createDb>, worldId: string, timelineId: string | undefined, userId: string) {
   const world = await db.select().from(worlds).where(and(eq(worlds.id, worldId), eq(worlds.userId, userId))).get()
@@ -23,11 +24,17 @@ async function scope(db: ReturnType<typeof createDb>, worldId: string, timelineI
   return tl ? { world, tl } : null
 }
 
-lifeRoutes.get('/worlds/:id/return', async c => {
+lifeRoutes.get('/worlds/:id/return', authMiddleware, async c => {
   const db = createDb(c.env.DB)
   const s = await scope(db, c.req.param('id'), c.req.query('timelineId'), c.get('user').id)
   if (!s) return c.json({ error: '世界或时间线不存在' }, 404)
   const visit = await db.select().from(worldVisits).where(and(eq(worldVisits.userId, c.get('user').id), eq(worldVisits.timelineId, s.tl.id))).get()
+  const access = { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id }
+  const timeContext = await readWorldTimeContext(db, access, {
+    worldId: s.world.id,
+    timelineId: s.tl.id,
+    visit: await readVisitContext(db, access, { worldId: s.world.id, timelineId: s.tl.id }),
+  })
   const requestedLimit = Number(c.req.query('limit') ?? 30)
   if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 50) return c.json({ error: 'limit 必须是 1–50 的整数' }, 400)
   const eventCursor = Number(c.req.query('eventCursor') ?? visit?.eventCursor ?? 0)
@@ -57,7 +64,7 @@ lifeRoutes.get('/worlds/:id/return', async c => {
       provenance = await buildEvidenceSnapshot(db, access, evidenceScope, { limit: 100 })
     } catch { provenance = null }
   }
-  return c.json({ timelineId: s.tl.id, simNow: s.tl.simNow, firstVisit: !visit, cursor: page.nextEventCursor,
+  return c.json({ timelineId: s.tl.id, simNow: s.tl.simNow, firstVisit: !visit, visit: timeContext?.visit, timeContext, cursor: page.nextEventCursor,
     revisionVersion: page.nextRevisionVersion, eventCursor: page.nextEventCursor, nextEventCursor: page.nextEventCursor,
     nextRevisionVersion: page.nextRevisionVersion, hasMore: page.hasMoreEvents || page.hasMoreFacts,
     summary, changes: page.changes, provenance,
@@ -67,7 +74,7 @@ lifeRoutes.get('/worlds/:id/return', async c => {
   })
 })
 
-lifeRoutes.get('/worlds/:id/events/:eventId/evidence', async c => {
+lifeRoutes.get('/worlds/:id/events/:eventId/evidence', authMiddleware, async c => {
   const db = createDb(c.env.DB)
   const timelineId = c.req.query('timelineId')
   if (!timelineId) return c.json({ error: 'timelineId 必填' }, 400)
@@ -78,7 +85,7 @@ lifeRoutes.get('/worlds/:id/events/:eventId/evidence', async c => {
   return c.json(detail)
 })
 
-lifeRoutes.post('/worlds/:id/return/seen', async c => {
+lifeRoutes.post('/worlds/:id/return/seen', authMiddleware, async c => {
   const body = await c.req.json<{ timelineId?: string; cursor?: number; eventCursor?: number; revisionVersion?: number }>().catch(() => null)
   if (!body) return c.json({ error: '无效的事件水位' }, 400)
   const cursor = body.eventCursor ?? body.cursor
@@ -105,7 +112,7 @@ lifeRoutes.post('/worlds/:id/return/seen', async c => {
   return c.json({ ok: true })
 })
 
-lifeRoutes.post('/worlds/:id/commitments/:commitmentId', async c => {
+lifeRoutes.post('/worlds/:id/commitments/:commitmentId', authMiddleware, async c => {
   const body = await c.req.json<{ action?: LifeAction; explanation?: string }>().catch(() => null)
   if (!body?.action || !['accept', 'decline', 'fulfill', 'explain'].includes(body.action)) return c.json({ error: '无效操作' }, 400)
   const db = createDb(c.env.DB)

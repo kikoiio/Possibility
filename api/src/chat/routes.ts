@@ -26,7 +26,6 @@ import { completeResponseAttempt, ensureResponseAttempt, readResponseSnapshot } 
 type Conversation = typeof conversations.$inferSelect
 
 export const chatRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-chatRoutes.use('*', authMiddleware)
 
 const CATCHUP_THRESHOLD_MS = 30 * 60 * 1000 // 30 分钟
 const CHAT_RECOVERY_STALE_MS = 30_000
@@ -55,7 +54,7 @@ async function loadOwnedConversation(
 }
 
 /** get-or-create：每条时间线下与某人只有一个对话 */
-chatRoutes.post('/persons/:id/conversations', async (c) => {
+chatRoutes.post('/persons/:id/conversations', authMiddleware, async (c) => {
   const body = await c.req.json<{ timelineId?: string | null }>().catch(() => ({}) as { timelineId?: string | null })
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
@@ -90,7 +89,7 @@ chatRoutes.post('/persons/:id/conversations', async (c) => {
   return c.json({ id: convo.id, personId: convo.personId, timelineId: convo.timelineId })
 })
 
-chatRoutes.get('/conversations/:id/messages', async (c) => {
+chatRoutes.get('/conversations/:id/messages', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const convo = await loadOwnedConversation(db, c.req.param('id'), c.get('user').id)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
@@ -103,7 +102,7 @@ chatRoutes.get('/conversations/:id/messages', async (c) => {
   return c.json({ messages: list })
 })
 
-chatRoutes.get('/conversations/:id/requests/pending', async (c) => {
+chatRoutes.get('/conversations/:id/requests/pending', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const conversationId = c.req.param('id')
   const userId = c.get('user').id
@@ -296,7 +295,7 @@ async function requestResponse(db: Db, conversationId: string, requestId: string
   }
 }
 
-chatRoutes.get('/conversations/:id/requests/:requestId', async (c) => {
+chatRoutes.get('/conversations/:id/requests/:requestId', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const convo = await loadOwnedConversation(db, c.req.param('id'), c.get('user').id)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
@@ -304,7 +303,7 @@ chatRoutes.get('/conversations/:id/requests/:requestId', async (c) => {
   return response ? c.json(response) : c.json({ error: '聊天请求不存在' }, 404)
 })
 
-chatRoutes.post('/conversations/:id/requests/:requestId/cancel', async (c) => {
+chatRoutes.post('/conversations/:id/requests/:requestId/cancel', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const convo = await loadOwnedConversation(db, c.req.param('id'), c.get('user').id)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
@@ -315,7 +314,7 @@ chatRoutes.post('/conversations/:id/requests/:requestId/cancel', async (c) => {
   return c.json((await requestResponse(db, convo.id, c.req.param('requestId'), c.get('user').id))!)
 })
 
-chatRoutes.post('/conversations/:id/requests/:requestId/recover', async (c) => {
+chatRoutes.post('/conversations/:id/requests/:requestId/recover', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const convo = await loadOwnedConversation(db, c.req.param('id'), c.get('user').id)
   if (!convo) return c.json({ error: '对话不存在' }, 404)
@@ -332,7 +331,7 @@ chatRoutes.post('/conversations/:id/requests/:requestId/recover', async (c) => {
 })
 
 /** 发消息：存 user 消息 → 自主体回合 → SSE 流 → 存 person 消息 */
-chatRoutes.post('/conversations/:id/messages', async (c) => {
+chatRoutes.post('/conversations/:id/messages', authMiddleware, async (c) => {
   const body = await c.req.json<{ content?: string; requestId?: string }>().catch(() => null)
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
@@ -430,7 +429,7 @@ chatRoutes.post('/conversations/:id/messages', async (c) => {
 })
 
 /** 懒惰追赶（F8）：经过时间超过阈值则让 TA 推演这段时间的经历 */
-chatRoutes.post('/conversations/:id/catchup', async (c) => {
+chatRoutes.post('/conversations/:id/catchup', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
   const convo = await loadOwnedConversation(db, c.req.param('id'), userId)

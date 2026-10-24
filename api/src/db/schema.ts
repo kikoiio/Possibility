@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -749,6 +750,50 @@ export const worldVisits = sqliteTable('world_visits', {
   revisionVersion: integer('revision_version').notNull().default(0),
   seenAt: text('seen_at').notNull(),
 }, t => [primaryKey({ columns: [t.userId, t.timelineId] })])
+
+/** Explicit world entry/exit sessions. This is visit metadata, not a world fact. */
+export const worldVisitSessions = sqliteTable('world_visit_sessions', {
+  id: text('id').primaryKey(),
+  principalKey: text('principal_key').notNull(),
+  userId: text('user_id').references(() => users.id),
+  guestSessionId: text('guest_session_id').references(() => guestSessions.id),
+  worldId: text('world_id').notNull().references(() => worlds.id),
+  timelineId: text('timeline_id').notNull().references(() => timelines.id),
+  clientSessionId: text('client_session_id').notNull(),
+  status: text('status').notNull().default('open'),
+  enteredSimTime: text('entered_sim_time').notNull(),
+  enteredAt: text('entered_at').notNull(),
+  exitedSimTime: text('exited_sim_time'),
+  exitedAt: text('exited_at'),
+  lastRequestId: text('last_request_id').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  uniqueIndex('world_visit_session_client').on(t.principalKey, t.worldId, t.timelineId, t.clientSessionId),
+  index('world_visit_session_scope').on(t.principalKey, t.worldId, t.timelineId, t.updatedAt),
+  index('world_visit_session_status').on(t.status, t.updatedAt),
+])
+
+/** Durable idempotency receipts for visit mutations, independent of session cleanup. */
+export const worldVisitRequests = sqliteTable('world_visit_requests', {
+  principalKey: text('principal_key').notNull(),
+  requestId: text('request_id').notNull(),
+  kind: text('kind').notNull(),
+  operation: text('operation'),
+  worldId: text('world_id'),
+  timelineId: text('timeline_id'),
+  clientSessionId: text('client_session_id'),
+  acceptedAt: text('accepted_at').notNull(),
+}, t => [
+  primaryKey({ columns: [t.principalKey, t.requestId] }),
+  check('world_visit_request_binding', sql`(
+    (${t.kind} = 'request' AND ${t.operation} IS NOT NULL AND ${t.operation} IN ('enter', 'leave')
+      AND ${t.worldId} IS NOT NULL AND ${t.timelineId} IS NOT NULL AND ${t.clientSessionId} IS NOT NULL)
+    OR
+    (${t.kind} = 'legacy' AND ${t.operation} IS NULL
+      AND ${t.worldId} IS NULL AND ${t.timelineId} IS NULL AND ${t.clientSessionId} IS NULL)
+  )`),
+])
 
 /** A frozen world definition. Existing worlds receive their first version on first state access. */
 export const worldModelVersions = sqliteTable('world_model_versions', {

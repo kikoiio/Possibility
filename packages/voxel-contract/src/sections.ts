@@ -96,10 +96,20 @@ export function createEmptyWorld(size: VoxelSize, theme: string, id = 'world'): 
 
 // ── 世界级读取：越界返回 'air' ────────────────
 export function getBlock(doc: VoxelDocument, at: VoxelCoord): string {
-  if (!inBounds(doc.size, at)) return AIR
-  const section = doc.sections[sectionKeyOf(at)]
+  return getBlockAt(doc, at.x, at.y, at.z)
+}
+
+export function getBlockAt(doc: VoxelDocument, x: number, y: number, z: number): string {
+  if (x < 0 || x >= doc.size.width || y < 0 || y >= doc.size.height || z < 0 || z >= doc.size.depth) return AIR
+  const cx = Math.floor(x / SECTION_SIZE)
+  const cy = Math.floor(y / SECTION_SIZE)
+  const cz = Math.floor(z / SECTION_SIZE)
+  const section = doc.sections[keyOfSection(cx, cy, cz)]
   if (!section) return AIR
-  return getBlockInSection(section, localIndexOf(at))
+  const lx = x % SECTION_SIZE
+  const ly = y % SECTION_SIZE
+  const lz = z % SECTION_SIZE
+  return getBlockInSection(section, localIndex(lx, ly, lz))
 }
 
 /**

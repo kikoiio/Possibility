@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { authApi, demoApi, getGuestToken, setGuestToken, setToken } from './client'
+import { authApi, chatApi, demoApi, getGuestToken, sceneApi, setGuestToken, setToken } from './client'
+import type { CatchupEvent, ChatMessageEvent, SceneEvent } from './types'
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>()
@@ -11,7 +12,81 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string) { this.values.set(key, value) }
 }
 
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+function sseResponse(...frames: (unknown | string)[]): Response {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) {
+        const data = typeof frame === 'string' ? frame : JSON.stringify(frame)
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+      }
+      controller.close()
+    },
+  })
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+function stubSse(frames: (unknown | string)[]) {
+  vi.stubGlobal('localStorage', new MemoryStorage())
+  const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => sseResponse(...frames))
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+describe('typed POST SSE endpoints', () => {
+  it('decodes chat route events and ignores malformed JSON and unknown event kinds', async () => {
+    const fetchMock = stubSse([
+      '{not-json',
+      { type: 'future-event', payload: 1 },
+      { type: 'text', delta: 'hello', replayed: true },
+      { type: 'pending', requestId: 'request-1' },
+      { type: 'error', message: 'try again', requestId: 'request-1', errorCode: 'retryable' },
+      { type: 'done', requestId: 'request-1', replayed: true },
+    ])
+    const events: ChatMessageEvent[] = []
+
+    await chatApi.send('conversation/a', 'hello', 'request-1', event => events.push(event))
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/conversations/conversation%2Fa/messages')
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ content: 'hello', requestId: 'request-1' })
+    expect(events).toEqual([
+      { type: 'text', delta: 'hello', replayed: true },
+      { type: 'pending', requestId: 'request-1' },
+      { type: 'error', message: 'try again', requestId: 'request-1', errorCode: 'retryable' },
+      { type: 'done', requestId: 'request-1', replayed: true },
+    ])
+  })
+
+  it('decodes catchup agent events and its skipped route event', async () => {
+    stubSse([
+      { type: 'state', state: { simTime: '2026-10-01T00:00:00.000Z', location: 'home', activity: 'resting', mood: 'calm', goal: 'sleep' } },
+      { type: 'skipped' },
+      { type: 'done' },
+    ])
+    const events: CatchupEvent[] = []
+
+    await chatApi.catchup('conversation-1', event => events.push(event))
+
+    expect(events.map(event => event.type)).toEqual(['state', 'skipped', 'done'])
+
+    stubSse([{ type: 'memory', id: 'memory-1', content: 'private detail' }])
+    await expect(chatApi.catchup('conversation-1', () => undefined))
+      .rejects.toMatchObject({ name: 'SseProtocolError' })
+  })
+
+  it('rejects malformed known scene events and propagates consumer exceptions', async () => {
+    stubSse([{ type: 'utterance', personId: 'person-1', name: 'Ada' }])
+    await expect(sceneApi.send('world-1', { timelineId: 'timeline-1', content: 'hello' }, () => undefined))
+      .rejects.toMatchObject({ name: 'SseProtocolError' })
+
+    stubSse([{ type: 'scene_start', dialogueId: 'dialogue-1', location: 'home', participants: ['Ada'] } satisfies SceneEvent])
+    await expect(sceneApi.send('world-1', { timelineId: 'timeline-1', content: 'hello' }, () => {
+      throw new Error('consumer failed')
+    })).rejects.toThrow('consumer failed')
+  })
+})
 
 describe('explicit claim identity', () => {
   it('does not attach guest identity to login and preserves it on authentication failure', async () => {

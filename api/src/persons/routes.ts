@@ -3,15 +3,18 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import { createDb } from '../db/client'
 import { persons, personStates, timelines, universeEvidence, universeRevisions, worldModelVersions, worldPersons, worlds } from '../db/schema'
 import { authMiddleware, type AuthVariables } from '../auth/middleware'
-import { distillPerson, normalizeModel } from '../agent/distill'
+import { distillPerson } from '../agent/distill'
+import { normalizePersonModel } from '../agent/person-model'
 import { BudgetRefusal } from '../engine/guard'
 import type { Env } from '../index'
+import { readWorldTimeContext } from '../worlds/time-context'
+import { readVisitContext } from '../life/visit-context'
+import { effectiveTimeZone } from '../worlds/time-zone'
 
 export const personRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
-personRoutes.use('*', authMiddleware)
 
 /** 蒸馏：描述 → 人物模型草稿（不落库）；预世界调用，按用户当日限额设防 */
-personRoutes.post('/distill', async (c) => {
+personRoutes.post('/distill', authMiddleware, async (c) => {
   const body = await c.req.json<{ description?: string }>().catch(() => ({}) as { description?: string })
   const description = body.description?.trim()
   if (!description) return c.json({ error: '请提供人物描述' }, 400)
@@ -26,7 +29,7 @@ personRoutes.post('/distill', async (c) => {
 })
 
 /** 创建人物；worldName、worldDescription 和 initialState 为兼容旧客户端而忽略 */
-personRoutes.post('/', async (c) => {
+personRoutes.post('/', authMiddleware, async (c) => {
   const body = await c.req
     .json<{
       name?: string
@@ -38,7 +41,7 @@ personRoutes.post('/', async (c) => {
     .catch(() => null)
   const name = body?.name?.trim()
   if (!body || !name || !body.model) return c.json({ error: 'name 与 model 必填' }, 400)
-  const model = normalizeModel(body.model)
+  const model = normalizePersonModel(body.model)
 
   const db = createDb(c.env.DB)
   const userId = c.get('user').id
@@ -54,7 +57,7 @@ personRoutes.post('/', async (c) => {
   return c.json({ id: personId })
 })
 
-personRoutes.get('/', async (c) => {
+personRoutes.get('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const list = await db
     .select()
@@ -68,7 +71,7 @@ personRoutes.get('/', async (c) => {
 })
 
 /** 详情：person + 主线 state + world + timelines */
-personRoutes.get('/:id', async (c) => {
+personRoutes.get('/:id', authMiddleware, async (c) => {
   const db = createDb(c.env.DB)
   const person = await db
     .select()
@@ -98,12 +101,13 @@ personRoutes.get('/:id', async (c) => {
         .where(and(eq(personStates.personId, person.id), eq(personStates.timelineId, mainTimeline.id)))
         .get()
     : null
+  const access = world ? { kind: 'user' as const, userId: c.get('user').id, username: c.get('user').username, role: c.get('user').role, ownerId: c.get('user').id } : null
 
   return c.json({
     person: {
       id: person.id,
       name: person.name,
-      model: JSON.parse(person.modelJson) as unknown,
+      model: normalizePersonModel(JSON.parse(person.modelJson) as unknown),
       createdAt: person.createdAt,
     },
     world: world ?? null,
@@ -114,13 +118,19 @@ personRoutes.get('/:id', async (c) => {
       forkScenario: t.forkScenarioJson ? (JSON.parse(t.forkScenarioJson) as unknown) : null,
       simNow: t.simNow,
       createdAt: t.createdAt,
-      timeZone: world?.timeZone ?? 'UTC',
+      status: t.status,
+      timeZone: effectiveTimeZone(world?.timeZone),
     })),
+    timeContext: world && mainTimeline && access ? await readWorldTimeContext(db, access, {
+      worldId: world.id,
+      timelineId: mainTimeline.id,
+      visit: await readVisitContext(db, access, { worldId: world.id, timelineId: mainTimeline.id }),
+    }) : undefined,
   })
 })
 
 /** 校正人物（F5）：更新 name 与 model */
-personRoutes.put('/:id', async (c) => {
+personRoutes.put('/:id', authMiddleware, async (c) => {
   const body = await c.req.json<{ name?: string; model?: unknown }>().catch(() => null)
   if (!body) return c.json({ error: '请求体无效' }, 400)
   const db = createDb(c.env.DB)
@@ -132,7 +142,9 @@ personRoutes.put('/:id', async (c) => {
   if (!person) return c.json({ error: '人物不存在' }, 404)
 
   const name = body.name?.trim() || person.name
-  const model = body.model ? normalizeModel(body.model) : (JSON.parse(person.modelJson) as unknown)
+  const model = body.model
+    ? normalizePersonModel(body.model)
+    : normalizePersonModel(JSON.parse(person.modelJson) as unknown)
   await db
     .update(persons)
     .set({ name, modelJson: JSON.stringify(model) })

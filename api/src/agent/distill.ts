@@ -4,7 +4,10 @@ import { budgetFromEnv } from '../engine/budget'
 import { BudgetRefusal, userReservation } from '../engine/guard'
 import type { Db } from '../db/client'
 import type { Env } from '../index'
-import type { InitialState, ModelItem, PersonModel } from './types'
+import type { InitialState, PersonModel } from './types'
+import { normalizePersonModel } from './person-model'
+
+export { normalizePersonModel as normalizeModel } from './person-model'
 
 export interface DistillResult {
   name: string
@@ -51,8 +54,11 @@ JSON 结构：
 - unknowns：描述中缺失、但对扮演此人重要的信息（信息空白）
 
 要求：
+- 逐条对照用户描述：只有描述明确表达的模型内容才能标 "known"（确知）。可以忠实改写，但不得增加事实、提高确定性或补入人物类型常见但用户没说的信息。
+- 模型自行补充的性格、经历、关系、能力和其他内容一律标 "inferred"（推断）；来源不清楚或无法可靠判断时也选 "inferred"，绝不猜成 "known"。
+- 每条模型条目的 provenance 必须明确输出为 "known" 或 "inferred"；不要因为人物描述整体可信而把补写内容标成确知。
+- 描述中明确说不知道、尚未确定或无法得知的信息放入独立 unknowns，不要改写成确定事实。
 - 描述中明确给出的信息（人名、年龄、地点、职业等）必须原样使用，不得改名、不得泛化成"某城市"、不得标注"待定"。
-- provenance：描述里明确说的标 "known"（确知），合理推测的标 "inferred"（推断）。
 - unknowns 至少 2 条（除非描述极其详尽）。
 - 每层 2-6 条，简明具体，避免空话。
 - 世界背景适合这个人物的日常生活。
@@ -67,49 +73,13 @@ function extractJson(raw: string): unknown {
   return JSON.parse(cleaned.slice(start, end + 1))
 }
 
-function toItems(v: unknown): ModelItem[] {
-  if (!Array.isArray(v)) return []
-  const out: ModelItem[] = []
-  for (const it of v) {
-    if (typeof it === 'string' && it.trim()) {
-      out.push({ text: it.trim(), provenance: 'inferred' })
-    } else if (it && typeof it === 'object') {
-      const text = String((it as { text?: unknown }).text ?? '').trim()
-      if (!text) continue
-      const provenance = (it as { provenance?: unknown }).provenance === 'known' ? 'known' : 'inferred'
-      out.push({ text, provenance })
-    }
-  }
-  return out
-}
-
-function toStrings(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  return v.map((s) => String(s ?? '').trim()).filter(Boolean)
-}
-
-/** 把任意输入归一化为合法 PersonModel（缺层补空数组） */
-export function normalizeModel(v: unknown): PersonModel {
-  const m = (v ?? {}) as Record<string, unknown>
-  return {
-    identity: toItems(m.identity),
-    behavior: toItems(m.behavior),
-    speech: toItems(m.speech),
-    skills: toItems(m.skills),
-    memories: toItems(m.memories),
-    relationships: toItems(m.relationships),
-    boundaries: toItems(m.boundaries),
-    unknowns: toStrings(m.unknowns),
-  }
-}
-
 function normalizeDistill(raw: unknown): DistillResult {
   const r = (raw ?? {}) as Record<string, unknown>
   const name = String(r.name ?? '').trim() || '未命名'
   const state = (r.initialState ?? {}) as Record<string, unknown>
   return {
     name,
-    model: normalizeModel(r.model),
+    model: normalizePersonModel(r.model),
     worldName: String(r.worldName ?? '').trim() || `${name}的世界`,
     worldDescription: String(r.worldDescription ?? '').trim() || '一个普通的世界。',
     initialState: {

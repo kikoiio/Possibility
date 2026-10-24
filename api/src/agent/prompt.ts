@@ -2,11 +2,13 @@ import type { ResidentPromptContext } from './context'
 import type { ModelItem } from './types'
 import { formatWorldTime } from '../worlds/time-zone'
 
+export function renderModelItem(item: ModelItem): string {
+  return `- ${item.text}${item.provenance === 'known' ? '' : '（推断）'}`
+}
+
 function items(title: string, list: ModelItem[]): string {
   if (!list.length) return ''
-  const lines = list.map(
-    (i) => `- ${i.text}${i.provenance === 'inferred' ? '（推断）' : ''}`,
-  )
+  const lines = list.map(renderModelItem)
   return `## ${title}\n${lines.join('\n')}`
 }
 
@@ -91,9 +93,7 @@ export function buildSystemPrompt(ctx: ResidentPromptContext): string {
   const unknowns = model.unknowns.length
     ? model.unknowns.map((u) => `- ${u}`).join('\n')
     : '- （暂无明确标注的未知项）'
-  const boundaryLines = model.boundaries.length
-    ? model.boundaries.map((b) => `- ${b.text}`).join('\n')
-    : ''
+  const boundaryLines = model.boundaries.map(renderModelItem).join('\n')
 
   const sections = [
     `# 你是 ${ctx.person.name}\n你是用户所认识/描述之人的一个 Version（版本）。以下是你的人物模型，带"（推断）"的条目是合理推测而非确证。`,

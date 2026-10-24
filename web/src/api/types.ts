@@ -1,5 +1,8 @@
 /** 与后端对齐的数据类型 */
 
+import type { TimelineStatus, VisitContext, WorldStatus, WorldTimeContext } from '@possibility/world-contract'
+export type { StatusView, TimelineStatus, VisitContext, VisitPhase, WorldStatus, WorldStatusReason, WorldTimeContext } from '@possibility/world-contract'
+
 export type Provenance = 'known' | 'inferred'
 
 export interface ModelItem {
@@ -98,7 +101,9 @@ export interface TimelineSummary {
   forkScenario: ForkScenario | null
   simNow: string
   createdAt: string
+  status?: TimelineStatus
   timeZone?: string
+  timeContext?: WorldTimeContext
 }
 
 export interface PersonDetail {
@@ -206,6 +211,7 @@ export interface TimelineDetail {
   events: TimelineEvent[]
   state: PersonState | null
   evidence: PublicUniverseEvidence
+  timeContext?: WorldTimeContext
 }
 
 export interface HomeData {
@@ -220,30 +226,48 @@ export interface HomeData {
     simNow: string
     timeZone?: string
     eventCount: number
+    timeContext?: WorldTimeContext
   }[]
   worlds: {
     id: string
     name: string
-    status: 'running' | 'paused' | 'capped'
+    status: WorldStatus
     pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
     isDemo: boolean
     simNow: string | null
     timeZone?: string
     personCount: number
     todayEventCount: number
+    timeContext?: WorldTimeContext
   }[]
 }
 
-/** SSE 事件（后端 agent 事件 + 路由级事件） */
 export type AgentStreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'event'; id: string; simTime: string; title: string; description: string }
   | { type: 'state'; state: PersonState }
   | { type: 'memory'; id: string; content: string }
-  | { type: 'timeline'; timelineId: string }
+  | { type: 'done'; llmCalls?: number; error?: string }
+
+export type StreamFailureEvent = { type: 'error'; message: string; requestId?: string; errorCode?: string }
+
+export type ChatMessageEvent =
+  | { type: 'text'; delta: string; replayed?: true }
+  | Extract<AgentStreamEvent, { type: 'event' | 'state' | 'memory' }>
+  | { type: 'done'; llmCalls?: number; error?: string; requestId?: string; replayed?: true }
+  | StreamFailureEvent
+  | { type: 'pending'; requestId: string }
+
+export type CatchupEvent =
+  | Extract<AgentStreamEvent, { type: 'text' | 'event' | 'state' | 'done' }>
+  | StreamFailureEvent
   | { type: 'skipped' }
-  | { type: 'error'; message: string }
-  | { type: 'done'; llmCalls?: number; fork?: ForkResult; error?: string }
+
+export type PersonTimelineForkEvent =
+  | Exclude<AgentStreamEvent, { type: 'done' | 'memory' }>
+  | { type: 'timeline'; timelineId: string }
+  | { type: 'done'; llmCalls?: number; error?: string; fork?: ForkResult }
+  | StreamFailureEvent
 
 /* ===== 阶段二：活的世界 ===== */
 
@@ -256,7 +280,7 @@ export interface WorldSummary {
   id: string
   name: string
   description: string
-  status: 'running' | 'paused' | 'capped' | 'archived'
+  status: WorldStatus
   pauseReason: 'manual' | 'daily_cap' | 'global_daily_cap' | 'idle' | null
   isDemo: boolean
   hasScene: boolean
@@ -266,6 +290,7 @@ export interface WorldSummary {
   simNow: string | null
   timeZone?: string
   createdAt: string
+  timeContext?: WorldTimeContext
 }
 
 export interface WorldDraft {
@@ -282,6 +307,7 @@ export interface TimelineInfo {
   createdAt: string
   forkScenario: ForkScenario | null
   timeZone?: string
+  timeContext?: WorldTimeContext
 }
 
 export interface WorldEventItem {
@@ -338,6 +364,7 @@ export interface TimelineComparison {
     events: { shared: ComparisonEvent[]; leftOnly: ComparisonEvent[]; rightOnly: ComparisonEvent[] }
   }
   limitations: string[]
+  timeContext?: { left: WorldTimeContext | null; right: WorldTimeContext | null }
 }
 
 export interface WorldSnapshot {
@@ -356,6 +383,7 @@ export interface WorldSnapshot {
   currentTimelineId: string
   simNow: string
   timeZone?: string
+  timeContext?: WorldTimeContext
   stateVersion: number
   worldModelVersion: number | null
   evidenceStatus: 'structured' | 'legacy'
@@ -572,6 +600,14 @@ export type SceneEvent =
   | { type: 'error'; message: string }
   | { type: 'done' }
 
+export interface SceneSendInput {
+  timelineId: string
+  location?: string
+  content: string
+  dialogueId?: string
+  requestId?: string
+}
+
 /* ===== 世界记得你：留言与与你有关的动静 ===== */
 
 export interface PersonaMessage {
@@ -621,6 +657,8 @@ export interface ReturnBrief {
   summary: string; changes: ReturnChange[]
   provenance?: ProvenanceSnapshot | null
   events: ReturnEvent[]; commitments: CommitmentView[]; unread: number
+  visit?: VisitContext
+  timeContext?: WorldTimeContext
 }
 export interface EventEvidenceDetail {
   timelineId: string
