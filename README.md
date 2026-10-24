@@ -1,21 +1,20 @@
 # Wispiva
 
-Wispiva 的需求正在重新评估。仓库保留了世界、人物、时间线分叉、对话和场景展示等现有实现，供后续评估与开发使用；这些实现不构成新一轮产品范围或交付承诺。
+一个给第一用户（作者本人）的平行世界模拟器：世界持续运转，随时 fork、修改任意设定，观察不同分支的命运分岔。
 
-仓库：https://github.com/kikoiio/Wispiva
+## 核心需求
 
-## 开发入口
+- 持续运转的世界，时间与真实时钟耦合（默认 24 倍速起，可加速、可暂停）。
+- 任意时刻可 fork；可自由批量修改角色、事件、世界设定，确认后生成新分支继续运行。
+- 纯 LLM 驱动的事件引擎，不预设固定行为规则；prompt 携带角色现状。
+- 实时观看必须有画面，2D 与 3D 渲染并行提供。
+- 完整历史 log，可回查任何分支（包括离开观看的分支）。
+- 带 LLM 的世界/角色编辑器。
+- 默认本机运行（进程不在则世界冻结）；支持自托管云服务器实现 7×24 常驻。
+- LLM 调用节拍与成本上限由用户配置。
 
-项目使用 npm workspaces：`web` 为 React/Vite 客户端，`api` 为 Hono/Cloudflare Worker 服务，`packages/*` 为共享契约。
+完整需求见 [docs/requirements.md](docs/requirements.md)。
 
-- `npm run dev`：启动 Web、API 与模拟节拍进程。
-- `npm run db:migrate`：应用本地 D1 迁移。
-- 各工作区的构建和测试命令见对应 `package.json`；工具用途见[脚本说明](scripts/README.md)。
+## 状态
 
-当前没有 GitHub Actions 工作流。源码、配置和测试文件的存在不代表部署可用或功能验证通过。`docs/` 是被 Git 忽略的本地代码导航，不随仓库克隆获得，也不上传。
-
-## 兼容标识
-
-项目和内部包使用 `wispiva` / `@wispiva/*`。浏览器存储、IndexedDB、事件、DOM 标识中的 `possibility` 前缀，以及 `X-Possibility-Guest` 请求头、访客哈希和幂等键命名空间仍用于兼容现有数据与请求。
-
-`mode=possibility` 是现有产品模式值。修改这些标识前，需要核对读写双方及迁移方式。
+从零重建中。旧实现（世界/人物/时间线分叉/场景展示）已删除，可从 git 历史 `f0c207e` 查看。

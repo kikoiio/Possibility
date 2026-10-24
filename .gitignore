@@ -1,26 +1,12 @@
-node_modules
-dist
-.dev.vars
-.dev.vars.k1-test
-.wrangler
-api/wrangler.staging-test.toml
+node_modules/
+dist/
+dist-ssr/
 *.local
+.env
+.env.*
+!.env.example
 .DS_Store
-.playwright-mcp
-# 项目文档仅保留在本地，不提交到 GitHub
-/docs/
-/development-docs/
-.agents
-.codex
-.claude
-.git
-
-
-# LLM 重建产物与本地批处理输出
-out/
-.worktrees/
-.cache/
-
-# 本地下载的 CI 浏览器验收产物
-/artifacts/u*-browser-*/
-/artifacts/u*-rerun-*/
+.local-trash/
+coverage/
+.vite/
+.wrangler/

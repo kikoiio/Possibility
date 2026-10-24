@@ -1,1 +1,0 @@
-ALTER TABLE `scene_requests` ADD `content_hash` text DEFAULT '' NOT NULL;

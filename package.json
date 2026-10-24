@@ -2,26 +2,8 @@
   "name": "wispiva",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "web",
-    "api"
-  ],
-  "scripts": {
-    "dev": "concurrently -n web,api,engine -c blue,magenta,green \"npm run dev:web\" \"npm run dev:api\" \"npm run dev:engine\"",
-    "dev:web": "npm --workspace web run dev",
-    "dev:api": "npm --workspace api run dev",
-    "dev:engine": "tsx scripts/engine-pinger.ts",
-    "db:migrate": "npm --workspace api run db:migrate",
-    "seed": "tsx scripts/seed.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts",
-    "verify:s02": "npm --workspace @wispiva/scene-contract test && npm --workspace @wispiva/scene-contract run build && npm --workspace api test && npm --workspace api run build && npm --workspace web test && npm --workspace web run build && npm --workspace web run test:e2e",
-    "asset:import": "tsx scripts/asset-import.ts",
-    "asset:thumbnail": "node scripts/asset-thumbnail.mjs",
-    "verify:deployment": "tsx scripts/verify-deployment-journey.ts"
-  },
-  "devDependencies": {
-    "concurrently": "^10.0.5",
-    "tsx": "^4.23.12"
+  "packageManager": "npm@11.10.0",
+  "engines": {
+    "node": ">=22"
   }
 }

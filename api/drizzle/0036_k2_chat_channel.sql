@@ -1,1 +1,0 @@
-ALTER TABLE `chat_requests` ADD `channel` text DEFAULT 'unknown' NOT NULL;
