@@ -10,3 +10,5 @@ dist-ssr/
 coverage/
 .vite/
 .wrangler/
+
+prototype/
