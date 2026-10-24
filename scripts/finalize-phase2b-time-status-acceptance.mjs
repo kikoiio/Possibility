@@ -1,31 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
-import { join, resolve } from 'node:path'
+import { currentSha, loadEvidence, sensitivePaths, writeEvidenceReport } from './lib/acceptance-evidence.mjs'
+
+export { loadEvidence }
 
 export const PHASE2B_SCHEMA = 'phase2b-time-status-v1'
 export const ACCEPTANCE_IDS = Array.from({ length: 12 }, (_, index) => `AC${index + 1}`)
-const SECRET_KEY = /(authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|header|raw.?body|trace|database.?path)/i
-const SECRET_VALUE = /(bearer\s+|token[=:]\s*|password[=:]\s*|secret[=:]\s*)[^\s,;]+/i
-const LONG_CREDENTIAL = /\b(?:sk|ghp|github_pat|xox[baprs])_[a-z0-9_-]{12,}\b/i
-
-function readJson(path) { return JSON.parse(readFileSync(path, 'utf8')) }
-
-function sensitivePaths(value, path = '$') {
-  if (typeof value === 'string') return SECRET_VALUE.test(value) || LONG_CREDENTIAL.test(value) ? [path] : []
-  if (!value || typeof value !== 'object') return []
-  const findings = []
-  for (const [key, child] of Object.entries(value)) {
-    if (SECRET_KEY.test(key)) findings.push(`${path}.${key}`)
-    else findings.push(...sensitivePaths(child, `${path}.${key}`))
-  }
-  return findings
-}
-
-function currentSha() {
-  try { return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() }
-  catch { return null }
-}
-
 export function validateEvidence(manifest, expectedSha = currentSha()) {
   const errors = []
   if (!manifest || typeof manifest !== 'object') return { valid: false, errors: ['manifest is missing'] }
@@ -65,37 +43,19 @@ export function validateEvidence(manifest, expectedSha = currentSha()) {
   return { valid: errors.length === 0, errors }
 }
 
-export function loadEvidence(directory) {
-  const root = resolve(directory)
-  const manifestPath = existsSync(join(root, 'manifest.json')) ? join(root, 'manifest.json') : join(root, 'run.json')
-  if (!existsSync(manifestPath)) throw new Error(`missing evidence manifest in ${root}`)
-  return { root, manifestPath, manifest: readJson(manifestPath) }
-}
-
 export function finalizeEvidence(directory, options = {}) {
   const loaded = loadEvidence(directory)
   const expectedSha = options.expectedSha === undefined ? currentSha() : options.expectedSha
   const validation = validateEvidence(loaded.manifest, expectedSha)
-  const counts = Object.fromEntries(['passed', 'failed', 'unverified'].map(status => [status, loaded.manifest.cases.filter(item => item.status === status).length]))
-  const status = validation.valid ? (counts.unverified === 0 ? 'passed' : 'partial') : 'failed'
-  const report = {
-    schema: `${PHASE2B_SCHEMA}-final-report`, runId: loaded.manifest.runId, gitSha: loaded.manifest.gitSha,
-    status, counts, errors: validation.errors, cleanup: loaded.manifest.cleanup,
-    cases: loaded.manifest.cases.map(item => ({ ac: item.ac, status: item.status, substitutes: item.substitutes ?? [] })),
-  }
-  mkdirSync(loaded.root, { recursive: true })
-  writeFileSync(join(loaded.root, 'final-report.json'), `${JSON.stringify(report, null, 2)}\n`)
-  const summary = [
-    `## Phase 2B time/status acceptance: ${report.status}`,
-    '',
-    `Run: \`${report.runId}\` · SHA: \`${report.gitSha}\` · Passed: ${counts.passed} · Failed: ${counts.failed} · Unverified: ${counts.unverified}`,
-    '',
-    ...(validation.errors.length ? validation.errors.map(error => `- ${error}`) : ['- Evidence associations and cleanup checks passed.']),
-    '',
-  ].join('\n')
-  writeFileSync(join(loaded.root, 'summary.md'), summary)
-  if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, summary, { flag: 'a' })
-  return { ...report, root: loaded.root }
+  return writeEvidenceReport({
+    root: loaded.root,
+    manifest: loaded.manifest,
+    validation,
+    schema: `${PHASE2B_SCHEMA}-final-report`,
+    title: 'Phase 2B time/status acceptance',
+    summarizeCase: item => ({ ac: item?.ac, status: item?.status, substitutes: item?.substitutes ?? [] }),
+    successMessage: 'Evidence associations and cleanup checks passed.',
+  })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
