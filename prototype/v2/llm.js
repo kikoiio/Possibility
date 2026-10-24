@@ -14,8 +14,8 @@ export function messagesFor(world, recent, { span = 60, time = 480, instruction 
   const charId = Object.keys(world.entities).find(k => world.entities[k].kind === 'character');
   const placeId = Object.keys(world.entities).find(k => world.entities[k].kind === 'place');
   const exampleOps = charId && placeId ? [{ op: 'set', path: `/entities/${charId}/location`, valueJson: JSON.stringify(placeId) }] : [];
-  const system = `你是Wispiva的世界推演者。所有输出为JSON。用户的世界文档是本世界的完整设定与现状，可以包含任意扩展字段。由你决定角色行为和事件，系统不预设剧情或物理规则。保持因果和人物动机连贯，尊重用户设定；角色只能依据自己的knowledge和knownBy包含自己的记忆行动，不应自动知道其他角色的秘密。允许新增实体、改变目标/关系/物品/法则，不要只改变一句状态文字。地点与人物的空间属性用于画面展示，移动角色可修改location或position。
-输出ops记录实际事实变化，与叙述保持一致。op为set/remove，path是相对于world文档自身根部的JSON Pointer，如/entities/角色ID/goal，绝对不要加/world前缀。valueJson是JSON编码后的值字符串（例如把目标设为逃离，valueJson为"\\"逃离\\""；remove时为"null"）。数组用数字下标或末尾/-追加；父路径必须已存在，新增对象先整体set该对象。角色的location引用存在的实体。长期承诺、关系变化、获得的知识写入每个事件的memories数组，knownBy是知情者实体ID，公开事实用["all"]。不要删除未失效的重要记忆。
+  const system = `你是Wispiva的世界推演者。所有输出为JSON。用户的世界文档是本世界的完整设定与现状，可以包含任意扩展字段。由你决定角色行为和事件，系统不预设剧情或物理规则。保持因果和人物动机连贯，尊重用户设定。你知道世界的秘密不代表角色知道：角色只能依据自己的knowledge和knownBy包含自己的记忆行动。角色获知秘密必须有对话、观察等信息来源，不能凭空知道另一角色的秘密；不在场的角色不能自动得知谈话。只有真正公开的事实才用knownBy:["all"]。允许新增实体、改变目标/关系/物品/法则，不要只改变一句状态文字。地点与人物的空间属性用于画面展示，移动角色可修改location或position。
+输出ops记录实际事实变化，与叙述保持一致。op为set/remove，path是相对于world文档自身根部的JSON Pointer，如/entities/角色ID/goal，绝对不要加/world前缀。valueJson是JSON编码后的值字符串（例如把目标设为逃离，valueJson为"\\"逃离\\""；remove时为"null"）。数组用数字下标或末尾/-追加。set会创建缺失的对象父路径，不会覆盖已有的标量父字段。角色的location引用存在的实体。长期承诺、关系变化、获得的知识写入每个事件的memories数组即可，不需再创建重复的memory字段；knownBy是知情者实体ID，公开事实用["all"]。不要删除未失效的重要记忆。
 不输出markdown。这是虚构的故事实验。`;
   const user = JSON.stringify({
     task: instruction ? '按用户想法提出一组完整修改，尚未确认，不推进时间。用中文解释改了什么。' : `推演从世界第${time}分钟开始的未来${span}分钟。输出1至4个事件，offsetMinutes为相对于同一起点的分钟数，范围0到${span}，按时间排序。叙述使用中文，有细节和具体选择，允许安静的时间段，不强制高潮。`,
@@ -51,9 +51,9 @@ export async function complete(settings, messages, kind = 'beat', request = fetc
         error.resumeModel = model;
         throw error;
       }
-      error.message = error.name === 'TimeoutError' ? 'LLM 请求超时，世界停在最后确认的时间。' : 'LLM 连接失败，世界停在最后确认的时间。';
-      error.attempts = attempts;
-      throw error;
+      const wrapped = new Error(error.name === 'TimeoutError' ? 'LLM 请求超时，世界停在最后确认的时间。' : 'LLM 连接失败，世界停在最后确认的时间。');
+      wrapped.attempts = attempts;
+      throw wrapped;
     }
     const raw = await res.text();
     attempts.push({ model, status: res.status, latencyMs: Date.now() - start, raw, request: body });

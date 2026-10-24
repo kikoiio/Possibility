@@ -23,7 +23,7 @@ async function pacedRequest(url, options) {
   lastUse.set(model, Date.now());
   requestCount++;
   console.log(`Groq request ${requestCount}/6 · ${model}`);
-  return fetch(url, options);
+  return fetch(url, { ...options, signal: AbortSignal.timeout(60000) });
 }
 function save() {
   report.requestCount = requestCount;

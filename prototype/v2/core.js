@@ -33,6 +33,10 @@ export function applyOps(world, ops) {
     if (keys.some(k => ['__proto__', 'prototype', 'constructor'].includes(k))) throw new Error('不支持的字段路径');
     let obj = result;
     for (const k of keys.slice(0, -1)) {
+      if (!Object.hasOwn(obj, k) && op.op === 'set') {
+        if (Array.isArray(obj) && (!/^\d+$/.test(k) || Number(k) > obj.length)) throw new Error(`数组路径不存在：${op.path}`);
+        obj[k] = {};
+      }
       if (!Object.hasOwn(obj, k) || obj[k] === null || typeof obj[k] !== 'object') throw new Error(`路径不存在：${op.path}`);
       obj = obj[k];
     }
