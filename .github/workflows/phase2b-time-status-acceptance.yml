@@ -1,0 +1,142 @@
+name: Phase 2B time/status acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase2b-time-status-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PHASE2B_ROOT: ${{ github.workspace }}/.tmp/phase2b/${{ github.run_id }}
+  PHASE2B_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/phase2b-time-status/${{ github.run_id }}
+
+jobs:
+  focused:
+    name: Focused phase2B contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Runner resources
+        run: |
+          free -h
+          vmstat 1 5
+          cat /proc/pressure/memory
+          df -h /tmp .
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused API and Web contracts
+        run: |
+          npm --workspace api test -- --maxWorkers=1 --no-file-parallelism \
+            src/worlds/status.test.ts \
+            src/worlds/time-status.routes.test.ts \
+            src/life/visit-sessions.test.ts \
+            src/life/compare.test.ts \
+            src/routing/authorization-order.test.ts \
+            src/db/time-status-migration.test.ts \
+            src/test/legacy-compat.test.ts
+          npm --workspace web test -- --maxWorkers=1 --no-file-parallelism \
+            src/lib/world-time.test.ts \
+            src/lib/world-status.test.ts \
+            src/world/requestScope.test.ts
+      - name: Validate evidence manifest tooling
+        run: |
+          npm exec -- tsx web/scripts/phase2b-time-status.acceptance.ts --validate-manifest
+          node --test scripts/finalize-phase2b-time-status-acceptance.test.mjs
+      - name: Cleanup focused resources
+        if: always()
+        run: |
+          mkdir -p "$PHASE2B_ROOT"
+          test ! -e "$PHASE2B_ROOT/active.pid"
+
+  build:
+    name: API and Web builds
+    needs: focused
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build API
+        run: npm --workspace api run build
+      - name: Build Web
+        run: npm --workspace web run build
+
+  browser:
+    name: Isolated time/status browser journeys
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npm --workspace web exec -- playwright install --with-deps chromium
+      - name: Run phase 2B time/status journeys
+        working-directory: web
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp/phase2b/${{ github.run_id }}
+          PHASE2B_EVIDENCE_MANIFEST: ${{ github.workspace }}/artifacts/phase2b-time-status/${{ github.run_id }}/manifest.json
+        run: npm run test:e2e -- --config playwright.phase2b-time-status.config.ts --workers=1
+      - name: Assemble full evidence manifest
+        if: always()
+        working-directory: web
+        env:
+          PHASE2B_EVIDENCE_MANIFEST: ${{ github.workspace }}/artifacts/phase2b-time-status/${{ github.run_id }}/manifest.json
+          # 契约/拒绝路径用例只在 focused 契约与构建均已通过的本 SHA 上声明（browser 依赖 build→focused）
+          PHASE2B_DECLARE_CONTRACTS: '1'
+        run: npm exec -- tsx scripts/phase2b-time-status.acceptance.ts --write-manifest
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2b-time-status-evidence-${{ github.run_id }}
+          if-no-files-found: error
+          path: artifacts/phase2b-time-status/${{ github.run_id }}/
+          retention-days: 14
+
+  finalize:
+    name: Finalize redacted evidence
+    if: always()
+    needs: [focused, build, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download approved evidence only
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: phase2b-time-status-evidence-*
+          path: artifacts/phase2b-time-status/${{ github.run_id }}
+          merge-multiple: true
+      - name: Finalize and verify cleanup
+        env:
+          PHASE2B_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/phase2b-time-status/${{ github.run_id }}
+        run: |
+          node scripts/finalize-phase2b-time-status-acceptance.mjs
+          test ! -e "$PHASE2B_ROOT/active.pid"
+      - name: Upload redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2b-time-status-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          path: artifacts/phase2b-time-status/${{ github.run_id }}/
+          retention-days: 14
