@@ -51,6 +51,9 @@ try {
   await page.screenshot({ path: join(artifacts, 'desktop-split-running.png'), fullPage: true });
   await page.locator('#what-if').click();
   await page.locator('#editor').waitFor({ state: 'visible' });
+  await page.locator('#edit-instruction').fill('如果白薇愿意保护戏台，陆则也选择帮助老周');
+  await page.locator('#ask-llm').click();
+  await page.waitForFunction(() => document.getElementById('edit-explanation').textContent.includes('演示模式'));
   const anchor = await page.locator('#draft-anchor').textContent();
   const base = JSON.parse(await page.locator('#world-json').inputValue());
   base.entities.lu.goal = '帮助老周公开全部真相';
@@ -93,6 +96,7 @@ try {
   assert.equal(secretLeak, false);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '事件日志', exact: true }).click();
+  await page.locator('#toast').waitFor({ state: 'hidden' });
   await page.screenshot({ path: join(artifacts, 'mobile.png'), fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2);
   assert.equal(overflow, false, '手机页面不能横向溢出');

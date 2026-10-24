@@ -100,6 +100,7 @@ async function openEditor(newWorld = false) {
   $('draft-name').value = newWorld ? '新的世界线' : `${line.name} · 如果`;
   $('draft-anchor').textContent = newWorld ? '这是一个独立世界的草稿。确认后创建，点击开始即可运行。' : `修改基于「${line.name}」的 ${time(state.draft.worldTime)}。原世界线继续运行；新线继承到这个时刻的历史，不会混入你编辑期间发生的事。`;
   $('edit-instruction').value = ''; $('edit-explanation').textContent = ''; $('edit-error').textContent = '';
+  $('ask-llm').disabled = false; $('confirm-edit').disabled = false;
   setDraftWorld(state.draft.world);
   $('editor').showModal();
 }
@@ -125,18 +126,22 @@ $('edit-premise').addEventListener('input', () => {
 });
 $('apply-json').onclick = run(() => { setDraftWorld(readDraft()); toast('编辑项已更新，尚未确认'); });
 $('ask-llm').onclick = async () => {
+  const draftId = state.draft.id;
   $('ask-llm').disabled = true; $('confirm-edit').disabled = true;
   $('edit-error').textContent = ''; $('edit-explanation').textContent = '正在根据你的想法修改草稿…';
   try {
-    const result = await api('edit', { draftId: state.draft.id, world: readDraft(), instruction: $('edit-instruction').value });
+    const result = await api('edit', { draftId, world: readDraft(), instruction: $('edit-instruction').value });
+    if (state.draft.id !== draftId) return;
     setDraftWorld(result.world); $('edit-explanation').textContent = result.explanation;
-  } catch (error) { $('edit-error').textContent = error.message; $('edit-explanation').textContent = ''; }
-  finally { $('ask-llm').disabled = false; $('confirm-edit').disabled = false; }
+  } catch (error) { if (state.draft.id === draftId) { $('edit-error').textContent = error.message; $('edit-explanation').textContent = ''; } }
+  finally { if (state.draft.id === draftId) { $('ask-llm').disabled = false; $('confirm-edit').disabled = false; } }
 };
 $('confirm-edit').onclick = async () => {
+  const draftId = state.draft.id;
   $('confirm-edit').disabled = true; $('edit-error').textContent = '';
   try {
-    const result = await api('confirm', { draftId: state.draft.id, world: readDraft(), name: $('draft-name').value });
+    const result = await api('confirm', { draftId, world: readDraft(), name: $('draft-name').value });
+    if (state.draft.id !== draftId) { await refresh(true); toast('上一份草稿已生成新的世界线'); return; }
     $('editor').close(); await refresh(true); selectLine(result.lineId); toast('新的世界线已生成。原世界线保持独立运行。');
   } catch (error) { $('edit-error').textContent = error.message; }
   finally { $('confirm-edit').disabled = false; }

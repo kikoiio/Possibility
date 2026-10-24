@@ -73,14 +73,14 @@ try {
   validateWorld(proposal.world);
   const paths = changedPaths(draft.world, proposal.world);
   const child = e.confirm(draft.id, proposal.world, '如果他们选择公开真相');
-  report.scenarios.push({ name: 'LLM-editor-multiple-changes', ok: paths.length >= 3, explanation: proposal.explanation, changes: paths, world: proposal.world, baseWorldTime: draft.worldTime });
+  report.scenarios.push({ name: 'LLM-editor-multiple-changes', ok: ['zhou', 'shen', 'bai'].every(k => proposal.world.entities[k]?.goal !== draft.world.entities[k]?.goal), explanation: proposal.explanation, changes: paths, world: proposal.world, baseWorldTime: draft.worldTime });
   const call = e.begin(child.id, 'beat', { mode: 'live' });
   const messages = messagesFor(e.world(child.id), e.history(child.id).slice(-12), { span: 60, time: child.worldTime });
   const result = await complete(settings, messages, 'beat', pacedRequest);
   e.accept(child.id, call, result.payload, 60);
   selected.advance(60);
   report.scenarios.push({
-    name: 'real-branch-continuation', ok: true, model: settings.model,
+    name: 'real-branch-continuation', ok: result.payload.events.length > 0 && JSON.stringify(e.world(line.id)) === JSON.stringify(draft.world), model: settings.model,
     originalWorldUnchanged: JSON.stringify(e.world(line.id)) === JSON.stringify(draft.world),
     editedGoals: Object.fromEntries(['zhou', 'shen', 'bai'].map(k => [k, e.world(child.id).entities[k]?.goal])),
     events: e.history(child.id).filter(x => x.kind === 'story' && !e.history(line.id).some(y => y.id === x.id)),
@@ -101,4 +101,5 @@ try {
   process.exitCode = 1;
 }
 save();
+if (report.scenarios.some(scenario => !scenario.ok)) process.exitCode = 1;
 console.log(`Groq observations saved; ${requestCount} real requests; preferred usable model ${report.recommendedModel}.`);
