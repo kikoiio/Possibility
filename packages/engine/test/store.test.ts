@@ -111,7 +111,7 @@ describe('store', () => {
     expect(await store.searchMemoryText('line-a', ['老舟'], '阿苇', 10)).toHaveLength(0);
     expect((await store.getMemories('line-a', ['阿苇'], 10))[0]).toMatchObject({ sourceEventId: 'evt-library', atMinutes: 525 });
     await store.touchMemories(['mem-wei'], 530);
-    expect((await store.getMemories('line-a', ['阿苇'], 10))[0].lastAccessedMinutes).toBe(530);
+    expect((await store.getMemories('line-a', ['阿苇'], 10))[0]?.lastAccessedMinutes).toBe(530);
 
     const reflection = { lineId: 'line-a', owner: '阿苇', version: 99, text: '我记得书院。', fromMinutes: 0, toMinutes: 525, generatedAt: 600 };
     await store.saveReflection(reflection);

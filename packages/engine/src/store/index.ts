@@ -65,14 +65,15 @@ function lineFromRow(row: SqlRow): WorldLine {
 }
 
 function memoryFromRow(row: SqlRow): MemoryRow {
-  return {
+  const memory: MemoryRow = {
     id: String(row.id), lineId: String(row.line_id), owner: String(row.owner), text: String(row.text),
     valence: Number(row.valence), intensity: Number(row.intensity), importance: Number(row.importance),
     about: parseJson<string[]>(row.about_json),
-    ...(row.emotion === null ? {} : { emotion: row.emotion as Memory['emotion'] }),
     sourceEventId: String(row.source_event_id), atMinutes: Number(row.at_minutes),
-    ...(row.last_accessed_minutes === null ? {} : { lastAccessedMinutes: Number(row.last_accessed_minutes) }),
   };
+  if (typeof row.emotion === 'string') memory.emotion = row.emotion as Exclude<Memory['emotion'], undefined>;
+  if (row.last_accessed_minutes !== null) memory.lastAccessedMinutes = Number(row.last_accessed_minutes);
+  return memory;
 }
 
 function reflectionFromRow(row: SqlRow): ReflectionRow {
@@ -191,18 +192,19 @@ export class Store implements StoreApi {
   async pageLog(lineId: string, q: { beforeRevisionId?: string; limit: number }): Promise<{ lineId: string; entries: LogEntry[]; nextBeforeRevisionId: string | null }> {
     this.ensureOpen();
     if (!Number.isInteger(q.limit) || q.limit < 1) throw new Error('Log page limit must be a positive integer.');
-    let current = q.beforeRevisionId
+    const seed = q.beforeRevisionId
       ? sqlRow(this.db.prepare('SELECT parent_id FROM revisions WHERE id = ? AND line_id = ?').get(q.beforeRevisionId, lineId))?.parent_id
       : sqlRow(this.db.prepare('SELECT head_revision_id FROM lines WHERE id = ?').get(lineId))?.head_revision_id;
+    let current: string | null = seed === undefined || seed === null ? null : String(seed);
     const entries: LogEntry[] = [];
-    while (current !== null && current !== undefined && entries.length < q.limit) {
+    while (current !== null && entries.length < q.limit) {
       const row = sqlRow(this.db.prepare('SELECT * FROM revisions WHERE id = ?').get(current));
       if (!row) break;
       entries.push({
         id: String(row.id), parentId: row.parent_id as string | null, worldTimeMinutes: Number(row.world_time_minutes),
         event: parseJson<Revision['event']>(row.event_json),
       });
-      current = row.parent_id;
+      current = row.parent_id === null || row.parent_id === undefined ? null : String(row.parent_id);
     }
     const nextBeforeRevisionId = current === null || current === undefined ? null : String(entries.at(-1)?.id ?? current);
     return { lineId, entries, nextBeforeRevisionId };
@@ -353,7 +355,7 @@ export class Store implements StoreApi {
       for (const row of pending) {
         const payload = parseJson<Record<string, unknown>>(row.payload_json);
         payload.error = 'Process restarted while call was in flight.';
-        updateCall.run(encodeJson(payload), now, row.id);
+        updateCall.run(encodeJson(payload), now, String(row.id));
       }
       this.db.prepare("UPDATE lines SET status='ready' WHERE status='generating'").run();
     });
