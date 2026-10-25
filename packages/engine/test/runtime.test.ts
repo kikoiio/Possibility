@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { LlmCall, Plan, Revision, WorldLine, WorldState } from '@wispiva/contract';
+import type { LlmCall, LogEntry, Plan, Revision, WorldLine, WorldState } from '@wispiva/contract';
 import { createHttpApp } from '../src/http/index.js';
-import { Runtime, startRuntime } from '../src/runtime/index.js';
+import { digest, Runtime, startRuntime } from '../src/runtime/index.js';
 import { openStore, type Store } from '../src/store/index.js';
 import type { LlmGateway, LlmSettings } from '../src/llm/index.js';
 
@@ -12,7 +12,7 @@ const settings: LlmSettings = {
   models: ['test'], baseUrl: 'http://localhost', apiKey: '', segmentWorldMinutes: 60,
   minIntervalSeconds: 0, hourlyLimit: 40, dailyLimit: 200, concurrency: 2,
 };
-const world: WorldState = { entities: { person: { kind: 'character', name: 'Person' }, place: { kind: 'place', name: 'Place' } }, marker: 0 };
+const world: WorldState = { entities: { person: { kind: 'character', name: 'Person' }, other: { kind: 'character', name: 'Other' }, place: { kind: 'place', name: 'Place' } }, marker: 0 };
 const projects = (state: WorldState, minutes: number, revisionId: string, recentText: string | null) => ({
   view: { lineId: 'line', revisionId, worldTimeMinutes: minutes, places: [], characters: [], others: [], recentText },
 });
@@ -63,6 +63,7 @@ function gateway(store: Store, beat: LlmGateway['beat'] = async (input) => ({
       schemaVersion: 1, proposalId: 'call_edit', draftId: input.draftId, baseRevisionId: input.baseRevisionId,
       ops: [{ op: 'set', path: '/marker', value: 1 }], summary: 'Edit', changedPaths: [], memories: [],
     }),
+    chat: async () => ({ callId: 'call_chat', text: '逐字回复', ops: [], memories: { asEntity: [], otherEntity: [] } }),
   };
 }
 
@@ -152,5 +153,48 @@ describe('runtime orchestration', () => {
     expect(ordered.indexOf('"type":"snapshot"')).toBeLessThan(ordered.indexOf('"type":"line"'));
     await reader.cancel();
     await store.close();
+  });
+
+  it('runs chat under slowdown, commits the verbatim exchange and restores the prior speed', async () => {
+    const { store } = await openTestStore();
+    await seedLine(store, null);
+    const runtime = new Runtime({ store, gateway: gateway(store), settings, projectWorld: projects, now: () => 10_000, chatIdleTimeoutMs: 60_000 });
+    const events: string[] = [];
+    runtime.subscribe((event) => events.push(event.type === 'slowdown' ? `slowdown:${event.data.active}` : event.type));
+    const reply = await runtime.chatTurn({ lineId: 'line', asEntity: 'person', otherEntity: 'other', text: '你好。' });
+    expect(reply.text).toBe('逐字回复');
+    expect(events.slice(0, 3)).toEqual(['slowdown:true', 'line', 'revision']);
+    expect((await store.getLine('line'))?.speed).toBe(1);
+    const head = await store.getRevision((await store.getLine('line'))!.headRevisionId);
+    expect(head?.event).toMatchObject({ kind: 'chat', text: '你好。\n逐字回复', callId: 'call_chat' });
+    await runtime.endChat('line');
+    expect((await store.getLine('line'))?.speed).toBe(24);
+    expect(events.slice(-2)).toEqual(['line', 'slowdown:false']);
+    await store.close();
+  });
+
+  it('isolates viewpoint selection by line and includes it in the state snapshot', async () => {
+    const { store } = await openTestStore();
+    await seedLine(store, null);
+    const secondOrigin = { id: 'rev_second', parentId: null, worldTimeMinutes: 0, event: { id: 'evt_second', kind: 'origin' as const, text: 'second', atMinutes: 0 }, world };
+    await store.createLine({ id: 'line2', name: 'β', parentLineId: null, forkRevisionId: null, forkTimeMinutes: null, headRevisionId: secondOrigin.id, worldTimeMinutes: 0, speed: 12, paused: false, plan: null, status: 'ready', error: null, retryAt: 0 });
+    await store.appendRevisions('line2', [secondOrigin]);
+    const runtime = new Runtime({ store, gateway: gateway(store), settings, projectWorld: projects });
+    expect(await runtime.setViewpoint('line', 'person')).toEqual({ lineId: 'line', entityId: 'person' });
+    expect(await runtime.setViewpoint('line2', 'other')).toEqual({ lineId: 'line2', entityId: 'other' });
+    const state = await runtime.getState() as Awaited<ReturnType<typeof runtime.getState>> & { viewpoints: Record<string, string> };
+    expect(state.viewpoints).toEqual({ line: 'person', line2: 'other' });
+    await runtime.setViewpoint('line', null);
+    expect((await runtime.getState() as unknown as { viewpoints: Record<string, string> }).viewpoints).toEqual({ line2: 'other' });
+    await store.close();
+  });
+
+  it('ranks digest entries by mean memory importance, then recency', () => {
+    const entries: LogEntry[] = [
+      { id: 'old', parentId: null, worldTimeMinutes: 1, event: { id: 'e1', kind: 'story', text: 'old low', atMinutes: 1, memories: [{ id: 'm1', owner: 'person', text: 'x', valence: 0, intensity: 0, importance: 2, about: ['other'] }] } },
+      { id: 'recent', parentId: null, worldTimeMinutes: 4, event: { id: 'e2', kind: 'story', text: 'recent high', atMinutes: 4, memories: [{ id: 'm2', owner: 'person', text: 'x', valence: 0, intensity: 0, importance: 8, about: ['other'] }, { id: 'm3', owner: 'other', text: 'x', valence: 0, intensity: 0, importance: 6, about: ['person'] }] } },
+      { id: 'tie-old', parentId: null, worldTimeMinutes: 2, event: { id: 'e3', kind: 'story', text: 'tie old', atMinutes: 2, memories: [{ id: 'm4', owner: 'person', text: 'x', valence: 0, intensity: 0, importance: 7, about: ['other'] }] } },
+    ];
+    expect(digest(entries, 2).map((item) => item.revisionId)).toEqual(['recent', 'tie-old']);
   });
 });

@@ -167,3 +167,22 @@ export function projectWorld(world: WorldState, worldTimeMinutes: Minutes,
 ```
 
 runtime(E)通过注入使用 `projectWorld`(可传桩以便测试);web 壳(F)只消费 `view`;3D 渲染器(G 的 web 侧)只消费 `scene` 并按 recipeHash 内容键做部件级增量重建。
+
+## 7. P3-J additive 在场接口（补充 §4）
+
+`packages/engine/src/llm/client.ts` 的 `LlmGateway` 增加：
+
+```ts
+export type ChatInput = {
+  lineId: string; baseRevisionId: string;
+  asEntity: string; otherEntity: string; text: string;
+  world: WorldState; visibleMemories: Memory[]; worldTimeMinutes: Minutes;
+};
+export type ChatResult = {
+  text: string; ops?: Op[];
+  memories: { asEntity: Memory[]; otherEntity: Memory[] };
+};
+chat(input: ChatInput): Promise<ChatResult & { callId: string }>;
+```
+
+`visibleMemories` 仅含对话对象 owner 的可见记忆；gateway 复用 beat/edit 的 OpenAI 兼容回退、预算、超时与完整 call 审计。

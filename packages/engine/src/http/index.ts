@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { ControlPayload, SettingsPayload, SseEvent } from '@wispiva/contract';
-import type { Runtime } from '../runtime/index.js';
+import type { Runtime, RuntimeEvent } from '../runtime/index.js';
 
 function badRequest(message: string, status = 400) {
   return { error: message, status };
@@ -20,9 +20,15 @@ export function createHttpApp(runtime: Runtime): Hono {
     return context.json(await runtime.getLog(context.req.param('id'), context.req.query('beforeRevisionId'), limit));
   });
 
+  app.get('/api/lines/:id/digest', async (context) => {
+    const count = Number(context.req.query('limit') ?? 5);
+    const limit = Number.isInteger(count) ? Math.max(1, Math.min(50, count)) : 5;
+    return context.json(await runtime.getDigest(context.req.param('id'), limit));
+  });
+
   app.get('/api/events', (context) => streamSSE(context, async (stream) => {
     let snapshotReady = false;
-    const pending: SseEvent[] = [];
+    const pending: RuntimeEvent[] = [];
     let writes = Promise.resolve();
     const unsubscribe = runtime.subscribe((event) => {
       if (!snapshotReady) pending.push(event);
@@ -73,6 +79,22 @@ export function createHttpApp(runtime: Runtime): Hono {
     const body = await context.req.json<ControlPayload>();
     if (!body.lineId) return context.json(badRequest('lineId is required.'), 400);
     return context.json(await runtime.control(body));
+  });
+
+  app.post('/api/chat', async (context) => {
+    const body = await context.req.json<{ lineId: string; asEntity: string; otherEntity: string; text: string }>();
+    if (!body?.lineId || !body.asEntity || !body.otherEntity || typeof body.text !== 'string' || !body.text.trim()) {
+      return context.json(badRequest('lineId, asEntity, otherEntity, and text are required.'), 400);
+    }
+    return context.json(await runtime.chatTurn(body), 201);
+  });
+
+  app.post('/api/presence', async (context) => {
+    const body = await context.req.json<{ lineId: string; entityId: string | null }>();
+    if (!body?.lineId || (body.entityId !== null && typeof body.entityId !== 'string')) {
+      return context.json(badRequest('lineId and entityId (string or null) are required.'), 400);
+    }
+    return context.json(await runtime.setViewpoint(body.lineId, body.entityId));
   });
 
   return app;

@@ -58,6 +58,23 @@ function response(status: number, payload: unknown, headers?: HeadersInit): Resp
 }
 
 describe('llm gateway', () => {
+  it('calls chat through the audited OpenAI compatible path', async () => {
+    const store = auditStore();
+    const fetchMock = vi.fn().mockResolvedValue(response(200, {
+      choices: [{ message: { content: JSON.stringify({ text: '你好。', ops: [], memories: { asEntity: [], otherEntity: [] } }) } }],
+      usage: { total_tokens: 7 },
+    }));
+    const gateway = new OpenAiLlmGateway(settings(), store, {
+      fetch: fetchMock, sleep: async () => {}, createId: () => 'call-chat',
+    });
+    const result = await gateway.chat({
+      lineId: 'line', baseRevisionId: 'rev0', asEntity: 'ada', otherEntity: 'bo', text: '你好',
+      world, visibleMemories: [], worldTimeMinutes: 12,
+    });
+    expect(result).toMatchObject({ callId: 'call-chat', text: '你好。', memories: { asEntity: [], otherEntity: [] } });
+    expect(store.calls.get('call-chat')).toMatchObject({ kind: 'chat', status: 'accepted', usage: { totalTokens: 7 } });
+  });
+
   it('falls back only on eligible statuses and audits every request', async () => {
     const store = auditStore();
     const fetchMock = vi.fn()

@@ -186,6 +186,14 @@ type SseEvent =
 type CallSummary = Pick<LlmCall, 'id' | 'kind' | 'lineId' | 'status' | 'error'>;
 ```
 
+### P3-J 在场 additive 补记
+
+- `LlmGateway.chat(input)` 输入 `lineId/baseRevisionId/asEntity/otherEntity/text/world/visibleMemories/worldTimeMinutes`；返回逐字回复 `text`、可选 `ops`、双方记忆增量 `memories.asEntity/otherEntity` 与 `callId`。新增调用使用既有 `LlmCall.kind = chat` 审计路径。
+- `POST /api/chat` 请求 `{ lineId, asEntity, otherEntity, text }`，返回 `{ lineId, callId, text }`；有效的世界变更与双方记忆写入 `Revision.event.kind = chat`，`event.text` 保留完整对话原文，`ops/changes/memories/callId/atMinutes` 随 revision 提交。
+- `POST /api/presence` 请求 `{ lineId, entityId: string | null }`，响应 `{ lineId, entityId }`；null 清除该线附身。viewpoint 仅驻留 runtime 内存，并作为 `StateSnapshot.viewpoints: Record<lineId, entityId>` 附加字段。
+- SSE additive 事件 `slowdown` 负载 `{ lineId, active, speed }`；开始时通知后将线速设为 1 并发 `line`，空闲超时或 `endChat` 时恢复原速并发 `line` 与结束通知。
+- `GET /api/lines/:id/digest?limit=N` 返回按事件记忆 importance 均值降序、同分按事件时间新到旧的播报条目 `{ revisionId, text, importance, atMinutes }[]`。
+
 ## 4. JSON Schema 草案（2020-12）
 
 仅列跨进程校验最关键的三个；其余按同法补齐。枚举字段均已显式列出。

@@ -30,6 +30,7 @@ const gateway: LlmGateway = {
     schemaVersion: 1, proposalId: 'call_edit', draftId: input.draftId, baseRevisionId: input.baseRevisionId,
     ops: [], summary: 'noop', changedPaths: [], memories: [],
   }),
+  chat: async () => ({ callId: 'call_chat', text: 'reply', memories: { asEntity: [], otherEntity: [] } }),
 };
 
 const tempDirs: string[] = [];
