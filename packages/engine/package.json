@@ -6,7 +6,11 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
     "@wispiva/contract": "0.1.0",
     "hono": "^4.10.4"
   }

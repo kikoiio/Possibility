@@ -7,10 +7,14 @@ function badRequest(message: string, status = 400) {
   return { error: message, status };
 }
 
-export function createHttpApp(runtime: Runtime): Hono {
+export function createHttpApp(runtime: Runtime, options: { shutdownSignal?: AbortSignal } = {}): Hono {
   const app = new Hono();
 
   app.onError((error, context) => context.json({ error: error.message }, 400));
+  app.use('*', async (context, next) => {
+    if (options.shutdownSignal?.aborted) return context.json({ error: 'Engine is shutting down.' }, 503);
+    await next();
+  });
 
   app.get('/api/state', async (context) => context.json(await runtime.getState()));
 
@@ -27,27 +31,33 @@ export function createHttpApp(runtime: Runtime): Hono {
   });
 
   app.get('/api/events', (context) => streamSSE(context, async (stream) => {
+    let finish = () => {};
+    const stopped = new Promise<void>((resolve) => { finish = resolve; });
     let snapshotReady = false;
     const pending: RuntimeEvent[] = [];
     let writes = Promise.resolve();
     const unsubscribe = runtime.subscribe((event) => {
       if (!snapshotReady) pending.push(event);
-      else writes = writes.then(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) }));
+      else writes = writes.then(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) })).catch(finish);
     });
+    const abortStream = () => stream.abort();
+    stream.onAbort(() => { unsubscribe(); finish(); });
+    options.shutdownSignal?.addEventListener('abort', abortStream, { once: true });
+    if (options.shutdownSignal?.aborted) abortStream();
     try {
       const snapshot: SseEvent = { type: 'snapshot', data: await runtime.getState() };
       await stream.writeSSE({ event: 'snapshot', data: JSON.stringify(snapshot) });
       const queued = pending.splice(0);
       writes = writes.then(async () => {
         for (const event of queued) await stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
-      });
+      }).catch(finish);
       snapshotReady = true;
       await writes;
-      await new Promise<void>((resolve) => {
-        stream.onAbort(() => resolve());
-      });
+      await stopped;
     } finally {
       unsubscribe();
+      options.shutdownSignal?.removeEventListener('abort', abortStream);
+      await writes;
     }
   }));
 
