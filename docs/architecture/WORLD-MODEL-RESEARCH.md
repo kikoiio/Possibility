@@ -3,6 +3,8 @@
 核对日期：2026-10-25
 状态：**讨论材料，不是选型或需求冻结**。承接 [DISCUSSION-world-model.md](DISCUSSION-world-model.md)。本轮阅读论文、作者资料、公开仓库与部分实现；没有安装项目、下载模型、调用付费模型或复现实验。对性能的描述均为作者报告，不是本项目测量。
 
+记录范围：下面保存进入本次讨论的研究及其一手入口、借鉴点、限制和阅读深度；末尾另列检索发现但未深入核查的线索。讨论中的优先级调整、用户要求和未定项见[讨论记录 §9](DISCUSSION-world-model.md#9-后续讨论记录与状态)。代码架构判断以[世界表示设计草案](DESIGN-world-representation.md)为入口，后续执行顺序见[计划](../PLAN-world-representation.md)。
+
 ## 1. 调研后最需要澄清的区别
 
 已有研究至少包含三种不同任务：
@@ -29,6 +31,12 @@
 NeSyS 的具体例子：公开 ScienceWorld 规则会检查“使用温度计”的候选是否含读数、是否不当地改变库存。这是有用的局部一致性信号，但不能据此证明读数或热力学过程正确。参见[公开规则文件](https://github.com/tianyi-lab/NeSyS/blob/main/nesys/final_rules/rules_scienceworld_qwen3-4b_final.py)。
 
 ## 3. 补搜中值得深入的工作
+
+### LLM-Sim / ByteSized32：直接检验状态转移
+
+[Can Language Models Serve as Text-Based World Simulators?（ACL 2024）](https://aclanthology.org/2024.acl-short.1/)。使用 ByteSized32-State-Prediction 文本游戏状态转移数据检验模型能否正确预测世界变化。本轮核对论文摘要与官方出版信息，没有复现实验。
+
+它作为“需要测实际状态变化”的基础参考，已在最初讨论中引用。其特定模型与任务上的结果不能直接作为当前模型的能力上限，也不能据此认定某种 Wispiva 表示已经有效。
 
 ### WorldAgent-Benchmark：长期运行与事件关系
 
@@ -59,6 +67,14 @@ NeSyS 的具体例子：公开 ScienceWorld 规则会检查“使用温度计”
 [作者项目](https://allenai.github.io/discoveryworld/)、[公开实现](https://github.com/allenai/discoveryworld)。提供需要提出假设、设计实验、执行与分析的科学发现任务，可参考如何构造“模型说得通，但实验可能反驳”的测试。
 
 它与 ScienceWorld 都有可执行环境为结果提供锚点。值得借鉴测试设计，不意味着要把 Wispiva 变成科研任务游戏。
+
+### Memento 3：围绕世界模型的自我改进
+
+[Memento 3: Model-Based Recursive Self-Improvement through Reflective Rulebooks](https://arxiv.org/abs/2610.11794)，2026-10-08 提交。本项在用户询问“RSI?”后补查，本轮仅核对论文摘要，未核实完整实现或复现实验。
+
+摘要描述：底层 LLM 保持固定，通过外部记忆维护可修订的自然语言规则书，编译为可执行世界模型，再根据观察、预测错误、规则修订和验证更新规则书与代码。更新接受条件包括模型对规则书忠实性的判断，以及精确重放已观察转移。作者将此作为基于世界模型的 RSI 路线。
+
+对 Wispiva 的讨论价值：已学机制可能帮助选择更有效的探索和实验，再改善后续建模。仅增加规则并不自动证明系统的自我改进能力增强；重放既有转移也不等于未见情形已正确。当前用户要求先解决表示和计划，**没有决定将 RSI 纳入交付或自动采用机制学习方案**。
 
 ## 4. 最新的显式世界与生成画面路线
 
@@ -108,3 +124,55 @@ GlobeBench 与 WorldAgent 的价值尤其在第三项。即使一次变化看起
 - ScienceWorld：[HeatTransfer.scala](https://github.com/allenai/ScienceWorld/blob/main/simulator/src/main/scala/scienceworld/processes/HeatTransfer.scala)、[Plant.scala](https://github.com/allenai/ScienceWorld/blob/main/simulator/src/main/scala/scienceworld/objects/livingthing/plant/Plant.scala)。
 
 这是定向调研，不是代码审计、性能排行或项目整体质量背书。公开仓库、论文方法和完整可运行产品分别判断；如后续引入代码或模型，还需按具体制品核对兼容性与许可。
+
+## 7. 阅读深度与证据范围
+
+以下为本次实际完成的资料阅读范围；“正文”指阅读了相关章节，不代表逐页精读。所有项目均未安装或运行，性能结论均未独立复现。
+
+| 资料 | 已核对的内容 | 尚未验证 |
+| --- | --- | --- |
+| Concordia | 官方 README、相关调度文件、世界状态与事件裁定组件的部分源码 | 目标场景的运行行为、真实性与成本 |
+| WorldCoder | 相关论文正文、README、转移评估和返修源码 | 依赖兼容、可运行性、迁移到开放世界的能力 |
+| Text2World | 作者项目页、README、评估源码 | 完整论文复核、规划器执行与本项目适用性 |
+| NeSyS | 方法正文、README、规则生成与部分最终规则源码 | 复现、开放式环境效应验证能力 |
+| Word2World | 官方 README、模型/数据入口、评估协议说明 | 权重效果、模型文件及训练/评估运行 |
+| GlobeBench | 论文摘要、README、确定性 grader 与 harness 的相关源码 | 数据与全部评审记录审计、重评分复现 |
+| AgentSociety 2 | README、作者资料与架构文档、仓库结构 | 环境与调度算法审计、部署和成本 |
+| ScienceWorld | README、传热与植物过程相关源码 | 数值正确性、过程覆盖和实际执行 |
+| LLM-Sim / ByteSized32（ACL 2024） | 官方论文摘要与出版信息 | 实验复现、对当前模型与本项目的可迁移性 |
+| WorldAgent-Benchmark | 论文摘要、README、维护轨 engine 相关源码 | 案例整体质量、评分复现、完整运行 |
+| WorldLLM | 相关论文正文与 README | 假设推断和探索算法源码审计、效果复现 |
+| EMPIRIC | 作者项目页、论文摘要、作者链接的仓库 | EMPIRIC 具体实现、实验轨迹与复现 |
+| AWM | 相关论文正文、README、verifier / verify 相关源码 | 生成环境质量、验证器准确率和训练效果 |
+| DiscoveryWorld | 论文摘要、作者项目与 README | 具体场景实现与 agent 实验 |
+| Code World Model | 相关论文正文、局限章节、项目与官方仓库 README | 完整 world brain、推理运行与视觉效果 |
+| PWM | 论文摘要与仓库 README / 发布路线 | 未核实到完整推理实现和权重运行 |
+| CoDeR | 相关论文正文 | 所列项目页未能访问，完整代码/权重发布未核实 |
+| Memento 3 | 论文摘要 | 具体算法实现、代码发布及 RSI 实验结论 |
+
+开放状态是 2026-10-25 的核对记录，后续选型需复核。源码入口是阅读证据，不表示代码已经通过测试；研究价值、可读实现和可直接用于本项目的产品能力分别判断。
+
+## 8. 检索发现但未深入核查的线索
+
+以下保留检索范围，便于后续接续。它们未进入已核对项目的推荐结论；没有确认的能力、跑分和宣传语不据此写入需求。
+
+| 线索与入口 | 当时关注的问题 | 本轮处理 |
+| --- | --- | --- |
+| [Code World Models for General Game Playing](https://arxiv.org/abs/2510.04542) | 根据规则与轨迹生成可执行游戏模型，再配合规划 | 阅读检索到的论文摘要与发布信息；未核实对应完整开源实现 |
+| [OpenWorld](https://github.com/quome-cloud/openworld) | 世界 spec、代码动力学与候选程序验收 | 仅检索到项目说明，未审查源码或验证性能声明 |
+| [Manyworld](https://github.com/alinojoumi8/manyworld) | 持久状态、社会模拟、实验与回放 | 仅检索线索，未深入评估 |
+| [WMW](https://github.com/EmmanuelleB985/wmw) | 类型化转移记录与混合检查器 | 仅检索线索，未验证数据与检查效果 |
+| [Agent World Model in the Wild](https://msr-orchard.github.io/WildAWM/) | 跨界面的合成环境与执行验收 | 仅阅读检索到的作者项目说明；属于软件环境方向，未深读实现 |
+| [Trace2Env](https://github.com/ruyue0001/trace2env) | 根据行动—观察轨迹重建环境动力学 | 仅检索线索，未审查实现与评测 |
+| [ExoPredicator（作者入口）](https://yichao-liang.github.io/) | 同时表示角色行动与自行发生的环境过程 | 作为 EMPIRIC 的相关工作发现，未单独深入核查 |
+
+论文索引也分层保留：[Awesome Code World Models](https://github.com/yifliu3/awesome-code-world-models)用于补搜线索；分享中还提到 [Awesome Text World Models](https://github.com/sustech-nlp/awesome-text-world-models)，本轮未单独核对其内容。索引条目需要回到原始论文、作者项目与源码验证。
+
+## 9. 当前研究判断与待回答问题
+
+- **有证据支持继续研究**：角色意图与环境后果分工、显式状态、可执行机制、基于轨迹的反例修订，以及多步后果传播评测都有对应研究与实现入口。
+- **本项目尚无验证结论**：A/B 哪种表示更合适、是否采用可执行机制、需要何种 Verifier、总成本与长期稳定性，均未实验。
+- **当前优先级已由用户明确**：世界表示优先；先写好文档与计划，再决定后续实践方式。
+- **仍开放**：基础规律如何确立、新机制第一次出现如何裁定、哪些现实依据必需、未知与估计如何记录，以及表示怎样扩展而不改写过去。
+
+后续每次补充应记录日期、一手来源、阅读/运行深度和对原判断的影响。若新证据推翻旧判断，保留变化原因，并同步讨论与设计文档；不把候选资料自动升级为已选方案。

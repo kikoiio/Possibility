@@ -13,7 +13,7 @@
 - 默认本机运行（进程不在则世界冻结）；支持自托管云服务器实现 7×24 常驻。
 - LLM 调用节拍与成本上限由用户配置。
 
-完整需求见 [docs/requirements.md](docs/requirements.md)。世界模型的新方向与待定问题见[环境 Simulator 与 Verifier 讨论](docs/architecture/DISCUSSION-world-model.md)。
+完整需求见 [docs/requirements.md](docs/requirements.md)。世界模型的资料出处、讨论记录、表示设计与计划入口见[世界模型讨论与资料导航](docs/architecture/DISCUSSION-world-model.md)。
 
 ## 状态
 

@@ -6,6 +6,8 @@
 
 2026-10-25 世界模型更新：需求增加环境 Simulator 与 Verifier 的职责分离，详见 [DISCUSSION-world-model.md](DISCUSSION-world-model.md)。下文 beat 流程仍描述现有基线，不能视为新环境模拟方案已定稿或已实现；表示、验证协议与调度需另行收敛。
 
+当前推进范围为世界表示的文档与计划，尚未实现。已有数据承载、ops、revision 与存储可作为实验基础；Schema 路径一致性、延迟失效、时间窗口、角色输入与 fork 上下文仍需核对和设计。证据与候选见 [DESIGN-world-representation.md](DESIGN-world-representation.md)，阶段与验证门见 [PLAN-world-representation.md](../PLAN-world-representation.md)。
+
 ## 1. 总体形态
 
 本机优先的单进程 Node 引擎 + 静态 web 前端 + SQLite 单文件。云自托管运行同一进程并挂载数据库文件，不重写、不换栈。
