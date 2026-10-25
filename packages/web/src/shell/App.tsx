@@ -1,11 +1,27 @@
 import { useState } from 'react';
-import type { ControlPayload, LogEntry, LogPage, StateSnapshot, WorldLine } from '@wispiva/contract';
+import type { ConfirmPayload, ControlPayload, Draft, EditProposal, LogEntry, LogPage, Memory, StateSnapshot, WorldLine } from '@wispiva/contract';
+import { EditorPanel } from '../editor/EditorPanel.js';
+import { MemoryPanel, type MemoryReflection } from '../memory-view/MemoryPanel.js';
+import { ChatPanel, type DialogueLine, type PresenceCharacter } from '../presence/ChatPanel.js';
+import { DigestPanel, type DigestEntry } from '../presence/DigestPanel.js';
 
 type AppProps = {
   snapshot: StateSnapshot;
   logs?: Record<string, LogPage>;
   onControl?: (payload: ControlPayload) => void | Promise<void>;
   onLoadOlder?: (line: WorldLine) => void | Promise<void>;
+  // 在场/编辑器/记忆视图(P3)。全部可选:数据由宿主(main.tsx/hook 层)注入。
+  onChat?: (input: { text: string; avatarId: string; otherId: string }) => void | Promise<void>;
+  chat?: { characters?: PresenceCharacter[]; dialogue?: DialogueLine[]; slowdownActive?: boolean };
+  digest?: DigestEntry[];
+  editor?: {
+    draft?: Draft | null;
+    proposal?: EditProposal | null;
+    onCreateDraft?: () => Draft | Promise<Draft>;
+    onProposeEdit?: (input: { draftId: string; instruction: string }) => EditProposal | Promise<EditProposal>;
+    onConfirm?: (payload: ConfirmPayload) => void | Promise<void>;
+  };
+  memory?: { eventText: string; memories: Memory[]; reflections: MemoryReflection[] };
 };
 
 const styles = {
@@ -21,8 +37,12 @@ function recentText(snapshot: StateSnapshot, line: WorldLine): string {
     ?? '暂无事件';
 }
 
-export function App({ snapshot, logs = {}, onControl, onLoadOlder }: AppProps) {
+export function App({ snapshot, logs = {}, onControl, onLoadOlder, onChat, chat, digest, editor, memory }: AppProps) {
   const [selectedLineId, setSelectedLineId] = useState(snapshot.lines[0]?.id ?? '');
+  const [tab, setTab] = useState<'log' | 'chat' | 'digest' | 'editor' | 'memory'>('log');
+  const [avatarId, setAvatarId] = useState(chat?.characters?.[0]?.id ?? '');
+  const [otherId, setOtherId] = useState(chat?.characters?.[1]?.id ?? '');
+  const [dialogue, setDialogue] = useState<DialogueLine[]>(chat?.dialogue ?? []);
   const selected = snapshot.lines.find((line) => line.id === selectedLineId) ?? snapshot.lines[0];
   const selectedPage = selected === undefined ? undefined : logs[selected.id];
   const selectedLogs = selected === undefined
@@ -58,6 +78,15 @@ export function App({ snapshot, logs = {}, onControl, onLoadOlder }: AppProps) {
         ))}
       </section>
       {selected !== undefined && (
+        <nav aria-label="视图" style={styles.controls}>
+          {(['log', 'chat', 'digest', 'editor', 'memory'] as const).map(key => (
+            <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}>
+              {{ log: '事件日志', chat: '对话', digest: '新闻播报', editor: '编辑器', memory: '记忆对照' }[key]}
+            </button>
+          ))}
+        </nav>
+      )}
+      {selected !== undefined && tab === 'log' && (
         <section aria-label="事件日志">
           <h2>{selected.name} · 事件日志</h2>
           {selectedLogs.map((entry: LogEntry) => <p key={entry.id}>{entry.event.text}</p>)}
@@ -71,6 +100,35 @@ export function App({ snapshot, logs = {}, onControl, onLoadOlder }: AppProps) {
             更早事件
           </button>
         </section>
+      )}
+      {tab === 'chat' && (
+        <section aria-label="在场对话">
+          <ChatPanel
+            characters={chat?.characters ?? []}
+            selectedEntityId={avatarId}
+            otherEntityId={otherId}
+            lines={dialogue}
+            slowdownActive={chat?.slowdownActive ?? false}
+            onSelectAvatar={(id) => { setAvatarId(id); const next = chat?.characters?.find(c => c.id !== id); if (next) setOtherId(next.id); }}
+            onSend={async text => {
+              setDialogue(prev => [...prev, { id: `local-${prev.length}`, speaker: avatarId, text }]);
+              await onChat?.({ text, avatarId, otherId });
+            }}
+          />
+        </section>
+      )}
+      {tab === 'digest' && <DigestPanel entries={digest ?? []} />}
+      {tab === 'editor' && editor?.onCreateDraft && editor.onProposeEdit && editor.onConfirm && (
+        <EditorPanel
+          draft={editor.draft ?? null}
+          proposal={editor.proposal ?? null}
+          onCreateDraft={editor.onCreateDraft}
+          onProposeEdit={editor.onProposeEdit}
+          onConfirm={editor.onConfirm}
+        />
+      )}
+      {tab === 'memory' && memory && (
+        <MemoryPanel eventText={memory.eventText} memories={memory.memories} reflections={memory.reflections} />
       )}
     </main>
   );

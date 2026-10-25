@@ -6,14 +6,14 @@
 
 - 持续运转的世界，时间与真实时钟耦合（默认 24 倍速起，可加速、可暂停）。
 - 任意时刻可 fork；可自由批量修改角色、事件、世界设定，确认后生成新分支继续运行。
-- 纯 LLM 驱动的事件引擎，不预设固定行为规则；prompt 携带角色现状。
+- 角色由 LLM Agent 自主决策；环境模拟探索 LLM Simulator + Verifier，推演并验证环境变化与行动后果（设计讨论中）。
 - 实时观看使用 3D 画面，视觉必须有吸引力；用户可通过文本创建和修改世界。
 - 完整历史 log，可回查任何分支（包括离开观看的分支）。
 - 带 LLM 的世界/角色编辑器。
 - 默认本机运行（进程不在则世界冻结）；支持自托管云服务器实现 7×24 常驻。
 - LLM 调用节拍与成本上限由用户配置。
 
-完整需求见 [docs/requirements.md](docs/requirements.md)。
+完整需求见 [docs/requirements.md](docs/requirements.md)。世界模型的新方向与待定问题见[环境 Simulator 与 Verifier 讨论](docs/architecture/DISCUSSION-world-model.md)。
 
 ## 状态
 
@@ -23,4 +23,4 @@ v1 架构：[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.m
 
 ## 开发
 
-规划中的 monorepo 结构为 `packages/contract`、`engine`、`web`，见架构文档。代码骨架尚未落地；落地前根目录没有可运行脚本。执行计划（轨道/依赖/决策门）见 [docs/PLAN.md](docs/PLAN.md)。
+monorepo 已有 `packages/contract`、`packages/engine`、`packages/web`；根目录提供 `npm test` 与 `npm run typecheck`。当前 beat 路径仍统一生成事件与 ops，独立环境 Simulator / Verifier 尚未实现。执行计划（轨道/依赖/决策门）见 [docs/PLAN.md](docs/PLAN.md)。

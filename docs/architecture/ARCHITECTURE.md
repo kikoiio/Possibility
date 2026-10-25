@@ -4,6 +4,8 @@
 状态：修订中。2026-10-25 裁决:3D 采用共享场景语义文档 + 双确定性后端,通用几何(solid)为 v1 主渲染,体素(voxel)为第二后端并承担编辑辅助视图(碰撞/导航/变更可视化候选);体素需补齐表面网格化、非整格部件、材质尺度,在真实模型生成实验后按数据定岗。生成路线及证据见 [文本到 3D 调研](TEXT-TO-3D-RESEARCH.md)。
 依据：[requirements.md](../requirements.md) 与第二轮原型机制观察。原型已完成使命并从 main 删除；参考实现可用 `git show dea81b8:prototype/v2/<file>` 查看，真实 Groq 观察见 [Actions run 40083293453](https://github.com/kikoiio/Wispiva/actions/runs/40083293453)。历史裁决见 [SYNTHESIS.md](SYNTHESIS.md)（原始候选已删，可从 git 历史查看）。
 
+2026-10-25 世界模型更新：需求增加环境 Simulator 与 Verifier 的职责分离，详见 [DISCUSSION-world-model.md](DISCUSSION-world-model.md)。下文 beat 流程仍描述现有基线，不能视为新环境模拟方案已定稿或已实现；表示、验证协议与调度需另行收敛。
+
 ## 1. 总体形态
 
 本机优先的单进程 Node 引擎 + 静态 web 前端 + SQLite 单文件。云自托管运行同一进程并挂载数据库文件，不重写、不换栈。
@@ -190,6 +192,12 @@ clock tick → domain 计算到期事件
 - 服务端结构化输出不能替代应用侧校验（原型观察到模型会多 `/world` 前缀、返回不合 schema 的输出）；演算失败整段拒绝，不部分提交。
 - 失败进入 `status=error + retryAt`；世界停在最后确认时间，不假装故事发生。用户可手动重试。
 
+### 环境 Simulator 与 Verifier（需求已补充，设计待定）
+
+- 角色侧决定行动意图，环境侧推演自然演化与行动后果；验证通过后仍由引擎经 ops/revision/事务提交。渲染与叙述继续消费已提交事实。
+- 当前 `validatePlan` / `applyOps` 提供结构与引用等检查，尚不提供通用的因果、资源与动力学验证；单个 beat 也尚未拆出角色与环境的生成边界。
+- 待定项包括最小世界与变化表示、规律与例外的版本化、验证失败/不确定语义、角色观察隔离、延迟效应失效与分岔语义。详见[讨论稿](DISCUSSION-world-model.md)，此处不提前冻结新模块或 DTO。
+
 ### 如果…（fork，原型已验证）
 
 - `POST /api/draft` 固定 `baseRevisionId` 与当时 worldTime/speed/paused；父线在编辑期间继续运行。
@@ -321,6 +329,7 @@ contract ──┬── domain ── store
 | contract 频繁变动 | 影响最大 | M0 冻结 + 变更协议；fixtures 先行 |
 | 完整快照容量 | 中，未长期测量 | store 内部可换增量表示，不改契约 |
 | 叙述与事实漂移 | 产品级，原型已观察到 | prompt 改绝对时间窗口；评估「先事实提案、后生成叙述」两段式；编辑器 diff 人工确认 |
+| 环境效应只有合理叙述、缺少可验证状态变化 | 新需求，尚未验证 | Simulator/Verifier 职责分离，先用小场景验证表示、因果依据与多步一致性；详见 DISCUSSION-world-model.md |
 | 上下文随时间增长 | 中 | 分层记忆+偏置检索+情境触发 L2（DESIGN-memory.md 已批准）;裁剪只动检索项并记审计,超预算显式停止 |
 | 需求持续更新 | 高（产品探索期） | 契约面保持最小；只 additive 演进；缝隙两侧（contract/domain、projection/renderer、llm/runtime）各自有独立测试，需求变化时冲击面可定位 |
 | `node:sqlite` 稳定性 | 低-中 | M1 冒烟；API 面小，预定退 better-sqlite3 |
