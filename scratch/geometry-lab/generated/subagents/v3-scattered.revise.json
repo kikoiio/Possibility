@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "id": "branching-hamlet",
+  "title": "枝巷人丁村",
+  "style": {
+    "palette": "warm-hamlet",
+    "voxelUnit": 0.42,
+    "seed": 207
+  },
+  "regions": [
+    {
+      "id": "water",
+      "kind": "water",
+      "center": [0, 0],
+      "size": [2000, 2000],
+      "elevation": -0.43
+    },
+    {
+      "id": "island",
+      "kind": "island",
+      "center": [0, 0],
+      "radius": 16,
+      "elevation": 0.8,
+      "irregularity": 0
+    },
+    {
+      "id": "landing",
+      "kind": "island",
+      "center": [14, -2],
+      "radius": 4.1,
+      "elevation": 0.61,
+      "irregularity": 0
+    }
+  ],
+  "objects": [
+    {
+      "id": "library",
+      "kind": "library",
+      "name": "村中书院",
+      "transform": { "position": [0, 0, 0], "rotation": 0 },
+      "bounds": { "width": 9, "depth": 7, "wallHeight": 4.7, "floor": 1.48 },
+      "roof": { "kind": "gable", "rise": 2.65, "overhang": 0.65 },
+      "entrance": { "wall": "front", "width": 2.6, "height": 3.8 },
+      "windows": [
+        { "wall": "front", "offset": -3 },
+        { "wall": "front", "offset": 3 }
+      ],
+      "parts": ["walls", "roof", "bookshelves", "reading-table", "lamp"],
+      "attachments": [{ "target": "porch", "relation": "front-door" }]
+    },
+    {
+      "id": "porch",
+      "kind": "porch",
+      "name": "临水门廊",
+      "transform": { "position": [0, 0, 4.65], "rotation": 0 },
+      "bounds": { "width": 7.7, "depth": 2.6, "floor": 1.32 },
+      "attachments": [{ "target": "library", "relation": "entrance" }]
+    },
+    {
+      "id": "bridge",
+      "kind": "bridge",
+      "name": "村口石桥",
+      "from": { "region": "island", "point": [7.2, 0.9, -2] },
+      "to": { "region": "landing", "point": [14.8, 0.9, -2] },
+      "width": 2.25,
+      "arch": 0.85,
+      "segments": 17
+    },
+    {
+      "id": "h1",
+      "kind": "house",
+      "name": "渔家甲",
+      "transform": { "position": [-7.5, 0, 8.6], "rotation": 1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h2",
+      "kind": "house",
+      "name": "渔家乙",
+      "transform": { "position": [7.5, 0, 8.8], "rotation": -1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h3",
+      "kind": "house",
+      "name": "渔家丙",
+      "transform": { "position": [0, 0, 12.5], "rotation": 3.1416 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h4",
+      "kind": "house",
+      "name": "渔家丁",
+      "transform": { "position": [-11.5, 0, 0], "rotation": 1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h5",
+      "kind": "house",
+      "name": "渔家戊",
+      "transform": { "position": [11.5, 0, 2.5], "rotation": -1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h6",
+      "kind": "house",
+      "name": "渔家己",
+      "transform": { "position": [-8, 0, -8], "rotation": 1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "h7",
+      "kind": "house",
+      "name": "渔家庚",
+      "transform": { "position": [8, 0, -8], "rotation": -1.5708 },
+      "bounds": { "width": 4, "depth": 3.2, "wallHeight": 3, "floor": 1.15 },
+      "roof": { "kind": "gable", "rise": 1.25, "overhang": 0.35 },
+      "entrance": { "wall": "front", "width": 1.4, "height": 2.3 }
+    },
+    {
+      "id": "lane-trunk",
+      "kind": "path",
+      "name": "门前主巷",
+      "points": [[0, 7], [0, 9.7]],
+      "width": 1.2
+    },
+    {
+      "id": "lane-east",
+      "kind": "path",
+      "name": "东巷",
+      "points": [[0, 9.5], [4.6, 9.5], [4.6, 8.8]],
+      "width": 1.2
+    },
+    {
+      "id": "lane-west",
+      "kind": "path",
+      "name": "西巷",
+      "points": [[0, 9.5], [-4.6, 9.5], [-4.6, 8.6]],
+      "width": 1.2
+    },
+    {
+      "id": "lane-east-south",
+      "kind": "path",
+      "name": "东南巷",
+      "points": [[0, 7], [4.6, 7], [4.6, 5.3], [6.5, 5.3], [6.5, 2.5], [8.6, 2.5]],
+      "width": 0.8
+    },
+    {
+      "id": "lane-west-north",
+      "kind": "path",
+      "name": "西北巷",
+      "points": [[-4.6, 7], [-4.6, 5], [-7.3, 5], [-7.3, 0], [-8.6, 0]],
+      "width": 0.8
+    },
+    {
+      "id": "lane-south-west",
+      "kind": "path",
+      "name": "西南巷",
+      "points": [[0, 7], [-4.6, 7], [-4.6, 5.2], [-6.5, 5.2], [-6.5, -5.1], [-4.5, -5.1], [-4.5, -8], [-5.15, -8]],
+      "width": 0.8
+    },
+    {
+      "id": "lane-south-east",
+      "kind": "path",
+      "name": "南巷接桥",
+      "points": [[6.5, 5.3], [6.5, -2], [7, -2], [7, -5.1], [4.5, -5.1], [4.5, -8], [5.15, -8]],
+      "width": 0.8
+    },
+    {
+      "id": "lane-landing",
+      "kind": "path",
+      "name": "洲头小径",
+      "points": [[13.2, -2], [15.2, -2]],
+      "width": 0.8
+    },
+    {
+      "id": "tree-1",
+      "kind": "tree",
+      "position": [-12.6, 0.8, -4.8],
+      "scale": 0.4,
+      "seed": 101
+    },
+    {
+      "id": "tree-2",
+      "kind": "tree",
+      "position": [12.6, 0.8, -5.2],
+      "scale": 0.4,
+      "seed": 102
+    },
+    {
+      "id": "tree-3",
+      "kind": "tree",
+      "position": [12.2, 0.8, 6.2],
+      "scale": 0.35,
+      "seed": 103
+    },
+    {
+      "id": "tree-4",
+      "kind": "tree",
+      "position": [-12.5, 0.8, 6],
+      "scale": 0.35,
+      "seed": 104
+    },
+    {
+      "id": "tree-5",
+      "kind": "tree",
+      "position": [3.4, 0.8, 13.5],
+      "scale": 0.3,
+      "seed": 105
+    },
+    {
+      "id": "tree-6",
+      "kind": "tree",
+      "position": [-3.4, 0.8, 13.5],
+      "scale": 0.3,
+      "seed": 106
+    },
+    {
+      "id": "tree-7",
+      "kind": "tree",
+      "position": [-2, 0.8, -12],
+      "scale": 0.35,
+      "seed": 107
+    },
+    {
+      "id": "tree-8",
+      "kind": "tree",
+      "position": [2, 0.8, -12],
+      "scale": 0.35,
+      "seed": 108
+    },
+    {
+      "id": "tree-9",
+      "kind": "tree",
+      "position": [5, 0.8, -11],
+      "scale": 0.3,
+      "seed": 109
+    },
+    {
+      "id": "tree-10",
+      "kind": "tree",
+      "position": [-5, 0.8, -11],
+      "scale": 0.3,
+      "seed": 110
+    },
+    {
+      "id": "tree-11",
+      "kind": "tree",
+      "position": [14.5, 0.61, -4.5],
+      "scale": 0.3,
+      "seed": 111
+    },
+    {
+      "id": "tree-12",
+      "kind": "tree",
+      "position": [5.5, 0.8, 12],
+      "scale": 0.3,
+      "seed": 112
+    },
+    {
+      "id": "tree-13",
+      "kind": "tree",
+      "position": [-5.5, 0.8, 12],
+      "scale": 0.3,
+      "seed": 113
+    }
+  ]
+}

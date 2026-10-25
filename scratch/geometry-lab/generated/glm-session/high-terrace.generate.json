@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "high-terrace",
+  "title": "高台藏书屋",
+  "style": { "palette": "wetland-sage", "voxelUnit": 0.42, "seed": 208 },
+  "regions": [
+    { "id": "water", "kind": "water", "center": [0, 0], "size": [2000, 2000], "elevation": -0.43 },
+    { "id": "island", "kind": "island", "center": [0, 0], "radius": 11.5, "elevation": 2.4, "irregularity": 0.08 },
+    { "id": "landing", "kind": "island", "center": [15, 6], "radius": 4.1, "elevation": 1.2, "irregularity": 0 }
+  ],
+  "objects": [
+    {
+      "id": "library", "kind": "library", "name": "高台藏书屋",
+      "transform": { "position": [0, 0, 0], "rotation": 0 },
+      "bounds": { "width": 9, "depth": 7, "wallHeight": 5.5, "floor": 3.0 },
+      "roof": { "kind": "gable", "rise": 2.65, "overhang": 0.65 },
+      "entrance": { "wall": "front", "width": 2.6, "height": 3.9 },
+      "windows": [{ "wall": "front", "offset": -3 }, { "wall": "front", "offset": 3 }],
+      "parts": ["walls", "roof", "bookshelves", "reading-table", "lamp"],
+      "attachments": [{ "target": "porch", "relation": "front-door" }]
+    },
+    {
+      "id": "porch", "kind": "porch", "name": "高台门廊",
+      "transform": { "position": [0, 0, 4.8], "rotation": 0 },
+      "bounds": { "width": 6.5, "depth": 2.6, "floor": 2.85 },
+      "attachments": [{ "target": "library", "relation": "entrance" }]
+    },
+    {
+      "id": "bridge", "kind": "bridge", "name": "下坡木桥",
+      "from": { "region": "island", "point": [7.2, 2.4, 4.5] },
+      "to": { "region": "landing", "point": [16.5, 1.2, 6] },
+      "width": 2.25, "arch": 1.25, "segments": 23
+    },
+    { "id": "tree-north", "kind": "tree", "position": [-5, 2.4, -6.5], "scale": 0.6, "seed": 663 },
+    { "id": "tree-east", "kind": "tree", "position": [7.8, 2.4, -1], "scale": 0.6, "seed": 1377 },
+    { "id": "tree-west", "kind": "tree", "position": [-7, 2.4, 5], "scale": 0.75, "seed": 1581 },
+    { "id": "tree-landing", "kind": "tree", "position": [15, 1.2, 8.7], "scale": 0.3, "seed": 1785 }
+  ]
+}

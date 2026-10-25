@@ -2,10 +2,6 @@
   "name": "wispiva",
   "private": true,
   "type": "module",
-  "scripts": {
-    "prototype": "node prototype/v2/server.js",
-    "prototype:observe": "node prototype/v2/observe.mjs"
-  },
   "packageManager": "npm@11.10.0",
   "engines": {
     "node": ">=24"

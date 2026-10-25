@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "id": "twin-islands-library",
+  "title": "双屿长桥书舍",
+  "style": {
+    "palette": "north-cedar",
+    "voxelUnit": 0.4,
+    "seed": 217
+  },
+  "regions": [
+    {
+      "id": "water",
+      "kind": "water",
+      "center": [0, 0],
+      "size": [2000, 2000],
+      "elevation": -0.43
+    },
+    {
+      "id": "island",
+      "kind": "island",
+      "center": [0, 0],
+      "radius": 12,
+      "elevation": 0.8,
+      "irregularity": 0.06
+    },
+    {
+      "id": "landing",
+      "kind": "island",
+      "center": [0, 34],
+      "radius": 5,
+      "elevation": 1.2,
+      "irregularity": 0
+    }
+  ],
+  "objects": [
+    {
+      "id": "library",
+      "kind": "library",
+      "name": "北向藏书屋",
+      "transform": {
+        "position": [0, 0, -1],
+        "rotation": 0
+      },
+      "bounds": {
+        "width": 9,
+        "depth": 7,
+        "wallHeight": 4.7,
+        "floor": 0.9
+      },
+      "roof": {
+        "kind": "gable",
+        "rise": 2.2,
+        "overhang": 0.65
+      },
+      "entrance": {
+        "wall": "front",
+        "width": 2.6,
+        "height": 3.6
+      },
+      "windows": [
+        { "wall": "front", "offset": -3 },
+        { "wall": "front", "offset": 3 }
+      ],
+      "parts": ["walls", "roof", "bookshelves", "reading-table", "lamp"],
+      "attachments": [
+        { "target": "porch", "relation": "front-door" }
+      ]
+    },
+    {
+      "id": "porch",
+      "kind": "porch",
+      "name": "迎桥门廊",
+      "transform": {
+        "position": [0, 0, 3.8],
+        "rotation": 0
+      },
+      "bounds": {
+        "width": 7.7,
+        "depth": 2.6,
+        "floor": 0.78
+      },
+      "attachments": [
+        { "target": "library", "relation": "entrance" }
+      ]
+    },
+    {
+      "id": "bridge",
+      "kind": "bridge",
+      "name": "跨水长桥",
+      "from": {
+        "region": "island",
+        "point": [0, 0.78, 5.2]
+      },
+      "to": {
+        "region": "landing",
+        "point": [0, 1.2, 31]
+      },
+      "width": 2.2,
+      "arch": 1.0,
+      "segments": 26
+    },
+    {
+      "id": "tree-west",
+      "kind": "tree",
+      "position": [-8, 0.8, -2],
+      "scale": 0.5,
+      "seed": 411
+    },
+    {
+      "id": "tree-east",
+      "kind": "tree",
+      "position": [7.5, 0.8, 1],
+      "scale": 0.5,
+      "seed": 87
+    },
+    {
+      "id": "tree-south",
+      "kind": "tree",
+      "position": [3, 0.8, -8.5],
+      "scale": 0.5,
+      "seed": 133
+    },
+    {
+      "id": "tree-landing",
+      "kind": "tree",
+      "position": [3, 1.2, 34.6],
+      "scale": 0.4,
+      "seed": 56
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "id": "compact-cabin-library",
+  "title": "紧凑藏书小屋",
+  "style": {
+    "palette": "wetland-sage",
+    "voxelUnit": 0.4,
+    "seed": 42
+  },
+  "regions": [
+    {
+      "id": "water",
+      "kind": "water",
+      "center": [
+        0,
+        0
+      ],
+      "size": [
+        2000,
+        2000
+      ],
+      "elevation": -0.45
+    },
+    {
+      "id": "island",
+      "kind": "island",
+      "center": [
+        0,
+        0
+      ],
+      "radius": 8,
+      "elevation": 0.8,
+      "irregularity": 0.05
+    },
+    {
+      "id": "landing",
+      "kind": "island",
+      "center": [
+        13,
+        0
+      ],
+      "radius": 3,
+      "elevation": 0.6,
+      "irregularity": 0.05
+    }
+  ],
+  "objects": [
+    {
+      "id": "library",
+      "kind": "library",
+      "name": "小藏书屋",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": 0
+      },
+      "bounds": {
+        "width": 5.5,
+        "depth": 5,
+        "wallHeight": 4,
+        "floor": 0.9
+      },
+      "roof": {
+        "kind": "gable",
+        "rise": 1.8,
+        "overhang": 0.65
+      },
+      "entrance": {
+        "wall": "front",
+        "width": 2.2,
+        "height": 2.6
+      },
+      "windows": [
+        {
+          "wall": "front",
+          "offset": -1.8
+        },
+        {
+          "wall": "front",
+          "offset": 1.8
+        }
+      ],
+      "parts": [
+        "walls",
+        "roof",
+        "bookshelves",
+        "reading-table",
+        "lamp"
+      ],
+      "attachments": [
+        {
+          "target": "porch",
+          "relation": "front-door"
+        }
+      ]
+    },
+    {
+      "id": "porch",
+      "kind": "porch",
+      "name": "小门廊",
+      "transform": {
+        "position": [
+          0,
+          0,
+          3.55
+        ],
+        "rotation": 0
+      },
+      "bounds": {
+        "width": 4,
+        "depth": 2.4,
+        "floor": 0.8
+      },
+      "attachments": [
+        {
+          "target": "library",
+          "relation": "entrance"
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "kind": "bridge",
+      "name": "短木桥",
+      "from": {
+        "region": "island",
+        "point": [
+          6.5,
+          0.9,
+          0
+        ]
+      },
+      "to": {
+        "region": "landing",
+        "point": [
+          11.5,
+          0.7,
+          0
+        ]
+      },
+      "width": 1.8,
+      "arch": 0.5,
+      "segments": 11
+    },
+    {
+      "id": "tree-southwest",
+      "kind": "tree",
+      "position": [
+        -3.9,
+        0.8,
+        -3.6
+      ],
+      "scale": 0.3,
+      "seed": 663
+    },
+    {
+      "id": "tree-southeast",
+      "kind": "tree",
+      "position": [
+        3.2,
+        0.8,
+        -4.8
+      ],
+      "scale": 0.5,
+      "seed": 712
+    },
+    {
+      "id": "tree-west",
+      "kind": "tree",
+      "position": [
+        -5,
+        0.8,
+        3.2
+      ],
+      "scale": 0.5,
+      "seed": 845
+    }
+  ]
+}

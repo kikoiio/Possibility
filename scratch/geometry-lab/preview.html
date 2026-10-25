@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>村庄生成预览</title>
+  <style>
+    body { margin: 0; background: #c9dcd5; font-family: system-ui, sans-serif; overflow: hidden; }
+    #viewport { position: fixed; inset: 0; }
+    .label { position: fixed; top: 10px; padding: 4px 12px; border-radius: 6px; background: rgba(20, 40, 35, 0.72); color: #eef5ec; font-size: 14px; }
+    #title { left: 50%; transform: translateX(-50%); }
+    #left { left: 12px; }
+    #right { right: 12px; }
+  </style>
+</head>
+<body>
+  <div id="viewport"></div>
+  <div class="label" id="title">加载中…</div>
+  <div class="label" id="left">通用几何 (solid)</div>
+  <div class="label" id="right">体素 (voxel)</div>
+  <script type="module" src="./preview.js"></script>
+</body>
+</html>

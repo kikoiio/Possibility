@@ -11,8 +11,5 @@ coverage/
 .vite/
 .wrangler/
 
-prototype/*
-!prototype/v2/
-prototype/v2/.data/
-prototype/v2/artifacts/
 .tmp/
+.data/

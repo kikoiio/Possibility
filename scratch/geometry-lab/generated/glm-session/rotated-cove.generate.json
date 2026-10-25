@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "rotated-cove",
+  "title": "转角水湾藏书屋",
+  "style": { "palette": "wetland-sage", "voxelUnit": 0.42, "seed": 83 },
+  "regions": [
+    { "id": "water", "kind": "water", "center": [0, 0], "size": [2000, 2000], "elevation": -0.43 },
+    { "id": "island", "kind": "island", "center": [0, 0], "radius": 11.5, "elevation": 0.8, "irregularity": 0.08 },
+    { "id": "landing", "kind": "island", "center": [15, 6], "radius": 4.1, "elevation": 0.61, "irregularity": 0 }
+  ],
+  "objects": [
+    {
+      "id": "library", "kind": "library", "name": "转角藏书屋",
+      "transform": { "position": [0, 0, 0], "rotation": 0.35 },
+      "bounds": { "width": 9, "depth": 7, "wallHeight": 4.7, "floor": 1.48 },
+      "roof": { "kind": "gable", "rise": 2.65, "overhang": 0.65 },
+      "entrance": { "wall": "front", "width": 2.6, "height": 3.8 },
+      "windows": [{ "wall": "front", "offset": -3 }, { "wall": "front", "offset": 3 }],
+      "parts": ["walls", "roof", "bookshelves", "reading-table", "lamp"],
+      "attachments": [{ "target": "porch", "relation": "front-door" }]
+    },
+    {
+      "id": "porch", "kind": "porch", "name": "临水门廊",
+      "transform": { "position": [1.646, 0, 4.509], "rotation": 0.35 },
+      "bounds": { "width": 6.5, "depth": 2.6, "floor": 1.32 },
+      "attachments": [{ "target": "library", "relation": "entrance" }]
+    },
+    {
+      "id": "bridge", "kind": "bridge", "name": "弧形木桥",
+      "from": { "region": "island", "point": [7.2, 0.9, 4.5] },
+      "to": { "region": "landing", "point": [16.5, 0.9, 6] },
+      "width": 2.25, "arch": 1.25, "segments": 23
+    },
+    { "id": "tree-north", "kind": "tree", "position": [-5, 0.8, -6.5], "scale": 0.6, "seed": 663 },
+    { "id": "tree-east", "kind": "tree", "position": [7.8, 0.8, -1], "scale": 0.6, "seed": 1377 },
+    { "id": "tree-west", "kind": "tree", "position": [-7, 0.8, 5], "scale": 0.75, "seed": 1581 },
+    { "id": "tree-landing", "kind": "tree", "position": [15, 0.61, 8.7], "scale": 0.3, "seed": 1785 }
+  ]
+}
