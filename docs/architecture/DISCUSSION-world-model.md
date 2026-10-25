@@ -135,4 +135,4 @@ Prompt 的研究重点是输入和职责边界，而不只是换一段系统提�
 | [Text2World 作者项目](https://text-to-world.github.io/) | 从文本生成 PDDL 符号世界模型，用执行指标评估 | 可借鉴前置条件、效果与验证方法，不要求本项目采用 PDDL |
 | [Can Language Models Serve as Text-Based World Simulators?（ACL 2024）](https://aclanthology.org/2024.acl-short.1/) | 使用文本游戏状态转移基准检验模型预测 | 支持用状态变化测试，论文的特定模型结果不代表当前模型的能力上限 |
 
-分享还提及其他项目；其版本、可用性与实验结论需逐项核对后再纳入选型。规律积累、代码生成、微调及专用动力学模型保留为后续研究，不列为本轮交付要求。
+继续调研见 [WORLD-MODEL-RESEARCH.md](WORLD-MODEL-RESEARCH.md)：已进一步核对分享中的项目，并补充 WorldAgent、WorldLLM、EMPIRIC、AWM、DiscoveryWorld 及近期代码世界模型的研究与开放状态。规律积累、代码生成、微调及专用动力学模型仍为讨论方向，未据调研自动列为交付要求。

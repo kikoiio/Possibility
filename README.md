@@ -24,3 +24,12 @@ v1 架构：[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.m
 ## 开发
 
 monorepo 已有 `packages/contract`、`packages/engine`、`packages/web`；根目录提供 `npm test` 与 `npm run typecheck`。当前 beat 路径仍统一生成事件与 ops，独立环境 Simulator / Verifier 尚未实现。执行计划（轨道/依赖/决策门）见 [docs/PLAN.md](docs/PLAN.md)。
+
+## 本地模型配置
+
+两种方式,任选(引擎优先读配置文件,key 为空时回退环境变量;实验脚本只读环境变量):
+
+1. **环境变量**:复制 [`.env.example`](.env.example) 为 `.env`(已被 gitignore),填 `GROQ_LLM_API_KEY`;
+2. **配置文件**:复制 [`config.example.json`](config.example.json) 到 `.data/wispiva/config.json`(目录与文件引擎会以 600 权限自动创建),可调 baseUrl/models 与预算(节拍分钟数/最短间隔/每小时/每日/并发)。
+
+apiKey 只写不读,不入库、不进 git。云端 CI 的真实调用走仓库 secret(`llm-live.yml` 手动触发),须仓库主人显式授权后才会运行。

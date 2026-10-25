@@ -83,6 +83,10 @@ export async function openSettingsStore(options: {
   const defaults = options.defaults ?? DEFAULT_LLM_SETTINGS;
   const stored = await readDocument(path);
   const settings = parseSettings(stored ?? defaults, defaults);
+  // 环境变量回退:未在配置文件写 apiKey 时,读 GROQ_LLM_API_KEY(本地 .env 即可,不入库)。
+  if (!settings.apiKey && process.env.GROQ_LLM_API_KEY) {
+    settings.apiKey = process.env.GROQ_LLM_API_KEY;
+  }
 
   const writeSettings = async (next: LlmSettings): Promise<void> => {
     const validated = parseSettings(next, defaults);
