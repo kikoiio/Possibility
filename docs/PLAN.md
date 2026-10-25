@@ -105,6 +105,8 @@ P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
 
 单命令打包(engine serve web/dist)、云自托管文档与卷挂载说明、E2E 全量(云端:桌面/手机/2D3D 并排/编辑器/多元宇宙/暂停)、性能测量(revision 大小与频率→是否改增量存储;fork 深链深度→是否物化前缀)。
 
+**P4 状态(2026-10-25,提交 d4ea1d9)**:单命令 `npm run wispiva` 已通(vite 构建 671ms→引擎启动→SPA 200→/api/state 合法快照→退出冻结,无残留进程);[DEPLOY.md](DEPLOY.md) 与 scripts/measure-revisions.mjs 就绪;65 测全绿。浏览器 E2E 全量仍按资源规则留待云端 CI。
+
 ## 4. 验证与资源规则
 
 - 每轨自带定向测试,合并点跑交集;全量回归只在门与 CI。
