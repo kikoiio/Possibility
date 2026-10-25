@@ -53,6 +53,8 @@ P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
 
 **门 G1(P1 完成)——已通过(2026-10-25)**:四轨(domain 15 测/store/clock 13 测/llm,共 30 测)由四个 GPT-6-Luna high codex 工人在独立 worktree 并行完成,验收合并全绿;tsc 零错。
 
+**门 G2(集成冒烟)——已通过(2026-10-25,代码级)**:G2 竖切测试(web/test/g2-vertical.test.ts)打通 store→runtime(mock beat)→revision→projection→3D 编译→增量重建(44 测全绿);竖切暴露并修复了 projection 桥拱默认值超坡度预算的问题(拱高按跨度钳制)。浏览器可见的实时推进冒烟按资源规则延后(MemAvailable<4G 时本机不跑 GUI,待云端 CI 或内存充裕)。P2 三轨(runtime+http / web shell / renderer)由三个 GPT-6-Luna codex 工人并行完成。
+
 ### P1 引擎四轨(并行,子 agent 或主 agent 分轨)
 
 | 轨 | 内容 | 独立验收 | 依赖 |

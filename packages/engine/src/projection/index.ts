@@ -91,7 +91,10 @@ function sceneObjects(items: [string, Entity][], regions: SceneRegion[]): SceneO
       const route = Array.isArray(extra.route) ? extra.route : [];
       const first = tuple(fromValue.point, 3) ?? (tuple(route[0], 3) ?? [finite(extra.x, 7), 0.9, finite(extra.z, 4.5)]);
       const last = tuple(toValue.point, 3) ?? (tuple(route[1], 3) ?? [16.5, 0.9, 6]);
-      objects.push({ id, kind, name, from: { region: typeof fromValue.region === 'string' ? fromValue.region : island, point: first as Vec3 }, to: { region: typeof toValue.region === 'string' ? toValue.region : landing, point: last as Vec3 }, width: finite(extra.width, 2.25), arch: finite(extra.arch, 1.25), segments: Math.max(2, Math.floor(finite(extra.segments, 23))) });
+      // 拱高按跨度钳制,保证投影默认值也能通过步行坡度校验(空间字段残缺不阻塞画面)。
+      const span = Math.hypot(Number(last[0]) - Number(first[0]), Number(last[2]) - Number(first[2]));
+      const arch = Math.min(finite(extra.arch, 1.25), Math.max(0, span * 0.22));
+      objects.push({ id, kind, name, from: { region: typeof fromValue.region === 'string' ? fromValue.region : island, point: first as Vec3 }, to: { region: typeof toValue.region === 'string' ? toValue.region : landing, point: last as Vec3 }, width: finite(extra.width, 2.25), arch, segments: Math.max(2, Math.floor(finite(extra.segments, 23))) });
     } else if (kind === 'tree') objects.push({ id, kind, name, position: vec3(extra.position, [finite(extra.x, 0), finite(extra.y, 0.8), finite(extra.z, 0)]), scale: finite(extra.scale, 0.35), seed: finite(extra.seed, 83) });
     else if (kind === 'path') {
       const rawPoints = Array.isArray(extra.points) ? extra.points : Array.isArray(extra.route) ? extra.route : [[finite(extra.x, 0), finite(extra.z, 0)], [finite(extra.x, 0) + 1, finite(extra.z, 0)]];
