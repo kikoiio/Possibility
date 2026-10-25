@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wispiva/contract/plan",
+  "title": "Plan",
+  "type": "object",
+  "required": ["fromMinutes", "toMinutes", "events", "callId"],
+  "additionalProperties": false,
+  "properties": {
+    "fromMinutes": { "type": "integer", "minimum": 0 },
+    "toMinutes": { "type": "integer", "minimum": 0 },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "atMinutes", "text", "ops", "memories"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "atMinutes": { "type": "integer", "minimum": 0 },
+          "text": { "type": "string", "minLength": 1 },
+          "ops": { "type": "array", "items": { "$ref": "#/$defs/op" } },
+          "memories": { "type": "array", "items": { "$ref": "#/$defs/memory" } }
+        }
+      }
+    },
+    "callId": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "op": { "$ref": "op.schema.json" },
+    "memory": {
+      "type": "object",
+      "required": ["id", "owner", "text", "valence", "intensity", "importance", "about"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "valence": { "type": "number", "minimum": -1, "maximum": 1 },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "importance": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "about": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "emotion": { "enum": ["喜悦", "接纳", "恐惧", "惊讶", "悲伤", "厌恶", "愤怒", "期待"] },
+        "sourceEventId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

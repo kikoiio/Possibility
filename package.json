@@ -5,5 +5,18 @@
   "packageManager": "npm@11.10.0",
   "engines": {
     "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/contract/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "ajv": "^8.17.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

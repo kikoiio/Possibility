@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wispiva/contract/op",
+  "title": "Op",
+  "type": "object",
+  "required": ["op", "path"],
+  "additionalProperties": false,
+  "properties": {
+    "op": { "enum": ["set", "remove"] },
+    "path": { "type": "string", "pattern": "^(|/(?:[^/~]|~[01])(?:/(?:[^/~]|~[01]))*)$" },
+    "value": {}
+  },
+  "allOf": [
+    { "if": { "properties": { "op": { "const": "set" } } }, "then": { "required": ["value"] } },
+    { "if": { "properties": { "op": { "const": "remove" } } }, "then": { "not": { "required": ["value"] } } }
+  ]
+}

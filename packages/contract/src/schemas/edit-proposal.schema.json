@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wispiva/contract/edit-proposal",
+  "title": "EditProposal",
+  "type": "object",
+  "required": ["schemaVersion", "proposalId", "draftId", "baseRevisionId", "ops", "summary", "changedPaths", "memories"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "proposalId": { "type": "string", "minLength": 1 },
+    "draftId": { "type": "string", "minLength": 1 },
+    "baseRevisionId": { "type": "string", "minLength": 1 },
+    "ops": { "type": "array", "items": { "$ref": "op.schema.json" } },
+    "summary": { "type": "string", "minLength": 1 },
+    "changedPaths": { "type": "array", "items": { "type": "string" } },
+    "memories": { "type": "array", "items": { "$ref": "plan.schema.json#/$defs/memory" } }
+  }
+}

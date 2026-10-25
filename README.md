@@ -23,4 +23,4 @@ v1 架构：[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.m
 
 ## 开发
 
-规划中的 monorepo 结构为 `packages/contract`、`engine`、`web`，见架构文档。代码骨架尚未落地；落地前根目录没有可运行脚本。
+规划中的 monorepo 结构为 `packages/contract`、`engine`、`web`，见架构文档。代码骨架尚未落地；落地前根目录没有可运行脚本。执行计划（轨道/依赖/决策门）见 [docs/PLAN.md](docs/PLAN.md)。
