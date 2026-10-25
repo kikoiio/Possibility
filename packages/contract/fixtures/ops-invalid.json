@@ -1,0 +1,19 @@
+{
+  "world": { "entities": { "老舟": { "kind": "character", "name": "老舟", "location": "书院" }, "书院": { "kind": "place", "name": "临水书院", "open": true } } },
+  "ops": [
+    { "op": "set", "path": "/entities/书院/open" },
+    { "op": "set", "path": "/entities/~2书院/name", "value": "坏指针" },
+    { "op": "set", "path": "/entities/__proto__/polluted", "value": true },
+    { "op": "set", "path": "/entities/老舟/location", "value": "不存在的渡口" },
+    { "op": "remove", "path": "/entities/木桥" },
+    { "op": "remove", "path": "/entities/书院/open", "value": false }
+  ],
+  "expectedErrors": [
+    "set 操作缺少必需的 value。",
+    "path 含有无效的 JSON Pointer 转义序列 ~2。",
+    "path 指向原型污染敏感键 __proto__。",
+    "location 值引用了不存在的实体“不存在的渡口”。",
+    "remove 目标 /entities/木桥 在当前世界中不存在。",
+    "remove 操作禁止携带 value。"
+  ]
+}

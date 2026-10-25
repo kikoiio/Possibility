@@ -1,0 +1,27 @@
+{
+  "world": {
+    "entities": {
+      "书院": { "kind": "place", "name": "临水书院", "x": 0, "z": 0, "width": 9, "depth": 7, "height": 4.7 },
+      "木桥": { "kind": "bridge", "name": "村口木桥", "x": 11.8, "z": 5.2, "width": 2.25, "depth": 7, "height": 1.25 },
+      "老舟": { "kind": "character", "name": "老舟", "location": "书院", "x": 1.8, "z": 7.2 },
+      "阿苇": { "kind": "character", "name": "阿苇", "location": "石板路", "x": -5.5, "z": 8, "height": 1.62 },
+      "石板路": { "kind": "path", "name": "村中石板路", "x": 1.8, "z": 9.5, "width": 1, "depth": 5.5 },
+      "榕树": { "kind": "tree", "name": "桥头榕树", "x": 13, "z": 2 }
+    },
+    "premise": { "村名": "芦汀渔村", "时令": "初秋" }
+  },
+  "view": {
+    "lineId": "line_alpha", "revisionId": "rev_origin_village", "worldTimeMinutes": 480,
+    "places": [
+      { "id": "书院", "kind": "place", "name": "临水书院", "x": 0, "z": 0, "width": 9, "depth": 7, "height": 4.7 },
+      { "id": "木桥", "kind": "bridge", "name": "村口木桥", "x": 11.8, "z": 5.2, "width": 2.25, "depth": 7, "height": 1.25 }
+    ],
+    "characters": [
+      { "id": "老舟", "kind": "character", "name": "老舟", "x": 1.8, "z": 7.2, "width": 0.8, "depth": 0.8, "height": 1.7, "locationId": "书院" },
+      { "id": "阿苇", "kind": "character", "name": "阿苇", "x": -5.5, "z": 8, "width": 0.8, "depth": 0.8, "height": 1.62, "locationId": "石板路" }
+    ],
+    "others": [{ "id": "榕树", "kind": "tree", "name": "桥头榕树", "x": 13, "z": 2, "width": 1, "depth": 1, "height": 1 }],
+    "recentText": "清晨的潮气漫过村中石板路。"
+  },
+  "defaults": { "老舟.width": 0.8, "老舟.depth": 0.8, "老舟.height": 1.7, "榕树.width": 1, "榕树.depth": 1, "榕树.height": 1 }
+}

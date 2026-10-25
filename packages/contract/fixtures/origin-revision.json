@@ -1,0 +1,25 @@
+{
+  "id": "rev_origin_village",
+  "parentId": null,
+  "worldTimeMinutes": 0,
+  "event": {
+    "id": "evt_origin_village",
+    "kind": "origin",
+    "text": "芦汀渔村在清晨醒来。",
+    "atMinutes": 0
+  },
+  "world": {
+    "entities": {
+      "老舟": { "kind": "character", "name": "老舟", "location": "书院", "x": 1.8, "z": 7.2, "age": 67 },
+      "阿苇": { "kind": "character", "name": "阿苇", "location": "石板路", "x": -5.5, "z": 8 },
+      "书院": { "kind": "place", "name": "临水书院", "x": 0, "z": 0, "width": 9, "depth": 7, "height": 4.7 },
+      "石板路": { "kind": "path", "name": "村中石板路", "x": 1.8, "z": 9.5, "width": 1, "depth": 5.5, "height": 0.1 },
+      "木桥": { "kind": "bridge", "name": "村口木桥", "x": 11.8, "z": 5.2, "width": 2.25, "depth": 7, "height": 1.25 }
+    },
+    "premise": {
+      "村名": "芦汀渔村",
+      "时令": "初秋",
+      "约定": ["潮水退后村民修桥", "书院每日午后开放"]
+    }
+  }
+}
