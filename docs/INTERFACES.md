@@ -148,3 +148,22 @@ D 对 `StoreApi`/`MemoryRow`/`ReflectionRow` 仅 import 类型(B 的 api.ts 占�
 | B store | engine/src/store | contract、domain(校验复用) | 业务决策、LLM |
 | C clock | engine/src/clock | contract | 写库、LLM |
 | D llm | engine/src/llm | contract、store 的 api.ts 类型 | domain、直接开库、改世界 |
+
+## 6. P2 补充接口:projection(G 轨道实现,E/F 消费)
+
+`packages/engine/src/projection/index.ts` 导出(纯函数,不依赖 three/web):
+
+```ts
+// SceneDocument:3D 场景语义文档,形状以 scratch/geometry-lab/src/scene-document.js
+// 的 village 子集为准(regions: water/island;objects: library/porch/bridge/tree/
+// house/path/character;style.voxelUnit 等),由 WorldState 实体字段(kind/location/
+// x/z/width/depth/height/route/position 等开放字段)投影派生。
+export type SceneDocument = { /* G 轨道定义并导出完整类型 */ };
+
+// view:契约的轻量 RendererView(shell 总览/连线用);scene:3D 渲染器唯一输入。
+// 未知 kind 实体进 view.others,不阻塞投影。
+export function projectWorld(world: WorldState, worldTimeMinutes: Minutes,
+  revisionId: string, recentText: string | null): { scene: SceneDocument; view: RendererView };
+```
+
+runtime(E)通过注入使用 `projectWorld`(可传桩以便测试);web 壳(F)只消费 `view`;3D 渲染器(G 的 web 侧)只消费 `scene` 并按 recipeHash 内容键做部件级增量重建。
