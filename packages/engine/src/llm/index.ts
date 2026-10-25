@@ -5,6 +5,8 @@ export {
   OpenAiLlmGateway,
 } from './client.js';
 export type {
+  ChatInput,
+  ChatResult,
   CallAuditStore,
   EditInput,
   LlmGateway,

@@ -3,8 +3,11 @@ import type {
   EditProposal,
   EpochMs,
   LlmCall,
+  Memory,
   Minutes,
+  Op,
   Plan,
+  WorldState,
 } from '@wispiva/contract';
 import { assembleBeatMessages, type BeatInput } from './assemble.js';
 
@@ -15,6 +18,23 @@ export type EditInput = {
   worldTimeMinutes: Minutes;
   world: BeatInput['world'];
   prompt: string;
+};
+
+export type ChatInput = {
+  lineId: string;
+  baseRevisionId: string;
+  asEntity: string;
+  otherEntity: string;
+  text: string;
+  world: WorldState;
+  visibleMemories: Memory[];
+  worldTimeMinutes: Minutes;
+};
+
+export type ChatResult = {
+  text: string;
+  ops?: Op[];
+  memories: { asEntity: Memory[]; otherEntity: Memory[] };
 };
 
 export interface LlmSettings {
@@ -31,6 +51,7 @@ export interface LlmSettings {
 export interface LlmGateway {
   beat(input: BeatInput): Promise<{ plan: Plan; callId: string }>;
   edit(input: EditInput): Promise<EditProposal>;
+  chat(input: ChatInput): Promise<ChatResult & { callId: string }>;
 }
 
 export interface CallAuditStore {
@@ -131,6 +152,23 @@ export class OpenAiLlmGateway implements LlmGateway {
     return { ...proposal, proposalId: callId, draftId: input.draftId, baseRevisionId: input.baseRevisionId };
   }
 
+  async chat(input: ChatInput): Promise<ChatResult & { callId: string }> {
+    const callId = this.createId();
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '你是世界中的角色，依据世界状态与提供的可见记忆自然回应。只返回 JSON：{"text":"逐字回复","ops":[],"memories":{"asEntity":[],"otherEntity":[]}}。记忆增量分别归属对话双方。' },
+      { role: 'user', content: JSON.stringify({ asEntity: input.asEntity, otherEntity: input.otherEntity, text: input.text, world: input.world, visibleMemories: input.visibleMemories }) },
+    ];
+    const result = await this.call('chat', input.lineId, input.baseRevisionId, input.worldTimeMinutes, messages, callId);
+    const payload = await this.parseAudited<ChatResult>(callId, result.content);
+    if (!payload || typeof payload.text !== 'string' || !payload.memories ||
+        !Array.isArray(payload.memories.asEntity) || !Array.isArray(payload.memories.otherEntity)) {
+      const error = new Error('Invalid chat response: text and memories are required.');
+      await this.store.updateCall(callId, { status: 'failed', error: error.message, finishedAt: this.now() });
+      throw error;
+    }
+    return { ...payload, callId };
+  }
+
   private pruneBudget(now: number): void {
     while (globalLedger.starts.length && now - globalLedger.starts[0]! >= 86_400_000) globalLedger.starts.shift();
   }
@@ -196,7 +234,7 @@ export class OpenAiLlmGateway implements LlmGateway {
   }
 
   private async call(
-    kind: 'beat' | 'edit',
+    kind: 'beat' | 'edit' | 'chat',
     lineId: string,
     baseRevisionId: string,
     startMinutes: number,

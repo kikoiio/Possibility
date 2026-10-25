@@ -24,7 +24,7 @@ import {
   validatePlan,
 } from '../domain/index.js';
 import { createClockState, dueEvents, sampleClock, type LineClockState } from '../clock/index.js';
-import type { BeatInput, EditInput, LlmGateway, LlmSettings } from '../llm/index.js';
+import type { BeatInput, ChatInput, EditInput, LlmGateway, LlmSettings } from '../llm/index.js';
 import { openStore, type StoreApi } from '../store/index.js';
 import type { Store } from '../store/index.js';
 
@@ -39,7 +39,13 @@ export type RuntimeOptions = {
   createId?: (prefix: string) => string;
   writeSettings?: (settings: LlmSettings) => Promise<void>;
   retryDelayMs?: number;
+  chatIdleTimeoutMs?: number;
 };
+
+export type RuntimeEvent = SseEvent | { type: 'slowdown'; data: { lineId: string; active: boolean; speed: number } };
+export type ChatTurnInput = Pick<ChatInput, 'lineId' | 'asEntity' | 'otherEntity' | 'text'>;
+export type DigestItem = { revisionId: string; text: string; importance: number; atMinutes: number };
+type ChatSession = { originalSpeed: number; timer: ReturnType<typeof setTimeout> | null };
 
 function id(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
@@ -64,9 +70,13 @@ export class Runtime {
   private readonly createId: (prefix: string) => string;
   private readonly writeSettings: ((settings: LlmSettings) => Promise<void>) | undefined;
   private readonly retryDelayMs: number;
+  private readonly chatIdleTimeoutMs: number;
   private readonly clocks = new Map<string, LineClockState>();
   private readonly proposals = new Map<string, EditProposal>();
   private readonly activeBeats = new Map<string, Promise<void>>();
+  private readonly viewpoints = new Map<string, string>();
+  private readonly chatSessions = new Map<string, ChatSession>();
+  private readonly activeChats = new Set<string>();
 
   constructor(options: RuntimeOptions) {
     this.store = options.store;
@@ -77,6 +87,7 @@ export class Runtime {
     this.createId = options.createId ?? id;
     this.writeSettings = options.writeSettings;
     this.retryDelayMs = options.retryDelayMs ?? 60_000;
+    this.chatIdleTimeoutMs = options.chatIdleTimeoutMs ?? 30_000;
   }
 
   async tick(): Promise<void> {
@@ -124,7 +135,133 @@ export class Runtime {
       views[line.id] = this.projectWorld(revision.world, line.worldTimeMinutes, revision.id, revision.event.text).view;
       recentLogs[line.id] = page.entries;
     }
-    return { schemaVersion: SCHEMA_VERSION, lines, views, recentLogs };
+    return { schemaVersion: SCHEMA_VERSION, lines, views, recentLogs, viewpoints: Object.fromEntries(this.viewpoints) } as StateSnapshot & { viewpoints: Record<string, string> };
+  }
+
+  async chatTurn(input: ChatTurnInput): Promise<{ text: string; callId: string; lineId: string }> {
+    if (this.activeChats.has(input.lineId)) throw new Error('该世界线已有对话正在处理中。');
+    this.activeChats.add(input.lineId);
+    try {
+      return await this.performChatTurn(input);
+    } finally {
+      this.activeChats.delete(input.lineId);
+    }
+  }
+
+  private async performChatTurn(input: ChatTurnInput): Promise<{ text: string; callId: string; lineId: string }> {
+    if (!input.text.trim()) throw new Error('对话文本不能为空。');
+    const line = await this.requireLine(input.lineId);
+    const revision = await this.store.getRevision(line.headRevisionId);
+    if (!revision) throw new Error(`Head revision not found: ${line.headRevisionId}`);
+    const asEntity = this.viewpoints.get(line.id) ?? input.asEntity;
+    for (const entityId of [asEntity, input.otherEntity]) {
+      const entity = revision.world.entities[entityId];
+      if (!entity || entity.kind !== 'character') throw new Error(`对话角色不存在或不是角色：${entityId}`);
+    }
+    if (asEntity === input.otherEntity) throw new Error('对话双方必须是不同角色。');
+
+    let session = this.chatSessions.get(line.id);
+    if (!session) {
+      session = { originalSpeed: line.speed, timer: null };
+      this.chatSessions.set(line.id, session);
+      this.emit({ type: 'slowdown', data: { lineId: line.id, active: true, speed: 1 } });
+      await this.store.updateLine(line.id, { speed: 1 });
+      this.clocks.set(line.id, { ...this.clocks.get(line.id) ?? createClockState(line.id, { anchorWorldMinutes: line.worldTimeMinutes, anchorWallMs: this.now() }), speed: 1, anchorWallMs: this.now() });
+      this.emitLine({ ...line, speed: 1 });
+    }
+    if (session.timer) clearTimeout(session.timer);
+    let callId: string | undefined;
+    try {
+      const visibleMemories = await this.store.getMemories(line.id, [input.otherEntity], 100);
+      const result = await this.gateway.chat({
+        lineId: line.id,
+        baseRevisionId: revision.id,
+        asEntity,
+        otherEntity: input.otherEntity,
+        text: input.text,
+        world: revision.world,
+        visibleMemories,
+        worldTimeMinutes: line.worldTimeMinutes,
+      });
+      callId = result.callId;
+      const ops = result.ops ?? [];
+      const applied = applyOps(revision.world, ops);
+      const memories = [...result.memories.asEntity, ...result.memories.otherEntity];
+      const invalidOwnership = result.memories.asEntity.some((memory) => memory.owner !== asEntity)
+        || result.memories.otherEntity.some((memory) => memory.owner !== input.otherEntity);
+      const diagnostics = validateMemories(applied.world, memories);
+      if (invalidOwnership || diagnostics.length) throw new Error(invalidOwnership ? 'Chat memories must belong to one of the two participants.' : diagnostics.map((item) => item.message).join('；'));
+      const latest = await this.requireLine(line.id);
+      if (latest.headRevisionId !== revision.id) throw new Error('世界线已前进，对话结果已过期。');
+      const eventId = this.createId('evt');
+      const revisionOut: Revision = {
+        id: this.createId('rev'),
+        parentId: revision.id,
+        worldTimeMinutes: latest.worldTimeMinutes,
+        event: {
+          id: eventId,
+          kind: 'chat',
+          text: `${input.text}\n${result.text}`,
+          ops,
+          changes: applied.changes,
+          memories: memories.map((memory) => ({ ...memory, sourceEventId: eventId })),
+          callId,
+          atMinutes: latest.worldTimeMinutes,
+        },
+        world: applied.world,
+      };
+      await this.store.transaction(async (tx) => {
+        await tx.appendRevisions(line.id, [revisionOut]);
+        if (memories.length) await tx.appendMemories(line.id, memories, eventId);
+      });
+      this.emit({ type: 'revision', data: { lineId: line.id, entry: toLogEntry(revisionOut) } });
+      const call = await this.store.getCall(callId);
+      if (call) this.emit({ type: 'call', data: callSummary(call.id, call.kind, call.lineId, call.status, call.error) });
+      return { text: result.text, callId, lineId: line.id };
+    } catch (error) {
+      if (callId) {
+        const call = await this.store.getCall(callId);
+        if (call && call.status !== 'failed') {
+          await this.store.updateCall(callId, { status: 'failed', error: error instanceof Error ? error.message : String(error), finishedAt: this.now() });
+          this.emit({ type: 'call', data: callSummary(call.id, 'chat', call.lineId, 'failed', error instanceof Error ? error.message : String(error)) });
+        }
+      }
+      throw error;
+    } finally {
+      session.timer = setTimeout(() => { void this.endChat(line.id); }, this.chatIdleTimeoutMs);
+      session.timer.unref?.();
+    }
+  }
+
+  async endChat(lineId: string): Promise<WorldLine> {
+    const session = this.chatSessions.get(lineId);
+    const line = await this.requireLine(lineId);
+    if (!session) return line;
+    if (session.timer) clearTimeout(session.timer);
+    this.chatSessions.delete(lineId);
+    await this.store.updateLine(lineId, { speed: session.originalSpeed });
+    this.clocks.set(lineId, { ...this.clocks.get(lineId) ?? createClockState(lineId, { anchorWorldMinutes: line.worldTimeMinutes, anchorWallMs: this.now() }), speed: session.originalSpeed, anchorWallMs: this.now() });
+    const restored = { ...line, speed: session.originalSpeed };
+    this.emitLine(restored);
+    this.emit({ type: 'slowdown', data: { lineId, active: false, speed: session.originalSpeed } });
+    return restored;
+  }
+
+  async setViewpoint(lineId: string, entityId: string | null): Promise<{ lineId: string; entityId: string | null }> {
+    const line = await this.requireLine(lineId);
+    if (entityId === null || entityId === '') this.viewpoints.delete(lineId);
+    else {
+      const revision = await this.store.getRevision(line.headRevisionId);
+      if (!revision?.world.entities[entityId] || revision.world.entities[entityId]?.kind !== 'character') throw new Error(`附身角色不存在：${entityId}`);
+      this.viewpoints.set(lineId, entityId);
+    }
+    return { lineId, entityId: this.viewpoints.get(lineId) ?? null };
+  }
+
+  async getDigest(lineId: string, limit = 5): Promise<DigestItem[]> {
+    await this.requireLine(lineId);
+    const page = await this.store.pageLog(lineId, { limit: Math.max(1, Math.min(200, Math.trunc(limit))) });
+    return digest(page.entries, limit);
   }
 
   getLog(lineId: string, beforeRevisionId?: string, limit = 50) {
@@ -249,12 +386,13 @@ export class Runtime {
     return next;
   }
 
-  subscribe(listener: (event: SseEvent) => void): () => void {
+  subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.events.on('event', listener);
     return () => this.events.off('event', listener);
   }
 
   async close(): Promise<void> {
+    await Promise.all([...this.chatSessions.keys()].map((lineId) => this.endChat(lineId)));
     await Promise.allSettled(this.activeBeats.values());
     await this.store.close();
   }
@@ -378,9 +516,20 @@ export class Runtime {
     this.emit({ type: 'line', data: line });
   }
 
-  private emit(event: SseEvent): void {
+  private emit(event: RuntimeEvent): void {
     this.events.emit('event', event);
   }
+}
+
+export function digest(entries: LogEntry[], limit = 5): DigestItem[] {
+  return entries.map((entry, index) => {
+    const importance = entry.event.memories?.length
+      ? entry.event.memories.reduce((sum, memory) => sum + memory.importance, 0) / entry.event.memories.length
+      : 0;
+    return { item: { revisionId: entry.id, text: entry.event.text, importance, atMinutes: entry.event.atMinutes }, index };
+  }).sort((left, right) => right.item.importance - left.item.importance
+    || right.item.atMinutes - left.item.atMinutes || left.index - right.index)
+    .slice(0, Math.max(0, Math.trunc(limit))).map(({ item }) => item);
 }
 
 export async function startRuntime(options: Omit<RuntimeOptions, 'store'> & { storePath: string }): Promise<Runtime> {
