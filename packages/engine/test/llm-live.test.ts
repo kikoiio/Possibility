@@ -36,6 +36,7 @@ describe('LLM settings store', () => {
     const gateway: LlmGateway = {
       beat: async () => { throw new Error('unused'); },
       edit: async () => { throw new Error('unused'); },
+      chat: async () => { throw new Error('unused'); },
     };
     const runtime = new Runtime({
       store: runtimeStore,
@@ -111,6 +112,7 @@ describe('memory A/B experiment', () => {
         };
       }),
       edit: vi.fn(),
+      chat: vi.fn(),
     };
 
     const report = await runAbMemoryExperiment({
