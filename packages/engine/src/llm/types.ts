@@ -1,17 +1,2 @@
-import type { EpochMs, Memory, Minutes } from '@wispiva/contract';
-
-export type MemoryRow = Memory & {
-  lineId: string;
-  atMinutes: Minutes;
-  lastAccessedMinutes?: Minutes;
-};
-
-export type ReflectionRow = {
-  lineId: string;
-  owner: string;
-  version: number;
-  text: string;
-  fromMinutes: Minutes;
-  toMinutes: Minutes;
-  generatedAt: EpochMs;
-};
+// 类型单一来源:与 store 的 api.ts 共享(INTERFACES §2/§4),避免两处分叉。
+export type { MemoryRow, ReflectionRow } from '../store/api.js';

@@ -51,6 +51,8 @@ P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
 
 **门 G0(M0 冻结)——已通过(2026-10-25,提交 36bbb8d + c2ee3ee)**:脚手架/类型/Schema/fixtures 全绿,轨道间接口见 [INTERFACES.md](INTERFACES.md)。此后 contract 改动走 §9 变更协议。
 
+**门 G1(P1 完成)——已通过(2026-10-25)**:四轨(domain 15 测/store/clock 13 测/llm,共 30 测)由四个 GPT-6-Luna high codex 工人在独立 worktree 并行完成,验收合并全绿;tsc 零错。
+
 ### P1 引擎四轨(并行,子 agent 或主 agent 分轨)
 
 | 轨 | 内容 | 独立验收 | 依赖 |
