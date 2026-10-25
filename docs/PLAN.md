@@ -49,7 +49,7 @@ P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
 | P0.4 | 9 个 fixtures(按 CONTRACT-DRAFT §5 清单) | 全部通过 schema |
 | P0.5 | **轨道间接口约定文档**(store 查询 API 签名、domain 导出清单、llm 组装输入) | 四轨负责人(即各 agent 任务书)可据此开工 |
 
-**门 G0(M0 冻结)**:上表全绿 → 宣布契约冻结,此后 contract 改动走 §9 变更协议。
+**门 G0(M0 冻结)——已通过(2026-10-25,提交 36bbb8d + c2ee3ee)**:脚手架/类型/Schema/fixtures 全绿,轨道间接口见 [INTERFACES.md](INTERFACES.md)。此后 contract 改动走 §9 变更协议。
 
 ### P1 引擎四轨(并行,子 agent 或主 agent 分轨)
 
