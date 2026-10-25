@@ -2,7 +2,7 @@
 
 日期：2026-10-24
 状态：修订中。2026-10-25 裁决:3D 采用共享场景语义文档 + 双确定性后端,通用几何(solid)为 v1 主渲染,体素(voxel)为第二后端并承担编辑辅助视图(碰撞/导航/变更可视化候选);体素需补齐表面网格化、非整格部件、材质尺度,在真实模型生成实验后按数据定岗。生成路线及证据见 [文本到 3D 调研](TEXT-TO-3D-RESEARCH.md)。
-依据：[requirements.md](../requirements.md) 与第二轮原型机制观察。原型已完成使命并从 main 删除；参考实现可用 `git show dea81b8:prototype/v2/<file>` 查看，真实 Groq 观察见 [Actions run 40083293453](https://github.com/kikoiio/Wispiva/actions/runs/40083293453)。历史候选与裁决保留在 [SYNTHESIS.md](SYNTHESIS.md) 与 [candidates/](candidates/)。
+依据：[requirements.md](../requirements.md) 与第二轮原型机制观察。原型已完成使命并从 main 删除；参考实现可用 `git show dea81b8:prototype/v2/<file>` 查看，真实 Groq 观察见 [Actions run 40083293453](https://github.com/kikoiio/Wispiva/actions/runs/40083293453)。历史裁决见 [SYNTHESIS.md](SYNTHESIS.md)（原始候选已删，可从 git 历史查看）。
 
 ## 1. 总体形态
 

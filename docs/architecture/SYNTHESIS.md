@@ -2,7 +2,7 @@
 
 > 复核状态（2026-10-24）：本文为历史裁决记录，不作为正式实施依据。第二轮原型已验证时间推进、编辑基准、状态与历史一致性、长期记忆和双渲染投影等关键机制，观察结论已并入正式架构；见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 git 历史 `dea81b8`。
 
-日期：2026-10-24 · 基准：docs/requirements.md · 候选：candidates/{a,b,c}.md
+日期：2026-10-24 · 基准：docs/requirements.md · 候选：candidates/{a,b,c}.md（原始文件已删，见 git 历史）
 
 ## 评分（1–5）
 

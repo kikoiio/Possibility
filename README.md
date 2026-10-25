@@ -19,7 +19,7 @@
 
 从零重建中。旧实现（世界/人物/时间线分叉/场景展示）已删除，可从 git 历史 `f0c207e` 查看。第二轮可玩原型于 2026-10-24 完成机制验证后删除，参考实现保留在 git 历史 `dea81b8`。
 
-v1 架构正在根据创世与视觉需求修订：[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)。文本生成 3D 的候选路线与来源见 [调研文档](docs/architecture/TEXT-TO-3D-RESEARCH.md)；视觉契约尚未冻结。[docs/architecture/SYNTHESIS.md](docs/architecture/SYNTHESIS.md) 及 candidates 仅作历史裁决记录。
+v1 架构：[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)，视觉走共享语义文档 + solid 主渲染/voxel 副岗（几何原型见 [调研文档](docs/architecture/TEXT-TO-3D-RESEARCH.md)）。[SYNTHESIS.md](docs/architecture/SYNTHESIS.md) 为架构竞赛的历史裁决记录（原始三份候选已删，见 git 历史）。
 
 ## 开发
 
