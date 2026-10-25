@@ -57,6 +57,8 @@ P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
 
 **门 G2(集成冒烟)——已通过(2026-10-25,代码级)**:G2 竖切测试(web/test/g2-vertical.test.ts)打通 store→runtime(mock beat)→revision→projection→3D 编译→增量重建(44 测全绿);竖切暴露并修复了 projection 桥拱默认值超坡度预算的问题(拱高按跨度钳制)。浏览器可见的实时推进冒烟按资源规则延后(MemAvailable<4G 时本机不跑 GUI,待云端 CI 或内存充裕)。P2 三轨(runtime+http / web shell / renderer)由三个 GPT-6-Luna codex 工人并行完成。
 
+**门 G3(可玩)——代码级完成(2026-10-25,提交 be23f14/f53efcf)**:P3 三轨(live 接线/编辑器+创世+记忆视图/在场对话+附身+新闻播报)由三个 codex 工人并行完成,58 测全绿,四块面板已挂进壳(事件日志/对话/新闻播报/编辑器/记忆对照五个标签页)。真实 LLM 的 G3 验收(灵魂 A/B、真对话、长期把玩)待用户授权 GROQ secret——scripts/ab-memory.mjs 与 .github/workflows/llm-live.yml 已就绪。
+
 ### P1 引擎四轨(并行,子 agent 或主 agent 分轨)
 
 | 轨 | 内容 | 独立验收 | 依赖 |
