@@ -469,9 +469,10 @@ local function spawn_agents()
 			le._memory = {met = {}, idle_streak = 0}
 			le._episodic = cognition_memory.new(32)
 			if saved then
-				local ok = pcall(persistence.restore, le, saved[i + 1], {reset_minds = RESET_MINDS})
+				local ok, detail = pcall(persistence.restore, le, saved[i + 1], {reset_minds = RESET_MINDS})
 				if not ok or le._id ~= i then
-					ev("fail=restore-invalid agent=%d", i)
+					ev("fail=restore-invalid agent=%d detail=%s saved_id=%s", i,
+						tostring(detail):gsub("%s+", "_"), tostring(saved[i + 1] and saved[i + 1].id))
 					S.failed = "restore-invalid"
 					minetest.request_shutdown()
 					return
