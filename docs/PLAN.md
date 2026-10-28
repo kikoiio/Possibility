@@ -5,7 +5,7 @@
 ## 当前状态
 
 - GitHub `main` 已启用规则集，要求 PR 和 GitHub Actions `branch-origin-guard` 检查，拦截 `proto/*`、`experiment/*` 直接合入；规则与检查文件已通过 API 读取核对，并已用实际 PR 运行验证（PR #3 通过检查后合并）。
-- 主线基线已提交（`b801bf1`，经 PR #3 合并为 `ceb952d`）：移除被替代的 v1 实现，加入 `AGENTS.md` 与重组后的 `docs/`。删除的代码仍保存在 `proto/world-genesis` 与 `experiment/minecraft-societies`。
+- 主线基线已提交（`b801bf1`，经 PR #3 合并为 `ceb952d`）：移除被替代的 v1 实现，重组 `docs/`。基线曾加入 `AGENTS.md`，其后删除，项目规则以 `docs/` 为准。删除的代码仍保存在 `proto/world-genesis` 与 `experiment/minecraft-societies`。
 - 产品文案使用“创建世界”描述从文本建立世界的过程。
 - 产品目标见[项目意图](intent.md)；[当前架构](architecture.md)描述现有证据和分支边界，[目标架构](design/2026-10-27-target-architecture.md)仍是方案。
 - 创建世界和模拟原型位于 `proto/world-genesis`，工作区为 `/home/neo/Projects/Wispiva-prototype`；主线不直接运行该原型，也不整体合并一次性原型分支。入口支持可选文本素材、讨论摘要和起点确认，素材作为参考资料而非指令；真实模型体验尚未验收。[合成数据浏览器验收](https://github.com/kikoiio/Wispiva/actions/runs/40664414490)通过，截图位于原型工作区 `.tmp/entry-flow/screenshots-final/`。
