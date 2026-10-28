@@ -1,24 +1,13 @@
--- society/init.lua —— M0：Luanti 服务端 agent 的最小闭环。
---
--- 本文件要证明的事情只有三件，正好是 M0 的退出条件：
---   1. 可以重复启停；
---   2. agent 确实每个 server step 都被引擎推进；
---   3. 失败时给出明确原因，而不是静默消失。
---
--- 它**不**做的事：不接 LLM（M4）、不做持久化与快照（M3）、不做规模阶梯（M1）。
--- 决策是 policy.lua 里的确定性桩，这样环境问题与模型问题不会混在一起。
---
--- 一条刻意的分工，不要改成「在 on_step 里决策」：
---   * 每个实体的 on_step 只累加自己的步数计数 —— 这是「被推进」的证据；
---   * 一个 globalstep 驱动按 agent id 排序依次决策 —— 这是事件序列可重复的前提。
--- 引擎遍历活跃区块的顺序不保证稳定，把决策放进 on_step 会让日志交错随机化。
-
+-- Luanti experiment: central stable-order decisions, private cognition, verified actions.
 local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
 local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
+local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
+local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
+local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -34,6 +23,10 @@ local WANDER = tonumber(cfg("society_wander_radius", "12"))
 local SENSE = tonumber(cfg("society_sense_radius", "12"))
 local STEP = tonumber(cfg("society_step", "2"))
 local STATS_EVERY = tonumber(cfg("society_stats_interval", "5"))
+local OPTIMIZED = cfg("society_optimized", "true") == "true"
+local PROFILE = cfg("society_profile", "false") == "true"
+local FRAME_BUDGET = tonumber(cfg("society_frame_budget_ms", "25"))
+local MEMORY_MODE = cfg("society_memory_mode", "fifo")
 local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
 local COGNITION = cfg("society_cognition", "false") == "true"
@@ -71,6 +64,34 @@ local summary_and_stop
 local agents = {}
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
+local index = spatial.new(math.max(SENSE, 1))
+local cached_nodes = node_cache.new(minetest, {MARK_NODE, "society:resource"}, 16, 1024)
+local object_queries = 0
+local profile = {observe=0, action=0, contact=0, callback=0, max_callback=0, log=0}
+local run_started
+local cadence = {sum=0, min=math.huge, max=0, n=0}
+local frame_driver
+local function nearby(pos, radius)
+	object_queries = object_queries + 1
+	local objects = OPTIMIZED and index:query(pos, radius) or minetest.get_objects_inside_radius(pos, radius)
+	-- Tie breaking is independent of engine iteration order on both sides.
+	if not OPTIMIZED then
+		table.sort(objects, function(a,b)
+			local ae, be = a:get_luaentity(), b:get_luaentity()
+			return (ae and ae._id or -1) < (be and be._id or -1)
+		end)
+	end
+	return objects
+end
+local function find_nodes(lo, hi, names)
+	if OPTIMIZED then return cached_nodes:find(lo, hi, names) end
+	return minetest.find_nodes_in_area(lo, hi, names)
+end
+local observation_engine = {
+	get_objects_inside_radius = nearby,
+	find_nodes_in_area = find_nodes,
+	get_node_or_nil = minetest.get_node_or_nil,
+}
 
 local function resource_total()
 	local in_world = #minetest.find_nodes_in_area(
@@ -84,7 +105,9 @@ local function resource_total()
 end
 
 local function ev(fmt, ...)
+	local started = PROFILE and minetest.get_us_time()
 	minetest.log("action", "SOCIETY " .. string.format(fmt, ...))
+	if started then profile.log = profile.log + minetest.get_us_time()-started end
 end
 
 local function fp(v)
@@ -135,7 +158,8 @@ end
 local function observe(self, pos)
 	local nearby_agents = {}
 	local nearest, nearest_d = nil, nil
-	for _, obj in ipairs(minetest.get_objects_inside_radius(pos, SENSE)) do
+	local candidates = nearby(pos, SENSE)
+	for _, obj in ipairs(candidates) do
 		if obj ~= self.object then
 			local le = obj:get_luaentity()
 			if le and le.name == "society:agent" and le._id then
@@ -151,7 +175,7 @@ local function observe(self, pos)
 		end
 	end
 
-	local marks = #minetest.find_nodes_in_area(
+	local marks = #find_nodes(
 		{x = pos.x - SENSE, y = pos.y - 2, z = pos.z - SENSE},
 		{x = pos.x + SENSE, y = pos.y + 2, z = pos.z + SENSE},
 		{MARK_NODE})
@@ -171,7 +195,7 @@ local function observe(self, pos)
 		marks_nearby = marks,
 		has_target = self._target ~= nil,
 		self_marks = self._marks_placed,
-	}
+	}, candidates
 end
 
 local function step_toward(self, pos, target)
@@ -188,6 +212,7 @@ local function step_toward(self, pos, target)
 		return nil
 	end
 	self.object:set_pos(np)
+	if OPTIMIZED then index:upsert(self._id, self.object, np) end
 	return np
 end
 
@@ -263,6 +288,7 @@ local function apply(self, action, pos)
 			return false, "occupied"
 		end
 		minetest.set_node(at, {name = MARK_NODE})
+		cached_nodes:invalidate(at)
 		local after = minetest.get_node(at).name
 		if after ~= MARK_NODE then
 			-- 写了但没落地：必须报出来，不能计入成功
@@ -289,6 +315,7 @@ local function apply(self, action, pos)
 
 	if kind == "gather" or kind == "build" then
 		local ok, reason = self._resources[kind](self._resources, action.point, "society:resource")
+		cached_nodes:invalidate(action.point)
 		self._last_action = {kind = kind, point = action.point, ok = ok, reason = reason or "verified"}
 		self._episodic:add({time = minetest.get_gametime(),
 			text = string.format("%s at %d,%d,%d %s: %s; inventory=%d", kind,
@@ -326,7 +353,7 @@ end
 
 -- 走到邻居身边时记一次接触：这不是决策，是执行结果反馈进记忆。
 local function settle_contacts(self, pos)
-	for _, obj in ipairs(minetest.get_objects_inside_radius(pos, STEP + 1)) do
+	for _, obj in ipairs(nearby(pos, STEP + 1)) do
 		if obj ~= self.object then
 			local le = obj:get_luaentity()
 			if le and le.name == "society:agent" and le._id and le._memory
@@ -347,11 +374,18 @@ local function decide_and_act(self)
 		ev("fail=no-position agent=%d persona=%s", self._id, self._persona)
 		return
 	end
+	local raw_pos = pos
 	pos = {x = fp(pos.x), y = fp(pos.y), z = fp(pos.z)}
 
-	local obs = observe(self, pos)
+	local measured = PROFILE and minetest.get_us_time()
+	local obs, candidates = observe(self, pos)
 	if COGNITION and not self._pending then
-		local local_obs, err = cognition_observe.observe(minetest, self.object,
+		local shared_engine = observation_engine
+		if OPTIMIZED and raw_pos.x==pos.x and raw_pos.y==pos.y and raw_pos.z==pos.z then
+			shared_engine = {get_objects_inside_radius=function() return candidates end,
+				find_nodes_in_area=find_nodes, get_node_or_nil=minetest.get_node_or_nil}
+		end
+		local local_obs, err = cognition_observe.observe(shared_engine, self.object,
 			{radius = SENSE, node_names = {MARK_NODE, "society:resource"}})
 		if not local_obs then
 			ev("fail=observation agent=%d reason=%s", self._id, err)
@@ -369,6 +403,7 @@ local function decide_and_act(self)
 			source = {kind = "observation", id = self._id}})
 		obs.local_view = local_obs
 	end
+	if measured then profile.observe = profile.observe + minetest.get_us_time() - measured end
 	local action
 	if MODEL then
 		if not self._pending then
@@ -381,7 +416,7 @@ local function decide_and_act(self)
 				last_action = self._last_action, incoming_messages = self._inbox,
 				visible_nodes = obs.local_view and obs.local_view.nodes or {},
 				inventory = self._resources:inventory(),
-				memory = MODEL_MEMORY and self._episodic:list() or {},
+				memory = MODEL_MEMORY and self._episodic:select(GOAL, {strategy=MEMORY_MODE, max_entries=8, max_chars=4096}) or {},
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			context.local_actions = action_context.describe(minetest, pos,
@@ -475,16 +510,27 @@ local function decide_and_act(self)
 		})
 	end
 	action.observation = obs
+	measured = PROFILE and minetest.get_us_time()
 	local ok, reason = apply(self, action, pos)
+	if measured then profile.action = profile.action + minetest.get_us_time() - measured end
 	self._last_action = {kind = action.kind, point = action.point, ok = ok, reason = reason}
 
+	local decided_at = minetest.get_us_time()
+	if self._decided_at then
+		local gap = (decided_at-self._decided_at)/1e6
+		cadence.n, cadence.sum = cadence.n+1, cadence.sum+gap
+		cadence.min, cadence.max = math.min(cadence.min,gap), math.max(cadence.max,gap)
+	end
+	self._decided_at = decided_at
 	self._decisions = self._decisions + 1
 	S.decisions = S.decisions + 1
 
+	measured = PROFILE and minetest.get_us_time()
 	local after = self.object:get_pos()
 	if after then
 		settle_contacts(self, {x = fp(after.x), y = fp(after.y), z = fp(after.z)})
 	end
+	if measured then profile.contact = profile.contact + minetest.get_us_time() - measured end
 end
 
 minetest.register_entity("society:agent", {
@@ -501,7 +547,7 @@ minetest.register_entity("society:agent", {
 		self._steps = 0
 		self._acc = 0
 	end,
-	-- 只记数。这是「agent 确实每步被推进」的唯一证据来源。
+	-- Per-entity counters prove participation within each sampled interval.
 	on_step = function(self, dtime)
 		self._steps = (self._steps or 0) + 1
 		S.step_ticks = S.step_ticks + 1
@@ -579,12 +625,14 @@ local function spawn_agents()
 					minetest.set_node(resource_pos, {name = "society:resource"})
 				end
 			end
+			if OPTIMIZED then index:upsert(i, obj, obj:get_pos()) end
 			agents[i] = le
 			S.spawned = S.spawned + 1
 		end
 	end
 	ev("spawn count=%d ok=%d spacing=%d bound=%d", COUNT, S.spawned, SPACING, BOUND)
 	step_count, last_us = 0, minetest.get_us_time()
+	run_started = last_us
 	if MODEL or SEED_RESOURCES then
 		local in_world, inventory = resource_total()
 		resource_initial = in_world + inventory
@@ -592,6 +640,13 @@ local function spawn_agents()
 end
 
 summary_and_stop = function()
+	local elapsed = run_started and (minetest.get_us_time()-run_started)/1e6 or 0
+	local cache = cached_nodes:stats()
+	ev("performance elapsed_s=%.6f decisions_per_sec=%.3f object_queries=%d node_hits=%d node_misses=%d callback_us=%.0f max_callback_us=%.0f observe_us=%.0f action_us=%.0f contact_us=%.0f log_us=%.0f",
+		elapsed, elapsed > 0 and S.decisions/elapsed or 0, object_queries, cache.hits, cache.misses,
+		profile.callback, profile.max_callback, profile.observe, profile.action, profile.contact, profile.log)
+	ev("cadence samples=%d mean_s=%.6f min_s=%.6f max_s=%.6f target_s=%.3f", cadence.n,
+		cadence.n>0 and cadence.sum/cadence.n or 0, cadence.n>0 and cadence.min or 0, cadence.max, INTERVAL)
 	ev("summary spawned=%d alive=%d decisions=%d rounds=%d marks=%d meetings=%d actions=%s",
 		S.spawned, alive_agents(), S.decisions, S.driver_rounds, S.marks, S.meets, action_string())
 	ev("done result=%s reason=%s", S.failed and "fail" or "ok", S.failed or "decisions-reached")
@@ -667,54 +722,65 @@ local function emit_stats()
 	end
 end
 
+local function visit(i)
+	local le = agents[i]
+	if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
+		decide_and_act(le)
+	end
+end
+local function round_done()
+	if MAX_DECISIONS <= 0 then return false end
+	for i = 0, COUNT - 1 do
+		if not agents[i] or agents[i]._decisions < MAX_DECISIONS then return false end
+	end
+	return true
+end
+
 minetest.register_globalstep(function(dtime)
 	step_count = step_count + 1
-	if S.finished or S.failed or S.spawned == 0 then
-		return
-	end
-
-	driver_acc = driver_acc + dtime
-	local rounds = 0
-	while driver_acc >= INTERVAL do
-		driver_acc = driver_acc - INTERVAL
-		rounds = rounds + 1
-		if rounds > 5 then
-			-- 服务端停顿时不做追赶式补决策，否则事件数不再对应真实时间
-			driver_acc = 0
-			break
+	if S.finished or S.failed or S.spawned == 0 then return end
+	local frame_started = minetest.get_us_time()
+	local completed = false
+	if OPTIMIZED then
+		if not frame_driver then
+			frame_driver = scheduler.new({count=COUNT, interval_us=INTERVAL*1e6,
+				budget_us=FRAME_BUDGET*1000, clock=minetest.get_us_time,
+				visit=function(i) if not S.failed then visit(i) end end,
+				on_round=function(number, wall, cpu)
+					S.driver_rounds = number
+					ev("round number=%d wall_ms=%.2f cpu_ms=%.2f", number, wall/1000, cpu/1000)
+				end})
 		end
-		S.driver_rounds = S.driver_rounds + 1
-		local round_started = minetest.get_us_time()
-		for i = 0, COUNT - 1 do
-			local le = agents[i]
-			if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
-				decide_and_act(le)
+		completed = frame_driver:step()
+	else
+		driver_acc = driver_acc + dtime
+		local rounds = 0
+		while driver_acc >= INTERVAL do
+			driver_acc = driver_acc - INTERVAL
+			rounds = rounds + 1
+			if rounds > 5 then driver_acc = 0; break end
+			S.driver_rounds = S.driver_rounds + 1
+			local started = minetest.get_us_time()
+			for i = 0, COUNT - 1 do
+				visit(i)
 				if S.failed then return end
 			end
-		end
-		ev("round number=%d wall_ms=%.2f", S.driver_rounds,
-			(minetest.get_us_time() - round_started) / 1000)
-		if MAX_DECISIONS > 0 then
-			local done = true
-			for i = 0, COUNT - 1 do
-				local le = agents[i]
-				if not le or (le._decisions or 0) < MAX_DECISIONS then
-					done = false
-					break
-				end
-			end
-			if done then
-				S.finished = true
-				emit_stats()
-				summary_and_stop()
-				return
-			end
+			ev("round number=%d wall_ms=%.2f", S.driver_rounds, (minetest.get_us_time()-started)/1000)
+			completed = true
+			if round_done() then break end
 		end
 	end
-
-	if (minetest.get_us_time() - last_us) / 1000000 >= STATS_EVERY then
+	local used = minetest.get_us_time()-frame_started
+	profile.callback = profile.callback+used
+	profile.max_callback = math.max(profile.max_callback, used)
+	if S.failed then return end
+	if completed and round_done() then
+		S.finished = true
 		emit_stats()
+		summary_and_stop()
+		return
 	end
+	if (minetest.get_us_time()-last_us)/1e6 >= STATS_EVERY then emit_stats() end
 end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
@@ -766,6 +832,7 @@ minetest.after(0, function()
 		jit and jit.version or "lua", policy.version)
 	ev("banner count=%d interval=%.2f max_decisions=%d seed=%d spacing=%d bound=%d sense=%d step=%d",
 		COUNT, INTERVAL, MAX_DECISIONS, SEED, SPACING, BOUND, SENSE, STEP)
+	ev("configuration optimized=%s frame_budget_ms=%.1f memory_mode=%s profile=%s", tostring(OPTIMIZED), FRAME_BUDGET, MEMORY_MODE, tostring(PROFILE))
 	ev("artifact init_sha256=%s policy_sha256=%s",
 		sha256_file(mp .. "/init.lua"), sha256_file(mp .. "/policy.lua"))
 end)

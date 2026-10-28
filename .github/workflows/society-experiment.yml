@@ -10,9 +10,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   experiment:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        count: ${{ startsWith(github.ref_name, 'experiment/cloud-run-opt-') && fromJSON('[1000,5000,10000]') || fromJSON('[0]') }}
     runs-on: ubuntu-24.04
     container: ubuntu:26.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Install runtime
         run: |
@@ -26,6 +31,9 @@ jobs:
           lua5.1 test_persistence.lua
           lua5.1 test_resource_actions.lua
           lua5.1 test_action_context.lua
+          lua5.1 test_spatial.lua
+          lua5.1 test_runtime.lua
+          lua5.1 test_retrieval.lua
           cd ../model
           python3 -B -m unittest -v
           cd ..
@@ -36,6 +44,8 @@ jobs:
           python3 -B -m unittest -v
       - name: Prepare runtime
         run: |
+          uptime
+          nproc
           rt="$GITHUB_WORKSPACE/experiments/minecraft-societies/.runtime"
           mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
           ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
@@ -72,7 +82,7 @@ jobs:
           grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
           grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
           python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
@@ -122,6 +132,21 @@ jobs:
                       header.append(line)
               report.write_text(''.join(header))
           PY
+      - name: Alternating full workload comparison
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-opt-') }}
+        run: |
+          long=0
+          if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
+          python3 -B experiments/minecraft-societies/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
+      - name: Controlled memory tasks and bounded concurrency probes
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-memory-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p memory-results
+          python3 -B experiments/minecraft-societies/model/memory_eval.py --output memory-results/tasks.json
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
@@ -167,8 +192,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: society-results
+          name: society-results-${{ matrix.count }}
           path: |
+            memory-results/
             observed-results.json
             run-metadata.json
             scale-results/
@@ -181,5 +207,6 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-memory-*
             experiments/minecraft-societies/agent/evidence/ci-large-*
             experiments/minecraft-societies/agent/evidence/ci-repeat-*
+            experiments/minecraft-societies/agent/evidence/ci-opt-*
           if-no-files-found: warn
           retention-days: 14
