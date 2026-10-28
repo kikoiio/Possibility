@@ -7,7 +7,7 @@
 - 按用户新指示，将创建世界原型保存到 `proto/world-genesis`，将 Minecraft 社会实验保存到 `experiment/minecraft-societies`。两者分别保留代码、说明、检查和相应 CI 定义；仅有本地分支，没有推送或合并。
 - 两个提交都基于同一原始 HEAD 创建，包含迁移时的共享项目工作区快照及各自目录，不会修改主工作区暂存区。逐一核对了原型 66 个文件及实验 30 个文件的 Git 对象与迁移前工作区内容一致。私有 `.env`、`.data/`、`node_modules/` 和实验 `.runtime/` 没有纳入提交。
 - 原始目录及其未入库的依赖、运行时和工作流移至 `.tmp/branch-migration/working-copy/`，便于恢复；此位置是本机临时备份，并非永久归档。未触碰 `.data/` 和真实配置，未终止用户进程。
-- 主线的运行说明、架构、导航和 `AGENTS.md` 已改为分支入口；下方历史记录描述当时的路径和验证，不代表主线仍有相应目录。
+- 主线的运行说明、架构、导航已改为分支入口；下方历史记录描述当时的路径和验证，不代表主线仍有相应目录。
 - 原有主工作区还有大量未提交的旧代码删除和新文档，迁移没有暂存或提交这些主线改动。两个本地分支在原始快照提交后增加了文档对齐提交；初始快照分别为 `40206a2414713b89bfd4e19a7b9347183dec0867` 和 `7e33189e144d76d5a18a13c462b26c502f74b797`。
 - 导出两个分支到本地临时目录核对：原型分支 21 份 Markdown、实验分支 16 份 Markdown 的本地链接目标均存在；主线文档链接与标题锚点检查通过。复用本机已有依赖，在原型分支导出目录运行 `node prototypes/verify.mjs`，73/73 Node 测试与 282/282 环境检查通过，未读取真实配置或调用网络；日志为 `.tmp/branch-migration/prototype-branch-verify.log`。实验分支三个 shell 脚本通过语法检查，未运行 Luanti、浏览器或云端 CI。
 
@@ -15,7 +15,7 @@
 
 - 当时补充了 `prototypes/`、`experiments/` 与根目录 `AGENTS.md` 的入口和边界；这条旧位置约定已由上方用户要求的分支迁移取代。
 - 将原 `docs/PRD.md` 完整迁入[项目意图与产品需求](intent.md)，把当前实现地图迁入[标准架构入口](architecture.md)，原目标架构方案迁入[设计文档](design/2026-10-27-target-architecture.md)。分别说明目标、现状与方案，更新内部链接，并增加目标、源码、证据和缺口的对应表。
-- 增加[人类阅读入口](for_human/README.md)和 [Agent 追踪入口](for_agent/README.md)，统一收录于[文档索引](README.md)。根 README 增加最短启动方式；仓库要求的本文件及原型、实验的独立位置不变。
+- 文档索引（`docs/README.md`）统一收录各文档；按受众拆分的独立入口目录后因文档类型表未定义而删除。根 README 增加最短启动方式；仓库要求的本文件及原型、实验的独立位置不变。
 - `docs/research/` 中现有研究为跨多日期持续更新的综合材料，不足以无歧义地改成某一天冻结的研究记录；暂保留原路径和内容，在索引中明确其生命周期与日期边界。历史 `PLAN.md` 记录按项目规则保留，不改写成已完成的目标设计。
 - 检查根 README、AGENTS 和项目文档共 23 份 Markdown 的本地链接与标题锚点，均可解析；`git diff --check` 通过。本机没有 Mermaid 解析器，图表语法和实际渲染尚未由工具验证。本轮未调用真实模型、浏览器或云端；此前的原型测试记录见下节。
 
@@ -56,7 +56,7 @@
 - 本轮新增角色级秘密行动验证：资源和行动支持 `visibility: { actors, clues }`，行动支持 `performers`；地点、知情、当前观察、可执行权限和主观记忆保持分离。新增《红发会》小起点夹具（`proto/world-genesis` 分支：`prototypes/fixtures/red-headed-league.mjs`）及 8 个定向测试，覆盖 Wilson、Spaulding、Holmes、地下挖掘、线索揭示、跨地点银行警戒、通用失败、严格引用和复制后观察一致性。
 - 本轮 `node prototypes/verify.mjs` 退出码 0：70 个 Node 测试全部通过。此前一次全量运行在观察投影向后兼容测试上发现 3 个失败，已修正为仅对带 story 的角色观察隐藏 author-facing 地点描述，并保留无 story 旧观察的完整序列化形状。
 - 使用真实 `.env` 配置在全新隔离目录 `.tmp/prototype/red-headed-live-vpQN87/` 完成一次三阶段创建世界，3 次真实模型调用通过完整世界、引用、规则、几何和运行检查，输出 4 个地点、3 个角色、4 个资源、2 个过程、5 个行动，并产生角色级 `visibility`/`performers`。没有确认进入作者当前世界，也没有启动浏览器。
-- 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/world-models.md)、[记忆研究](research/memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创建世界记为语义完全正确。
+- 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/2026-10-28-world-models.md)、[记忆研究](research/2026-10-28-memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创建世界记为语义完全正确。
 - 已把创建世界接受前的 `auditCandidatePrivacy()` 接入 `checkWorldCandidate()`：确定性检查覆盖作者级 premise/地点叙述、隐藏实体标识、他人目标与前史是否进入角色观察；有限片段重合检查覆盖公开文本中的私有目标和隐藏机制。通过的草稿保存审计限制，命中的候选以 `privacy-audit-failed` 拒绝。审计明确标注不能证明同义改写、暗示、推理或后续对白安全。
 - 《红发会》夹具新增 Wilson 出勤计数与反事实分支测试：Wilson 继续赴红发会、Holmes 检查地下室获得进度信息但仍无 Spaulding 执行权、Spaulding 挖掘到阈值后银行警戒变化；原点副本彼此独立，不写死银行抢劫结局。
 - 当前工作树验证已扩展为 72 个 Node 测试及既有环境检查，全部通过；本次仍未启动真实模型或浏览器验收。
@@ -86,7 +86,7 @@
 - `prototypes/ui/index.html`、`style.css` 重做为维多利亚伦敦调查档案视觉：暗煤黑、雾蓝灰、旧纸金和暗红；首屏直接显示红发会冲突，运行页以现场总览、案件时间线、暂停／播放／下一人行动组成同一体验。保留既有状态、SSE、键盘焦点、移动布局和 reduced-motion 行为。
 - 浏览器检查先发现动态模块请求 `/prototypes/geometry/*` 导致三维区域空白，已修复为服务实际暴露的 `/geometry/*`。随后用本机独立、禁用 GPU 的 headless Chrome 延迟截图检查桌面和移动尺寸：画布存在、无 `data-scene-error`，三处现场可见；移动截图无横向溢出。截图证据在 `.tmp/browser/rhl-final-visual.png`、`.tmp/browser/rhl-mobile.png`，仅作本轮临时证据。
 - CUA 浏览器入口当时不可用（`Browser is not available: iab`），所以本轮使用 AGENTS 允许的本机兜底：启动前确认 `MemAvailable` 约 4.8–5.4 GiB、内存 PSI 低、`/tmp` 使用率约 2%，headless Chrome 禁用 GPU 且一次只运行一个实例；截图后关闭了临时浏览器进程。软件 WebGL 仅用于视觉回归，不代表目标设备性能验收。
-- 本轮新增架构经验已写入[架构](design/2026-10-27-target-architecture.md)和[3D 生成研究](research/3d-generation.md)，红发会起点与主题化壳层经验写入[世界模型研究](research/world-models.md)。
+- 本轮新增架构经验已写入[架构](design/2026-10-27-target-architecture.md)和[3D 生成研究](research/2026-10-28-3d-generation.md)，红发会起点与主题化壳层经验写入[世界模型研究](research/2026-10-28-world-models.md)。
 
 ### 本轮待收尾验证
 
@@ -127,9 +127,9 @@
 
 ## 2026-10-27 Minecraft agent 社会实验立项
 
-- 用户决定把[研究文档](research/minecraft-agent-societies.md)中的方向作为**延伸研究**启动，硬约束是**只能用免费资源**（免费模型端点、仅本机使用；容量测量也全部本机跑，不启用云端任务），并要求环境**优先开源、不为 Minecraft 付费**。位置定为仓库顶层 `experiments/minecraft-societies/`，计划与边界见实验说明（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。
+- 用户决定把[研究文档](research/2026-10-28-minecraft-agent-societies.md)中的方向作为**延伸研究**启动，硬约束是**只能用免费资源**（免费模型端点、仅本机使用；容量测量也全部本机跑，不启用云端任务），并要求环境**优先开源、不为 Minecraft 付费**。位置定为仓库顶层 `experiments/minecraft-societies/`，计划与边界见实验说明（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。
 - 用户最初答复为“一定要用真 MC”，随后澄清其本意是“找类似 MC 的开源项目，不打算为 MC 付费”。本轮据此纠正了一条事实：**Minecraft Java 版服务端免费、离线模式不需要账号、不需要买游戏**，需要付费的只是“正版客户端登录在线模式服务器”，与本研究无关；MC 本体确实**不开源**（Paper 是它的补丁分支）。因此环境改为 A（Paper）／B（flying-squid）／C（Luanti）三选一，**尚未决定**。
-- 位置决策经过比较：不建 `scratch/`，也不把 `prototypes/` 搬进去。`scratch/` 是本轮整理刚作为迁移残留移除的目录；`prototypes/` 是 AGENTS.md 规定的唯一原型入口。实验需要的是独立运行时（自己的依赖、CI、Java 与 MC 服务端），不是多一层目录。AGENTS.md 已补充“独立实验放 `experiments/<方向>/`”一条。
+- 位置决策经过比较：不建 `scratch/`，也不把 `prototypes/` 搬进去。`scratch/` 是本轮整理刚作为迁移残留移除的目录；`prototypes/` 是 分支约定中唯一的原型入口。实验需要的是独立运行时（自己的依赖、CI、Java 与 MC 服务端），不是多一层目录。另有约定“独立实验放 `experiments/<方向>/`”。
 - 本轮只做立项与核实，**没有实现、没有下载 MC 服务端、没有安装 Java、没有启动服务器或 bot、没有调用真实模型、没有发起云端任务**，也没有改动 `prototypes/` 的任何文件。
 - 实际核实的事实（HTTP 查询与本机检查）：本机未安装 Java（`mise` 可用户级装 21/25，`apt` 有 openjdk-21 候选但需 sudo）；Paper 旧 API `api.papermc.io/v2` 已 sunset，现用 `fill.papermc.io/v3` 可访问；可用版本含 `1.21.11`、`26.1`、`26.3`（`26.3` 要求 Java ≥ 25）；`mineflayer@4.39.0` 依赖的 `minecraft-data` 实测支持到 `1.21.11` 与 `26.1`，因此固定 Paper `1.21.11` + Java 21，最终以 bot 实际连上为准；仓库为 public，Actions 标准 runner 免费；Mineflayer 与服务端均无头，不需 GPU/Xvfb。
 - 路线：技能循环自己写最小实现（不引入 Mindcraft 作运行时）。原计划把 M1–M3 放云端免费 runner，**已按用户指示改为全部本机执行**；M4 真实 LLM 只在本机小规模（3–5 agent）接免费端点，密钥不进 CI、不读 `.env`。
