@@ -58,7 +58,7 @@ node prototypes/server.mjs
 | `world-genesis.mjs`、`genesis-records.mjs` | 生成提示、小条目解析与语义场景组装 |
 | `world-definition.mjs`、`core.mjs`、`actor.mjs` | 世界规则、事实历史、角色观察与经历 |
 | `activity.mjs`、`server.mjs` | 已发生动态投影、同一 HTTP/SSE 服务 |
-| `geometry/`、`ui/` | 既有 solid/voxel 编译、三维场景及简洁交互；`ui/world-scene.js` 负责取景、光照、天空、地表与画面标签 |
+| `geometry/`、`ui/`、`voxel-*.mjs` | 既有 solid/voxel 编译、对话建造、持久化体素状态、三维场景及简洁交互；`ui/world-scene.js` 负责模拟场景，`ui/voxel-scene.js` 负责建造世界 |
 | `model/` | 唯一配置加载器、Responses 流、脱敏审计及受限格式整理 |
 
 `.data/prototype/state.json` 保存当前世界、历史、经历和起源；`creation.json` 保存对话、草稿和世界索引；`worlds/` 保留切换前快照。新建世界前保存旧世界。完整历史仍驻留内存并整体写入文件，长期容量和断电耐久性未验证。
@@ -75,4 +75,4 @@ node prototypes/verify.mjs
 
 `scripts/try-conversation.mjs` 用公开输入和 `.tmp/prototype/conversation-live/` 隔离存档，逐条执行明确指定的真实模型步骤，无自动重试。它是观察脚本，不是第二套体验入口，也不会操作作者的当前世界。
 
-`scripts/observe-browser.mjs` 是云端浏览器验收，使用同一页面和 HTTP/SSE 运行时、明确标记的合成模型；通过 `.github/workflows/prototype-preview.yml` 执行，输出桌面/手机截图与检查报告。使用云端前需用户许可，不上传实际配置、世界存档或模型审计。代码检查、真实模型证据与浏览器验收分别记录在 `docs/PLAN.md`。
+`scripts/observe-browser.mjs` 和 `scripts/observe-voxel-browser.mjs` 是云端浏览器验收，使用同一页面和 HTTP/SSE 运行时、明确标记的合成模型；通过 `.github/workflows/prototype-preview.yml` 执行，输出截图与检查报告。使用云端前需用户许可，不上传实际配置、世界存档或模型审计。代码检查、真实模型证据与浏览器验收分别记录在 `docs/PLAN.md`。

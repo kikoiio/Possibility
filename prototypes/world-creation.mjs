@@ -115,15 +115,16 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         creation.draft = null; persist(); return response(true, '草稿已放弃。');
       case 'world-accept': {
         if (blocked() || !creation.draft || creation.draft.id !== body.draftId) return response(false, '这个世界草稿已经变化，不能创建。');
-        if (voxel.state().error) return response(false, voxel.state().error);
+        const voxelSnapshot = voxel.state();
+        if (voxelSnapshot.error) return response(false, voxelSnapshot.error);
         if (creation.draft.baseConversationRevision !== undefined && creation.draft.baseConversationRevision !== creation.dialogue.revision) return response(false, '讨论已经更新，请先按新的设定生成草稿，再确认进入。');
-        if (creation.draft.baseVoxelId !== undefined && (creation.draft.baseVoxelId !== creation.voxelId || creation.draft.baseVoxelRevision !== voxel.state().revision)) return response(false, '建造草稿已经改变，请重新检查起点。');
+        if (creation.draft.baseVoxelId !== undefined && (creation.draft.baseVoxelId !== creation.voxelId || creation.draft.baseVoxelRevision !== voxelSnapshot.revision)) return response(false, '建造草稿已经改变，请重新检查起点。');
         const checked = checkWorldCandidate(creation.draft.definition);
         if (!checked.ok) return response(false, '草稿未通过检查。', checked);
         const { definition } = checked;
         const next = new CampSimulation({ world: definition.world }); next.pause();
         const origin = next.view(1);
-        const genesis = { draftId: creation.draft.id, description: creation.draft.description, initialMemories: definition.initialMemories, instanceId: origin.instanceId, worldTitle: definition.world.title, scene: clone(definition.scene), voxel: voxel.state(), voxelBindings: clone(creation.draft.voxelBindings || bindVoxelWorld({ definition, voxel: voxel.state() })), adjustments: clone(creation.draft.adjustments || []), dialogue: clone(creation.dialogue) };
+        const genesis = { draftId: creation.draft.id, description: creation.draft.description, initialMemories: definition.initialMemories, instanceId: origin.instanceId, worldTitle: definition.world.title, scene: clone(definition.scene), voxel: voxelSnapshot, voxelBindings: clone(creation.draft.voxelBindings || bindVoxelWorld({ definition, voxel: voxelSnapshot })), adjustments: clone(creation.draft.adjustments || []), dialogue: clone(creation.dialogue) };
         const ledgers = Object.fromEntries(definition.world.actors.map(a => [a.id, { entries: [], lastDecision: null }]));
         const experience = { ledgers, autonomy: { enabled: false, waitingReason: null, nextActorId: definition.world.actors[0].id }, lastResult: null, recovery: null,
           pending: false, pendingKind: null, genesis, scene: { document: definition.scene, revision: 0, draft: null, lastResult: null } };
@@ -248,10 +249,11 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         const checked = definition ? checkWorldCandidate(definition) : null;
         if (checked && !checked.ok) result = { ...checked, message: '生成结果未通过世界规则或三维场景检查，请调整想法后再试。' };
         else if (checked) {
+          const voxelSnapshot = voxel.state();
           creation.draft = { id: randomUUID(), description: description.trim(), definition: checked.definition,
-            baseVoxelId: creation.voxelId, baseVoxelRevision: voxel.state().revision,
+            baseVoxelId: creation.voxelId, baseVoxelRevision: voxelSnapshot.revision,
             ...(conversational ? { baseConversationRevision: creation.dialogue.revision } : {}),
-            voxelBindings: bindVoxelWorld({ definition: checked.definition, voxel: voxel.state() }),
+            voxelBindings: bindVoxelWorld({ definition: checked.definition, voxel: voxelSnapshot }),
             adjustments: [...adjustments, ...checked.adjustments], privacyAudit: checked.privacyAudit, createdAt: new Date().toISOString() };
           result = { ok: true, message: '这一片起点已生成。看看画面和规律，可以继续告诉我哪里要改，满意后再进入。' };
           if (conversational) creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: result.message });
