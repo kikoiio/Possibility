@@ -12,7 +12,7 @@ story: {
   connections: [{from: 'hall', to: 'study'}], // 无向，相邻房间才可移动
   facts: [{id: 'fact-a', text: '客观事实或前史', knownBy: ['actor-a']}],
   clues: [{id: 'letter', name: '折叠的信', location: 'study', detail: '检查后才能知道的内容', discoveredBy: []}],
-  conversations: [] // 创世必须为空；运行时由引擎追加
+  conversations: [] // 创建世界必须为空；运行时由引擎追加
 }
 ```
 

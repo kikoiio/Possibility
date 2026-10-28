@@ -237,6 +237,23 @@ await check('first visit waits for dialogue; one initial GET and long SSE, with 
   await p.tick(90000); await p.tick(90000);
   assert.deepEqual(p.requests.map((entry) => entry.path), ['/api/state']);
 }));
+await check('a selected story is sent as material, shown by name, and can be removed', () => withPage(emptyState(), async (p) => {
+  const story = '红发会的故事原文。';
+  const next = emptyState(); next.creation.source = { name: '红发会.txt', characters: story.length };
+  p.route('/api/control', body => {
+    assert.deepEqual(body, { type: 'source-set', source: { name: '红发会.txt', text: story } });
+    return Response.json(result(next));
+  });
+  const bytes = new TextEncoder().encode(story);
+  p.$('source-input').files = [{ name: '红发会.txt', size: bytes.length, arrayBuffer: async () => bytes.buffer }];
+  await p.$('source-input').dispatch('change').done; await settle();
+  assert.match(p.$('source-status').textContent, /红发会\.txt/);
+  assert.equal(p.$('source-remove').hidden, false);
+  next.creation.source = null;
+  p.route('/api/control', body => { assert.deepEqual(body, { type: 'source-set', source: null }); return Response.json(result(next)); });
+  await p.click('source-remove');
+  assert.match(p.$('source-status').textContent, /还没有添加素材/);
+}));
 await check('IME and empty submissions never send; submit locks while streaming and displays no model JSON', () => withPage(emptyState(), async (p) => {
   await p.submit(); assert.equal(p.requests.length, 1);
   await p.input('海边有一座灯塔');

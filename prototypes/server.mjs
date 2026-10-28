@@ -4,6 +4,7 @@ import { existsSync, readFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { StringDecoder } from 'node:string_decoder';
 import { CampSimulation } from './core.mjs';
 import { observeResident, verifyDecision, createLedgers, ledgerView, buildResidentMessages } from './actor.mjs';
 import { loadModelConfig } from './model/config.mjs';
@@ -372,7 +373,14 @@ export function createCampServer({ withCreation = true, ...options } = {}) {
       if (request.method !== 'POST' || !['/api/control', '/api/actor-step', '/api/scene-generate', '/api/world-generate', '/api/creation-chat', '/api/model-cancel'].includes(path)) return send(404, { ok: false, message: '这个入口不存在。' });
       if (request.headers.origin && ![`http://127.0.0.1:${port}`, `http://localhost:${port}`].includes(request.headers.origin)) return send(403, { ok: false, message: '来源不匹配。' });
       if (request.headers['content-type']?.split(';')[0] !== 'application/json') return send(415, { ok: false, message: '需要JSON请求。' });
-      let text = ''; for await (const part of request) { text += part; if (Buffer.byteLength(text) > 32768) return send(413, { ok: false, message: '请求过大。' }); }
+      const maxBody = path === '/api/control' ? 512 * 1024 : 32768;
+      const decoder = new StringDecoder('utf8'); let text = '', bytes = 0;
+      for await (const part of request) {
+        const chunk = Buffer.isBuffer(part) ? part : Buffer.from(part);
+        bytes += chunk.length; if (bytes > maxBody) return send(413, { ok: false, message: '请求过大。' });
+        text += decoder.write(chunk);
+      }
+      text += decoder.end();
       let body; try { body = JSON.parse(text); } catch { return send(400, { ok: false, message: '请求格式无效。' }); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { ok: false, message: '请求必须是对象。' });
       if (path === '/api/control') return send(200, experience.control(body));

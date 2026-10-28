@@ -20,13 +20,14 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   let saved = null;
   if (existsSync(stagingFile)) { try { saved = JSON.parse(readFileSync(stagingFile, 'utf8')); } catch { /* current world remains untouched */ } }
-  let creation = { mode: 'create', draft: null, lastResult: null, worlds: [], dialogue: emptyDialogue() };
+  let creation = { mode: 'create', draft: null, lastResult: null, worlds: [], dialogue: emptyDialogue(), source: null };
   if (saved?.schemaVersion === 1) {
     creation.mode = saved.mode === 'world' ? 'world' : 'create';
     if (saved.draft?.id && checkWorldCandidate(saved.draft.definition).ok) creation.draft = saved.draft;
     if (Array.isArray(saved.worlds)) creation.worlds = saved.worlds.filter(w => /^[0-9a-f-]{36}$/.test(w?.id) && typeof w.title === 'string' && Number.isSafeInteger(w.worldMinute));
-    creation.lastResult = saved.pending ? { ok: false, message: '上次创世调用中断，没有自动重试。' } : saved.lastResult ?? null;
+    creation.lastResult = saved.pending ? { ok: false, message: '上次创建世界的请求中断，没有自动重试。' } : saved.lastResult ?? null;
     if (validDialogue(saved.dialogue)) creation.dialogue = saved.dialogue;
+    if (typeof saved.source?.name === 'string' && saved.source.name.length <= 120 && typeof saved.source?.text === 'string' && saved.source.text.length <= 100000 && saved.source.text.trim()) creation.source = saved.source;
     if (saved.pending) creation.dialogue.ready = false;
   }
   // Fixed experiments are backups, never an active world in the creation flow.
@@ -55,7 +56,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   const model = { pending: false, kind: 'creation', actorId: null, progress: null, lastResult: creation.lastResult };
   const persist = () => save({ schemaVersion: 1, ...creation, pending: Boolean(active && !active.controller.signal.aborted) });
   const state = () => ({ ...(inner?.state() ?? { world: null, worldMinute: 0, revision: 0, paused: true, speed: 24, waiting: null, actors: {}, autonomy: { enabled: false, waitingReason: null }, scene: null, model: { pending: false } }),
-    creation: { ...clone(creation), hasWorld: Boolean(inner) },
+    creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), hasWorld: Boolean(inner) },
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
   const response = (ok, message, extra = {}) => ({ ok, message, ...extra, state: state() });
   const blocked = () => Boolean(active || inner?.state().model.pending);
@@ -73,12 +74,19 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     switch (body?.type) {
       case 'creation-open': case 'reset':
         if (blocked()) return response(false, '请先完成或取消当前模型调用。');
-        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; }
+        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; creation.source = null; }
         inner?.control({ type: 'pause' }); creation.mode = 'create'; creation.lastResult = null; epoch++; persist();
         return response(true, '从一个新想法开始，现有世界已暂停并保留。');
       case 'creation-resume':
         if (blocked() || !inner) return response(false, '当前没有可返回的世界，或调用尚未结束。');
         creation.mode = 'world'; persist(); return response(true, '已返回现有世界。');
+      case 'source-set': {
+        if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再更换素材。');
+        if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > 100000)) return response(false, '请选择不超过 10 万字的非空文本文件。');
+        creation.source = body.source ? { name: body.source.name.trim(), text: body.source.text } : null;
+        creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; epoch++; persist();
+        return response(true, creation.source ? '素材已保存。告诉我想从哪里开始。' : '素材已移除，可以从自己的想法开始。');
+      }
       case 'world-discard':
         if (blocked() || !creation.draft || creation.draft.id !== body.draftId) return response(false, '这个世界草稿已经变化。');
         creation.draft = null; persist(); return response(true, '草稿已放弃。');
@@ -117,7 +125,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   const cancelModel = () => {
     if (!active) { const result = inner?.cancelModel(); return result ? { ...result, state: state() } : response(false, '没有进行中的模型调用。'); }
-    active.controller.abort(); persist(); return response(true, '已请求取消创世。');
+    active.controller.abort(); persist(); return response(true, '已请求取消创建世界。');
   };
   const discussStep = async ({ message } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '先结束当前请求，再继续讨论。', { reason: 'busy' });
@@ -133,7 +141,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     let result = { ok: false, reason: 'request-failed', message: '讨论没有完成，你的输入已保留。' };
     try {
       persist(); const { llm } = configLoader();
-      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft), fetchImpl, signal: controller.signal, onProgress: publish });
+      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source), fetchImpl, signal: controller.signal, onProgress: publish });
       appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify({ role: 'world-discussion', ...r.audit })+'\n', { mode: 0o600 });
       if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '已停止回复，你的输入仍保留。' };
       else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: '这次回复未完成，可以继续发送消息；没有改变草稿。' };
@@ -168,21 +176,21 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     active = { controller, startedAt: performance.now() }; model.pending = true; model.kind = 'creation'; model.lastResult = null;
     const publish = p => { model.progress = p; try { onProgress?.(p); } catch { /* signal handles disconnect */ } };
     publish({ phase: 'connecting', elapsedMs: 0, eventsReceived: 0, outputCharacters: 0, preview: '' });
-    let result = { ok: false, reason: 'request-failed', message: '创世没有完成，没有自动重试。' };
+    let result = { ok: false, reason: 'request-failed', message: '创建世界没有完成，没有自动重试。' };
     try {
       persist(); const { llm } = configLoader();
       const records = [], adjustments = [];
       let definition = null, failed = false;
       for (const stage of GENESIS_STAGES) {
-        if (controller.signal.aborted) { result = { ok: false, reason: 'cancelled', message: '创世已取消，现有世界保持原样。' }; failed = true; break; }
+        if (controller.signal.aborted) { result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' }; failed = true; break; }
         const stageProgress = p => publish({ ...p, stageLabel: stage.label, elapsedMs: performance.now() - active.startedAt });
         stageProgress({ phase: 'connecting', outputCharacters: 0 });
         const r = await callModel({ llm, messages: buildGenesisMessages(description.trim(), {
-          dialogue: conversational ? creation.dialogue : null, previousDraft,
+          dialogue: conversational ? creation.dialogue : null, source: creation.source, previousDraft,
           diagnostics: creation.lastResult?.diagnostics ?? [], stage, previousRecords: records,
         }), fetchImpl, signal: controller.signal, onProgress: stageProgress });
         appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify({ role: 'world-genesis', stage: stage.id, ...r.audit })+'\n', { mode: 0o600 });
-        if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创世已取消，现有世界保持原样。' };
+        if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
         else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: `${stage.label.replace('正在', '')}未完成，请继续讨论或重新生成。` };
         else if (epoch !== startEpoch) result = { ok: false, reason: 'stale-basis', message: '创建基准已变化，旧草稿未保留。' };
         else {
@@ -214,7 +222,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
           if (conversational) creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: result.message });
         }
       }
-    } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '创世调用或保存未完成，请检查配置与本地存储；没有自动重试。' }; }
+    } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '创建世界的请求或保存未完成，请检查配置与本地存储；没有自动重试。' }; }
     finally { signal?.removeEventListener('abort', abort); active = null; model.pending = false; model.lastResult = result; creation.lastResult = result; persist(); }
     return { ...result, state: state() };
   };

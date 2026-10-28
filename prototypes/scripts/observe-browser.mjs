@@ -12,11 +12,14 @@ if (!process.env.CI) throw Error('Browser observation is cloud-first. Run throug
 const output = resolve('.tmp/prototype/browser'); mkdirSync(output, { recursive: true });
 const temporary = mkdtempSync(join(output, 'state-'));
 let discussions = 0, generations = 0, calls = 0;
+const story = '合成故事：海岛观测站靠海风蓄能。守灯人准备在傍晚记录星图。';
+const materialRequests = [];
 const { server, experience } = createCampServer({ stateFile: join(temporary, 'state.json'),
   configLoader: () => ({ llm: { baseUrl: 'https://fixture.invalid/v1', model: 'synthetic-browser-fixture', apiKey: 'not-a-credential' } }),
   fetchImpl: async (_url, init) => {
     calls++;
     const input = JSON.parse(JSON.parse(init.body).input.at(-1).content);
+    if (input.sourceMaterial) materialRequests.push(input.sourceMaterial.text);
     await delay(input.observation ? 450 : 120, undefined, { signal: init.signal });
     let value;
     if (input.previousSummary !== undefined) {
@@ -42,6 +45,12 @@ const send = async text => { await page.locator('#creation-input').fill(text); a
 try {
   await page.goto(address); await page.waitForFunction(() => !document.querySelector('#creation-input').disabled);
   await shot('01-conversation-start');
+  await page.locator('#source-input').setInputFiles({ name: '故事.txt', mimeType: 'text/plain', buffer: Buffer.from(story) });
+  await page.waitForFunction(() => document.querySelector('#source-status').textContent.includes('故事.txt'));
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+  await shot('01-entry-mobile');
+  await page.setViewportSize({ width: 1440, height: 960 });
   await send('我想从一座靠海风蓄能的海岛观测站开始。');
   assert.equal(await page.locator('#world-generate').isVisible(), false);
   assert.equal(experience.state().world, null); checks.push('first message clarifies instead of fabricating a world');
@@ -49,6 +58,8 @@ try {
   await page.locator('#world-generate').click(); await page.locator('#world-accept').waitFor({ state: 'visible' });
   await page.waitForFunction(() => !document.querySelector('#world-accept').disabled);
   await page.locator('#world-draft-scene canvas, #world-draft-scene svg').waitFor();
+  assert(materialRequests.length >= 3 && materialRequests.every(value => value === story));
+  checks.push('uploaded text reaches discussion and generation');
   await shot('02-discussion-and-draft');
   await send('起点保留，标题改成修订后的雾海星图站。');
   assert.equal(await page.locator('#world-accept').isDisabled(), true); checks.push('feedback invalidates prior confirmation');

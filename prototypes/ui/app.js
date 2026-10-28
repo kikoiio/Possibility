@@ -4,6 +4,7 @@ const ui = Object.fromEntries([
   'new-world', 'world-resume', 'archive-controls', 'world-archives', 'world-open',
   'world-create', 'world-experience', 'dialogue-scroll', 'dialogue-log', 'dialogue-empty',
   'creation-summary', 'creation-summary-text', 'creation-status', 'creation-form', 'creation-input', 'creation-send',
+  'source-input', 'source-status', 'source-remove',
   'generate-actions', 'generate-hint', 'world-generate', 'world-draft', 'world-draft-scene',
   'world-draft-title', 'world-draft-description', 'world-draft-summary', 'draft-stale', 'world-accept',
   'scene-host', 'clock-state', 'play-pause', 'actor-step', 'actor-retry',
@@ -70,6 +71,8 @@ function updateControls() {
   const locked = busy || pending() || cancelBusy;
   ui['creation-input'].disabled = locked || !creating();
   ui['creation-send'].disabled = locked || !creating() || composing || !ui['creation-input'].value.trim();
+  ui['source-input'].disabled = locked || !creating();
+  ui['source-remove'].disabled = locked || !creating() || !state?.creation?.source;
   ui['world-generate'].disabled = locked || !creating() || !state?.creation?.dialogue?.ready;
   ui['world-accept'].disabled = locked || !creating() || !currentDraft() || staleDraft();
   ui['play-pause'].disabled = busy || creating() || (!canPause() && (pending() || Boolean(waiting())));
@@ -140,6 +143,9 @@ function renderMenu() {
 }
 function renderDialogue() {
   const dialogue = state?.creation?.dialogue || {};
+  const sourceMaterial = state?.creation?.source;
+  setText(ui['source-status'], sourceMaterial ? `已添加：${sourceMaterial.name}（${sourceMaterial.characters} 字）` : '还没有添加素材，也可以直接开始对话。');
+  ui['source-remove'].hidden = !sourceMaterial;
   const messages = list(dialogue.messages).filter((entry) => entry?.id && ['user', 'assistant'].includes(entry.role) && typeof entry.text === 'string');
   const follow = nearBottom(ui['dialogue-scroll']);
   const wanted = new Set(messages.map((entry) => entry.id));
@@ -165,8 +171,8 @@ function renderDialogue() {
   ui['creation-summary'].hidden = !text(dialogue.summary);
   setText(ui['creation-summary-text'], text(dialogue.summary));
   ui['generate-actions'].hidden = !dialogue.ready;
-  setText(ui['world-generate'], state?.creation?.draft ? '重新生成草稿' : '生成这一小片');
-  setText(ui['generate-hint'], staleDraft() ? '新的想法需要一份新草稿。' : '可以先看看这一小片，也可以继续补充。');
+  setText(ui['world-generate'], state?.creation?.draft ? '重新生成起点草稿' : '查看起点草稿');
+  setText(ui['generate-hint'], staleDraft() ? '新的想法需要一份新草稿。' : '可以先检查起点，也可以继续聊。');
 }
 function draftLines(world) {
   const place = (id) => text(list(world.places).find((entry) => entry.id === id)?.name, id || '起点');
@@ -367,8 +373,8 @@ function applyState(next) {
   ui['world-create'].hidden = !isCreate;
   ui['world-experience'].hidden = isCreate;
   ui['world-time'].hidden = isCreate;
-  setText(ui['page-title'], isCreate ? '从一处开始' : text(next.world.title, '世界'));
-  document.title = isCreate ? '一起创建 · Wispiva' : `${text(next.world.title, '世界')} · Wispiva`;
+  setText(ui['page-title'], isCreate ? '从想法开始' : text(next.world.title, '世界'));
+  document.title = isCreate ? '从想法开始 · Wispiva' : `${text(next.world.title, '世界')} · Wispiva`;
   const target = isCreate ? ui['creation-status'] : ui['world-status'];
   if (ui['request-status'].parentNode !== target) target.append(ui['request-status']);
   renderMenu();
@@ -585,6 +591,20 @@ ui['creation-form'].addEventListener('submit', (event) => {
   return runStep('discussion', '/api/creation-chat', { message: ui['creation-input'].value.trim() });
 });
 ui['creation-input'].addEventListener('input', updateControls);
+ui['source-input'].addEventListener('change', async () => {
+  const file = ui['source-input'].files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 512 * 1024) throw new Error('文件过大，请选择不超过 10 万字的文本。');
+    const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+    if (!content.trim() || content.length > 100000) throw new Error('请选择不超过 10 万字的非空文本文件。');
+    await control({ type: 'source-set', source: { name: file.name.slice(0, 120), text: content } });
+  } catch (error) {
+    localError = error instanceof TypeError ? '无法读取文本，请确认文件使用 UTF-8 编码。' : text(error.message, '无法读取文件。');
+    renderStatus();
+  } finally { ui['source-input'].value = ''; }
+});
+ui['source-remove'].addEventListener('click', () => control({ type: 'source-set', source: null }));
 ui['creation-input'].addEventListener('compositionstart', () => { composing = true; updateControls(); });
 ui['creation-input'].addEventListener('compositionend', () => { composing = false; suppressEnterUntil = performance.now() + 80; updateControls(); });
 ui['creation-input'].addEventListener('keydown', (event) => {

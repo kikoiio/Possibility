@@ -65,6 +65,47 @@ test('malformed discussion cannot approve a scope or invent a draft', async t =>
   assert.equal(f.requests.length, 1);
 });
 
+test('story material survives reload, reaches discussion and generation, and changing it invalidates the draft', async t => {
+  const f = fixture(t); let e = f.experience;
+  const story = '红发会故事原文。'.repeat(5000);
+  const added = e.control({ type: 'source-set', source: { name: '红发会.txt', text: story } });
+  assert.equal(added.ok, true);
+  assert.deepEqual(added.state.creation.source, { name: '红发会.txt', characters: story.length });
+  assert.equal(JSON.stringify(added.state).includes(story), false);
+  e = f.reload();
+  assert.equal(e.state().creation.source.name, '红发会.txt');
+  await e.discussStep({ message: '从威尔逊上班那天开始。' });
+  assert.equal(f.requests.at(-1).sourceMaterial.text, story);
+  await e.discussStep({ message: '让他发现助理的异常。' });
+  const draft = await e.worldStep({ conversationRevision: e.state().creation.dialogue.revision });
+  assert.equal(draft.ok, true);
+  assert.equal(f.requests.slice(-3).every(request => request.sourceMaterial.text === story), true);
+  const replaced = e.control({ type: 'source-set', source: { name: '新故事.txt', text: '新的素材。' } });
+  assert.equal(replaced.state.creation.draft, null);
+  assert.equal(replaced.state.creation.dialogue.ready, false);
+  assert.equal(replaced.state.creation.dialogue.summary, '');
+  assert.equal(e.control({ type: 'world-accept', draftId: draft.state.creation.draft.id }).ok, false);
+  assert.equal(e.control({ type: 'source-set', source: { name: '大文件.txt', text: 'x'.repeat(100001) } }).ok, false);
+  assert.equal(e.state().creation.source.name, '新故事.txt');
+  assert.equal(e.control({ type: 'source-set', source: null }).state.creation.source, null);
+});
+
+test('story upload accepts a long JSON body with UTF-8 characters split between request chunks', async t => {
+  const f = fixture(t); const { server, experience } = createCampServer(f.options);
+  t.after(() => experience.close()); server.address = () => ({ port: 5175 });
+  const story = '红发会'.repeat(12000);
+  const data = Buffer.from(JSON.stringify({ type: 'source-set', source: { name: '故事.txt', text: story } }));
+  const split = data.indexOf(Buffer.from('红')) + 1;
+  const request = Readable.from([data.subarray(0, split), data.subarray(split)]);
+  request.method = 'POST'; request.url = '/api/control'; request.headers = { host: '127.0.0.1:5175', 'content-type': 'application/json' };
+  const response = { writeHead(code) { this.code = code; }, end(value) { this.body = value; } };
+  await server.listeners('request')[0](request, response);
+  assert.equal(response.code, 200);
+  assert.equal(JSON.parse(response.body).state.creation.source.characters, story.length);
+  await experience.discussStep({ message: '从威尔逊上班那天开始。' });
+  assert.equal(f.requests.at(-1).sourceMaterial.text, story);
+});
+
 test('provider literal paragraph breaks preserve reply text without inventing JSON fields', () => {
   const parsed = parseGeneratedJSON('{"reply":"第一段\n\n第二段\t继续","summary":"起点","ready":false}');
   assert.equal(parsed.value.reply, '第一段\n\n第二段\t继续'); assert.equal(parsed.adjustments.length, 3);
