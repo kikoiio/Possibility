@@ -30,6 +30,16 @@ assert(#c:find(lo,hi,{'mark'})==1)
 for x=1,10 do c:find({x=x*16,y=1,z=0},{x=x*16,y=1,z=0},{'mark'}) end
 assert(c:stats().cells<=4)
 assert(#c:find(lo,hi,{'resource'})==1)
+-- An unavailable cell must be rescanned when it becomes loaded.
+local loaded = false
+local changing = nodes.new({
+  get_node_or_nil=function(p) return loaded and {name='mark'} or nil end,
+  find_nodes_in_area=function() return loaded and {{x=0,y=1,z=0}} or {} end,
+}, {'mark'},16,4)
+assert(#changing:find({x=0,y=1,z=0},{x=1,y=1,z=0},{'mark'})==0)
+assert(changing:stats().cells==0)
+loaded=true
+assert(#changing:find({x=0,y=1,z=0},{x=1,y=1,z=0},{'mark'})==1)
 local time, seen, rounds = 0, {}, {}
 local s=scheduler.new({count=5,interval_us=100,budget_us=10,clock=function() return time end,
   visit=function(id) seen[#seen+1]=id; time=time+6 end,

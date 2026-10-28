@@ -65,7 +65,8 @@ def inspect_run(label, count, decisions, exit_code):
     header=''.join(header)
     rss=re.search(r'峰值 RSS: (\d+) MiB',header)
     correctness = (done and checked and world_ok and not fail and stepped and min(stepped)==count
-                   and int(summary.get('decisions',-1))==count*decisions and int(summary.get('alive',-1))==count)
+                   and int(summary.get('decisions',-1))==count*decisions and int(summary.get('alive',-1))==count
+                   and cadence.get('samples')==count*(decisions-1))
     result = {'label':label,'exit_code':exit_code,'correct':bool(correctness),
               'realtime_pass':exit_code==0,'steps_per_sec':distribution(rates),
               'round_wall_ms':distribution(rounds),'round_active_ms':distribution(active_rounds),
@@ -90,10 +91,12 @@ def run(count,cognition,optimized,trial,decisions=12,profile=False):
           '--set',f'society_profile={str(profile).lower()}']
     started=time.monotonic()
     result=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    process_wall=time.monotonic()-started
     print(result.stdout,flush=True)
+    evidence_started=time.monotonic()
     parsed=inspect_run(label,count,decisions,result.returncode)
     parsed.update(count=count,cognition=cognition,optimized=optimized,trial=trial,
-                  decisions_per_agent=decisions,profile=profile,process_wall_s=time.monotonic()-started)
+                  decisions_per_agent=decisions,profile=profile,process_wall_s=process_wall,evidence_processing_s=time.monotonic()-evidence_started)
     return parsed
 
 
@@ -107,7 +110,14 @@ def main():
     args.output.parent.mkdir(parents=True,exist_ok=True)
     runs=[]
     def save():
-        args.output.write_text(json.dumps({'source_sha':os.environ.get('GITHUB_SHA'),
+        equivalence=[]
+        for count in sorted({r['count'] for r in runs if not r['profile'] and r['trial']!='long'}):
+            for cognition in (False,True):
+                group=[r for r in runs if r['count']==count and r['cognition']==cognition and not r['profile'] and r['trial']!='long']
+                hashes={r['behavior_sha256'] for r in group}
+                equivalence.append({'count':count,'cognition':cognition,'runs':len(group),
+                                    'distinct_behavior_hashes':len(hashes),'equal':len(hashes)==1})
+        args.output.write_text(json.dumps({'behavior_equivalence':equivalence,'source_sha':os.environ.get('GITHUB_SHA'),
             'runs':runs,'notes':['Engine RSS excludes model workers; no model in capacity runs.',
             'Intervals are targets. Round wall includes yields; round active excludes yields.',
             'Each side alternates within trial on one runner; trial order reverses.',

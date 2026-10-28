@@ -20,13 +20,18 @@ function M.new(engine, names, size, capacity)
       end
       cells[oldest], count = nil, count - 1
     end
+    local lo = {x=x*size,y=y*size,z=z*size}
+    local loaded = engine.get_node_or_nil(lo)
+    local complete = loaded and loaded.name ~= "ignore"
     local nodes = {}
     for _, p in ipairs(engine.find_nodes_in_area(
-        {x=x*size,y=y*size,z=z*size}, {x=(x+1)*size-1,y=(y+1)*size-1,z=(z+1)*size-1}, names)) do
+        lo, {x=(x+1)*size-1,y=(y+1)*size-1,z=(z+1)*size-1}, names)) do
       local n = engine.get_node_or_nil(p)
-      if n then nodes[#nodes+1] = {pos={x=p.x,y=p.y,z=p.z}, name=n.name} end
+      if n and n.name ~= "ignore" then
+        nodes[#nodes+1] = {pos={x=p.x,y=p.y,z=p.z}, name=n.name}
+      else complete = false end
     end
-    cells[k], count = {nodes=nodes,stamp=stamp}, count + 1
+    if complete then cells[k], count = {nodes=nodes,stamp=stamp}, count + 1 end
     return nodes
   end
   local cache = {}
