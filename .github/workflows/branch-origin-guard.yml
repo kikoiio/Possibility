@@ -1,0 +1,25 @@
+name: Protect main from experimental branches
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  branch-origin-guard:
+    name: branch-origin-guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block prototype and experiment source branches
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          case "$SOURCE_BRANCH" in
+            proto/*|experiment/*)
+              echo "Branches under proto/ and experiment/ must not be merged into main."
+              exit 1
+              ;;
+            *) echo "Source branch is allowed." ;;
+          esac
