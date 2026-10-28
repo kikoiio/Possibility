@@ -344,7 +344,7 @@ local function decide_and_act(self)
 		local path = SPOOL .. "/response-" .. self._pending.id .. ".json"
 		local f = io.open(path, "r")
 		if not f then
-			if minetest.get_us_time() - self._pending.started > (COUNT * 45 + 30) * 1000000 then
+			if minetest.get_us_time() - self._pending.started > (COUNT * 135 + 30) * 1000000 then
 				ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
 				S.failed = "model-timeout"
 				minetest.request_shutdown()
@@ -356,9 +356,22 @@ local function decide_and_act(self)
 		os.remove(path)
 		local id = self._pending.id
 		self._pending = nil
+		if result and type(result.attempts) == "table" then
+			for n, attempt in ipairs(result.attempts) do
+				local audit = attempt.audit or {}
+				local usage = audit.usage or {}
+				ev("ev=model-attempt agent=%d request=%d attempt=%d ok=%s error=%s latency_ms=%s input_tokens=%s output_tokens=%s",
+					self._id, id, n, tostring(attempt.ok), tostring(attempt.error or "none"),
+					tostring(audit.latency_ms or "unknown"), tostring(usage.input_tokens or "unknown"),
+					tostring(usage.output_tokens or "unknown"))
+			end
+		end
 		if not result or result.id ~= id or result.ok ~= true or type(result.action) ~= "table" then
-			ev("fail=model-response agent=%d request=%d error=%s", self._id, id,
-				result and tostring(result.error) or "invalid")
+			local audit = result and result.audit or {}
+			local usage = audit.usage or {}
+			ev("fail=model-response agent=%d request=%d error=%s latency_ms=%s input_tokens=%s output_tokens=%s", self._id, id,
+				result and tostring(result.error) or "invalid", tostring(audit.latency_ms or "unknown"),
+				tostring(usage.input_tokens or "unknown"), tostring(usage.output_tokens or "unknown"))
 			S.failed = "model-response"
 			minetest.request_shutdown()
 			return

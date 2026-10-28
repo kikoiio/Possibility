@@ -62,6 +62,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! "$LABEL" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "run.sh: label 只能包含字母、数字、下划线和连字符" >&2
+  exit 2
+fi
+
 if [[ ! -x "$ENGINE" ]]; then
   echo "run.sh: 找不到引擎 $ENGINE —— 先跑 runtime/bootstrap.sh" >&2
   exit 2

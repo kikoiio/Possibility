@@ -44,9 +44,21 @@ jobs:
           count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
           test "$count" -eq 5
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') }}
         run: |
           python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
+      - name: Agent cognition capacity ladder
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-agent-') }}
+        run: |
+          exp=experiments/minecraft-societies
+          for cognition in false true; do
+            for count in 20 100 500 1000; do
+              label="ci-agent-${count}-${cognition}"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 90 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+              echo "$label exit=$rc" >> "$exp/agent/evidence/ci-agent-status.txt"
+            done
+          done
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
@@ -54,7 +66,7 @@ jobs:
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
-          experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 300 --model
+          experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -64,5 +76,6 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-cognition.*
             experiments/minecraft-societies/agent/evidence/ci-model.*
             experiments/minecraft-societies/agent/evidence/ci-reset.*
+            experiments/minecraft-societies/agent/evidence/ci-agent-*
           if-no-files-found: warn
           retention-days: 14

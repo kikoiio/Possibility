@@ -37,6 +37,8 @@ def serve(source, sink, config, decision=decide):
             code = str(exc)
             response = {'id': request_id, 'ok': False,
                         'error': code if code in ERRORS else 'internal_error'}
+            if exc.audit is not None:
+                response['audit'] = exc.audit
         except Exception:
             response = {'id': request_id, 'ok': False, 'error': 'invalid_request'}
         sink.write(json.dumps(response, ensure_ascii=True, separators=(',', ':')) + '\n')

@@ -96,7 +96,15 @@ def process_one(directory, path, timeout, runner=run_bridge):
                       ('invalid_shape', 'invalid_id', 'invalid_context') else 'invalid_request'}
         else:
             try:
-                result = runner(request, directory / 'STOP', timeout)
+                attempts = []
+                for _ in range(3):
+                    result = runner(request, directory / 'STOP', timeout)
+                    attempts.append({'ok': result.get('ok') is True,
+                                     'error': result.get('error'),
+                                     'audit': result.get('audit')})
+                    if result.get('ok') is True or result.get('error') != 'invalid_action':
+                        break
+                result['attempts'] = attempts
             except Exception:
                 result = {'id': request_id, 'ok': False, 'error': 'bridge_error'}
         publish(directory, request_id, result)

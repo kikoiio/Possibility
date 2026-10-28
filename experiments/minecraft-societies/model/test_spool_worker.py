@@ -17,6 +17,16 @@ class SpoolTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
 
+    def test_invalid_action_retries_are_bounded_and_audited(self):
+        path = self.root / 'request-1.json'
+        path.write_text(json.dumps({'id': 1, 'context': {}}))
+        runner = mock.Mock(side_effect=[{'id': 1, 'ok': False, 'error': 'invalid_action'},
+                                       {'id': 1, 'ok': True, 'action': {'kind': 'inspect'}}])
+        worker.process_one(self.root, path, 1, runner=runner)
+        result = json.loads((self.root / 'response-1.json').read_text())
+        self.assertEqual([a['ok'] for a in result['attempts']], [False, True])
+        self.assertEqual(runner.call_count, 2)
+
     def test_atomic_response_and_bad_requests(self):
         request = {'id': 3, 'context': {'observation': {}}}
         path = self.root / 'request-3.json'
@@ -61,7 +71,9 @@ class SpoolTests(unittest.TestCase):
             while not response.exists() and time.monotonic() < end:
                 time.sleep(0.01)
             self.assertTrue(response.exists())
-            self.assertEqual(json.loads(response.read_text()), {'id': 1, 'ok': False, 'error': 'invalid_config'})
+            result = json.loads(response.read_text())
+            self.assertEqual((result['id'], result['ok'], result['error']), (1, False, 'invalid_config'))
+            self.assertEqual(len(result['attempts']), 1)
             (self.root / 'STOP').touch()
             self.assertEqual(process.wait(timeout=3), 0)
         finally:
