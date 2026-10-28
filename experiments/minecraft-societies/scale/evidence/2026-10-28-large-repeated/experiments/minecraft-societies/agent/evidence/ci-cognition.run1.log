@@ -1,0 +1,86 @@
+
+
+-------------
+  Separator
+-------------
+
+2026-10-28 17:29:28: [Main]: Using game specified by --gameid on the command line
+2026-10-28 17:29:28: WARNING[Main]: Mod society at /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/worlds/ci-cognition.run1/worldmods/society:
+2026-10-28 17:29:28: WARNING[Main]: 	Mods not having a mod.conf file with the name is deprecated.
+2026-10-28 17:29:28: ACTION[Main]: World at [/__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/worlds/ci-cognition.run1]
+2026-10-28 17:29:28: ACTION[Main]: Server for gameid="minetest_game" listening on 127.0.0.1:30077.
+2026-10-28 17:29:28: ACTION[Server]: SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+2026-10-28 17:29:28: ACTION[Server]: SOCIETY banner count=5 interval=1.00 max_decisions=8 seed=20261027 spacing=8 bound=32 sense=12 step=2
+2026-10-28 17:29:28: ACTION[Server]: SOCIETY artifact init_sha256=e91b2eae48f046771cd42150de0163a857285e6eaddab0cfb781f3651d0e9706 policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+2026-10-28 17:29:29: ACTION[Server]: SOCIETY forceload blocks=25/25 bound=32
+2026-10-28 17:29:29: ACTION[Emerge-0]: SOCIETY spawn count=5 ok=5 spacing=8 bound=32
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY check stage=spawn alive=5 expected=5 ok=true
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY ev=mark agent=0 persona=atlas at=-7,1,-8 marks_total=1
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY ev=approach agent=1 persona=birch target=0 at=-6,1,-8
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY ev=mark agent=2 persona=cinder at=7,1,-8 marks_total=2
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY ev=approach agent=3 persona=delta target=0 at=-8,1,-6
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY ev=approach agent=4 persona=ember target=0 at=-6,1,-8
+2026-10-28 17:29:30: ACTION[Server]: SOCIETY round number=1 wall_ms=0.75
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY ev=approach agent=0 persona=atlas target=1 at=-2,1,-8
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY ev=move agent=1 persona=birch to=-2,1,-8 remaining=4 why=en-route
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY ev=approach agent=2 persona=cinder target=4 at=2,1,0
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY ev=move agent=3 persona=delta to=-8,1,-2 remaining=4 why=en-route
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY ev=move agent=4 persona=ember to=0,1,-2 remaining=6 why=en-route
+2026-10-28 17:29:31: ACTION[Server]: SOCIETY round number=2 wall_ms=0.59
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=move agent=0 persona=atlas to=-6,1,-8 remaining=4 why=en-route
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=move agent=1 persona=birch to=-4,1,-8 remaining=2 why=en-route
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=arrive agent=1 persona=birch at=-4,1,-8
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=meet agent=1 persona=birch with=0 persona=atlas at=-4,1,-8
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=8,1,-6 remaining=6 why=en-route
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=move agent=3 persona=delta to=-8,1,-4 remaining=2 why=en-route
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=arrive agent=3 persona=delta at=-8,1,-4
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY ev=move agent=4 persona=ember to=-2,1,-2 remaining=6 why=en-route
+2026-10-28 17:29:32: ACTION[Server]: SOCIETY round number=3 wall_ms=0.71
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=move agent=0 persona=atlas to=-4,1,-8 remaining=2 why=en-route
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=arrive agent=0 persona=atlas at=-4,1,-8
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=inspect agent=1 persona=birch at=-4,1,-8 neighbours=3 marks_nearby=2
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=6,1,-6 remaining=6 why=en-route
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=approach agent=3 persona=delta target=0 at=-6,1,-8
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY ev=move agent=4 persona=ember to=-2,1,-4 remaining=4 why=en-route
+2026-10-28 17:29:33: ACTION[Server]: SOCIETY round number=4 wall_ms=0.75
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=inspect agent=0 persona=atlas at=-4,1,-8 neighbours=4 marks_nearby=2
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=inspect agent=1 persona=birch at=-4,1,-8 neighbours=4 marks_nearby=2
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=6,1,-4 remaining=4 why=en-route
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=move agent=3 persona=delta to=-8,1,-6 remaining=2 why=en-route
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=arrive agent=3 persona=delta at=-8,1,-6
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY ev=move agent=4 persona=ember to=-4,1,-4 remaining=4 why=en-route
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY round number=5 wall_ms=1.93
+2026-10-28 17:29:34: ACTION[Server]: SOCIETY stats t=6.0 agents=5/5 stepped_delta=5 steps_per_sec=11.10 decisions=25 marks=2 meetings=1 actions=advance:14,approach:6,inspect:3,mark:2,wander:0,say:0,gather:0,build:0,unknown:0
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=inspect agent=0 persona=atlas at=-4,1,-8 neighbours=4 marks_nearby=2
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=wander agent=1 persona=birch why=stalled target=1,1,-9
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=4,1,-4 remaining=4 why=en-route
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=approach agent=3 persona=delta target=0 at=-6,1,-8
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=move agent=4 persona=ember to=-4,1,-6 remaining=2 why=en-route
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=arrive agent=4 persona=ember at=-4,1,-6
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=meet agent=4 persona=ember with=0 persona=atlas at=-4,1,-6
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY ev=meet agent=4 persona=ember with=1 persona=birch at=-4,1,-6
+2026-10-28 17:29:35: ACTION[Server]: SOCIETY round number=6 wall_ms=0.71
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=wander agent=0 persona=atlas why=stalled target=3,1,-7
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=move agent=1 persona=birch to=-2,1,-8 remaining=3 why=en-route
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=4,1,-2 remaining=2 why=en-route
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=arrive agent=2 persona=cinder at=4,1,-2
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=move agent=3 persona=delta to=-6,1,-6 remaining=2 why=en-route
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=arrive agent=3 persona=delta at=-6,1,-6
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=meet agent=3 persona=delta with=0 persona=atlas at=-6,1,-6
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=meet agent=3 persona=delta with=4 persona=ember at=-6,1,-6
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY ev=inspect agent=4 persona=ember at=-4,1,-6 neighbours=4 marks_nearby=2
+2026-10-28 17:29:36: ACTION[Server]: SOCIETY round number=7 wall_ms=0.76
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=move agent=0 persona=atlas to=-2,1,-8 remaining=5 why=en-route
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=move agent=1 persona=birch to=0,1,-8 remaining=1 why=en-route
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=arrive agent=1 persona=birch at=0,1,-8
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=approach agent=2 persona=cinder target=0 at=0,1,-8
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=inspect agent=3 persona=delta at=-6,1,-6 neighbours=4 marks_nearby=1
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY ev=inspect agent=4 persona=ember at=-4,1,-6 neighbours=4 marks_nearby=2
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY round number=8 wall_ms=0.73
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY stats t=9.0 agents=5/5 stepped_delta=5 steps_per_sec=11.09 decisions=40 marks=2 meetings=5 actions=advance:21,approach:8,inspect:7,mark:2,wander:2,say:0,gather:0,build:0,unknown:0
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY summary spawned=5 alive=5 decisions=40 rounds=8 marks=2 meetings=5 actions=advance:21,approach:8,inspect:7,mark:2,wander:2,say:0,gather:0,build:0,unknown:0
+2026-10-28 17:29:37: ACTION[Server]: SOCIETY done result=ok reason=decisions-reached
+2026-10-28 17:29:37: ACTION[Main]: Server: Shutting down
+2026-10-28 17:29:37: ACTION[Main]: SOCIETY persist agents=5
+2026-10-28 17:29:37: ACTION[Main]: SOCIETY verify marks_counter=2 marks_in_world=2 ok=true
+2026-10-28 17:29:37: ACTION[Main]: SOCIETY shutdown alive=5 spawned=5 decisions=40 rounds=8 marks=2 meetings=5 actions=advance:21,approach:8,inspect:7,mark:2,wander:2,say:0,gather:0,build:0,unknown:0

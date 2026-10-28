@@ -1,0 +1,222 @@
+
+
+-------------
+  Separator
+-------------
+
+2026-10-28 17:22:17: [Main]: Using game specified by --gameid on the command line
+2026-10-28 17:22:17: WARNING[Main]: Mod society at /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/worlds/ci-memory-false-2.run1/worldmods/society:
+2026-10-28 17:22:17: WARNING[Main]: 	Mods not having a mod.conf file with the name is deprecated.
+2026-10-28 17:22:17: ACTION[Main]: World at [/__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/worlds/ci-memory-false-2.run1]
+2026-10-28 17:22:17: ACTION[Main]: Server for gameid="minetest_game" listening on 127.0.0.1:30077.
+2026-10-28 17:22:17: ACTION[Server]: SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+2026-10-28 17:22:17: ACTION[Server]: SOCIETY banner count=3 interval=1.00 max_decisions=8 seed=20261027 spacing=2 bound=32 sense=12 step=2
+2026-10-28 17:22:17: ACTION[Server]: SOCIETY artifact init_sha256=7753ab7792907e54f13804f07773350e2d3b94b531052282d11b7fbe57d11c09 policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+2026-10-28 17:22:18: ACTION[Server]: SOCIETY forceload blocks=25/25 bound=32
+2026-10-28 17:22:18: ACTION[Emerge-0]: SOCIETY ev=restore agent=0 reset=true memories=0
+2026-10-28 17:22:18: ACTION[Emerge-0]: SOCIETY ev=restore agent=1 reset=true memories=0
+2026-10-28 17:22:18: ACTION[Emerge-0]: SOCIETY ev=restore agent=2 reset=true memories=0
+2026-10-28 17:22:18: ACTION[Emerge-0]: SOCIETY spawn count=3 ok=3 spacing=2 bound=32
+2026-10-28 17:22:19: ACTION[Server]: SOCIETY check stage=spawn alive=3 expected=3 ok=true
+2026-10-28 17:22:19: ACTION[Server]: SOCIETY ev=model-request agent=0 request=1
+2026-10-28 17:22:19: ACTION[Server]: SOCIETY ev=model-request agent=1 request=2
+2026-10-28 17:22:19: ACTION[Server]: SOCIETY ev=model-request agent=2 request=3
+2026-10-28 17:22:19: ACTION[Server]: SOCIETY round number=1 wall_ms=0.99
+2026-10-28 17:22:20: ACTION[Server]: SOCIETY round number=2 wall_ms=2.03
+2026-10-28 17:22:21: ACTION[Server]: SOCIETY round number=3 wall_ms=1.93
+2026-10-28 17:22:22: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=1 attempt=1 ok=true error=none latency_ms=2852 input_tokens=715 output_tokens=26
+2026-10-28 17:22:22: ACTION[Server]: SOCIETY ev=model-action agent=0 request=1 kind=say origin=model latency_ms=2852 input_tokens=715 output_tokens=26
+2026-10-28 17:22:22: ACTION[Server]: SOCIETY ev=message agent=0 recipient=1 sha256=ef0be902a662c11ec2d50b576c2355b665fd10fdce1877390d74f12f2c2a7805
+2026-10-28 17:22:22: ACTION[Server]: SOCIETY ev=message-text agent=0 recipient=1 text="I'll gather resources nearby and help build our shared structure."
+2026-10-28 17:22:22: ACTION[Server]: SOCIETY round number=4 wall_ms=2.36
+2026-10-28 17:22:23: ACTION[Server]: SOCIETY ev=model-request agent=0 request=4
+2026-10-28 17:22:23: ACTION[Server]: SOCIETY round number=5 wall_ms=1.86
+2026-10-28 17:22:23: ACTION[Server]: SOCIETY stats t=15.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=1 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:0,say:1,gather:0,build:0,unknown:0
+2026-10-28 17:22:24: ACTION[Server]: SOCIETY round number=6 wall_ms=1.97
+2026-10-28 17:22:25: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=2 attempt=1 ok=true error=none latency_ms=2452 input_tokens=774 output_tokens=23
+2026-10-28 17:22:25: ACTION[Server]: SOCIETY ev=model-action agent=1 request=2 kind=gather origin=model latency_ms=2452 input_tokens=774 output_tokens=23
+2026-10-28 17:22:25: ACTION[Server]: SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+2026-10-28 17:22:25: ACTION[Server]: SOCIETY round number=7 wall_ms=3.37
+2026-10-28 17:22:26: ACTION[Server]: SOCIETY ev=model-request agent=1 request=5
+2026-10-28 17:22:26: ACTION[Server]: SOCIETY round number=8 wall_ms=1.92
+2026-10-28 17:22:27: ACTION[Server]: SOCIETY round number=9 wall_ms=1.94
+2026-10-28 17:22:28: ACTION[Server]: SOCIETY round number=10 wall_ms=2.15
+2026-10-28 17:22:28: ACTION[Server]: SOCIETY stats t=20.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=2 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:0,say:1,gather:1,build:0,unknown:0
+2026-10-28 17:22:29: ACTION[Server]: SOCIETY round number=11 wall_ms=1.90
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=3 attempt=1 ok=false error=invalid_action latency_ms=2286 input_tokens=716 output_tokens=7
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=3 attempt=2 ok=true error=none latency_ms=2903 input_tokens=716 output_tokens=22
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY ev=model-action agent=2 request=3 kind=say origin=model latency_ms=2903 input_tokens=716 output_tokens=22
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY ev=message agent=2 recipient=1 sha256=4ad74a7b8d99e3460d0b644c03f65100a9b6ec98b929492fa179ea112e56e1b3
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY ev=message-text agent=2 recipient=1 text="Let's gather resources and build together."
+2026-10-28 17:22:30: ACTION[Server]: SOCIETY round number=12 wall_ms=2.34
+2026-10-28 17:22:31: ACTION[Server]: SOCIETY ev=model-request agent=2 request=6
+2026-10-28 17:22:31: ACTION[Server]: SOCIETY round number=13 wall_ms=1.90
+2026-10-28 17:22:32: ACTION[Server]: SOCIETY round number=14 wall_ms=1.94
+2026-10-28 17:22:33: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=4 attempt=1 ok=true error=none latency_ms=3026 input_tokens=735 output_tokens=23
+2026-10-28 17:22:33: ACTION[Server]: SOCIETY ev=model-action agent=0 request=4 kind=wander origin=model latency_ms=3026 input_tokens=735 output_tokens=23
+2026-10-28 17:22:33: ACTION[Server]: SOCIETY ev=wander agent=0 persona=new-atlas why=model target=2,1,-1
+2026-10-28 17:22:33: ACTION[Server]: SOCIETY round number=15 wall_ms=2.23
+2026-10-28 17:22:33: ACTION[Server]: SOCIETY stats t=25.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=4 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:1,say:2,gather:1,build:0,unknown:0
+2026-10-28 17:22:34: ACTION[Server]: SOCIETY ev=model-request agent=0 request=7
+2026-10-28 17:22:34: ACTION[Server]: SOCIETY round number=16 wall_ms=2.64
+2026-10-28 17:22:35: ACTION[Server]: SOCIETY round number=17 wall_ms=1.92
+2026-10-28 17:22:36: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=5 attempt=1 ok=true error=none latency_ms=2667 input_tokens=945 output_tokens=23
+2026-10-28 17:22:36: ACTION[Server]: SOCIETY ev=model-action agent=1 request=5 kind=gather origin=model latency_ms=2667 input_tokens=945 output_tokens=23
+2026-10-28 17:22:36: ACTION[Server]: SOCIETY ev=resource agent=1 action=gather ok=false reason=target_out_of_reach inventory=1
+2026-10-28 17:22:36: ACTION[Server]: SOCIETY round number=18 wall_ms=2.28
+2026-10-28 17:22:37: ACTION[Server]: SOCIETY ev=model-request agent=1 request=8
+2026-10-28 17:22:37: ACTION[Server]: SOCIETY round number=19 wall_ms=1.85
+2026-10-28 17:22:38: ACTION[Server]: SOCIETY round number=20 wall_ms=2.02
+2026-10-28 17:22:38: ACTION[Server]: SOCIETY stats t=30.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=5 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:1,say:2,gather:2,build:0,unknown:0
+2026-10-28 17:22:39: ACTION[Server]: SOCIETY round number=21 wall_ms=1.98
+2026-10-28 17:22:40: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=6 attempt=1 ok=true error=none latency_ms=3517 input_tokens=704 output_tokens=37
+2026-10-28 17:22:40: ACTION[Server]: SOCIETY ev=model-action agent=2 request=6 kind=say origin=model latency_ms=3517 input_tokens=704 output_tokens=37
+2026-10-28 17:22:40: ACTION[Server]: SOCIETY ev=message agent=2 recipient=1 sha256=ac5b815936bcab54cb9f50dbb6530318751f3d83bce865bb20e0c0af6919aa4e
+2026-10-28 17:22:40: ACTION[Server]: SOCIETY ev=message-text agent=2 recipient=1 text="I'm moving toward the resources near (0,1,-1) to gather them for our shared build."
+2026-10-28 17:22:40: ACTION[Server]: SOCIETY round number=22 wall_ms=2.28
+2026-10-28 17:22:41: ACTION[Server]: SOCIETY ev=model-request agent=2 request=9
+2026-10-28 17:22:41: ACTION[Server]: SOCIETY round number=23 wall_ms=1.79
+2026-10-28 17:22:42: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=7 attempt=1 ok=true error=none latency_ms=2200 input_tokens=754 output_tokens=7
+2026-10-28 17:22:42: ACTION[Server]: SOCIETY ev=model-action agent=0 request=7 kind=advance origin=model latency_ms=2200 input_tokens=754 output_tokens=7
+2026-10-28 17:22:42: ACTION[Server]: SOCIETY ev=move agent=0 persona=new-atlas to=7,1,-1 remaining=5 why=model
+2026-10-28 17:22:42: ACTION[Server]: SOCIETY round number=24 wall_ms=2.29
+2026-10-28 17:22:43: ACTION[Server]: SOCIETY ev=model-request agent=0 request=10
+2026-10-28 17:22:43: ACTION[Server]: SOCIETY round number=25 wall_ms=1.92
+2026-10-28 17:22:43: ACTION[Server]: SOCIETY stats t=35.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=7 marks=1 meetings=0 actions=advance:1,approach:0,inspect:0,mark:0,wander:1,say:3,gather:2,build:0,unknown:0
+2026-10-28 17:22:44: ACTION[Server]: SOCIETY round number=26 wall_ms=2.01
+2026-10-28 17:22:45: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=8 attempt=1 ok=true error=none latency_ms=3037 input_tokens=941 output_tokens=21
+2026-10-28 17:22:45: ACTION[Server]: SOCIETY ev=model-action agent=1 request=8 kind=say origin=model latency_ms=3037 input_tokens=941 output_tokens=21
+2026-10-28 17:22:45: ACTION[Server]: SOCIETY ev=message agent=1 recipient=0 sha256=26c362ae4061a0a2d0ade5e1c299988e8482a0e975061adbe9bc6d0214dda97b
+2026-10-28 17:22:45: ACTION[Server]: SOCIETY ev=message-text agent=1 recipient=0 text="Gathering resources then building together."
+2026-10-28 17:22:45: ACTION[Server]: SOCIETY round number=27 wall_ms=2.29
+2026-10-28 17:22:46: ACTION[Server]: SOCIETY ev=model-request agent=1 request=11
+2026-10-28 17:22:46: ACTION[Server]: SOCIETY round number=28 wall_ms=1.95
+2026-10-28 17:22:47: ACTION[Server]: SOCIETY round number=29 wall_ms=1.97
+2026-10-28 17:22:48: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=9 attempt=1 ok=true error=none latency_ms=2823 input_tokens=704 output_tokens=11
+2026-10-28 17:22:48: ACTION[Server]: SOCIETY ev=model-action agent=2 request=9 kind=approach origin=model latency_ms=2823 input_tokens=704 output_tokens=11
+2026-10-28 17:22:48: ACTION[Server]: SOCIETY ev=approach agent=2 persona=new-cinder target=1 at=0,1,-1
+2026-10-28 17:22:48: ACTION[Server]: SOCIETY round number=30 wall_ms=2.24
+2026-10-28 17:22:48: ACTION[Server]: SOCIETY stats t=40.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=9 marks=1 meetings=0 actions=advance:1,approach:1,inspect:0,mark:0,wander:1,say:4,gather:2,build:0,unknown:0
+2026-10-28 17:22:49: ACTION[Server]: SOCIETY ev=model-request agent=2 request=12
+2026-10-28 17:22:49: ACTION[Server]: SOCIETY round number=31 wall_ms=1.70
+2026-10-28 17:22:50: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=10 attempt=1 ok=true error=none latency_ms=2024 input_tokens=768 output_tokens=7
+2026-10-28 17:22:50: ACTION[Server]: SOCIETY ev=model-action agent=0 request=10 kind=advance origin=model latency_ms=2024 input_tokens=768 output_tokens=7
+2026-10-28 17:22:50: ACTION[Server]: SOCIETY ev=move agent=0 persona=new-atlas to=5,1,-1 remaining=3 why=model
+2026-10-28 17:22:50: ACTION[Server]: SOCIETY ev=meet agent=0 persona=new-atlas with=1 persona=new-birch at=5,1,-1
+2026-10-28 17:22:50: ACTION[Server]: SOCIETY round number=32 wall_ms=2.19
+2026-10-28 17:22:51: ACTION[Server]: SOCIETY ev=model-request agent=0 request=13
+2026-10-28 17:22:51: ACTION[Server]: SOCIETY round number=33 wall_ms=1.71
+2026-10-28 17:22:52: ACTION[Server]: SOCIETY round number=34 wall_ms=1.97
+2026-10-28 17:22:53: ACTION[Server]: SOCIETY round number=35 wall_ms=1.92
+2026-10-28 17:22:53: ACTION[Server]: SOCIETY stats t=45.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=10 marks=1 meetings=1 actions=advance:2,approach:1,inspect:0,mark:0,wander:1,say:4,gather:2,build:0,unknown:0
+2026-10-28 17:22:54: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=11 attempt=1 ok=true error=none latency_ms=3023 input_tokens=931 output_tokens=45
+2026-10-28 17:22:54: ACTION[Server]: SOCIETY ev=model-action agent=1 request=11 kind=say origin=model latency_ms=3023 input_tokens=931 output_tokens=45
+2026-10-28 17:22:54: ACTION[Server]: SOCIETY ev=message agent=1 recipient=0 sha256=1506266ad39440c130bcebbdf975f34d5e4859f67207853010946568e04871c0
+2026-10-28 17:22:54: ACTION[Server]: SOCIETY ev=message-text agent=1 recipient=0 text="I have a resource and will build near (1,1,-1). I'm moving toward resources at (0,1,-1)."
+2026-10-28 17:22:54: ACTION[Server]: SOCIETY round number=36 wall_ms=2.25
+2026-10-28 17:22:55: ACTION[Server]: SOCIETY ev=model-request agent=1 request=14
+2026-10-28 17:22:55: ACTION[Server]: SOCIETY round number=37 wall_ms=1.99
+2026-10-28 17:22:56: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=12 attempt=1 ok=true error=none latency_ms=2769 input_tokens=771 output_tokens=22
+2026-10-28 17:22:56: ACTION[Server]: SOCIETY ev=model-action agent=2 request=12 kind=wander origin=model latency_ms=2769 input_tokens=771 output_tokens=22
+2026-10-28 17:22:56: ACTION[Server]: SOCIETY ev=wander agent=2 persona=new-cinder why=model target=0,1,1
+2026-10-28 17:22:56: ACTION[Server]: SOCIETY round number=38 wall_ms=2.23
+2026-10-28 17:22:57: ACTION[Server]: SOCIETY ev=model-request agent=2 request=15
+2026-10-28 17:22:57: ACTION[Server]: SOCIETY round number=39 wall_ms=1.70
+2026-10-28 17:22:58: ACTION[Server]: SOCIETY round number=40 wall_ms=2.02
+2026-10-28 17:22:58: ACTION[Server]: SOCIETY stats t=50.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=12 marks=1 meetings=1 actions=advance:2,approach:1,inspect:0,mark:0,wander:2,say:5,gather:2,build:0,unknown:0
+2026-10-28 17:22:59: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=13 attempt=1 ok=true error=none latency_ms=2660 input_tokens=793 output_tokens=13
+2026-10-28 17:22:59: ACTION[Server]: SOCIETY ev=model-action agent=0 request=13 kind=approach origin=model latency_ms=2660 input_tokens=793 output_tokens=13
+2026-10-28 17:22:59: ACTION[Server]: SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+2026-10-28 17:22:59: ACTION[Server]: SOCIETY round number=41 wall_ms=2.24
+2026-10-28 17:23:00: ACTION[Server]: SOCIETY ev=model-request agent=0 request=16
+2026-10-28 17:23:00: ACTION[Server]: SOCIETY round number=42 wall_ms=1.68
+2026-10-28 17:23:01: ACTION[Server]: SOCIETY round number=43 wall_ms=1.88
+2026-10-28 17:23:02: ACTION[Server]: SOCIETY round number=44 wall_ms=2.12
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=14 attempt=1 ok=true error=none latency_ms=3141 input_tokens=890 output_tokens=35
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY ev=model-action agent=1 request=14 kind=say origin=model latency_ms=3141 input_tokens=890 output_tokens=35
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY ev=message agent=1 recipient=0 sha256=a2a72b94adf42107caaed4922ce5d22fca7536d077537b954b23057cda9f4d02
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY ev=message-text agent=1 recipient=0 text="I have 1 resource and see build points nearby. Let's gather at the resources and build together."
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY round number=45 wall_ms=2.26
+2026-10-28 17:23:03: ACTION[Server]: SOCIETY stats t=55.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=14 marks=1 meetings=1 actions=advance:2,approach:2,inspect:0,mark:0,wander:2,say:6,gather:2,build:0,unknown:0
+2026-10-28 17:23:04: ACTION[Server]: SOCIETY ev=model-request agent=1 request=17
+2026-10-28 17:23:04: ACTION[Server]: SOCIETY round number=46 wall_ms=1.84
+2026-10-28 17:23:05: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=15 attempt=1 ok=true error=none latency_ms=2387 input_tokens=792 output_tokens=7
+2026-10-28 17:23:05: ACTION[Server]: SOCIETY ev=model-action agent=2 request=15 kind=advance origin=model latency_ms=2387 input_tokens=792 output_tokens=7
+2026-10-28 17:23:05: ACTION[Server]: SOCIETY ev=move agent=2 persona=new-cinder to=-3,1,-1 remaining=3 why=model
+2026-10-28 17:23:05: ACTION[Server]: SOCIETY round number=47 wall_ms=2.18
+2026-10-28 17:23:06: ACTION[Server]: SOCIETY ev=model-request agent=2 request=18
+2026-10-28 17:23:06: ACTION[Server]: SOCIETY round number=48 wall_ms=1.73
+2026-10-28 17:23:07: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=16 attempt=1 ok=true error=none latency_ms=2150 input_tokens=819 output_tokens=7
+2026-10-28 17:23:07: ACTION[Server]: SOCIETY ev=model-action agent=0 request=16 kind=advance origin=model latency_ms=2150 input_tokens=819 output_tokens=7
+2026-10-28 17:23:07: ACTION[Server]: SOCIETY ev=move agent=0 persona=new-atlas to=4,1,-1 remaining=0 why=model
+2026-10-28 17:23:07: ACTION[Server]: SOCIETY ev=arrive agent=0 persona=new-atlas at=4,1,-1
+2026-10-28 17:23:07: ACTION[Server]: SOCIETY round number=49 wall_ms=2.22
+2026-10-28 17:23:08: ACTION[Server]: SOCIETY ev=model-request agent=0 request=19
+2026-10-28 17:23:08: ACTION[Server]: SOCIETY round number=50 wall_ms=1.78
+2026-10-28 17:23:08: ACTION[Server]: SOCIETY stats t=60.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=16 marks=1 meetings=1 actions=advance:4,approach:2,inspect:0,mark:0,wander:2,say:6,gather:2,build:0,unknown:0
+2026-10-28 17:23:09: ACTION[Server]: SOCIETY round number=51 wall_ms=2.40
+2026-10-28 17:23:10: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=17 attempt=1 ok=true error=none latency_ms=2413 input_tokens=890 output_tokens=23
+2026-10-28 17:23:10: ACTION[Server]: SOCIETY ev=model-action agent=1 request=17 kind=gather origin=model latency_ms=2413 input_tokens=890 output_tokens=23
+2026-10-28 17:23:10: ACTION[Server]: SOCIETY ev=resource agent=1 action=gather ok=false reason=target_out_of_reach inventory=1
+2026-10-28 17:23:10: ACTION[Server]: SOCIETY round number=52 wall_ms=4.61
+2026-10-28 17:23:11: ACTION[Server]: SOCIETY ev=model-request agent=1 request=20
+2026-10-28 17:23:11: ACTION[Server]: SOCIETY round number=53 wall_ms=1.95
+2026-10-28 17:23:12: ACTION[Server]: SOCIETY round number=54 wall_ms=1.95
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=18 attempt=1 ok=true error=none latency_ms=2763 input_tokens=766 output_tokens=7
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY ev=model-action agent=2 request=18 kind=advance origin=model latency_ms=2763 input_tokens=766 output_tokens=7
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY ev=move agent=2 persona=new-cinder to=-1,1,-1 remaining=2 why=model
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY ev=arrive agent=2 persona=new-cinder at=-1,1,-1
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY ev=meet agent=2 persona=new-cinder with=1 persona=new-birch at=-1,1,-1
+2026-10-28 17:23:13: ACTION[Server]: SOCIETY round number=55 wall_ms=2.20
+2026-10-28 17:23:14: ACTION[Server]: SOCIETY stats t=65.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=18 marks=1 meetings=2 actions=advance:5,approach:2,inspect:0,mark:0,wander:2,say:6,gather:3,build:0,unknown:0
+2026-10-28 17:23:14: ACTION[Server]: SOCIETY ev=model-request agent=2 request=21
+2026-10-28 17:23:14: ACTION[Server]: SOCIETY round number=56 wall_ms=1.86
+2026-10-28 17:23:15: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=19 attempt=1 ok=true error=none latency_ms=2490 input_tokens=780 output_tokens=22
+2026-10-28 17:23:15: ACTION[Server]: SOCIETY ev=model-action agent=0 request=19 kind=wander origin=model latency_ms=2490 input_tokens=780 output_tokens=22
+2026-10-28 17:23:15: ACTION[Server]: SOCIETY ev=wander agent=0 persona=new-atlas why=model target=1,1,0
+2026-10-28 17:23:15: ACTION[Server]: SOCIETY round number=57 wall_ms=2.38
+2026-10-28 17:23:16: ACTION[Server]: SOCIETY ev=model-request agent=0 request=22
+2026-10-28 17:23:16: ACTION[Server]: SOCIETY round number=58 wall_ms=1.95
+2026-10-28 17:23:17: ACTION[Server]: SOCIETY round number=59 wall_ms=1.93
+2026-10-28 17:23:18: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=20 attempt=1 ok=true error=none latency_ms=2700 input_tokens=915 output_tokens=28
+2026-10-28 17:23:18: ACTION[Server]: SOCIETY ev=model-action agent=1 request=20 kind=build origin=model latency_ms=2700 input_tokens=915 output_tokens=28
+2026-10-28 17:23:18: ACTION[Server]: SOCIETY ev=resource agent=1 action=build ok=true reason=none inventory=0
+2026-10-28 17:23:18: ACTION[Server]: SOCIETY round number=60 wall_ms=2.30
+2026-10-28 17:23:19: ACTION[Server]: SOCIETY stats t=70.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=20 marks=1 meetings=2 actions=advance:5,approach:2,inspect:0,mark:0,wander:3,say:6,gather:3,build:1,unknown:0
+2026-10-28 17:23:19: ACTION[Server]: SOCIETY ev=model-request agent=1 request=23
+2026-10-28 17:23:19: ACTION[Server]: SOCIETY round number=61 wall_ms=1.91
+2026-10-28 17:23:20: ACTION[Server]: SOCIETY round number=62 wall_ms=2.01
+2026-10-28 17:23:21: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=21 attempt=1 ok=true error=none latency_ms=2397 input_tokens=761 output_tokens=23
+2026-10-28 17:23:21: ACTION[Server]: SOCIETY ev=model-action agent=2 request=21 kind=gather origin=model latency_ms=2397 input_tokens=761 output_tokens=23
+2026-10-28 17:23:21: ACTION[Server]: SOCIETY ev=resource agent=2 action=gather ok=true reason=none inventory=1
+2026-10-28 17:23:21: ACTION[Server]: SOCIETY round number=63 wall_ms=2.35
+2026-10-28 17:23:22: ACTION[Server]: SOCIETY ev=model-request agent=2 request=24
+2026-10-28 17:23:22: ACTION[Server]: SOCIETY round number=64 wall_ms=1.76
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY ev=model-attempt agent=0 request=22 attempt=1 ok=true error=none latency_ms=2475 input_tokens=791 output_tokens=7
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY ev=model-action agent=0 request=22 kind=advance origin=model latency_ms=2475 input_tokens=791 output_tokens=7
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY ev=move agent=0 persona=new-atlas to=2,1,-1 remaining=1 why=model
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY ev=arrive agent=0 persona=new-atlas at=2,1,-1
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY ev=meet agent=0 persona=new-atlas with=2 persona=new-cinder at=2,1,-1
+2026-10-28 17:23:23: ACTION[Server]: SOCIETY round number=65 wall_ms=2.38
+2026-10-28 17:23:24: ACTION[Server]: SOCIETY stats t=75.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=22 marks=1 meetings=3 actions=advance:6,approach:2,inspect:0,mark:0,wander:3,say:6,gather:4,build:1,unknown:0
+2026-10-28 17:23:24: ACTION[Server]: SOCIETY round number=66 wall_ms=1.43
+2026-10-28 17:23:25: ACTION[Server]: SOCIETY round number=67 wall_ms=1.35
+2026-10-28 17:23:26: ACTION[Server]: SOCIETY ev=model-attempt agent=1 request=23 attempt=1 ok=true error=none latency_ms=2583 input_tokens=818 output_tokens=23
+2026-10-28 17:23:26: ACTION[Server]: SOCIETY ev=model-action agent=1 request=23 kind=gather origin=model latency_ms=2583 input_tokens=818 output_tokens=23
+2026-10-28 17:23:26: ACTION[Server]: SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+2026-10-28 17:23:26: ACTION[Server]: SOCIETY round number=68 wall_ms=1.77
+2026-10-28 17:23:27: ACTION[Server]: SOCIETY round number=69 wall_ms=0.71
+2026-10-28 17:23:28: ACTION[Server]: SOCIETY round number=70 wall_ms=0.75
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY stats t=80.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=23 marks=1 meetings=3 actions=advance:6,approach:2,inspect:0,mark:0,wander:3,say:6,gather:5,build:1,unknown:0
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY ev=model-attempt agent=2 request=24 attempt=1 ok=true error=none latency_ms=2571 input_tokens=939 output_tokens=28
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY ev=model-action agent=2 request=24 kind=build origin=model latency_ms=2571 input_tokens=939 output_tokens=28
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY ev=resource agent=2 action=build ok=true reason=none inventory=0
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY round number=71 wall_ms=1.07
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY stats t=81.0 agents=3/3 stepped_delta=3 steps_per_sec=11.04 decisions=24 marks=1 meetings=3 actions=advance:6,approach:2,inspect:0,mark:0,wander:3,say:6,gather:5,build:2,unknown:0
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY summary spawned=3 alive=3 decisions=24 rounds=71 marks=1 meetings=3 actions=advance:6,approach:2,inspect:0,mark:0,wander:3,say:6,gather:5,build:2,unknown:0
+2026-10-28 17:23:29: ACTION[Server]: SOCIETY done result=ok reason=decisions-reached
+2026-10-28 17:23:29: ACTION[Main]: Server: Shutting down
+2026-10-28 17:23:29: ACTION[Main]: SOCIETY resource-verify initial=3 world=2 inventory=1 ok=true
+2026-10-28 17:23:29: ACTION[Main]: SOCIETY persist agents=3
+2026-10-28 17:23:29: ACTION[Main]: SOCIETY verify marks_counter=1 marks_in_world=1 ok=true
+2026-10-28 17:23:29: ACTION[Main]: SOCIETY shutdown alive=3 spawned=3 decisions=24 rounds=71 marks=1 meetings=3 actions=advance:6,approach:2,inspect:0,mark:0,wander:3,say:6,gather:5,build:2,unknown:0

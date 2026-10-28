@@ -1,0 +1,2 @@
+memory=true exit=0
+memory=false exit=0

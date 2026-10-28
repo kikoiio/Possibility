@@ -1,0 +1,49 @@
+=== M0 运行报告 ci-repeat-false.run1 ===
+时间: 2026-10-28T17:17:04+00:00
+停止方式: self-shutdown（退出码 0，运行 27s）
+预期结果: 成功
+执行模式: rule-policy
+峰值 RSS: 92 MiB
+
+--- 配置 ---
+  bind_address = 127.0.0.1
+  port = 30077
+  mg_name = singlenode
+  max_users = 8
+  creative_mode = true
+  enable_damage = false
+  server_announce = false
+  dedicated_server_step = 0.09
+  max_forceloaded_blocks = -1
+  society_count = 1000
+  society_decide_interval = 2
+  society_max_decisions = 12
+  society_persist = true
+  society_bound=64
+  society_spacing=2
+  society_cognition=false
+
+--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---
+  d6c1d25c67f4c3d2c0411015d2dec0f06ee2dc19301460531b880eec39570cba  /__w/Wispiva/Wispiva/experiments/minecraft-societies/.runtime/root/usr/libexec/luanti/luantiserver
+  7753ab7792907e54f13804f07773350e2d3b94b531052282d11b7fbe57d11c09  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/init.lua
+  c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/policy.lua
+  53498d0e2da0f5ddfd79c45dc295b9f4439c4d1999c39a692bcff9ee64618abc  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/action_context.lua
+  2f99d247b6f2f08ba40e714e1aeebb3107198127f95be779b941eb3103c8471d  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/memory.lua
+  eb7d96cab41edff1b975ba41696c0ad040c51c911ee503761e097bd14e49c502  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/observation.lua
+  fde0b6f3e5805fe48d0fcc12962d4f9d88d2c9f8ac596de410ee135efb3b6b1f  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/persistence.lua
+  e2cdbbbee05385005c32d2d840d841824aca62dc15d339e02e22d5566bc797f0  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/resource_actions.lua
+  b8a7baaa19f12254e86ad703d093c4be3dbfbea1c4cf4f3a830e0e1060a2bd46  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test.lua
+  fa0f499b096214899c18d5f30ca056302a5006228069848458626aa026e82517  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_action_context.lua
+  86904f6b5fd258db8f9f2b9cc89de2444b7a3812d169a411b7e0e2119d579ba5  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_persistence.lua
+  f5d95d99659e3b125a7e2bb40ac5bf0143e195a14ce03b13bb37a55f48a96df7  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_resource_actions.lua
+  773bb22a1973b04c1b900a09d0e661547ec0e119fe18db8332b22dc26e108b25  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/adapter.py
+  fc91b9e5db113262127d265a474f894342fa984e5a83d348fb7610b7389b6d3b  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/bridge.py
+  598109ca1e635651fab2f059bb2e90b8d53ee15b9174c593324389062851e37e  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/spool_worker.py
+  dad7f293c1a6c847026b771c2eb28a4aea638ac18679b307d19ef2f4d19f46fc  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/test_adapter.py
+  5eb142d7d85648305bcd214addaa3f3619cf561174374c9c4671d326f15d1fe2  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/test_spool_worker.py
+
+--- 校验 ---
+  stats 行数: 5
+  每区间最少被推进的 agent: 1000 / 1000
+  最低 steps_per_sec: 10.72（实时基准 11.1）
+  结果: PASS

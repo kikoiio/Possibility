@@ -1,25 +1,27 @@
 # Minecraft 式 LLM Agent 社会实验
 
-状态：**已立项；C 路线（Luanti）已跑通 M0 小规模闭环，环境选型待定**。服务端 agent 可以重复启停、每步被引擎推进、动作在世界里留下真实方块，逐条证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)。**仍未接入 LLM**：M0 的决策是 `policy.lua` 里的确定性桩，只有 6 条规则。
+状态：**本轮 Luanti 实现、容量测量与真实模型配对已完成**。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
 
-研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../../docs/research/minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../../docs/architecture.md)，近期进度和待决事项见[工作计划](../../docs/PLAN.md)。
+研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../../docs/research/2026-10-28-minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../../docs/architecture.md)，近期进度和待决事项见[工作计划](../../docs/PLAN.md)。
 
 ## 定位与边界
 
 - 这是 **Wispiva 的延伸研究**，不是产品主线，也不是第二套体验入口。
 - 与唯一原型的边界（2026-10-27 决定）：
   - 不共用 `prototypes/package.json`；Luanti 依赖由本目录的 `runtime/bootstrap.sh` 从系统软件源获取并解包，当前没有依赖锁文件。`.runtime/manifest.sha256` 记录本机产物哈希，并不固定将来下载的版本。
-  - 不共用原型的 CI job 与运行时；[独立 CI](../../.github/workflows/minecraft-societies.yml) 目前只定义 shell 与 Lua 语法检查，手动触发，尚未运行，不能替代 Luanti 闭环验收。服务端 jar／原生二进制、bot 连接、EULA 与账号问题都不进入 Wispiva 的 `verify.mjs` 和原型依赖。
-  - 不改变 [Mineflayer / Voyager 研究](../../docs/research/mineflayer-voyager.md) 得出的“Wispiva 主项目不引入 Minecraft 运行时”结论。
+  - 不共用原型的 CI job 与运行时；[实验 CI](../../.github/workflows/society-experiment.yml) 顺序验证 Lua/Python、引擎闭环、快照、资源动作和按分支选择的容量或真实模型实验。服务端 jar／原生二进制、bot 连接、EULA 与账号问题都不进入 Wispiva 的 `verify.mjs` 和原型依赖。
+  - 不改变 [Mineflayer / Voyager 研究](../../docs/research/2026-10-28-mineflayer-voyager.md) 得出的“Wispiva 主项目不引入 Minecraft 运行时”结论。
 - 为什么不是 `scratch/`：`scratch/` 是 2026-10-27 整理时作为迁移残留被移除的目录；`prototypes/` 是 AGENTS.md 规定的唯一原型入口。实验需要的是**独立运行时**，不是多一层目录。
 
 ## 硬约束（用户 2026-10-27 决定）
 
-1. **只能用免费资源**：模型只用现有免费端点且**只在本机使用**（密钥不进 CI、不读 `.env`）。2026-10-27 的容量测量与闭环验证由用户指定在本机进行；后续重型任务按当前项目规则优先使用云端免费资源，调用前须告知服务、用途和权限并获得许可。独立 CI 手动触发，不会自行上传或运行。
-2. **优先开源**：用户明确不打算为 Minecraft 付费，并倾向用开源项目替代。这条改变了最初的“一定要真 Minecraft”，环境因此在下面三选一中待定。
+1. **只能用免费资源**：2026-10-28 用户授权调用 GitHub 配置的模型和使用 GitHub Actions 免费资源，取代此前模型只在本机调用的限制。密钥仅作为运行时 secret 注入，不写进代码或日志，不读取 `.env`。重型测试优先 GitHub Actions。
+2. **优先开源**：用户明确不打算为 Minecraft 付费，并倾向用开源项目替代。这条改变了最初的“一定要真 Minecraft”，本轮已选择下表的 C 路线。
 3. 任何可能产生费用的服务、任何需要上传密钥或私有数据的云端调用，执行前必须再次取得用户明确许可。
 
-## 环境选型（待定）
+## 环境选型
+
+2026-10-28 用户接受 C 路线的服务端实体形态；A、B 保留作背景，不作为本轮实现目标。
 
 | 路线 | 开源 | 需要 Java | 生态兼容 | 已核实的状态 |
 | --- | --- | --- | --- | --- |
@@ -96,12 +98,12 @@ agent/run.sh --label m0-negative --set society_spacing=64 \
   --expect-fail agents-lost-after-spawn                   # 反向用例
 ```
 
-代码分工（M4 接 LLM 时只替换其中一个文件）：
+M0 的代码分工如下；后续模型接入还需要异步队列、校验和运行器，不能只替换策略文件：
 
 ```text
 agent/
   mod/society/init.lua    # 引擎胶水：forceload/emerge、生成、推进、执行、记账、事件格式
-  mod/society/policy.lua  # 决策层：读 observation，给出意图。M4 用 LLM 替换的就是它
+  mod/society/policy.lua  # M0 的规则策略；模型模式由独立桥接实现
   run.sh                  # 启停夹具与硬校验（一次只跑一个服务端）
   evidence/               # 原始日志、逐项报告、M0 证据文档
 ```
@@ -118,7 +120,7 @@ agent/
 - **LLM agent / 多智能体社会模拟在 Luanti 生态基本空白**：没有可核实的规模化先例，arXiv 标题与摘要对 minetest／luanti **零命中**，能查到的都是玩具级或停更实验（如 `minetest_llm` 4 个文件、2023 年后未更新）。这既意味着无先例可借鉴，也意味着方向未被占据。
 - **外部客户端路线被两件事堵住**：官方 `doc/protocol.txt` 仍是 **2011 年的未完成草案**（无成文协议规范，自研客户端需逆向 wire format），且现存客户端协议库孱弱——多个无 LICENSE、多数已停更，没有可与 Mineflayer 相提并论的库。Luanti 也没有 JS/Node 生态。
 - **官方客户端 mod（CSM）无法操纵玩家**：`LocalPlayer` 只有 getter，没有 `set_pos` / `set_control`。因此“agent 作为玩家客户端”在 Luanti 里只有自研协议客户端一条路。
-- **结论**：C 路线的现实形态是**全程服务端 Lua mod 实体**——agent 不是玩家、没有玩家视角，直接对世界执行动作。这与 A 路线（mineflayer 玩家 bot）在形态上有本质差异，必须由用户确认是否接受。
+- **结论**：C 路线的现实形态是**全程服务端 Lua mod 实体**——agent 不是玩家、没有玩家视角，直接对世界执行动作。用户已接受这一差异。
 - 待补：ContentDB 于 2026-10-26 因安全事件下线维护（<https://blog.luanti.org/2026/10/27/contentdb-security-incident/>），包搜索核实与 VoxeLibre 实际安装验证需等其恢复后再做。
 
 ## 复现步骤（C 路线，无 sudo）
@@ -142,21 +144,31 @@ runtime/bootstrap.sh    # 下载 11 个 deb -> 解包到 .runtime/root -> 修软
 
 ## 后续里程碑
 
-环境选定后再细化；里程碑的**退出条件**不变，每个都要产出可重复运行的日志与数字。
+执行进度与新的验证记录见 [PLAN.md](PLAN.md)；每个里程碑都要产出可重复运行的日志与数字。下表保留立项时的划分，新增实现与云端证据以执行计划为准。
 
 | 里程碑 | 内容 | 退出条件 | 状态 |
 | --- | --- | --- | --- |
 | M0 地基 | 选定环境的启停、版本与产物哈希记录、单个 agent 生成／连接并产生一次可观察行为 | 可重复启停；失败有明确原因；agent 确实每步被推进 | **已完成（C 路线，2026-10-27）** |
-| M1 容量实测 | 决策用确定性桩，1／5／10／20（C 路线可再上探）阶梯测 tick、内存、连接或实体开销 | 本项目自己的容量曲线，能回答”多少 agent 还能实时” | 未开始 |
-| M2 运行闭环 | `observe → decide → act → event` 全链路，先接桩决策；动作、观察、事件日志与世界差异 | 能重复运行并产出可比较日志 | 部分：M0 已跑通该链路，缺实验编排与指标 |
-| M3 快照与重置 | 停服 → 快照世界 + agent 状态 → 重置 persona／记忆／关系 → 新 experiment ID → 重启 | 同一初始世界可复现，只有实验条件不同 | 未开始 |
-| M4 真实 LLM | 本机小规模（3–5 agent）接**免费**端点，跑通建造 → 快照 → 重置 → 实验 | 有 token／耗时／失败数据，且证据能说明是 LLM 在决策，不是手写脚本 | 未开始 |
+| M1 容量实测 | 合成实体与实际规则 agent 分层至 10,000 | 步频、存活、决策、内存与原始证据 | 已完成短阶梯；重复测量见执行计划 |
+| M2 运行闭环 | 规则与异步模型共用观察／行动执行器 | 日志、实际写入回读、失败可检出 | 已实现并在 Actions 验证 |
+| M3 快照与重置 | 停服复制、内容哈希核对、重置角色心智 | 独立副本；错误恢复不破坏原检查点 | 已实现；保留 body ID 与库存 |
+| M4 真实 LLM | GitHub 配置模型，3 人实验与记忆对照 | token、延迟、重试、消息、资源动作 | 已接通，结果见执行计划；不能由夹具推断模型行为 |
 
-M0 只覆盖到”能跑、能复现、失败说得清”；M2 的”可比较日志”还缺实验编排与指标定义。
+实现和测量范围以 [PLAN.md](PLAN.md) 及其证据链接为准。当前没有证明万级 LLM 实时运行、长期语义记忆或自发社会结构。
 
-停止条件沿用研究文档：20 agent 闭环看不出可测量社会行为、成本超出预算、或行为主要由手写脚本完成，就停下重新评估，不扩规模。
+本轮范围、停止条件与结果以 [PLAN.md](PLAN.md) 为准。规则负载用于容量测量，真实模型与夹具分开计数。没有把规则行为解释为模型涌现。
 
-**决策点（不要跳过）**：M4 之前必须确定研究问题、指标与对照组。这是研究文档的未决问题 2，目前未定；没有它，做出来的是“能动的世界”，不是社会实验。
+### 2026-10-28 新增实验能力
+
+最新结果见 [万级重复容量](scale/evidence/2026-10-28-large-repeated/summary.md) 和 [真实模型记忆对照](model/evidence/2026-10-28-memory-paired/summary.md)。完整规则负载的万级实时验收未通过，记忆收益尚未证实。规则 agent 的早期短时容量测量见 [阶梯结果](scale/evidence/2026-10-28-agent.md)。真实模型在 [40729157211](https://github.com/kikoiio/Wispiva/actions/runs/40729157211) 中产生六个有效动作；在 [40730088350](https://github.com/kikoiio/Wispiva/actions/runs/40730088350) 中自主采集两次资源。两次均为三个角色的小样本，不代表大规模模型吞吐或可复现的社会行为。
+
+`agent/run.sh --model` 使用单个独立进程、私有文件队列和受约束动作连接模型；环境变量 `XUNFEI_OPENAI_RESPONSE_URL`、`XUNFEI_MODEL`、`XUNFEI_API_KEY` 由调用方提供，不读取 `.env`。参数 `--fake-model` 使用完全确定性的测试夹具，不调用模型；新事件明确记录 origin，旧证据须结合运行配置区分两者。每个格式无效的模型决策最多尝试三次，逐次记录错误、延迟和可用 token 数；当前桥接是串行的，并非千人模型调度器。
+
+每个角色只能接收局部半径内的公开对象和节点、自己的有界记忆与库存；采集和建造会检查距离、库存与世界回读。范围感知没有遮挡或视野方向；采集／建造不模拟玩家物理，也没有通用保护权限。`snapshot.py` 在停服后复制世界并核对文件哈希；`--resume` 在指定副本上恢复角色并清空记忆和目标，因此应先复制原世界再恢复。
+
+手动触发实验请参阅 [执行计划](PLAN.md) 和 [GitHub Actions 工作流](../../.github/workflows/society-experiment.yml)。模型模式只发送合成实验观察；GitHub 运行所需密钥通过 Actions secret 注入，不写入事件文件。当前免费额度及其计费状态需以供应商账户为准。
+
+本轮研究问题、指标与对照已写入 [PLAN.md](PLAN.md)：分层容量、局部信息如何支持行动、FIFO 记忆与即时反馈的配对探测。
 
 ## 目录现状
 
@@ -169,13 +181,13 @@ experiments/minecraft-societies/
   bench/run.sh                   # 顺序跑阶梯、采 RSS、抽 BENCH 日志
   bench/luanti-entity-scale-2026-10-27.txt   # 原始证据与结论
   agent/mod/society/init.lua     # M0 agent 运行时（引擎胶水）
-  agent/mod/society/policy.lua   # M0 决策层（确定性桩；M4 换成 LLM）
+  agent/mod/society/policy.lua   # 规则策略；模型另走异步桥接
   agent/run.sh                   # M0 启停夹具与硬校验
   agent/evidence/                # M0 原始日志、逐项报告与证据文档
 ```
 
 `.runtime/`（就地解包的运行时）与 `agent/worlds/`（每次运行生成的世界）都不入库，可由脚本重建。
-契约层、实验编排、快照与重置目录仍未创建：不预先搭空壳。
+新增 `cognition/`（观察／记忆／资源／持久化）、`model/`（异步桥接）、`scale/`（容量与队列模拟）、`analysis/`（汇总工具）和 `snapshot.py`；运行与结果由 PLAN.md 索引。
 
 ## 合规
 
@@ -187,5 +199,5 @@ experiments/minecraft-societies/
 
 - 容量部分**只覆盖 Luanti 5.10.0 的服务端实体 tick 与内存**：合成实体、`singlenode` 地图、无客户端连接、无网络 IO、单次运行。
 - M0 部分**只覆盖"能起停、被推进、失败说得清"**：决策是 6 条规则的确定性桩，**没有 LLM**、没有持久化、没有玩家在场、规模只到 20、引擎是 5.10.0（不含上游 2025-04-08 的 k-d 树空间索引），且全部只在本机跑过。
-- **没有**验证：LLM agent 行为、真实建造、世界快照与重置、多人／客户端在场时的表现、长时间稳定性、A 路线（Paper）的任何数据。
+- **没有**验证：多人／客户端在场时的表现、长时间稳定性、A 路线（Paper）的任何数据、大规模真实模型吞吐及长期社会行为。新运行中的模型动作、资源操作和快照重置证据分别见上文与 [执行计划](PLAN.md)。
 - 容量、token 与费用在研究文档中的估算仍**未被本项目实测推翻或确认**。

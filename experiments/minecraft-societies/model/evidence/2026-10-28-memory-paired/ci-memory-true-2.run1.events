@@ -1,0 +1,120 @@
+SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+SOCIETY banner count=3 interval=1.00 max_decisions=8 seed=20261027 spacing=2 bound=32 sense=12 step=2
+SOCIETY artifact init_sha256=7753ab7792907e54f13804f07773350e2d3b94b531052282d11b7fbe57d11c09 policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+SOCIETY forceload blocks=25/25 bound=32
+SOCIETY ev=restore agent=0 reset=true memories=0
+SOCIETY ev=restore agent=1 reset=true memories=0
+SOCIETY ev=restore agent=2 reset=true memories=0
+SOCIETY spawn count=3 ok=3 spacing=2 bound=32
+SOCIETY check stage=spawn alive=3 expected=3 ok=true
+SOCIETY ev=model-request agent=0 request=1
+SOCIETY ev=model-request agent=1 request=2
+SOCIETY ev=model-request agent=2 request=3
+SOCIETY ev=model-attempt agent=0 request=1 attempt=1 ok=true error=none latency_ms=2557 input_tokens=752 output_tokens=23
+SOCIETY ev=model-action agent=0 request=1 kind=wander origin=model latency_ms=2557 input_tokens=752 output_tokens=23
+SOCIETY ev=wander agent=0 persona=new-atlas why=model target=2,1,-1
+SOCIETY ev=model-request agent=0 request=4
+SOCIETY ev=model-attempt agent=1 request=2 attempt=1 ok=true error=none latency_ms=2795 input_tokens=811 output_tokens=23
+SOCIETY ev=model-action agent=1 request=2 kind=say origin=model latency_ms=2795 input_tokens=811 output_tokens=23
+SOCIETY ev=message agent=1 recipient=0 sha256=431b17e154768e8124e9cbb9486059ae2b2500af97898f56fab0d50883c3afee
+SOCIETY ev=message-text agent=1 recipient=0 text="Gathering resources here, then build nearby."
+SOCIETY ev=model-request agent=1 request=5
+SOCIETY ev=model-attempt agent=2 request=3 attempt=1 ok=true error=none latency_ms=2516 input_tokens=753 output_tokens=24
+SOCIETY ev=model-action agent=2 request=3 kind=wander origin=model latency_ms=2516 input_tokens=753 output_tokens=24
+SOCIETY ev=wander agent=2 persona=new-cinder why=model target=-1,1,-1
+SOCIETY ev=model-request agent=2 request=6
+SOCIETY ev=model-attempt agent=0 request=4 attempt=1 ok=true error=none latency_ms=2526 input_tokens=860 output_tokens=7
+SOCIETY ev=model-action agent=0 request=4 kind=advance origin=model latency_ms=2526 input_tokens=860 output_tokens=7
+SOCIETY ev=move agent=0 persona=new-atlas to=7,1,-1 remaining=5 why=model
+SOCIETY ev=model-request agent=0 request=7
+SOCIETY ev=model-attempt agent=1 request=5 attempt=1 ok=true error=none latency_ms=2988 input_tokens=903 output_tokens=25
+SOCIETY ev=model-action agent=1 request=5 kind=say origin=model latency_ms=2988 input_tokens=903 output_tokens=25
+SOCIETY ev=message agent=1 recipient=0 sha256=6a31c02407ebc8f4d1818c8b5597bbe118d3d168ecba6bbb3d5dfdb1d2612a21
+SOCIETY ev=message-text agent=1 recipient=0 text="Gathering society:resource here, then build nearby."
+SOCIETY ev=model-request agent=1 request=8
+SOCIETY ev=model-attempt agent=2 request=6 attempt=1 ok=true error=none latency_ms=2664 input_tokens=863 output_tokens=7
+SOCIETY ev=model-action agent=2 request=6 kind=advance origin=model latency_ms=2664 input_tokens=863 output_tokens=7
+SOCIETY ev=move agent=2 persona=new-cinder to=-3,1,-1 remaining=2 why=model
+SOCIETY ev=arrive agent=2 persona=new-cinder at=-3,1,-1
+SOCIETY ev=model-request agent=2 request=9
+SOCIETY ev=model-attempt agent=0 request=7 attempt=1 ok=true error=none latency_ms=2095 input_tokens=973 output_tokens=7
+SOCIETY ev=model-action agent=0 request=7 kind=advance origin=model latency_ms=2095 input_tokens=973 output_tokens=7
+SOCIETY ev=move agent=0 persona=new-atlas to=5,1,-1 remaining=3 why=model
+SOCIETY ev=meet agent=0 persona=new-atlas with=1 persona=new-birch at=5,1,-1
+SOCIETY ev=model-request agent=0 request=10
+SOCIETY ev=model-attempt agent=1 request=8 attempt=1 ok=true error=none latency_ms=2610 input_tokens=977 output_tokens=23
+SOCIETY ev=model-action agent=1 request=8 kind=gather origin=model latency_ms=2610 input_tokens=977 output_tokens=23
+SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+SOCIETY ev=model-request agent=1 request=11
+SOCIETY ev=model-attempt agent=2 request=9 attempt=1 ok=true error=none latency_ms=3041 input_tokens=885 output_tokens=29
+SOCIETY ev=model-action agent=2 request=9 kind=say origin=model latency_ms=3041 input_tokens=885 output_tokens=29
+SOCIETY ev=message agent=2 recipient=1 sha256=bd18f6912de8aff1b41ee303ff31d247e7dbfcf85fa072cea045bf21b402f8fe
+SOCIETY ev=message-text agent=2 recipient=1 text="Let's gather resources near the mark, then build a shared structure together."
+SOCIETY ev=model-request agent=2 request=12
+SOCIETY ev=model-attempt agent=0 request=10 attempt=1 ok=true error=none latency_ms=2565 input_tokens=1048 output_tokens=11
+SOCIETY ev=model-action agent=0 request=10 kind=approach origin=model latency_ms=2565 input_tokens=1048 output_tokens=11
+SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+SOCIETY ev=model-request agent=0 request=13
+SOCIETY ev=model-attempt agent=1 request=11 attempt=1 ok=true error=none latency_ms=3006 input_tokens=1177 output_tokens=28
+SOCIETY ev=model-action agent=1 request=11 kind=build origin=model latency_ms=3006 input_tokens=1177 output_tokens=28
+SOCIETY ev=resource agent=1 action=build ok=true reason=none inventory=0
+SOCIETY ev=model-request agent=1 request=14
+SOCIETY ev=model-attempt agent=2 request=12 attempt=1 ok=true error=none latency_ms=2607 input_tokens=931 output_tokens=11
+SOCIETY ev=model-action agent=2 request=12 kind=approach origin=model latency_ms=2607 input_tokens=931 output_tokens=11
+SOCIETY ev=approach agent=2 persona=new-cinder target=1 at=0,1,-1
+SOCIETY ev=model-request agent=2 request=15
+SOCIETY ev=model-attempt agent=0 request=13 attempt=1 ok=true error=none latency_ms=2453 input_tokens=1027 output_tokens=11
+SOCIETY ev=model-action agent=0 request=13 kind=approach origin=model latency_ms=2453 input_tokens=1027 output_tokens=11
+SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+SOCIETY ev=model-request agent=0 request=16
+SOCIETY ev=model-attempt agent=1 request=14 attempt=1 ok=true error=none latency_ms=2619 input_tokens=1232 output_tokens=29
+SOCIETY ev=model-action agent=1 request=14 kind=gather origin=model latency_ms=2619 input_tokens=1232 output_tokens=29
+SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+SOCIETY ev=model-request agent=1 request=17
+SOCIETY ev=model-attempt agent=2 request=15 attempt=1 ok=true error=none latency_ms=3239 input_tokens=1028 output_tokens=7
+SOCIETY ev=model-action agent=2 request=15 kind=advance origin=model latency_ms=3239 input_tokens=1028 output_tokens=7
+SOCIETY ev=move agent=2 persona=new-cinder to=-1,1,-1 remaining=1 why=model
+SOCIETY ev=arrive agent=2 persona=new-cinder at=-1,1,-1
+SOCIETY ev=meet agent=2 persona=new-cinder with=1 persona=new-birch at=-1,1,-1
+SOCIETY ev=model-request agent=2 request=18
+SOCIETY ev=model-attempt agent=0 request=16 attempt=1 ok=true error=none latency_ms=2536 input_tokens=1096 output_tokens=7
+SOCIETY ev=model-action agent=0 request=16 kind=advance origin=model latency_ms=2536 input_tokens=1096 output_tokens=7
+SOCIETY ev=move agent=0 persona=new-atlas to=4,1,-1 remaining=0 why=model
+SOCIETY ev=arrive agent=0 persona=new-atlas at=4,1,-1
+SOCIETY ev=model-request agent=0 request=19
+SOCIETY ev=model-attempt agent=1 request=17 attempt=1 ok=true error=none latency_ms=2803 input_tokens=1375 output_tokens=29
+SOCIETY ev=model-action agent=1 request=17 kind=gather origin=model latency_ms=2803 input_tokens=1375 output_tokens=29
+SOCIETY ev=resource agent=1 action=gather ok=false reason=target_out_of_reach inventory=1
+SOCIETY ev=model-request agent=1 request=20
+SOCIETY ev=model-attempt agent=2 request=18 attempt=1 ok=true error=none latency_ms=2692 input_tokens=1024 output_tokens=11
+SOCIETY ev=model-action agent=2 request=18 kind=approach origin=model latency_ms=2692 input_tokens=1024 output_tokens=11
+SOCIETY ev=approach agent=2 persona=new-cinder target=1 at=0,1,-1
+SOCIETY ev=model-request agent=2 request=21
+SOCIETY ev=model-attempt agent=0 request=19 attempt=1 ok=false error=invalid_action latency_ms=2828 input_tokens=1072 output_tokens=7
+SOCIETY ev=model-attempt agent=0 request=19 attempt=2 ok=true error=none latency_ms=2854 input_tokens=1072 output_tokens=23
+SOCIETY ev=model-action agent=0 request=19 kind=say origin=model latency_ms=2854 input_tokens=1072 output_tokens=23
+SOCIETY ev=message agent=0 recipient=1 sha256=431b17e154768e8124e9cbb9486059ae2b2500af97898f56fab0d50883c3afee
+SOCIETY ev=message-text agent=0 recipient=1 text="Gathering resources here, then build nearby."
+SOCIETY ev=model-request agent=0 request=22
+SOCIETY ev=model-attempt agent=1 request=20 attempt=1 ok=true error=none latency_ms=3133 input_tokens=1457 output_tokens=30
+SOCIETY ev=model-action agent=1 request=20 kind=say origin=model latency_ms=3133 input_tokens=1457 output_tokens=30
+SOCIETY ev=message agent=1 recipient=2 sha256=2cf6c37462086b261c46e6695999b2c52e719f03283924e3d42ef34d38193748
+SOCIETY ev=message-text agent=1 recipient=2 text="Gathering society:resource near the mark, then building a shared structure nearby."
+SOCIETY ev=model-request agent=1 request=23
+SOCIETY ev=model-attempt agent=2 request=21 attempt=1 ok=true error=none latency_ms=2819 input_tokens=1090 output_tokens=7
+SOCIETY ev=model-action agent=2 request=21 kind=advance origin=model latency_ms=2819 input_tokens=1090 output_tokens=7
+SOCIETY ev=move agent=2 persona=new-cinder to=0,1,-1 remaining=0 why=model
+SOCIETY ev=arrive agent=2 persona=new-cinder at=0,1,-1
+SOCIETY ev=model-request agent=2 request=24
+SOCIETY ev=model-attempt agent=0 request=22 attempt=1 ok=true error=none latency_ms=3059 input_tokens=1145 output_tokens=11
+SOCIETY ev=model-action agent=0 request=22 kind=approach origin=model latency_ms=3059 input_tokens=1145 output_tokens=11
+SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+SOCIETY ev=model-attempt agent=1 request=23 attempt=1 ok=true error=none latency_ms=2756 input_tokens=1573 output_tokens=23
+SOCIETY ev=model-action agent=1 request=23 kind=gather origin=model latency_ms=2756 input_tokens=1573 output_tokens=23
+SOCIETY ev=resource agent=1 action=gather ok=false reason=target_out_of_reach inventory=1
+SOCIETY ev=model-attempt agent=2 request=24 attempt=1 ok=true error=none latency_ms=4095 input_tokens=1173 output_tokens=23
+SOCIETY ev=model-action agent=2 request=24 kind=gather origin=model latency_ms=4095 input_tokens=1173 output_tokens=23
+SOCIETY ev=resource agent=2 action=gather ok=true reason=none inventory=1
+SOCIETY summary spawned=3 alive=3 decisions=24 rounds=74 marks=1 meetings=2 actions=advance:6,approach:5,inspect:0,mark:0,wander:2,say:5,gather:5,build:1,unknown:0
+SOCIETY done result=ok reason=decisions-reached
+SOCIETY verify marks_counter=1 marks_in_world=1 ok=true

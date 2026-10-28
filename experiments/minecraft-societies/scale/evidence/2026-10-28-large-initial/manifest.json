@@ -1,0 +1,27 @@
+{
+  "run_id": 40732010396,
+  "source_sha": "da7d2f0e1b7c9e0c7fe1eba84ca6b2a5860300e8",
+  "sampling": "original short-run; no stats for 10000 cognition=true",
+  "files": [
+    {
+      "file": "ci-large-10000-false.run1.log.gz",
+      "raw_sha256": "67bc70255410d24fb6f1966b84110d01546f7eceefa734f1e9d64fa18f33541d",
+      "raw_bytes": 13898087
+    },
+    {
+      "file": "ci-large-10000-true.run1.log.gz",
+      "raw_sha256": "ad24507f03f9431b3db27386c1d0a1a786bbcb4e3cbffff5e4ef9df13dfd75e9",
+      "raw_bytes": 13897738
+    },
+    {
+      "file": "ci-large-5000-false.run1.log.gz",
+      "raw_sha256": "92ae69d97434c059a55eeb71605c743bab86d8e760ef654193f22e7bc22d5a61",
+      "raw_bytes": 6778748
+    },
+    {
+      "file": "ci-large-5000-true.run1.log.gz",
+      "raw_sha256": "115e4f3319cb9a04161fb53b422f8de3ea52d1b1b84c0122760b21a93f6b0f8f",
+      "raw_bytes": 6778749
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+cognition=false exit=0
+cognition=true exit=1

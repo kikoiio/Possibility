@@ -1,0 +1,35 @@
+=== M0 运行报告 ci-large-10000-false.run1 ===
+时间: 2026-10-28T17:05:04+00:00
+停止方式: self-shutdown（退出码 0，运行 23s）
+预期结果: 成功
+峰值 RSS: 253 MiB
+
+--- 配置 ---
+  bind_address = 127.0.0.1
+  port = 30077
+  mg_name = singlenode
+  max_users = 8
+  creative_mode = true
+  enable_damage = false
+  server_announce = false
+  dedicated_server_step = 0.09
+  max_forceloaded_blocks = -1
+  society_count = 10000
+  society_decide_interval = 2
+  society_max_decisions = 4
+  society_persist = true
+  society_bound=128
+  society_spacing=2
+  society_cognition=false
+
+--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---
+  d6c1d25c67f4c3d2c0411015d2dec0f06ee2dc19301460531b880eec39570cba  /__w/Wispiva/Wispiva/experiments/minecraft-societies/.runtime/root/usr/libexec/luanti/luantiserver
+  a40dbda0fdeaf06535314dfb3109c1cbcc6daaf645576694be3293af9c4fb1a3  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/init.lua
+  c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/policy.lua
+
+--- 校验 ---
+  stats 行数: 1
+  每区间最少被推进的 agent: 10000 / 10000
+  最低 steps_per_sec: 2.50（实时基准 11.1）
+  结果: FAIL
+    - steps_per_sec 最低 2.50，低于实时基准 11.1 太多

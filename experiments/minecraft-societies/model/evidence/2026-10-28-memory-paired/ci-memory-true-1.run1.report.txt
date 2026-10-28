@@ -1,0 +1,278 @@
+=== M0 运行报告 ci-memory-true-1.run1 ===
+时间: 2026-10-28T17:20:57+00:00
+停止方式: self-shutdown（退出码 0，运行 86s）
+预期结果: 成功
+执行模式: real-model
+模型: spark-x2.6
+峰值 RSS: 40 MiB
+
+--- 配置 ---
+  bind_address = 127.0.0.1
+  port = 30077
+  mg_name = singlenode
+  max_users = 8
+  creative_mode = true
+  enable_damage = false
+  server_announce = false
+  dedicated_server_step = 0.09
+  max_forceloaded_blocks = -1
+  society_count = 3
+  society_decide_interval = 1
+  society_max_decisions = 8
+  society_persist = true
+  society_restore = true
+  society_reset_minds = true
+  society_model = true
+  society_cognition = true
+  society_spool = /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/worlds/ci-memory-true-1.run1/model-spool.NAFOZC3o
+  society_spacing=2
+  society_model_memory=true
+  society_log_messages=true
+  society_goal=Work with nearby agents to gather resources and build a shared structure. Tell a neighbor your plan or progress. Choose actions yourself; evaluate feedback and adjust.
+
+--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---
+  d6c1d25c67f4c3d2c0411015d2dec0f06ee2dc19301460531b880eec39570cba  /__w/Wispiva/Wispiva/experiments/minecraft-societies/.runtime/root/usr/libexec/luanti/luantiserver
+  7753ab7792907e54f13804f07773350e2d3b94b531052282d11b7fbe57d11c09  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/init.lua
+  c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd  /__w/Wispiva/Wispiva/experiments/minecraft-societies/agent/mod/society/policy.lua
+  53498d0e2da0f5ddfd79c45dc295b9f4439c4d1999c39a692bcff9ee64618abc  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/action_context.lua
+  2f99d247b6f2f08ba40e714e1aeebb3107198127f95be779b941eb3103c8471d  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/memory.lua
+  eb7d96cab41edff1b975ba41696c0ad040c51c911ee503761e097bd14e49c502  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/observation.lua
+  fde0b6f3e5805fe48d0fcc12962d4f9d88d2c9f8ac596de410ee135efb3b6b1f  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/persistence.lua
+  e2cdbbbee05385005c32d2d840d841824aca62dc15d339e02e22d5566bc797f0  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/resource_actions.lua
+  b8a7baaa19f12254e86ad703d093c4be3dbfbea1c4cf4f3a830e0e1060a2bd46  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test.lua
+  fa0f499b096214899c18d5f30ca056302a5006228069848458626aa026e82517  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_action_context.lua
+  86904f6b5fd258db8f9f2b9cc89de2444b7a3812d169a411b7e0e2119d579ba5  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_persistence.lua
+  f5d95d99659e3b125a7e2bb40ac5bf0143e195a14ce03b13bb37a55f48a96df7  /__w/Wispiva/Wispiva/experiments/minecraft-societies/cognition/test_resource_actions.lua
+  773bb22a1973b04c1b900a09d0e661547ec0e119fe18db8332b22dc26e108b25  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/adapter.py
+  fc91b9e5db113262127d265a474f894342fa984e5a83d348fb7610b7389b6d3b  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/bridge.py
+  598109ca1e635651fab2f059bb2e90b8d53ee15b9174c593324389062851e37e  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/spool_worker.py
+  dad7f293c1a6c847026b771c2eb28a4aea638ac18679b307d19ef2f4d19f46fc  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/test_adapter.py
+  5eb142d7d85648305bcd214addaa3f3619cf561174374c9c4671d326f15d1fe2  /__w/Wispiva/Wispiva/experiments/minecraft-societies/model/test_spool_worker.py
+
+--- 校验 ---
+  stats 行数: 17
+  每区间最少被推进的 agent: 3 / 3
+  最低 steps_per_sec: 11.07（实时基准 11.1）
+  结果: PASS
+
+--- SOCIETY 事件（原文）---
+SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+SOCIETY banner count=3 interval=1.00 max_decisions=8 seed=20261027 spacing=2 bound=32 sense=12 step=2
+SOCIETY artifact init_sha256=7753ab7792907e54f13804f07773350e2d3b94b531052282d11b7fbe57d11c09 policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+SOCIETY forceload blocks=25/25 bound=32
+SOCIETY ev=restore agent=0 reset=true memories=0
+SOCIETY ev=restore agent=1 reset=true memories=0
+SOCIETY ev=restore agent=2 reset=true memories=0
+SOCIETY spawn count=3 ok=3 spacing=2 bound=32
+SOCIETY check stage=spawn alive=3 expected=3 ok=true
+SOCIETY ev=model-request agent=0 request=1
+SOCIETY ev=model-request agent=1 request=2
+SOCIETY ev=model-request agent=2 request=3
+SOCIETY round number=1 wall_ms=1.01
+SOCIETY round number=2 wall_ms=2.06
+SOCIETY round number=3 wall_ms=2.04
+SOCIETY round number=4 wall_ms=2.14
+SOCIETY round number=5 wall_ms=2.14
+SOCIETY stats t=15.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=0 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:0,say:0,gather:0,build:0,unknown:0
+SOCIETY ev=model-attempt agent=0 request=1 attempt=1 ok=true error=none latency_ms=4071 input_tokens=752 output_tokens=25
+SOCIETY ev=model-action agent=0 request=1 kind=say origin=model latency_ms=4071 input_tokens=752 output_tokens=25
+SOCIETY ev=message agent=0 recipient=1 sha256=a1030bbd82b6a4fe1547c6f158214932fdce97ff7ca5caef00c762dead049084
+SOCIETY ev=message-text agent=0 recipient=1 text="Plan: gather resources near mark, then build shared structure."
+SOCIETY round number=6 wall_ms=2.45
+SOCIETY ev=model-request agent=0 request=4
+SOCIETY round number=7 wall_ms=1.82
+SOCIETY round number=8 wall_ms=2.09
+SOCIETY ev=model-attempt agent=1 request=2 attempt=1 ok=true error=none latency_ms=3327 input_tokens=811 output_tokens=23
+SOCIETY ev=model-action agent=1 request=2 kind=gather origin=model latency_ms=3327 input_tokens=811 output_tokens=23
+SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+SOCIETY round number=9 wall_ms=2.39
+SOCIETY ev=model-request agent=1 request=5
+SOCIETY round number=10 wall_ms=1.96
+SOCIETY stats t=20.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=2 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:0,say:1,gather:1,build:0,unknown:0
+SOCIETY round number=11 wall_ms=2.03
+SOCIETY round number=12 wall_ms=2.04
+SOCIETY ev=model-attempt agent=2 request=3 attempt=1 ok=true error=none latency_ms=3713 input_tokens=753 output_tokens=22
+SOCIETY ev=model-action agent=2 request=3 kind=wander origin=model latency_ms=3713 input_tokens=753 output_tokens=22
+SOCIETY ev=wander agent=2 persona=new-cinder why=model target=0,1,0
+SOCIETY round number=13 wall_ms=2.37
+SOCIETY ev=model-request agent=2 request=6
+SOCIETY round number=14 wall_ms=1.92
+SOCIETY round number=15 wall_ms=2.13
+SOCIETY stats t=25.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=3 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:1,say:1,gather:1,build:0,unknown:0
+SOCIETY round number=16 wall_ms=1.98
+SOCIETY round number=17 wall_ms=1.99
+SOCIETY ev=model-attempt agent=0 request=4 attempt=1 ok=true error=none latency_ms=4727 input_tokens=846 output_tokens=23
+SOCIETY ev=model-action agent=0 request=4 kind=wander origin=model latency_ms=4727 input_tokens=846 output_tokens=23
+SOCIETY ev=wander agent=0 persona=new-atlas why=model target=2,1,-1
+SOCIETY round number=18 wall_ms=2.35
+SOCIETY ev=model-request agent=0 request=7
+SOCIETY round number=19 wall_ms=1.87
+SOCIETY round number=20 wall_ms=2.08
+SOCIETY stats t=30.0 agents=3/3 stepped_delta=3 steps_per_sec=11.09 decisions=4 marks=1 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:2,say:1,gather:1,build:0,unknown:0
+SOCIETY round number=21 wall_ms=2.10
+SOCIETY ev=model-attempt agent=1 request=5 attempt=1 ok=true error=none latency_ms=4310 input_tokens=1097 output_tokens=34
+SOCIETY ev=model-action agent=1 request=5 kind=say origin=model latency_ms=4310 input_tokens=1097 output_tokens=34
+SOCIETY ev=message agent=1 recipient=0 sha256=954070838c2d0f80d21be90907e165f895e9b4ebca911d35b8c8a686da51aa57
+SOCIETY ev=message-text agent=1 recipient=0 text="Gathered 1 resource at 2,1,-1. Building shared structure near mark."
+SOCIETY round number=22 wall_ms=2.47
+SOCIETY ev=model-request agent=1 request=8
+SOCIETY round number=23 wall_ms=1.98
+SOCIETY round number=24 wall_ms=2.11
+SOCIETY ev=model-attempt agent=2 request=6 attempt=1 ok=true error=none latency_ms=2672 input_tokens=827 output_tokens=7
+SOCIETY ev=model-action agent=2 request=6 kind=advance origin=model latency_ms=2672 input_tokens=827 output_tokens=7
+SOCIETY ev=move agent=2 persona=new-cinder to=-3,1,-1 remaining=3 why=model
+SOCIETY round number=25 wall_ms=2.48
+SOCIETY stats t=35.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=6 marks=1 meetings=0 actions=advance:1,approach:0,inspect:0,mark:0,wander:2,say:2,gather:1,build:0,unknown:0
+SOCIETY ev=model-request agent=2 request=9
+SOCIETY round number=26 wall_ms=1.87
+SOCIETY round number=27 wall_ms=2.03
+SOCIETY ev=model-attempt agent=0 request=7 attempt=1 ok=true error=none latency_ms=3425 input_tokens=902 output_tokens=29
+SOCIETY ev=model-action agent=0 request=7 kind=gather origin=model latency_ms=3425 input_tokens=902 output_tokens=29
+SOCIETY ev=resource agent=0 action=gather ok=false reason=target_out_of_reach inventory=0
+SOCIETY round number=28 wall_ms=2.40
+SOCIETY ev=model-request agent=0 request=10
+SOCIETY round number=29 wall_ms=1.97
+SOCIETY round number=30 wall_ms=2.07
+SOCIETY stats t=40.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=7 marks=1 meetings=0 actions=advance:1,approach:0,inspect:0,mark:0,wander:2,say:2,gather:2,build:0,unknown:0
+SOCIETY round number=31 wall_ms=2.19
+SOCIETY ev=model-attempt agent=1 request=8 attempt=1 ok=true error=none latency_ms=2980 input_tokens=1126 output_tokens=28
+SOCIETY ev=model-action agent=1 request=8 kind=build origin=model latency_ms=2980 input_tokens=1126 output_tokens=28
+SOCIETY ev=resource agent=1 action=build ok=true reason=none inventory=0
+SOCIETY round number=32 wall_ms=2.48
+SOCIETY ev=model-request agent=1 request=11
+SOCIETY round number=33 wall_ms=2.01
+SOCIETY round number=34 wall_ms=2.08
+SOCIETY round number=35 wall_ms=2.12
+SOCIETY stats t=45.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=8 marks=1 meetings=0 actions=advance:1,approach:0,inspect:0,mark:0,wander:2,say:2,gather:2,build:1,unknown:0
+SOCIETY ev=model-attempt agent=2 request=9 attempt=1 ok=true error=none latency_ms=3829 input_tokens=878 output_tokens=11
+SOCIETY ev=model-action agent=2 request=9 kind=approach origin=model latency_ms=3829 input_tokens=878 output_tokens=11
+SOCIETY ev=approach agent=2 persona=new-cinder target=1 at=0,1,-1
+SOCIETY round number=36 wall_ms=2.45
+SOCIETY ev=model-request agent=2 request=12
+SOCIETY round number=37 wall_ms=2.03
+SOCIETY ev=model-attempt agent=0 request=10 attempt=1 ok=true error=none latency_ms=2773 input_tokens=1108 output_tokens=23
+SOCIETY ev=model-action agent=0 request=10 kind=wander origin=model latency_ms=2773 input_tokens=1108 output_tokens=23
+SOCIETY ev=wander agent=0 persona=new-atlas why=model target=2,1,-1
+SOCIETY round number=38 wall_ms=2.42
+SOCIETY ev=model-request agent=0 request=13
+SOCIETY round number=39 wall_ms=2.07
+SOCIETY round number=40 wall_ms=1.98
+SOCIETY stats t=50.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=10 marks=1 meetings=0 actions=advance:1,approach:1,inspect:0,mark:0,wander:3,say:2,gather:2,build:1,unknown:0
+SOCIETY ev=model-attempt agent=1 request=11 attempt=1 ok=true error=none latency_ms=2810 input_tokens=1132 output_tokens=23
+SOCIETY ev=model-action agent=1 request=11 kind=gather origin=model latency_ms=2810 input_tokens=1132 output_tokens=23
+SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+SOCIETY round number=41 wall_ms=3.24
+SOCIETY ev=model-request agent=1 request=14
+SOCIETY round number=42 wall_ms=2.10
+SOCIETY round number=43 wall_ms=2.10
+SOCIETY ev=model-attempt agent=2 request=12 attempt=1 ok=true error=none latency_ms=2413 input_tokens=951 output_tokens=7
+SOCIETY ev=model-action agent=2 request=12 kind=advance origin=model latency_ms=2413 input_tokens=951 output_tokens=7
+SOCIETY ev=move agent=2 persona=new-cinder to=-1,1,-1 remaining=1 why=model
+SOCIETY ev=arrive agent=2 persona=new-cinder at=-1,1,-1
+SOCIETY ev=meet agent=2 persona=new-cinder with=1 persona=new-birch at=-1,1,-1
+SOCIETY round number=44 wall_ms=2.61
+SOCIETY ev=model-request agent=2 request=15
+SOCIETY round number=45 wall_ms=2.27
+SOCIETY stats t=55.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=12 marks=1 meetings=1 actions=advance:2,approach:1,inspect:0,mark:0,wander:3,say:2,gather:3,build:1,unknown:0
+SOCIETY round number=46 wall_ms=2.22
+SOCIETY round number=47 wall_ms=2.23
+SOCIETY ev=model-attempt agent=0 request=13 attempt=1 ok=true error=none latency_ms=3962 input_tokens=1139 output_tokens=7
+SOCIETY ev=model-action agent=0 request=13 kind=advance origin=model latency_ms=3962 input_tokens=1139 output_tokens=7
+SOCIETY ev=move agent=0 persona=new-atlas to=7,1,-1 remaining=5 why=model
+SOCIETY round number=48 wall_ms=2.53
+SOCIETY ev=model-request agent=0 request=16
+SOCIETY round number=49 wall_ms=2.20
+SOCIETY round number=50 wall_ms=2.16
+SOCIETY stats t=60.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=13 marks=1 meetings=1 actions=advance:3,approach:1,inspect:0,mark:0,wander:3,say:2,gather:3,build:1,unknown:0
+SOCIETY ev=model-attempt agent=1 request=14 attempt=1 ok=true error=none latency_ms=2597 input_tokens=1308 output_tokens=22
+SOCIETY ev=model-action agent=1 request=14 kind=build origin=model latency_ms=2597 input_tokens=1308 output_tokens=22
+SOCIETY ev=resource agent=1 action=build ok=true reason=none inventory=0
+SOCIETY round number=51 wall_ms=2.52
+SOCIETY ev=model-request agent=1 request=17
+SOCIETY round number=52 wall_ms=2.20
+SOCIETY round number=53 wall_ms=2.12
+SOCIETY round number=54 wall_ms=2.32
+SOCIETY round number=55 wall_ms=2.26
+SOCIETY stats t=65.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=14 marks=1 meetings=1 actions=advance:3,approach:1,inspect:0,mark:0,wander:3,say:2,gather:3,build:2,unknown:0
+SOCIETY ev=model-attempt agent=2 request=15 attempt=1 ok=false error=invalid_action latency_ms=2412 input_tokens=947 output_tokens=7
+SOCIETY ev=model-attempt agent=2 request=15 attempt=2 ok=true error=none latency_ms=2480 input_tokens=947 output_tokens=23
+SOCIETY ev=model-action agent=2 request=15 kind=gather origin=model latency_ms=2480 input_tokens=947 output_tokens=23
+SOCIETY ev=resource agent=2 action=gather ok=true reason=none inventory=1
+SOCIETY round number=56 wall_ms=2.64
+SOCIETY ev=model-request agent=2 request=18
+SOCIETY round number=57 wall_ms=2.17
+SOCIETY ev=model-attempt agent=0 request=16 attempt=1 ok=true error=none latency_ms=2214 input_tokens=1117 output_tokens=7
+SOCIETY ev=model-action agent=0 request=16 kind=advance origin=model latency_ms=2214 input_tokens=1117 output_tokens=7
+SOCIETY ev=move agent=0 persona=new-atlas to=5,1,-1 remaining=3 why=model
+SOCIETY ev=meet agent=0 persona=new-atlas with=1 persona=new-birch at=5,1,-1
+SOCIETY round number=58 wall_ms=2.31
+SOCIETY ev=model-request agent=0 request=19
+SOCIETY round number=59 wall_ms=1.89
+SOCIETY round number=60 wall_ms=1.94
+SOCIETY stats t=70.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=16 marks=1 meetings=2 actions=advance:4,approach:1,inspect:0,mark:0,wander:3,say:2,gather:4,build:2,unknown:0
+SOCIETY ev=model-attempt agent=1 request=17 attempt=1 ok=true error=none latency_ms=2868 input_tokens=1289 output_tokens=23
+SOCIETY ev=model-action agent=1 request=17 kind=say origin=model latency_ms=2868 input_tokens=1289 output_tokens=23
+SOCIETY ev=message agent=1 recipient=2 sha256=3212273f762fe643b2c208f25103dffafaf0d87478b015e59e5d39cdf94d6917
+SOCIETY ev=message-text agent=1 recipient=2 text="Gathering near mark and building shared structure."
+SOCIETY round number=61 wall_ms=2.24
+SOCIETY ev=model-request agent=1 request=20
+SOCIETY round number=62 wall_ms=2.98
+SOCIETY round number=63 wall_ms=2.08
+SOCIETY ev=model-attempt agent=2 request=18 attempt=1 ok=true error=none latency_ms=3190 input_tokens=1203 output_tokens=39
+SOCIETY ev=model-action agent=2 request=18 kind=say origin=model latency_ms=3190 input_tokens=1203 output_tokens=39
+SOCIETY ev=message agent=2 recipient=1 sha256=cc22fd48e4448e804416ff8c83f1ca51c189a9974eff1793f1853e22394652ad
+SOCIETY ev=message-text agent=2 recipient=1 text="I gathered at (0,1,-1). Let's build at (-1,1,-1)."
+SOCIETY round number=64 wall_ms=2.42
+SOCIETY ev=model-request agent=2 request=21
+SOCIETY round number=65 wall_ms=1.87
+SOCIETY stats t=75.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=18 marks=1 meetings=2 actions=advance:4,approach:1,inspect:0,mark:0,wander:3,say:4,gather:4,build:2,unknown:0
+SOCIETY round number=66 wall_ms=1.96
+SOCIETY ev=model-attempt agent=0 request=19 attempt=1 ok=true error=none latency_ms=2883 input_tokens=1154 output_tokens=11
+SOCIETY ev=model-action agent=0 request=19 kind=approach origin=model latency_ms=2883 input_tokens=1154 output_tokens=11
+SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+SOCIETY round number=67 wall_ms=2.26
+SOCIETY ev=model-request agent=0 request=22
+SOCIETY round number=68 wall_ms=1.81
+SOCIETY round number=69 wall_ms=2.01
+SOCIETY round number=70 wall_ms=1.91
+SOCIETY stats t=80.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=19 marks=1 meetings=2 actions=advance:4,approach:2,inspect:0,mark:0,wander:3,say:4,gather:4,build:2,unknown:0
+SOCIETY ev=model-attempt agent=1 request=20 attempt=1 ok=true error=none latency_ms=3054 input_tokens=1305 output_tokens=25
+SOCIETY ev=model-action agent=1 request=20 kind=say origin=model latency_ms=3054 input_tokens=1305 output_tokens=25
+SOCIETY ev=message agent=1 recipient=0 sha256=a18895ef3776d5abbd9af9922ff72179a63e12b5c8e36c09bbb9ade28de169ef
+SOCIETY ev=message-text agent=1 recipient=0 text="Gathering resources near mark, then building shared structure."
+SOCIETY round number=71 wall_ms=2.29
+SOCIETY ev=model-request agent=1 request=23
+SOCIETY round number=72 wall_ms=1.98
+SOCIETY round number=73 wall_ms=2.01
+SOCIETY ev=model-attempt agent=2 request=21 attempt=1 ok=true error=none latency_ms=3273 input_tokens=1327 output_tokens=23
+SOCIETY ev=model-action agent=2 request=21 kind=build origin=model latency_ms=3273 input_tokens=1327 output_tokens=23
+SOCIETY ev=resource agent=2 action=build ok=true reason=none inventory=0
+SOCIETY round number=74 wall_ms=2.31
+SOCIETY ev=model-request agent=2 request=24
+SOCIETY round number=75 wall_ms=1.78
+SOCIETY stats t=85.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=21 marks=1 meetings=2 actions=advance:4,approach:2,inspect:0,mark:0,wander:3,say:5,gather:4,build:3,unknown:0
+SOCIETY round number=76 wall_ms=1.98
+SOCIETY ev=model-attempt agent=0 request=22 attempt=1 ok=true error=none latency_ms=2529 input_tokens=1194 output_tokens=11
+SOCIETY ev=model-action agent=0 request=22 kind=approach origin=model latency_ms=2529 input_tokens=1194 output_tokens=11
+SOCIETY ev=approach agent=0 persona=new-atlas target=1 at=4,1,-1
+SOCIETY round number=77 wall_ms=2.28
+SOCIETY round number=78 wall_ms=1.43
+SOCIETY round number=79 wall_ms=1.43
+SOCIETY ev=model-attempt agent=1 request=23 attempt=1 ok=true error=none latency_ms=3058 input_tokens=1471 output_tokens=23
+SOCIETY ev=model-action agent=1 request=23 kind=gather origin=model latency_ms=3058 input_tokens=1471 output_tokens=23
+SOCIETY ev=resource agent=1 action=gather ok=true reason=none inventory=1
+SOCIETY round number=80 wall_ms=1.67
+SOCIETY stats t=90.0 agents=3/3 stepped_delta=3 steps_per_sec=11.08 decisions=23 marks=1 meetings=2 actions=advance:4,approach:3,inspect:0,mark:0,wander:3,say:5,gather:5,build:3,unknown:0
+SOCIETY round number=81 wall_ms=0.76
+SOCIETY round number=82 wall_ms=0.73
+SOCIETY ev=model-attempt agent=2 request=24 attempt=1 ok=true error=none latency_ms=2885 input_tokens=1285 output_tokens=24
+SOCIETY ev=model-action agent=2 request=24 kind=gather origin=model latency_ms=2885 input_tokens=1285 output_tokens=24
+SOCIETY ev=resource agent=2 action=gather ok=true reason=none inventory=1
+SOCIETY round number=83 wall_ms=1.04
+SOCIETY stats t=93.0 agents=3/3 stepped_delta=3 steps_per_sec=11.07 decisions=24 marks=1 meetings=2 actions=advance:4,approach:3,inspect:0,mark:0,wander:3,say:5,gather:6,build:3,unknown:0
+SOCIETY summary spawned=3 alive=3 decisions=24 rounds=83 marks=1 meetings=2 actions=advance:4,approach:3,inspect:0,mark:0,wander:3,say:5,gather:6,build:3,unknown:0
+SOCIETY done result=ok reason=decisions-reached
+SOCIETY resource-verify initial=3 world=1 inventory=2 ok=true
+SOCIETY persist agents=3
+SOCIETY verify marks_counter=1 marks_in_world=1 ok=true
+SOCIETY shutdown alive=3 spawned=3 decisions=24 rounds=83 marks=1 meetings=2 actions=advance:4,approach:3,inspect:0,mark:0,wander:3,say:5,gather:6,build:3,unknown:0
