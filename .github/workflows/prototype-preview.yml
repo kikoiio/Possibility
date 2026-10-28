@@ -34,10 +34,19 @@ jobs:
           fc-match -f '%{family}' 'Noto Sans CJK SC' | grep -q 'Noto Sans CJK SC'
       - name: Conversation and live activity in a real browser
         run: node prototypes/scripts/observe-browser.mjs
+      - name: Voxel building in a real browser
+        run: node prototypes/scripts/observe-voxel-browser.mjs
       - name: Screenshots and observations
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: prototype-experience
           path: .tmp/prototype/browser/
+          retention-days: 7
+      - name: Voxel screenshots and observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-voxel-experience
+          path: .tmp/prototype/voxel-browser/
           retention-days: 7

@@ -4,7 +4,7 @@ const ui = Object.fromEntries([
   'new-world', 'world-resume', 'archive-controls', 'world-archives', 'world-open',
   'world-create', 'world-experience', 'dialogue-scroll', 'dialogue-log', 'dialogue-empty',
   'creation-summary', 'creation-summary-text', 'creation-status', 'creation-form', 'creation-input', 'creation-send',
-  'source-input', 'source-status', 'source-remove',
+  'source-input', 'source-status', 'source-remove', 'voxel-scene', 'voxel-undo', 'voxel-redo',
   'generate-actions', 'generate-hint', 'world-generate', 'world-draft', 'world-draft-scene',
   'world-draft-title', 'world-draft-description', 'world-draft-summary', 'draft-stale', 'world-accept',
   'scene-host', 'clock-state', 'play-pause', 'actor-step', 'actor-retry',
@@ -42,6 +42,7 @@ const messageNodes = new Map();
 const requests = new Set();
 const slots = {
   draft: { host: ui['world-draft-scene'], key: null, token: 0, scene: null, latest: null, signature: '' },
+  voxel: { host: ui['voxel-scene'], key: null, token: 0, scene: null, latest: null, signature: '' },
   world: { host: ui['scene-host'], key: null, token: 0, scene: null, latest: null, signature: '' },
 };
 const creating = () => state?.creation?.mode !== 'world';
@@ -52,7 +53,11 @@ const retryable = () => Boolean(state?.autonomy?.waitingReason || text(state?.wa
 const canPause = () => !creating() && (!state?.paused || (pending() && activeKind() === 'resident'));
 const staleDraft = () => {
   const draft = state?.creation?.draft;
-  return draft?.baseConversationRevision !== undefined && draft.baseConversationRevision !== state?.creation?.dialogue?.revision;
+  return Boolean(draft) && (
+    draft.baseConversationRevision !== undefined && draft.baseConversationRevision !== state?.creation?.dialogue?.revision ||
+    draft.baseVoxelId !== state?.creation?.voxelId ||
+    draft.baseVoxelRevision !== state?.creation?.voxel?.revision
+  );
 };
 const currentDraft = () => {
   const draft = state?.creation?.draft;
@@ -73,6 +78,8 @@ function updateControls() {
   ui['creation-send'].disabled = locked || !creating() || composing || !ui['creation-input'].value.trim();
   ui['source-input'].disabled = locked || !creating();
   ui['source-remove'].disabled = locked || !creating() || !state?.creation?.source;
+  ui['voxel-undo'].disabled = locked || !creating() || !state?.creation?.voxel?.canUndo;
+  ui['voxel-redo'].disabled = locked || !creating() || !state?.creation?.voxel?.canRedo;
   ui['world-generate'].disabled = locked || !creating() || !state?.creation?.dialogue?.ready;
   ui['world-accept'].disabled = locked || !creating() || !currentDraft() || staleDraft();
   ui['play-pause'].disabled = busy || creating() || (!canPause() && (pending() || Boolean(waiting())));
@@ -357,6 +364,44 @@ function syncScene(slot, key, next) {
   }).catch(() => sceneFailure(slot, token));
 }
 
+function syncVoxel(slot, key, world) {
+  if (slot.key === key) {
+    slot.latest = world;
+    if (slot.scene) {
+      try { slot.scene.update(world); } catch { voxelFailure(slot, slot.token); }
+    }
+    return;
+  }
+  releaseScene(slot);
+  slot.key = key; slot.latest = world;
+  const token = ++slot.token;
+  const mount = node('div', '', 'scene-mount');
+  slot.host.replaceChildren(mount);
+  void import('./voxel-scene.js').then(async ({ createVoxelScene }) => {
+    if (closed || token !== slot.token) return;
+    const scene = await createVoxelScene(mount, slot.latest);
+    if (closed || token !== slot.token) { scene?.dispose(); return; }
+    slot.scene = scene;
+    scene.update(slot.latest);
+  }).catch(() => voxelFailure(slot, token));
+}
+function voxelFailure(slot, token) {
+  if (closed || token !== slot.token) return;
+  try { slot.scene?.dispose(); } catch { /* Conversation remains available. */ }
+  slot.scene = null;
+  const error = node('div', '', 'scene-error');
+  error.append(node('p', '画面暂时无法显示，你仍可以继续对话。'));
+  const retry = node('button', '重新载入画面', 'button secondary');
+  retry.type = 'button';
+  retry.addEventListener('click', () => {
+    const key = slot.key, latest = slot.latest;
+    releaseScene(slot);
+    if (!closed) syncVoxel(slot, key, latest);
+  });
+  error.append(retry);
+  slot.host.replaceChildren(error);
+}
+
 function applyState(next) {
   if (closed) return;
   if (!next?.creation || !['create', 'world'].includes(next.creation.mode) || next.creation.mode === 'world' && !next.world) throw new Error('世界状态不完整，请重新连接。');
@@ -378,14 +423,17 @@ function applyState(next) {
   const target = isCreate ? ui['creation-status'] : ui['world-status'];
   if (ui['request-status'].parentNode !== target) target.append(ui['request-status']);
   renderMenu();
-  if (isCreate) { releaseScene(slots.world); renderDialogue(); renderDraft(); }
+  if (isCreate) { releaseScene(slots.world); renderDialogue(); renderDraft(); syncVoxel(slots.voxel, 'creation', next.creation.voxel || { revision: 0, cells: [], objects: [] }); }
   else {
-    releaseScene(slots.draft);
+    releaseScene(slots.draft); releaseScene(slots.voxel);
     setText(ui['world-time'], minute(next.worldMinute));
     // Weather and resource totals now live in scene chips and in the activity
     // list; the old bottom bar repeated them across the full width.
     renderActivity(next);
-    syncScene(slots.world, next.instanceId || next.genesis?.draftId || next.world.title, next);
+    const worldKey = next.instanceId || next.genesis?.instanceId || next.genesis?.draftId || next.world.title;
+    const voxel = next.genesis?.voxel;
+    if (list(voxel?.cells).length) syncVoxel(slots.world, `voxel:${worldKey}`, voxel);
+    else syncScene(slots.world, `world:${worldKey}`, next);
   }
   updateControls(); renderStatus();
   if (previousMode && previousMode !== next.creation.mode) {
@@ -612,6 +660,11 @@ ui['creation-input'].addEventListener('keydown', (event) => {
   event.preventDefault();
   if (!ui['creation-send'].disabled) ui['creation-form'].requestSubmit();
 });
+for (const type of ['undo', 'redo']) {
+  ui[`voxel-${type}`].addEventListener('click', () => {
+    if (!ui[`voxel-${type}`].disabled) return control({ type: `voxel-${type}`, baseRevision: state.creation.voxel.revision });
+  });
+}
 ui['world-generate'].addEventListener('click', () => {
   if (!ui['world-generate'].disabled) return runStep('creation', '/api/world-generate', { conversationRevision: state.creation.dialogue.revision });
 });
@@ -659,7 +712,7 @@ window.addEventListener('pagehide', () => {
   for (const controller of requests) controller.abort();
   requests.clear();
   window.clearInterval(progressTimer); progressTimer = null;
-  releaseScene(slots.world); releaseScene(slots.draft);
+  releaseScene(slots.world); releaseScene(slots.draft); releaseScene(slots.voxel);
 });
 window.addEventListener('pageshow', (event) => {
   if (!event.persisted) return;
