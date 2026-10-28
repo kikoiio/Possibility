@@ -235,6 +235,9 @@ run_once() {
     command grep -q 'SOCIETY check stage=spawn .* ok=true' "$log" || failed+=("生成后存活校验未通过")
     command grep -q 'SOCIETY verify .* ok=true' "$log" || failed+=("缺少世界回读核对（verify ok=true）")
     if [[ "$MODEL" -eq 1 ]]; then
+      command grep -q 'SOCIETY resource-verify .* ok=true' "$log" || failed+=("资源总量回读核对未通过")
+    fi
+    if [[ "$MODEL" -eq 1 ]]; then
       local model_actions
       model_actions=$(command grep -c 'SOCIETY ev=model-action ' "$log" || true)
       if [[ "$DECISIONS" -gt 0 && "$model_actions" -ne $((AGENTS * DECISIONS)) ]]; then

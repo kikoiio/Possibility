@@ -26,6 +26,8 @@ jobs:
           python3 -B -m unittest -v
           cd ..
           python3 -B -m unittest -v test_snapshot.py
+          cd scale
+          python3 -B -m unittest -v test_queue_sim.py
       - name: Prepare runtime
         run: |
           rt="$GITHUB_WORKSPACE/experiments/minecraft-societies/.runtime"
@@ -76,6 +78,12 @@ jobs:
               rc=0
               "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 120 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
               echo "$label exit=$rc" >> "$exp/agent/evidence/ci-large-status.txt"
+            done
+          done
+          mkdir -p "$GITHUB_WORKSPACE/scale-results/queue-simulation"
+          for count in 1000 10000; do
+            for workers in 1 100 1000; do
+              python3 "$exp/scale/queue_sim.py" --agents "$count" --workers "$workers" --latency 3 --seconds 60 --interval 2 --max-wait 30 > "$GITHUB_WORKSPACE/scale-results/queue-simulation/${count}-${workers}.json"
             done
           done
       - name: Model-driven agent loop

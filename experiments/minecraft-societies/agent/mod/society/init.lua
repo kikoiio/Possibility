@@ -66,6 +66,18 @@ local S = {
 
 local agents = {}
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
+local resource_initial = nil
+
+local function resource_total()
+	local in_world = #minetest.find_nodes_in_area(
+		{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND}, {"society:resource"})
+	local inventory = 0
+	for i = 0, COUNT - 1 do
+		local le = agents[i]
+		if le and le._resources then inventory = inventory + le._resources:count("society:resource") end
+	end
+	return in_world, inventory
+end
 
 local function ev(fmt, ...)
 	minetest.log("action", "SOCIETY " .. string.format(fmt, ...))
@@ -273,6 +285,9 @@ local function apply(self, action, pos)
 
 	if kind == "gather" or kind == "build" then
 		local ok, reason = self._resources[kind](self._resources, action.point, "society:resource")
+		self._episodic:add({time = minetest.get_gametime(),
+			text = string.format("%s %s; inventory=%d", kind, ok and "succeeded" or "failed",
+				self._resources:count("society:resource")), source = {kind = "action", id = self._id}})
 		ev("ev=resource agent=%d action=%s ok=%s reason=%s inventory=%d", self._id, kind,
 			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
 		return
@@ -531,6 +546,10 @@ local function spawn_agents()
 		end
 	end
 	ev("spawn count=%d ok=%d spacing=%d bound=%d", COUNT, S.spawned, SPACING, BOUND)
+	if MODEL or SEED_RESOURCES then
+		local in_world, inventory = resource_total()
+		resource_initial = in_world + inventory
+	end
 end
 
 local function summary_and_stop()
@@ -659,6 +678,11 @@ end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
+	if resource_initial then
+		local in_world, inventory = resource_total()
+		ev("resource-verify initial=%d world=%d inventory=%d ok=%s", resource_initial,
+			in_world, inventory, tostring(resource_initial == in_world + inventory))
+	end
 	if PERSIST and not S.failed then
 		local saved = {}
 		for i = 0, COUNT - 1 do
