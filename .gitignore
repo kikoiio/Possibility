@@ -1,15 +1,15 @@
 node_modules/
 dist/
-dist-ssr/
 *.local
 .env
 .env.*
 !.env.example
+/config.json
 .DS_Store
-.local-trash/
-coverage/
 .vite/
-.wrangler/
 
 .tmp/
 .data/
+
+# agent work logs (keep conclusions in docs/)
+/.audit/
