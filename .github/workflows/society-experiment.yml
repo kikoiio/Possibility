@@ -32,6 +32,8 @@ jobs:
           python3 -B -m unittest -v test_snapshot.py
           cd scale
           python3 -B -m unittest -v test_queue_sim.py
+          cd ../analysis
+          python3 -B -m unittest -v
       - name: Prepare runtime
         run: |
           rt="$GITHUB_WORKSPACE/experiments/minecraft-societies/.runtime"
@@ -40,6 +42,16 @@ jobs:
           cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
           mkdir -p "$rt/home/.minetest"
           ln -s ../.luanti/games "$rt/home/.minetest/games"
+          python3 - <<'PY'
+          import json, os, platform, subprocess
+          from pathlib import Path
+          Path('run-metadata.json').write_text(json.dumps({
+              'git_sha': os.environ['GITHUB_SHA'], 'run_id': os.environ['GITHUB_RUN_ID'],
+              'platform': platform.platform(), 'cpu_count': os.cpu_count(),
+              'engine_package': subprocess.check_output(['dpkg-query', '-W', 'luanti-server'], text=True).strip(),
+              'mem_total': next(line.strip() for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:')),
+          }, indent=2) + '\n')
+          PY
       - name: Run agent loop with cognition
         run: |
           experiments/minecraft-societies/agent/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
@@ -148,11 +160,17 @@ jobs:
             done
           done
           ! grep -qv 'exit=0' "$exp/agent/evidence/ci-memory-status.txt"
+      - name: Summarize observed results
+        if: always()
+        run: |
+          python3 -B experiments/minecraft-societies/analysis/summarize.py --compact --input experiments/minecraft-societies/agent/evidence --output observed-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: society-results
           path: |
+            observed-results.json
+            run-metadata.json
             scale-results/
             experiments/minecraft-societies/agent/evidence/ci-cognition.*
             experiments/minecraft-societies/agent/evidence/ci-model.*
