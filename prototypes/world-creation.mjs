@@ -7,10 +7,42 @@ import { loadModelConfig } from './model/config.mjs';
 import { checkWorldCandidate, buildGenesisMessages } from './world-genesis.mjs';
 import { parseGeneratedJSON } from './model/generated-json.mjs';
 import { parseGenesisOutput, compileGenesisRecords, GENESIS_STAGES, readGenesisStage } from './genesis-records.mjs';
-import { emptyDialogue, validDialogue, checkDiscussion, buildDiscussionMessages } from './creation-dialogue.mjs';
+import { emptyDialogue, validDialogue, checkDiscussion, normalizeDiscussion, buildDiscussionMessages } from './creation-dialogue.mjs';
 import { createVoxelWorldStore } from './voxel-world.mjs';
 import { bindVoxelWorld } from './voxel-bindings.mjs';
+import { retrieveSource } from './model/source-retrieval.mjs';
 const clone = value => structuredClone(value);
+const MAX_SOURCE_CHARACTERS = 5_000_000;
+
+function compactModelAudit(role, audit, extra = {}) {
+  const requestBody = audit?.request?.body;
+  const input = Array.isArray(requestBody?.input) ? requestBody.input : [];
+  return {
+    role,
+    ...extra,
+    id: audit?.id ?? null,
+    startedAt: audit?.startedAt ?? null,
+    model: audit?.model ?? null,
+    requestSent: Boolean(audit?.requestSent),
+    responseStatus: audit?.responseStatus ?? null,
+    elapsedMs: audit?.elapsedMs ?? 0,
+    headersReceivedMs: audit?.headersReceivedMs ?? null,
+    firstEventMs: audit?.firstEventMs ?? null,
+    firstTextMs: audit?.firstTextMs ?? null,
+    streamedResponse: Boolean(audit?.streamedResponse),
+    eventsReceived: audit?.eventsReceived ?? 0,
+    finishReason: audit?.finishReason ?? null,
+    incompleteReason: audit?.incompleteReason ?? null,
+    usage: audit?.usage ?? null,
+    error: audit?.error ?? null,
+    request: {
+      model: requestBody?.model ?? null,
+      messageCount: input.length,
+      inputCharacters: input.reduce((sum, message) => sum + String(message?.content ?? '').length, 0),
+    },
+    responseCharacters: typeof audit?.rawResponse === 'string' ? audit.rawResponse.length : null,
+  };
+}
 
 export function createWorldCreation({ stateFile, createExperience, configLoader = loadModelConfig, fetchImpl = globalThis.fetch } = {}) {
   const directory = dirname(stateFile), stagingFile = join(directory, 'creation.json');
@@ -29,7 +61,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     if (Array.isArray(saved.worlds)) creation.worlds = saved.worlds.filter(w => /^[0-9a-f-]{36}$/.test(w?.id) && typeof w.title === 'string' && Number.isSafeInteger(w.worldMinute));
     creation.lastResult = saved.pending ? { ok: false, message: '上次创建世界的请求中断，没有自动重试。' } : saved.lastResult ?? null;
     if (validDialogue(saved.dialogue)) creation.dialogue = saved.dialogue;
-    if (typeof saved.source?.name === 'string' && saved.source.name.length <= 120 && typeof saved.source?.text === 'string' && saved.source.text.length <= 100000 && saved.source.text.trim()) creation.source = saved.source;
+    if (typeof saved.source?.name === 'string' && saved.source.name.length <= 120 && typeof saved.source?.text === 'string' && saved.source.text.length <= MAX_SOURCE_CHARACTERS && saved.source.text.trim()) creation.source = saved.source;
     if (saved.pending) creation.dialogue.ready = false;
   }
   creation.voxelId = /^[0-9a-f-]{36}$/.test(saved?.voxelId || '') ? saved.voxelId : randomUUID();
@@ -98,7 +130,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         creation.mode = 'world'; persist(); return response(true, '已返回现有世界。');
       case 'source-set': {
         if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再更换素材。');
-        if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > 100000)) return response(false, '请选择不超过 10 万字的非空文本文件。');
+        if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > MAX_SOURCE_CHARACTERS)) return response(false, '请选择不超过 500 万字的非空文本文件；大文本会按需检索，不会整篇发送给模型。');
         creation.source = body.source ? { name: body.source.name.trim(), text: body.source.text } : null;
         creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; epoch++; persist();
         return response(true, creation.source ? '素材已保存，现有建造保留。告诉我想从哪里开始。' : '素材已移除，现有建造保留。');
@@ -169,14 +201,23 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     try {
       persist(); const { llm } = configLoader();
       const voxelBasis = voxel.state();
-      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source, voxelBasis), fetchImpl, signal: controller.signal, onProgress: publish });
-      appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify({ role: 'world-discussion', ...r.audit })+'\n', { mode: 0o600 });
+      const sourceContext = retrieveSource(creation.source, [message, creation.dialogue.summary]);
+      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source, voxelBasis, { sourceContext }), fetchImpl, signal: controller.signal, onProgress: publish });
+      appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(compactModelAudit('world-discussion', r.audit))+'\n', { mode: 0o600 });
       if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '已停止回复，你的输入仍保留。' };
       else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: '这次回复未完成，可以继续发送消息；没有改变草稿。' };
       else if (epoch !== startEpoch) result = { ok: false, reason: 'stale-basis', message: '讨论起点已经变化，这次回复未采用。' };
       else {
-        let value; try { value = parseGeneratedJSON(r.content).value; } catch {}
-        if (!checkDiscussion(value)) result = { ok: false, reason: 'invalid-discussion', message: '回复格式不完整，请继续说明你的想法；没有据此生成世界。' };
+        publish({ ...model.progress, phase: 'verifying', elapsedMs: performance.now() - active.startedAt });
+        let value; try { value = parseGeneratedJSON(r.content, { allowEmbeddedObject: true, requiredKeys: ['reply'] }).value; } catch {}
+        value = normalizeDiscussion(value, creation.dialogue.summary);
+        if (checkDiscussion(value) && value.retrievalQueries?.length && creation.source) {
+          const searched = retrieveSource(creation.source, value.retrievalQueries);
+          const followUp = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source, voxelBasis, { sourceContext: searched, retrievalRound: true }), fetchImpl, signal: controller.signal, onProgress: publish });
+          appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(compactModelAudit('world-discussion-retrieval', followUp.audit))+'\n', { mode: 0o600 });
+          if (followUp.ok) { try { value = normalizeDiscussion(parseGeneratedJSON(followUp.content, { allowEmbeddedObject: true, requiredKeys: ['reply'] }).value, creation.dialogue.summary); } catch { value = null; } }
+        }
+        if (!checkDiscussion(value)) result = { ok: false, reason: 'invalid-discussion', message: '模型没有返回可用的讨论回复，请继续说明你的想法；没有据此生成世界。', diagnostics: [{ path: 'discussion', message: '需要 reply、summary、ready；模型附带的其他字段会被忽略。' }] };
         else if (value.commands?.length && voxelBasis.cells.length > 5000) result = { ok: false, reason: 'scene-too-large', message: '当前场景过大，无法完整提供给模型；这次没有修改场景。' };
         else {
           try { if (value.commands?.length) voxel.apply({ baseRevision: voxelBasis.revision, commands: value.commands }); }
@@ -219,11 +260,12 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         if (controller.signal.aborted) { result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' }; failed = true; break; }
         const stageProgress = p => publish({ ...p, stageLabel: stage.label, elapsedMs: performance.now() - active.startedAt });
         stageProgress({ phase: 'connecting', outputCharacters: 0 });
+        const sourceContext = retrieveSource(creation.source, [description, creation.dialogue.summary, stage.label]);
         const r = await callModel({ llm, messages: buildGenesisMessages(description.trim(), {
-          dialogue: conversational ? creation.dialogue : null, source: creation.source, previousDraft,
+          dialogue: conversational ? creation.dialogue : null, source: creation.source, sourceContext, previousDraft,
           diagnostics: creation.lastResult?.diagnostics ?? [], stage, previousRecords: records, voxel: voxel.state(),
         }), fetchImpl, signal: controller.signal, onProgress: stageProgress });
-        appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify({ role: 'world-genesis', stage: stage.id, ...r.audit })+'\n', { mode: 0o600 });
+        appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(compactModelAudit('world-genesis', r.audit, { stage: stage.id }))+'\n', { mode: 0o600 });
         if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
         else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: `${stage.label.replace('正在', '')}未完成，请继续讨论或重新生成。` };
         else if (epoch !== startEpoch) result = { ok: false, reason: 'stale-basis', message: '创建基准已变化，旧草稿未保留。' };

@@ -300,7 +300,8 @@ export async function callModel({ llm, messages, fetchImpl = globalThis.fetch, s
     for (let n = Math.min((secret?.length ?? 0) - 1, safe.length); n > 0; n--) {
       if (safe.endsWith(secret.slice(0, n))) { safe = safe.slice(0, -n); break; }
     }
-    try { onProgress?.({ phase, elapsedMs: now - startedClock, eventsReceived: audit.eventsReceived, outputCharacters: outputText.length, preview: safe.slice(-800) }); } catch { /* UI observers do not own model execution. */ }
+    try { onProgress?.({ phase, elapsedMs: now - startedClock, eventsReceived: audit.eventsReceived, outputCharacters: outputText.length,
+      headersReceivedMs: audit.headersReceivedMs, firstEventMs: audit.firstEventMs, firstTextMs: audit.firstTextMs, preview: safe.slice(-800) }); } catch { /* UI observers do not own model execution. */ }
   };
   const streamProgress = (type, event) => {
     audit.eventsReceived++;

@@ -65,6 +65,42 @@ test('malformed discussion cannot approve a scope or invent a draft', async t =>
   assert.equal(f.requests.length, 1);
 });
 
+test('discussion accepts provider prose around a complete JSON reply', async t => {
+  const payload = { reply: '先从一座小岛的灯室开始，可以继续讨论。', summary: '一座海岛灯室作为起点。', ready: false };
+  const f = fixture(t, () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: `模型说明：\n${JSON.stringify(payload)}` }] }] }));
+  const result = await f.experience.discussStep({ message: '我想从海岛灯室开始。' });
+  assert.equal(result.ok, true);
+  assert.equal(result.message, payload.reply);
+  assert.equal(result.state.creation.dialogue.summary, payload.summary);
+  assert.equal(result.state.creation.dialogue.messages.at(-1).text, payload.reply);
+});
+
+test('discussion ignores provider metadata and keeps long source material out of the request body', async t => {
+  const payload = { reply: '先确定街区和开始时刻。', summary: '等待确定第一片街区与开始时刻。', ready: false, trace: { hidden: true }, citations: ['source-1'] };
+  const f = fixture(t, (input) => {
+    assert.equal(Object.hasOwn(input.sourceMaterial, 'text'), false);
+    assert.equal(Object.hasOwn(input.sourceContext, 'text'), true);
+    return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: `说明文字\n${JSON.stringify(payload)}` }] }] });
+  });
+  f.experience.control({ type: 'source-set', source: { name: '很长的素材.txt', text: '城市与街区。'.repeat(10000) } });
+  const result = await f.experience.discussStep({ message: '从城市街区开始。' });
+  assert.equal(result.ok, true);
+  assert.equal(result.message, payload.reply);
+  assert.equal(result.state.creation.dialogue.ready, false);
+});
+
+test('discussion lets the model request a second local source retrieval pass', async t => {
+  const f = fixture(t, (_input, count) => count === 1
+    ? reply({ reply: '我先查一下素材中的城市背景。', summary: '需要核对城市背景。', ready: false, retrievalQueries: ['红发会发生的城市与街区'] })
+    : reply({ reply: '素材中确认这是伦敦城市起点，我们可以继续缩小开始地点。', summary: '以红发会中的伦敦城市为背景，仍待确定第一片街区。', ready: false }));
+  f.experience.control({ type: 'source-set', source: { name: '故事.txt', text: '红发会发生在伦敦城市，故事从萨克斯-科堡广场附近开始。' } });
+  const result = await f.experience.discussStep({ message: '我想要红发会里的那个城市。' });
+  assert.equal(result.ok, true);
+  assert.equal(f.requests.length, 2);
+  assert.match(f.requests[1].sourceContext.text, /伦敦/);
+  assert.match(result.message, /伦敦城市/);
+});
+
 test('story material survives reload, reaches discussion and generation, and changing it invalidates the draft', async t => {
   const f = fixture(t); let e = f.experience;
   const story = '红发会故事原文。'.repeat(5000);
@@ -75,17 +111,20 @@ test('story material survives reload, reaches discussion and generation, and cha
   e = f.reload();
   assert.equal(e.state().creation.source.name, '红发会.txt');
   await e.discussStep({ message: '从威尔逊上班那天开始。' });
-  assert.equal(f.requests.at(-1).sourceMaterial.text, story);
+  assert.equal(f.requests.at(-1).sourceMaterial.characters, story.length);
+  assert(f.requests.at(-1).sourceContext.text.length < story.length);
+  assert(f.requests.at(-1).sourceContext.text.length > 0);
   await e.discussStep({ message: '让他发现助理的异常。' });
   const draft = await e.worldStep({ conversationRevision: e.state().creation.dialogue.revision });
   assert.equal(draft.ok, true);
-  assert.equal(f.requests.slice(-3).every(request => request.sourceMaterial.text === story), true);
+  assert.equal(f.requests.slice(-3).every(request => request.sourceMaterial.characters === story.length), true);
+  assert.equal(f.requests.slice(-3).every(request => request.sourceContext.text.length < story.length), true);
   const replaced = e.control({ type: 'source-set', source: { name: '新故事.txt', text: '新的素材。' } });
   assert.equal(replaced.state.creation.draft, null);
   assert.equal(replaced.state.creation.dialogue.ready, false);
   assert.equal(replaced.state.creation.dialogue.summary, '');
   assert.equal(e.control({ type: 'world-accept', draftId: draft.state.creation.draft.id }).ok, false);
-  assert.equal(e.control({ type: 'source-set', source: { name: '大文件.txt', text: 'x'.repeat(100001) } }).ok, false);
+  assert.equal(e.control({ type: 'source-set', source: { name: '大文件.txt', text: 'x'.repeat(5_000_001) } }).ok, false);
   assert.equal(e.state().creation.source.name, '新故事.txt');
   assert.equal(e.control({ type: 'source-set', source: null }).state.creation.source, null);
 });
@@ -103,7 +142,8 @@ test('story upload accepts a long JSON body with UTF-8 characters split between 
   assert.equal(response.code, 200);
   assert.equal(JSON.parse(response.body).state.creation.source.characters, story.length);
   await experience.discussStep({ message: '从威尔逊上班那天开始。' });
-  assert.equal(f.requests.at(-1).sourceMaterial.text, story);
+  assert.equal(f.requests.at(-1).sourceMaterial.characters, story.length);
+  assert(f.requests.at(-1).sourceContext.text.length < story.length);
 });
 
 test('provider literal paragraph breaks preserve reply text without inventing JSON fields', () => {

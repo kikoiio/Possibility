@@ -1,6 +1,37 @@
+function objectCandidates(input) {
+  const candidates = [];
+  for (let start = 0; start < input.length; start += 1) {
+    if (input[start] !== '{') continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let index = start; index < input.length; index += 1) {
+      const ch = input[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') quoted = false;
+        continue;
+      }
+      if (ch === '"') quoted = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          candidates.push({ text: input.slice(start, index + 1), start, end: index + 1 });
+          break;
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 // Tolerate only redundant JSON punctuation, never invent keys, values or array
-// entries. The original response remains in the model audit.
-export function parseGeneratedJSON(text) {
+// entries. The original response remains in the model audit. Some compatible
+// providers prepend a short explanation even when JSON mode is requested; that
+// fallback is opt-in so strict callers continue rejecting surrounding prose.
+export function parseGeneratedJSON(text, { allowEmbeddedObject = false, requiredKeys = [] } = {}) {
   if (typeof text !== 'string') throw new Error('模型没有返回 JSON 文本。');
   let input = text.trim(), adjustments = [];
   const fence = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(input);
@@ -9,6 +40,23 @@ export function parseGeneratedJSON(text) {
   // that exact envelope; never strip asterisks from quoted speech or prose.
   const emphasis = /^\*\*\s*(\{[\s\S]*\})\s*\*\*$/.exec(input);
   if (emphasis) { input = emphasis[1]; adjustments.push('移除 JSON 对象外层强调标记'); }
+  if (allowEmbeddedObject && !/^\s*\{/.test(input)) {
+    const matches = objectCandidates(input).map(candidate => {
+      try { return { candidate, parsed: parseGeneratedJSON(candidate.text) }; }
+      catch { return null; }
+    }).filter(Boolean);
+    const matching = matches.filter(({ parsed }) => requiredKeys.every(key => Object.hasOwn(parsed.value, key)));
+    const usable = matching.length ? matching : matches;
+    if (usable.length) {
+      // When a provider leaks a long analysis before the final JSON, the
+      // useful object is usually the last matching one. Prefer that object;
+      // choosing the longest candidate can accidentally select an earlier
+      // example embedded in the analysis.
+      const selected = usable.sort((a, b) => b.candidate.end - a.candidate.end || a.candidate.text.length - b.candidate.text.length)[0];
+      input = selected.candidate.text;
+      adjustments.push('从模型附带的说明文字中提取 JSON 对象');
+    }
+  }
   let output = '', quoted = false, escaped = false; const stack = [];
   for (let i=0;i<input.length;i++) {
     const ch=input[i];

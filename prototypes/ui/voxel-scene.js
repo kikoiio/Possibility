@@ -46,7 +46,7 @@ export async function createVoxelScene(host, initialWorld) {
   if (!host?.appendChild) throw new TypeError('host must be an element');
   let cells = readCells(initialWorld);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xc9e2e7);
+  scene.background = new THREE.Color(0x182126);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 10000);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -59,7 +59,7 @@ export async function createVoxelScene(host, initialWorld) {
   const chunks = new Map(), materials = new Map(), textures = new Map();
   // A simple backdrop gives the model a visual base without adding world cells.
   const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 64),
-    new THREE.MeshStandardMaterial({ color: 0x9db99c, roughness: 1, side: THREE.DoubleSide }));
+    new THREE.MeshStandardMaterial({ color: 0x4a5558, roughness: 1, side: THREE.DoubleSide }));
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
   const target = new THREE.Vector3();
@@ -202,8 +202,8 @@ export async function createVoxelScene(host, initialWorld) {
     rebuild(dirty);
   }
   function pointerDown(event) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (event.pointerType === 'mouse' && ![0, 1].includes(event.button)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan: event.button === 1 || event.shiftKey });
     renderer.domElement.setPointerCapture(event.pointerId);
     if (pointers.size === 2) {
       const [a, b] = pointers.values();
@@ -213,9 +213,14 @@ export async function createVoxelScene(host, initialWorld) {
   function pointerMove(event) {
     const point = pointers.get(event.pointerId);
     if (!point) return;
-    if (pointers.size === 1) {
+    if (pointers.size === 1 && !point.pan) {
       azimuth -= (event.clientX - point.x) * 0.008;
       polar = Math.max(0.08, Math.min(Math.PI - 0.08, polar - (event.clientY - point.y) * 0.008));
+    } else if (pointers.size === 1 && point.pan) {
+      const dx = event.clientX - point.x, dy = event.clientY - point.y;
+      const scale = radius / Math.max(160, host.clientHeight) * 1.15;
+      target.x -= (Math.cos(azimuth) * dx - Math.sin(azimuth) * dy * 0.35) * scale;
+      target.z -= (Math.sin(azimuth) * dx + Math.cos(azimuth) * dy * 0.35) * scale;
     }
     point.x = event.clientX; point.y = event.clientY;
     if (pointers.size === 2) {

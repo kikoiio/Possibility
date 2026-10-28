@@ -19,7 +19,7 @@ const { server, experience } = createCampServer({ stateFile: join(temporary, 'st
   fetchImpl: async (_url, init) => {
     calls++;
     const input = JSON.parse(JSON.parse(init.body).input.at(-1).content);
-    if (input.sourceMaterial) materialRequests.push(input.sourceMaterial.text);
+    if (input.sourceMaterial) materialRequests.push({ characters: input.sourceMaterial.characters, context: input.sourceContext?.text || '' });
     await delay(input.observation ? 450 : 120, undefined, { signal: init.signal });
     let value;
     if (input.previousSummary !== undefined) {
@@ -58,7 +58,7 @@ try {
   await page.locator('#world-generate').click(); await page.locator('#world-accept').waitFor({ state: 'visible' });
   await page.waitForFunction(() => !document.querySelector('#world-accept').disabled);
   await page.locator('#world-draft-scene canvas, #world-draft-scene svg').waitFor();
-  assert(materialRequests.length >= 3 && materialRequests.every(value => value === story));
+  assert(materialRequests.length >= 3 && materialRequests.every(value => value.characters === story.length && value.context.includes(story)));
   checks.push('uploaded text reaches discussion and generation');
   await shot('02-discussion-and-draft');
   await send('起点保留，标题改成修订后的雾海星图站。');

@@ -39,6 +39,7 @@ let following = true, unread = 0;
 // reset a reading position, so there is no remembered offset to replay.
 let pendingScroll = null;
 const messageNodes = new Map();
+let dialogueNotice = null;
 const requests = new Set();
 const slots = {
   draft: { host: ui['world-draft-scene'], key: null, token: 0, scene: null, latest: null, signature: '' },
@@ -98,7 +99,9 @@ function updateControls() {
 function takeProgress(next) {
   if (!next || !['connecting', 'generating', 'receiving', 'verifying'].includes(next.phase)) return;
   // Progress is temporary UI only. Neither model output nor reasoning enters the feed.
-  progress = { stageLabel: text(next.stageLabel), phase: next.phase, elapsedMs: finite(next.elapsedMs) ? Math.max(0, next.elapsedMs) : 0, at: performance.now() };
+  progress = { stageLabel: text(next.stageLabel), phase: next.phase, elapsedMs: finite(next.elapsedMs) ? Math.max(0, next.elapsedMs) : 0,
+    headersReceivedMs: finite(next.headersReceivedMs) ? next.headersReceivedMs : null,
+    firstTextMs: finite(next.firstTextMs) ? next.firstTextMs : null, at: performance.now() };
 }
 function failureText(result) {
   const diagnostics = list(result?.diagnostics).slice(0, 3).map((item) => {
@@ -114,7 +117,11 @@ function renderStatus() {
     const kind = activeKind();
     const actor = list(state?.world?.actors).find((entry) => entry.id === (state?.model?.actorId || localTask?.actorId));
     const verifying = progress?.phase === 'verifying';
-    const label = kind === 'discussion' ? '正在整理你的想法，稍候回复'
+    const label = kind === 'discussion'
+      ? progress?.phase === 'connecting' ? '正在连接模型'
+        : progress?.phase === 'generating' ? '模型已连接，正在生成回复'
+          : progress?.phase === 'receiving' ? '正在接收模型回复'
+            : '正在整理你的想法，稍候回复'
       : kind === 'creation' ? verifying ? '正在核验地点、人物与规律' : progress?.stageLabel || '正在生成这一小片世界'
       : verifying ? `正在核验${text(actor?.name, '人物')}的行动` : `${text(actor?.name, '人物')}正在考虑下一步`;
     setText(ui['model-phase'], cancelRequested || cancelBusy ? '正在停止这次请求' : label);
@@ -154,10 +161,19 @@ function renderDialogue() {
   setText(ui['source-status'], sourceMaterial ? `已添加：${sourceMaterial.name}（${sourceMaterial.characters} 字）` : '还没有添加素材，也可以直接开始对话。');
   ui['source-remove'].hidden = !sourceMaterial;
   const messages = list(dialogue.messages).filter((entry) => entry?.id && ['user', 'assistant'].includes(entry.role) && typeof entry.text === 'string');
+  const visibleMessages = messages.slice(-12);
+  const hiddenCount = messages.length - visibleMessages.length;
   const follow = nearBottom(ui['dialogue-scroll']);
-  const wanted = new Set(messages.map((entry) => entry.id));
+  const wanted = new Set(visibleMessages.map((entry) => entry.id));
   for (const [id, item] of messageNodes) if (!wanted.has(id)) { item.remove(); messageNodes.delete(id); }
-  messages.forEach((message, index) => {
+  if (hiddenCount) {
+    if (!dialogueNotice) dialogueNotice = node('li', '', 'dialogue-collapsed');
+    setText(dialogueNotice, `${hiddenCount} 条较早消息已收起`);
+    if (ui['dialogue-log'].firstElementChild !== dialogueNotice) ui['dialogue-log'].prepend(dialogueNotice);
+  } else if (dialogueNotice) {
+    dialogueNotice.remove(); dialogueNotice = null;
+  }
+  visibleMessages.forEach((message, index) => {
     let item = messageNodes.get(message.id);
     if (!item) {
       item = node('li');
@@ -167,7 +183,8 @@ function renderDialogue() {
     item.className = message.role === 'user' ? 'message-user' : 'message-assistant';
     setText(item.children[0], message.role === 'user' ? '你' : 'Wispiva');
     setText(item.children[1], message.text);
-    if (ui['dialogue-log'].children[index] !== item) ui['dialogue-log'].insertBefore(item, ui['dialogue-log'].children[index] || null);
+    const slot = hiddenCount ? index + 1 : index;
+    if (ui['dialogue-log'].children[slot] !== item) ui['dialogue-log'].insertBefore(item, ui['dialogue-log'].children[slot] || null);
   });
   ui['dialogue-empty'].hidden = Boolean(messages.length);
   if (follow) ui['dialogue-scroll'].scrollTop = ui['dialogue-scroll'].scrollHeight;
@@ -643,9 +660,9 @@ ui['source-input'].addEventListener('change', async () => {
   const file = ui['source-input'].files?.[0];
   if (!file) return;
   try {
-    if (file.size > 512 * 1024) throw new Error('文件过大，请选择不超过 10 万字的文本。');
+    if (file.size > 20 * 1024 * 1024) throw new Error('文件过大，请选择不超过 500 万字的文本。大文本会按需检索。');
     const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
-    if (!content.trim() || content.length > 100000) throw new Error('请选择不超过 10 万字的非空文本文件。');
+    if (!content.trim() || content.length > 5_000_000) throw new Error('请选择不超过 500 万字的非空文本文件。大文本会按需检索。');
     await control({ type: 'source-set', source: { name: file.name.slice(0, 120), text: content } });
   } catch (error) {
     localError = error instanceof TypeError ? '无法读取文本，请确认文件使用 UTF-8 编码。' : text(error.message, '无法读取文件。');

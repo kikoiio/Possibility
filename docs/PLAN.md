@@ -10,7 +10,7 @@
 - 主工作区 `/home/neo/Projects/Wispiva` 的 `main` 为 `340ec15`，本地状态干净并跟踪 `origin/main`；主线是文档与研究基线，不直接运行原型。此前“主工作区未提交删除”“本地主线未同步”的记录已过时。以上远端状态基于本机已有的跟踪引用，不代表本次查询了 GitHub 最新状态。
 - 社会实验在 `/home/neo/Projects/Wispiva-experiment` 的 `experiment/minecraft-societies`，跟踪 `origin/experiment/minecraft-societies`；该工作区有其他任务正在进行的未提交修改，不应覆盖。用户已选择 Luanti 服务端实体路线。M0 证明有限实体可启停、推进并修改方块，使用确定性策略；其证据在实验分支 `experiments/minecraft-societies/agent/evidence/m0-2026-10-27.md`。远端跟踪引用另有 `origin/experiment/cloud-run-model-20261028-2`（本次所见 `ee96dba`），包含模型桥接与修复；其计划仍将集成和端到端验收列为进行中。本计划不把提交标题当作实测通过，也不把社会实验视为已完成对话建造或网页展示。
 - 当前完整验证通过 97 个 Node 测试和 282 项环境检查；GitHub Actions `40734288111` 还通过了体素浏览器验收。长期记忆、反思、平行世界、完整小说因果、跨模型比较和大型 3D 世界仍未完成或未验证。
-- 《红发会》英文[原文](source-texts/sherlock-holmes/the-red-headed-league.txt)已保存；入口可接收素材并随请求发给配置的模型服务，长素材处理与完整小说模拟尚未验证。来源与权利边界见[项目意图](intent.md)及 [Project Gutenberg](https://www.gutenberg.org/cache/epub/1661/pg1661.txt)。
+- 《红发会》英文[原文](source-texts/sherlock-holmes/the-red-headed-league.txt)已保存；入口完整保留本地素材，创建请求通过本地分块检索提供相关片段，模型可返回 `retrievalQueries` 触发一次补充检索。长素材的检索质量和完整小说模拟仍需验证。来源与权利边界见[项目意图](intent.md)及 [Project Gutenberg](https://www.gutenberg.org/cache/epub/1661/pg1661.txt)。
 
 ## 当前目标：对话建造可持续修改的 3D 世界
 

@@ -18,6 +18,7 @@
 | 文本创建世界与用户确认 | `proto/world-genesis` 的 `prototypes/world-creation.mjs` 和 `tests/dialogue-flow.test.mjs` | 真实模型生成质量与自然语言隐私。 |
 | 世界演化与行动后果 | 同分支 `world-definition.mjs` 和 `tests/conditional-world.test.mjs` | 任意物理与完整小说因果。 |
 | 角色认知与记忆 | 同分支 `actor.mjs` 和 `tests/red-headed-league.test.mjs` | 长期检索、反思和分岔继承。 |
+| 素材检索 | `model/source-retrieval.mjs`、`creation-dialogue.mjs` | 原文留在本地；按当前对话检索片段，模型可请求一次补充检索，避免长文档整体重复进入上下文。 |
 | 实时 3D | 同分支 `geometry/`、`ui/` 和几何测试 | 目标设备性能、复杂几何及生产级视觉质量。 |
 | 社会实验 | `experiment/minecraft-societies` 的 `agent/evidence/m0-2026-10-27.md` | 真实 LLM 社会行为、持久化、长期运行及最终环境选型。 |
 
