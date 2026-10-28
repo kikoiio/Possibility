@@ -4,7 +4,7 @@
 
 | 任务 | 分支与追踪起点 | 验证与边界 |
 | --- | --- | --- |
-| 世界创世原型 | `proto/world-genesis`：`prototypes/world-creation.mjs`、`world-genesis.mjs`、`server.mjs` | 分支内 `prototypes/verify.mjs`；它是实验性原型，不整体合并到主线。 |
+| 世界创建原型 | `proto/world-genesis`：`prototypes/world-creation.mjs`、`world-genesis.mjs`、`server.mjs` | 分支内 `prototypes/verify.mjs`；它是实验性原型，不整体合并到主线。 |
 | 世界规则与信息边界 | `proto/world-genesis`：`prototypes/world-definition.mjs`、`actor.mjs` | 分支内 `prototypes/tests/conditional-world.test.mjs` 和 `red-headed-league.test.mjs`。 |
 | 三维场景 | `proto/world-genesis`：`prototypes/geometry/`、`prototypes/ui/` | 分支内几何检查与浏览器工作流；浏览器验证遵循项目资源和云端权限规则。 |
 | Minecraft 社会实验 | `experiment/minecraft-societies`：`experiments/minecraft-societies/README.md` | 独立运行时、语法工作流和 M0 证据都在实验分支；不接入原型依赖。 |

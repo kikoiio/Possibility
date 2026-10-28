@@ -4,7 +4,7 @@
 
 ## 2026-10-28 原型与实验分支迁移
 
-- 按用户新指示，将创世原型保存到 `proto/world-genesis`，将 Minecraft 社会实验保存到 `experiment/minecraft-societies`。两者分别保留代码、说明、检查和相应 CI 定义；仅有本地分支，没有推送或合并。
+- 按用户新指示，将创建世界原型保存到 `proto/world-genesis`，将 Minecraft 社会实验保存到 `experiment/minecraft-societies`。两者分别保留代码、说明、检查和相应 CI 定义；仅有本地分支，没有推送或合并。
 - 两个提交都基于同一原始 HEAD 创建，包含迁移时的共享项目工作区快照及各自目录，不会修改主工作区暂存区。逐一核对了原型 66 个文件及实验 30 个文件的 Git 对象与迁移前工作区内容一致。私有 `.env`、`.data/`、`node_modules/` 和实验 `.runtime/` 没有纳入提交。
 - 原始目录及其未入库的依赖、运行时和工作流移至 `.tmp/branch-migration/working-copy/`，便于恢复；此位置是本机临时备份，并非永久归档。未触碰 `.data/` 和真实配置，未终止用户进程。
 - 主线的运行说明、架构、导航和 `AGENTS.md` 已改为分支入口；下方历史记录描述当时的路径和验证，不代表主线仍有相应目录。
@@ -34,9 +34,9 @@
 
 ## 当前状态
 
-- 创世与模拟原型保存在 `proto/world-genesis` 分支（`prototypes/README.md`）；Minecraft 社会实验保存在 `experiment/minecraft-societies` 分支。主工作区不再提供这两个目录或原型启动入口。
+- 创建世界与模拟原型保存在 `proto/world-genesis` 分支（`prototypes/README.md`）；Minecraft 社会实验保存在 `experiment/minecraft-societies` 分支。主工作区不再提供这两个目录或原型启动入口。
 - 原型使用 Node.js、ES modules、Three.js 和 JSON 存档；[目标架构](design/2026-10-27-target-architecture.md)不代表 React、Hono、SQLite 等均已实现。[产品需求](intent.md)描述目标，[当前架构](architecture.md)描述实现。
-- 现有证据支持有限资源、阈值过程、离散行动和小规模角色调用；完整小说因果、长期相关性记忆、反思、分岔、任意物理与复杂 3D 未实现或未验证。创世失败不得以固定故事冒充成功。
+- 现有证据支持有限资源、阈值过程、离散行动和小规模角色调用；完整小说因果、长期相关性记忆、反思、分岔、任意物理与复杂 3D 未实现或未验证。创建世界失败不得以固定故事冒充成功。
 
 ## 故事原文
 
@@ -55,9 +55,9 @@
 - 在当前工作树运行 `node prototypes/verify.mjs`，退出码 0：62 个 Node 测试、282 个行为检查、配置 17/17、模型客户端 39/39 全部通过，未调用真实模型或浏览器；使用隔离存档做 HTTP 冒烟，`/`、`/api/state`、`/app.js`、Three.js 静态资源和场景模块均返回 200。
 - 本轮新增角色级秘密行动验证：资源和行动支持 `visibility: { actors, clues }`，行动支持 `performers`；地点、知情、当前观察、可执行权限和主观记忆保持分离。新增《红发会》小起点夹具（`proto/world-genesis` 分支：`prototypes/fixtures/red-headed-league.mjs`）及 8 个定向测试，覆盖 Wilson、Spaulding、Holmes、地下挖掘、线索揭示、跨地点银行警戒、通用失败、严格引用和复制后观察一致性。
 - 本轮 `node prototypes/verify.mjs` 退出码 0：70 个 Node 测试全部通过。此前一次全量运行在观察投影向后兼容测试上发现 3 个失败，已修正为仅对带 story 的角色观察隐藏 author-facing 地点描述，并保留无 story 旧观察的完整序列化形状。
-- 使用真实 `.env` 配置在全新隔离目录 `.tmp/prototype/red-headed-live-vpQN87/` 完成一次三阶段创世，3 次真实模型调用通过完整世界、引用、规则、几何和运行检查，输出 4 个地点、3 个角色、4 个资源、2 个过程、5 个行动，并产生角色级 `visibility`/`performers`。没有确认进入作者当前世界，也没有启动浏览器。
-- 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/world-models.md)、[记忆研究](research/memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创世记为语义完全正确。
-- 已把创世接受前的 `auditCandidatePrivacy()` 接入 `checkWorldCandidate()`：确定性检查覆盖作者级 premise/地点叙述、隐藏实体标识、他人目标与前史是否进入角色观察；有限片段重合检查覆盖公开文本中的私有目标和隐藏机制。通过的草稿保存审计限制，命中的候选以 `privacy-audit-failed` 拒绝。审计明确标注不能证明同义改写、暗示、推理或后续对白安全。
+- 使用真实 `.env` 配置在全新隔离目录 `.tmp/prototype/red-headed-live-vpQN87/` 完成一次三阶段创建世界，3 次真实模型调用通过完整世界、引用、规则、几何和运行检查，输出 4 个地点、3 个角色、4 个资源、2 个过程、5 个行动，并产生角色级 `visibility`/`performers`。没有确认进入作者当前世界，也没有启动浏览器。
+- 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/world-models.md)、[记忆研究](research/memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创建世界记为语义完全正确。
+- 已把创建世界接受前的 `auditCandidatePrivacy()` 接入 `checkWorldCandidate()`：确定性检查覆盖作者级 premise/地点叙述、隐藏实体标识、他人目标与前史是否进入角色观察；有限片段重合检查覆盖公开文本中的私有目标和隐藏机制。通过的草稿保存审计限制，命中的候选以 `privacy-audit-failed` 拒绝。审计明确标注不能证明同义改写、暗示、推理或后续对白安全。
 - 《红发会》夹具新增 Wilson 出勤计数与反事实分支测试：Wilson 继续赴红发会、Holmes 检查地下室获得进度信息但仍无 Spaulding 执行权、Spaulding 挖掘到阈值后银行警戒变化；原点副本彼此独立，不写死银行抢劫结局。
 - 当前工作树验证已扩展为 72 个 Node 测试及既有环境检查，全部通过；本次仍未启动真实模型或浏览器验收。
 - 已启动本地体验服务 `node prototypes/server.mjs`，地址 `http://127.0.0.1:5175/`；只读冒烟确认 `/`、`/api/state`、`/api/events`、`/app.js` 和 `/world-scene.js` 可访问。服务复用现有存档“山雨未停”（世界第 30 分钟、revision 39），没有重置或覆盖当前世界；当时存档处于 `actor:invalid-decision` 等待状态。

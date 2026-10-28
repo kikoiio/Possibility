@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 产品需求 | [intent.md](intent.md) | 作者、世界、模拟与验收目标。 |
 | 主线计划与研究 | [PLAN.md](PLAN.md)、[文档索引](README.md) | 保留进展和证据；研究结论不等于实现。 |
-| 创世与模拟原型 | `proto/world-genesis`，原始快照 `40206a2414713b89bfd4e19a7b9347183dec0867` | 保存模型创世、有限规则、角色、3D、测试和原型专用 CI；作为探索证据，不整体合并主线。 |
+| 创建世界与模拟原型 | `proto/world-genesis`，原始快照 `40206a2414713b89bfd4e19a7b9347183dec0867` | 保存模型创建世界、有限规则、角色、3D、测试和原型专用 CI；作为探索证据，不整体合并主线。 |
 | Minecraft 社会实验 | `experiment/minecraft-societies`，原始快照 `7e33189e144d76d5a18a13c462b26c502f74b797` | 独立 Luanti 运行时、Lua 代码、M0 证据和单独语法 CI；不接入原型。 |
 
 分支的提交是对迁移前工作区的快照，并非对上游主线变更的批准。分支可以通过 `git show <分支>:<路径>` 只读查看。分支快照不包含本机 `.env`、`.data/`、`node_modules/` 或实验 `.runtime/`；运行时应在隔离工作区按各分支说明准备。
@@ -15,7 +15,7 @@
 
 | 产品目标 | 原型证据 | 仍未证明 |
 | --- | --- | --- |
-| 文本创世与用户确认 | `proto/world-genesis` 的 `prototypes/world-creation.mjs` 和 `tests/dialogue-flow.test.mjs` | 真实模型生成质量与自然语言隐私。 |
+| 文本创建世界与用户确认 | `proto/world-genesis` 的 `prototypes/world-creation.mjs` 和 `tests/dialogue-flow.test.mjs` | 真实模型生成质量与自然语言隐私。 |
 | 世界演化与行动后果 | 同分支 `world-definition.mjs` 和 `tests/conditional-world.test.mjs` | 任意物理与完整小说因果。 |
 | 角色认知与记忆 | 同分支 `actor.mjs` 和 `tests/red-headed-league.test.mjs` | 长期检索、反思和分岔继承。 |
 | 实时 3D | 同分支 `geometry/`、`ui/` 和几何测试 | 目标设备性能、复杂几何及生产级视觉质量。 |
