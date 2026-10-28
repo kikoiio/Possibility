@@ -41,6 +41,7 @@ REPEAT=1
 PORT=30077
 EXPECT_FAIL=""
 MODEL=0
+FIXTURE=0
 RESUME=0
 EXTRA_SETTINGS=()
 
@@ -55,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="$2"; shift 2 ;;
     --expect-fail) EXPECT_FAIL="$2"; shift 2 ;;
     --model) MODEL=1; shift ;;
+    --fake-model) MODEL=1; FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
     --set) EXTRA_SETTINGS+=("$2"); shift 2 ;;
     -h|--help) command sed -n '2,24p' "$0"; exit 0 ;;
@@ -109,7 +111,7 @@ run_once() {
     spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
   fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
-  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
@@ -144,7 +146,9 @@ run_once() {
 
   local worker_pid=""
   if [[ "$MODEL" -eq 1 ]]; then
-    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 > "$world/worker.log" 2>&1 &
+    local worker_flags=()
+    if [[ "$FIXTURE" -eq 1 ]]; then worker_flags+=(--fixture); fi
+    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 "${worker_flags[@]}" > "$world/worker.log" 2>&1 &
     worker_pid=$!
   fi
   HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" "$ENGINE" \

@@ -113,7 +113,18 @@ def process_one(directory, path, timeout, runner=run_bridge):
     return True
 
 
-def serve(directory, timeout=30.0, poll_interval=0.1):
+def fake_runner(request, stop, timeout):
+    """Deterministic test fixture; never calls a model."""
+    context = request['context']
+    pos = context['observation']['pos']
+    inventory = context.get('inventory') or {}
+    point = {'x': int(pos['x'] + 1), 'y': int(pos['y']), 'z': int(pos['z'])}
+    kind = 'build' if inventory.get('society:resource', 0) else 'gather'
+    return {'id': request['id'], 'ok': True, 'action': {'kind': kind, 'point': point, 'why': 'fixture'},
+            'audit': {'latency_ms': 0, 'usage': {}}}
+
+
+def serve(directory, timeout=30.0, poll_interval=0.1, runner=run_bridge):
     directory = Path(directory)
     if not directory.is_dir() or not 0 < timeout <= 300 or not 0.01 <= poll_interval <= 5:
         raise ValueError('invalid worker configuration')
@@ -122,7 +133,7 @@ def serve(directory, timeout=30.0, poll_interval=0.1):
         for path in sorted(directory.glob('request-*.json')):
             if stop.exists():
                 break
-            process_one(directory, path, timeout)
+            process_one(directory, path, timeout, runner=runner)
         time.sleep(poll_interval)
 
 
@@ -131,12 +142,13 @@ def main():
     parser.add_argument('directory')
     parser.add_argument('--timeout', type=float, default=30.0, help='per request deadline in seconds (0 < t <= 300)')
     parser.add_argument('--poll-interval', type=float, default=0.1)
+    parser.add_argument('--fixture', action='store_true', help='use deterministic offline fixture, not a model')
     args = parser.parse_args()
     def stop_signal(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop_signal)
     try:
-        serve(args.directory, args.timeout, args.poll_interval)
+        serve(args.directory, args.timeout, args.poll_interval, fake_runner if args.fixture else run_bridge)
     except (OSError, ValueError):
         print('spool worker configuration or I/O failure', file=sys.stderr)
         return 1

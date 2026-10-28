@@ -17,6 +17,7 @@ local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
 local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
+local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -36,6 +37,8 @@ local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
 local COGNITION = cfg("society_cognition", "false") == "true"
 local MODEL = cfg("society_model", "false") == "true"
+local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
+local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local PERSIST = cfg("society_persist", "false") == "true"
 local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
@@ -52,7 +55,7 @@ local PERSONAS = {
 local FACINGS = {
 	{x = 1, z = 0}, {x = 0, z = 1}, {x = -1, z = 0}, {x = 0, z = -1},
 }
-local ACTION_ORDER = {"advance", "approach", "inspect", "mark", "wander", "unknown"}
+local ACTION_ORDER = {"advance", "approach", "inspect", "mark", "wander", "say", "gather", "build", "unknown"}
 
 local S = {
 	spawned = 0, decisions = 0, marks = 0, meets = 0,
@@ -99,6 +102,10 @@ minetest.register_node("society:mark", {
 	description = "society mark",
 	tiles = {"default_stone.png^[colorize:#c9a227:200"},
 	groups = {cracky = 3, oddly_breakable_by_hand = 3},
+})
+minetest.register_node("society:resource", {
+	description = "society resource", tiles = {"default_stone.png^[colorize:#33aa66:180"},
+	groups = {cracky = 3},
 })
 
 -- 确定性 PRNG：每个 agent 一份状态，种子固定。
@@ -263,6 +270,12 @@ local function apply(self, action, pos)
 		return
 	end
 
+	if kind == "gather" or kind == "build" then
+		local ok, reason = self._resources[kind](self._resources, action.point, "society:resource")
+		ev("ev=resource agent=%d action=%s ok=%s reason=%s inventory=%d", self._id, kind,
+			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
+		return
+	end
 	if kind == "say" then
 		local recipient = agents[action.target]
 		if recipient then
@@ -272,6 +285,10 @@ local function apply(self, action, pos)
 				source = {kind = "self", id = self._id}})
 			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
 				minetest.sha256(action.text))
+			if LOG_MESSAGES then
+				ev("ev=message-text agent=%d recipient=%d text=%s", self._id, action.target,
+					minetest.write_json(action.text):gsub("[\r\n]", ""))
+			end
 		end
 		return
 	end
@@ -307,7 +324,7 @@ local function decide_and_act(self)
 	local obs = observe(self, pos)
 	if COGNITION and not self._pending then
 		local local_obs, err = cognition_observe.observe(minetest, self.object,
-			{radius = SENSE, node_names = {MARK_NODE}})
+			{radius = SENSE, node_names = {MARK_NODE, "society:resource"}})
 		if not local_obs then
 			ev("fail=observation agent=%d reason=%s", self._id, err)
 			S.failed = "observation"
@@ -325,8 +342,10 @@ local function decide_and_act(self)
 			request_id = request_id + 1
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
-				persona = self._persona, goal = "Explore, leave marks, and interact with nearby agents.",
-				memory = self._episodic:list(),
+				persona = self._persona, goal = "Explore, gather resources, build, and interact with nearby agents.",
+				visible_nodes = obs.local_view and obs.local_view.nodes or {},
+				inventory = self._resources:inventory(),
+				memory = MODEL_MEMORY and self._episodic:list() or {},
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
@@ -387,7 +406,7 @@ local function decide_and_act(self)
 				valid = valid and type(action.text) == "string" and #action.text > 0
 					and #action.text <= 240 and not action.text:find("[%c]")
 			end
-		elseif action.kind == "wander" and type(action.point) == "table" then
+		elseif (action.kind == "wander" or action.kind == "gather" or action.kind == "build") and type(action.point) == "table" then
 			local p = action.point
 			valid = type(p.x) == "number" and type(p.y) == "number" and type(p.z) == "number"
 				and p.x == math.floor(p.x) and p.z == math.floor(p.z)
@@ -498,6 +517,13 @@ local function spawn_agents()
 					le._decisions = 0
 				end
 				ev("ev=restore agent=%d reset=%s memories=%d", i, tostring(RESET_MINDS), le._episodic:size())
+			end
+			le._resources = resources.new(minetest, obj, le._restored_inventory)
+			if MODEL and not RESTORE then
+				local resource_pos = {x = at.x + 1, y = at.y, z = at.z}
+				if in_bounds(resource_pos) and minetest.get_node(resource_pos).name == "air" then
+					minetest.set_node(resource_pos, {name = "society:resource"})
+				end
 			end
 			agents[i] = le
 			S.spawned = S.spawned + 1

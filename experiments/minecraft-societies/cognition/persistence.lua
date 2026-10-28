@@ -1,6 +1,8 @@
 -- Lua 5.1; no storage or engine globals. Snapshots contain only JSON values.
 -- snapshot(entity) reads object:get_pos(), _id, _persona, _home, _facing,
--- _target, _rng, _decisions, _marks_placed, _memory and _episodic:list().
+-- _target, _rng, _decisions, _marks_placed, _memory, _episodic:list() and
+-- optionally _resources:inventory(). Restore exposes inventory through
+-- _restored_inventory; applying it to a resource instance is the caller's job.
 -- restore(entity, snapshot, {reset_minds = true}) restores the physical and
 -- identity fields, RNG and counters, but clears persona, target and memories.
 -- Otherwise it restores all fields. The caller creates the object and episodic
@@ -25,6 +27,16 @@ end
 local function counter(n)
   assert(finite(n) and n >= 0 and n == math.floor(n), "invalid counter")
   return n
+end
+
+local function inventory(value)
+  assert(type(value) == "table", "invalid inventory")
+  local result = {}
+  for name, amount in pairs(value) do
+    assert(type(name) == "string", "inventory names must be strings")
+    result[name] = counter(amount)
+  end
+  return result
 end
 
 local function array(t)
@@ -73,7 +85,8 @@ local function normalise(s)
     target = s.target ~= nil and point(s.target) or nil, rng = s.rng,
     decisions = counter(s.decisions), marks_placed = counter(s.marks_placed),
     memory = {met = met, idle_streak = counter(s.memory.idle_streak)},
-    episodic = episodes(s.episodic)}
+    episodic = episodes(s.episodic),
+    inventory = inventory(s.inventory == nil and {} or s.inventory)}
 end
 
 function M.snapshot(entity)
@@ -91,12 +104,17 @@ function M.snapshot(entity)
     if type(a) ~= type(b) then return type(a) < type(b) end
     return a < b
   end)
+  local resources = {}
+  if entity._resources ~= nil then
+    resources = entity._resources:inventory()
+    assert(type(resources) == "table", "invalid inventory")
+  end
   return normalise({version = 1, id = entity._id, pos = pos,
     persona = entity._persona, home = entity._home, facing = entity._facing,
     target = entity._target, rng = entity._rng, decisions = entity._decisions,
     marks_placed = entity._marks_placed,
     memory = {met = met, idle_streak = entity._memory.idle_streak},
-    episodic = entity._episodic:list()})
+    episodic = entity._episodic:list(), inventory = resources})
 end
 
 function M.restore(entity, snapshot, options)
@@ -114,6 +132,7 @@ function M.restore(entity, snapshot, options)
   entity.object:set_pos(s.pos)
   entity._id, entity._home, entity._facing = s.id, s.home, s.facing
   entity._rng, entity._decisions, entity._marks_placed = s.rng, s.decisions, s.marks_placed
+  entity._restored_inventory = s.inventory
   entity._persona = not options.reset_minds and s.persona or nil
   entity._target = not options.reset_minds and s.target or nil
   entity._memory = {met = met, idle_streak = options.reset_minds and 0 or s.memory.idle_streak}

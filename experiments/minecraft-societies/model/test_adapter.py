@@ -50,7 +50,9 @@ class AdapterTests(unittest.TestCase):
         self.assertNotIn('secret-key', repr(CONFIG))
 
     def test_actions_and_context_constraints(self):
-        valid = [{'kind': 'inspect'}, {'kind': 'mark'}, {'kind': 'wander', 'point': {'x': 5, 'y': 1, 'z': -5}}]
+        valid = [{'kind': 'inspect'}, {'kind': 'mark'}, {'kind': 'wander', 'point': {'x': 5, 'y': 1, 'z': -5}},
+                 {'kind': 'gather', 'point': {'x': 0, 'y': 1, 'z': 0}},
+                 {'kind': 'build', 'point': {'x': 0, 'y': 1, 'z': 0}}]
         for action in valid:
             with self.subTest(action=action):
                 self.assertEqual(adapter._validate_action(json.dumps(action), CTX)['kind'], action['kind'])

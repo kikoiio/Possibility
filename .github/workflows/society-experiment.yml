@@ -21,6 +21,7 @@ jobs:
           cd experiments/minecraft-societies/cognition
           lua5.1 test.lua
           lua5.1 test_persistence.lua
+          lua5.1 test_resource_actions.lua
           cd ../model
           python3 -B -m unittest -v
           cd ..
@@ -43,6 +44,12 @@ jobs:
           "$exp/agent/run.sh" --label ci-reset --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
           count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
           test "$count" -eq 5
+      - name: Verify resource actions with deterministic fixture
+        run: |
+          exp=experiments/minecraft-societies
+          "$exp/agent/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1
+          grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
+          grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') }}
         run: |
@@ -77,5 +84,6 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-model.*
             experiments/minecraft-societies/agent/evidence/ci-reset.*
             experiments/minecraft-societies/agent/evidence/ci-agent-*
+            experiments/minecraft-societies/agent/evidence/ci-resource.*
           if-no-files-found: warn
           retention-days: 14
