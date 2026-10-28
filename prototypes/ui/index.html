@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#11161a">
+    <title>红发会 · Wispiva</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./style.css">
+    <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/utils/BufferGeometryUtils.js":"/vendor/BufferGeometryUtils.js"}}</script>
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <header class="masthead">
+      <div class="case-mark" aria-hidden="true"><span>R</span><span>H</span><span>L</span></div>
+      <div class="brand-block"><p class="brand-kicker">Wispiva · 调查档案 1661</p><div class="brand-line"><span class="brand">红发会</span><span class="brand-english">THE RED-HEADED LEAGUE</span></div></div>
+      <div class="page-heading"><h1 id="page-title">案件起点</h1><span id="world-time" hidden></span></div>
+      <div class="connection" role="status"><span class="status-dot"></span><span id="connection-label">正在连接…</span><button id="connection-retry" class="text-button" type="button" hidden>重新连接</button></div>
+      <details id="more-menu" class="more-menu"><summary aria-label="打开档案菜单">档案</summary><div class="more-content"><p class="menu-label">案件管理</p><button id="new-world" type="button" hidden disabled>新建一份案件</button><button id="world-resume" type="button" hidden disabled>返回当前案件</button><div id="archive-controls" hidden><label for="world-archives">已保存的案件</label><select id="world-archives" disabled></select><button id="world-open" type="button" disabled>打开档案</button></div></div></details>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <section id="world-create" class="creation-layout" aria-label="创建红发会案件">
+        <div class="creation-hero"><div class="case-stamp">CASE 1661 · LONDON</div><h2>红发会</h2><p class="hero-deck">一个看似荒诞的职位，把一间当铺、一条地下通道和一家银行牵到了一起。</p><div class="hero-rule"><span></span><span>从现场开始</span><span></span></div><div class="hero-facts" aria-label="案件线索"><div><b>10:00—14:00</b><span>威尔逊离店的时段</span></div><div><b>3 个现场</b><span>当铺 · 地下室 · 银行</span></div><div><b>未定结局</b><span>每一步都可能改变案情</span></div></div></div>
+        <div class="conversation dossier-panel"><div class="panel-heading"><div><p class="eyebrow">起点记录</p><h2>先说你想查清什么</h2></div><span class="panel-index">01</span></div><p class="creation-intro">我们会从《红发会》的现场出发，逐步确定人物、地点和可被验证的规律。你可以改变任何一项，确认后再让世界开始。</p><div id="dialogue-scroll" class="dialogue-scroll" tabindex="0" role="region" aria-label="案件创世对话"><p id="dialogue-empty" class="empty-message">比如：我想从威尔逊第一次来找福尔摩斯开始。</p><ol id="dialogue-log" class="dialogue-log" role="log" aria-label="创世消息" aria-live="polite" aria-relevant="additions text"></ol></div><details id="creation-summary" class="creation-summary" hidden><summary>目前说定的</summary><p id="creation-summary-text"></p></details><div id="creation-status"></div><form id="creation-form" class="composer"><label for="creation-input">写下你的调查方向</label><textarea id="creation-input" rows="3" maxlength="8000" placeholder="例如：我想让地下室更早被发现，但不要预设银行一定会被抢。" aria-describedby="composer-help" disabled></textarea><div class="composer-actions"><span id="composer-help" class="quiet">Enter 发送 · Shift + Enter 换行</span><button id="creation-send" class="button primary" type="submit" disabled>记录想法</button></div></form><div id="generate-actions" class="generate-actions" hidden><p id="generate-hint" class="quiet">设定清楚后，先查看现场草稿。</p><button id="world-generate" class="button secondary" type="button" disabled>生成现场草稿</button></div></div>
+        <section id="world-draft" class="world-draft" aria-labelledby="world-draft-title" hidden><div class="draft-banner"><span>现场草稿</span><span>待确认</span></div><div id="world-draft-scene" class="scene-host draft-scene" aria-label="案件现场预览"></div><div class="draft-copy"><p class="eyebrow">ORIGIN SCENE</p><h2 id="world-draft-title"></h2><p id="world-draft-description"></p><dl id="world-draft-summary" class="draft-summary"></dl><p id="draft-stale" class="inline-warning" role="status" hidden>对话已经更新，请重新生成现场草稿。</p><button id="world-accept" class="button primary" type="button" disabled>确认并进入案件</button><p class="quiet draft-help">进入后时间停在第 0 分钟，所有行动都从这里开始。</p></div></section>
+      </section>
+
+      <section id="world-experience" class="experience-layout" aria-label="红发会案件现场" hidden><div class="world-view"><div class="scene-topline"><div><p class="eyebrow">现场总览</p><h2>萨克斯·科堡广场</h2></div><span class="scene-state">LIVE CASE</span></div><div id="scene-host" class="scene-host world-scene" aria-label="红发会三维现场"></div><div class="scene-caption"><span>观察现场 · 选择人物 · 改变状态</span><span>拖动场景环视</span></div></div><section class="activity-panel dossier-panel" aria-labelledby="activity-title"><div class="case-summary"><div><p class="eyebrow">THE RED-HEADED LEAGUE</p><h2 id="activity-title">案情时间线</h2></div><span class="case-number">RHL / 1661</span></div><div class="case-intro-line"><span class="red-thread"></span><p>你看到的是已经发生的事实。下一步由人物、线索和现场状态共同决定。</p></div><div class="world-controls" role="group" aria-label="案件运行"><button id="play-pause" class="button primary" type="button" disabled>播放</button><button id="actor-step" class="button secondary" type="button" disabled>让下一人行动</button><button id="actor-retry" class="text-button" type="button" hidden disabled>重试</button></div><div class="control-note"><span class="control-led"></span><span id="clock-state" class="quiet">案件在第 0 分钟暂停</span></div><div id="activity-scroll" class="activity-scroll" tabindex="0" role="region" aria-label="案件时间线，可滚动查看之前的事实"><p id="activity-empty" class="empty-message">案件还没有留下新记录。让一个人物走出下一步。</p><ol id="activity-log" class="activity-log" role="log" aria-label="已发生的案件事实" aria-live="polite" aria-relevant="additions text"></ol></div><button id="activity-new" class="new-activity" type="button" hidden></button><div id="world-status"></div></section></section>
+    </main>
+
+    <div id="request-status" class="request-status"><div id="model-progress" class="model-progress" hidden><p id="model-phase" role="status" aria-live="polite"></p><span id="model-elapsed" class="quiet"></span><button id="model-cancel" class="text-button" type="button" disabled>取消</button></div><p id="operation-error" class="operation-error" role="alert" hidden></p></div>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "wispiva-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "check": "node verify.mjs"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  }
+}

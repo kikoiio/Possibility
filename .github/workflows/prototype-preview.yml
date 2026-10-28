@@ -1,0 +1,43 @@
+name: Prototype experience
+on:
+  workflow_dispatch:
+  push:
+    branches: ['prototype/review-*']
+permissions:
+  contents: read
+jobs:
+  experience:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      TMPDIR: ${{ github.workspace }}/.tmp/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: mkdir -p .tmp/ci
+      - run: npm ci --prefix prototypes
+      - name: Offline behavior checks
+        run: node prototypes/verify.mjs
+      - name: Browser tooling (CI only)
+        working-directory: prototypes
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.64.0
+          google-chrome --version
+      - name: Chinese font for readable screenshots
+        run: |
+          mkdir -p "$HOME/.local/share/fonts"
+          curl --fail --location --max-time 60 https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf -o "$HOME/.local/share/fonts/NotoSansCJKsc-Regular.otf"
+          fc-cache -f "$HOME/.local/share/fonts"
+          fc-match -f '%{family}' 'Noto Sans CJK SC' | grep -q 'Noto Sans CJK SC'
+      - name: Conversation and live activity in a real browser
+        run: node prototypes/scripts/observe-browser.mjs
+      - name: Screenshots and observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-experience
+          path: .tmp/prototype/browser/
+          retention-days: 7

@@ -1,118 +1,146 @@
-# Wispiva v1 开发计划
+# Wispiva 工作计划
 
-日期:2026-10-25
-状态:**草案,待用户确认后执行**。本文把 [ARCHITECTURE.md](architecture/ARCHITECTURE.md) §9 的里程碑展开为可并行执行的轨道计划;契约依据 [CONTRACT-DRAFT.md](architecture/CONTRACT-DRAFT.md)(11 项已裁决),记忆依据 [DESIGN-memory.md](architecture/DESIGN-memory.md)(已批准)。
+更新日期：2026-10-28。
 
-## 0. 基线:已定与未定
+## 2026-10-28 按 development-docs 整理文档与架构
 
-**已定**:契约形状全部(Q1–Q11);记忆系统(owner 分行/透镜/三层/情境触发 reflection);渲染路线(solid 主/voxel 副);在场三态(可对话、附身=B 含 A、交互降速+提醒);创世=用户与 AI 对话式;追更=新闻播报;驱动力=架构解耦不预付方案。
+- 补充 `prototypes/`、`experiments/` 与根目录 `AGENTS.md` 的入口和边界说明：主原型持续运行，独立实验拥有自己的依赖、证据和检查入口。技能对一次性原型的分支约定与项目明确要求冲突时，以项目要求为准，不迁走现有代码。
+- 将原 `docs/PRD.md` 完整迁入[项目意图与产品需求](intent.md)，把当前实现地图迁入[标准架构入口](architecture.md)，原目标架构方案迁入[设计文档](design/2026-10-27-target-architecture.md)。分别说明目标、现状与方案，更新内部链接，并增加目标、源码、证据和缺口的对应表。
+- 增加[人类阅读入口](for_human/README.md)和 [Agent 追踪入口](for_agent/README.md)，统一收录于[文档索引](README.md)。根 README 增加最短启动方式；仓库要求的本文件及原型、实验的独立位置不变。
+- `docs/research/` 中现有研究为跨多日期持续更新的综合材料，不足以无歧义地改成某一天冻结的研究记录；暂保留原路径和内容，在索引中明确其生命周期与日期边界。历史 `PLAN.md` 记录按项目规则保留，不改写成已完成的目标设计。
+- 检查根 README、AGENTS 和项目文档共 23 份 Markdown 的本地链接与标题锚点，均可解析；`git diff --check` 通过。本机没有 Mermaid 解析器，图表语法和实际渲染尚未由工具验证。本轮未调用真实模型、浏览器或云端；此前的原型测试记录见下节。
 
-**未定(归属后置阶段,不阻塞开工)**:在场细节(降速窗口内到期 beat 的抢占/交错,P2-E 实现);新闻播报的分级阈值(P3-J);创世对话流程细节(P3-I);story driver 策略(P3+);两段式叙述(P3-H 实验带)。
+## 2026-10-28 文档入口整理
 
-**2026-10-25 新增需求方向**：世界模型定位为环境 Simulator，角色 LLM Agent 决定意图，Simulator 推演环境与行动后果，Verifier 检查候选变化。依据与待定设计见 [DISCUSSION-world-model.md](architecture/DISCUSSION-world-model.md)。现有 G0–G2 通过记录仍只覆盖原有能力，不代表独立 Simulator 或因果/动力学验证已完成。新增探索见 P3-W，优先级与实现范围待收敛。
+- 早先增加了文档索引、简短项目意图和实现地图，但没有按技能采用规范文件名，也没有完整迁移需求；这次遗漏已按上节纠正。当时未迁移历史资料或修改代码。
+- 本轮仅做文档与源码路径核对和本地链接检查，未运行应用、测试、浏览器或云端任务；此前记录的验证结果不代表本轮重新执行。
 
-## 1. 并行执行策略
+## 2026-10-28 全仓整理与核对
 
-- **执行者**:主 agent + 子 agent。实测子 agent 并发上限约 1–2,因此并行性首先体现在**轨道解耦**(互不依赖、各有独立 DoD 与测试),其次才是同时开工——轨道一旦解耦,串行调度也能无缝流水,并发恢复时立即加速。
-- **关键技巧:轨道间接口先行**。凡有依赖的轨道,先在共享文档冻结接口签名(不是实现),各轨对接口编程,消除等待。
-- **重型验证走云端 CI**(E2E、真实 LLM 调用、大规模回归),本机只跑定向单测;规则遵守用户 AGENTS.md(内存判断、复用服务、错峰)。
-- **决策门推进,不做日历估计**:每阶段以"门"收口,过门才进下一阶段。
+- 基线为大量未提交的迁移：180 个跟踪文件删除，原型、实验和多份文档尚未跟踪。保留现有工作，不暂存、不恢复或删除旧代码，也未读取真实配置和存档。
+- 根目录的 `ddg.html` 是 DuckDuckGo 页面，`index.js` 是引用不存在的外部分包的打包文件，未发现项目引用；两份文件移至 `.tmp/project-organization-2026-10-28/` 暂存，未删除。该目录被 Git 忽略，不是永久归档；如需恢复，可将文件移回根目录。
+- 修正实验说明：Luanti 实验没有依赖锁文件，运行时哈希清单不能固定后续软件下载版本。新增[独立 CI 定义](../.github/workflows/minecraft-societies.yml)，仅手动触发 shell 和 Lua 语法检查；尚未运行，使用前仍需依当前规则告知并取得许可。原型依赖与锁文件一致，`.env`、`.data/`、实验运行时及生成世界被忽略。
+- 本轮运行 `node prototypes/verify.mjs`，退出码 0；包括 73/73 Node 测试、282/282 环境检查、17/17 配置检查、39/39 模型客户端检查，未调用真实模型或浏览器。日志为 `.tmp/project-organization-2026-10-28/prototype-verify.log`。三份实验 shell 脚本通过 `bash -n`，三份 Lua 源文件通过本机 LuaJIT 语法解析，CI YAML 可解析，文档本地链接目标存在；这不代表 CI、实验运行时或浏览器已重新验收。
+- 待处理：独立 CI 尚未运行，不能视为实验闭环验收；尚未全面逐项确认所有旧代码、历史证据和新文件是否应纳入最终提交，也尚未完成迁移的浏览器验收。相关盘点和决定记录在 `.audit/project-organization.todo.md` 与 `.audit/project-organization.tsv`。
 
-## 2. 依赖图
+## 当前状态
 
-```
-P0 contract(串行,关键路径)
-    │ 类型+Schema+fixtures+轨道间接口约定
-    ├─────────────┬─────────────┬─────────────┐
-P1-A domain   P1-B store    P1-C clock    P1-D llmclient
-(纯函数)      (SQLite+FTS5) (倍速积分)    (预算/审计/记忆组装)
-    │             │              │             │
-    └──────┬──────┴──────┬───────┘             │
-P2-E runtime+http ←──────┘(编排 T1–T4)   P2-F web/shell(可与 P1 并行起)
-           │                                 │
-P2-G renderer 3d(projection=engine 侧 + three.js 侧,依赖 A/F)
-           │
-    ┌──────┴────────┬──────────────┐
-P3-H live LLM    P3-I 编辑器+      P3-J 在场:对话/附身/
-+灵魂A/B实验     创世+三栏视图      新闻播报/追更
-    └──────┬────────┴──────────────┘
-P4 收口:单命令打包/云部署文档/E2E 全量/性能测量
-```
+- 当前唯一运行原型在 [prototypes](../prototypes/README.md)：文本对话创世、有限世界规则、角色调用、动态流和实时 3D 已接入同一服务。启动命令为 `node prototypes/server.mjs`，默认地址 `http://127.0.0.1:5175/`。
+- 原型使用 Node.js、ES modules、Three.js 和 JSON 存档；[目标架构](design/2026-10-27-target-architecture.md)不代表 React、Hono、SQLite 等均已实现。[产品需求](intent.md)描述目标，[当前架构](architecture.md)描述实现。
+- 现有证据支持有限资源、阈值过程、离散行动和小规模角色调用；完整小说因果、长期相关性记忆、反思、分岔、任意物理与复杂 3D 未实现或未验证。创世失败不得以固定故事冒充成功。
 
-## 3. 阶段与轨道
+## 故事原文
 
-### P0 契约与脚手架(串行,主 agent)
+- 探索方向为《福尔摩斯探案集》的世界，先用《红发会》研究资料导入、时间和人物知情边界、角色塑造及改变条件后的演化。当前仅选择了素材，小说导入和模拟尚未实现。
+- [《红发会》英文原文](source-texts/sherlock-holmes/the-red-headed-league.txt)从 [Project Gutenberg 第 1661 号文本](https://www.gutenberg.org/cache/epub/1661/pg1661.txt)按第二、第三篇标题截取，UTF-8，50,288 字符，SHA-256 `8eaa2a64865f9c78e793b82e80940515d3b4c46149a747fe13f7d05905f26ebe`。已检查边界、长度和迁移前后哈希，尚未逐段校对。Gutenberg 标注此英文版本在美国属于公有领域，其他地区和中文译本需另行核实。
 
-| 项 | 内容 | 验收 |
-| --- | --- | --- |
-| P0.1 | 根 workspaces(`packages/contract engine web`)+ tsconfig 基座 + vitest | `npm test` 空转通过 |
-| P0.2 | `packages/contract`:全部 TS 类型(按 CONTRACT-DRAFT 定稿) | tsc 零错误 |
-| P0.3 | JSON Schema(Op/Plan/Memory/EditProposal 优先)+ 校验工具函数 | schema 自校验 fixtures |
-| P0.4 | 9 个 fixtures(按 CONTRACT-DRAFT §5 清单) | 全部通过 schema |
-| P0.5 | **轨道间接口约定文档**(store 查询 API 签名、domain 导出清单、llm 组装输入) | 四轨负责人(即各 agent 任务书)可据此开工 |
+## 2026-10-27 仓库整理
 
-**门 G0(M0 冻结)——已通过(2026-10-25,提交 36bbb8d + c2ee3ee)**:脚手架/类型/Schema/fixtures 全绿,轨道间接口见 [INTERFACES.md](INTERFACES.md)。此后 contract 改动走 §9 变更协议。
+- `docs/PRD.md` 保存需求，`docs/ARCHITECTURE.md` 保存目标架构，`docs/research/` 保存项目级研究，`docs/source-texts/` 只放原始文本；根 README 仅作简短介绍。
+- 将原型统一整理在 `prototypes/`，把原型说明、专属实验报告与历史记录移入原型目录，并将测试、山庄夹具及辅助脚本分到 `tests/`、`fixtures/`、`scripts/`。旧营地、voxel、山庄样例仍被代码或回归检查引用，本轮未因名称或年代删除。原型可能存在的其他冗余仍需逐项判断。
+- 更新代码引用、验证入口、CI 工作流和项目文档链接。`.data/prototype/` 存档位置保持不变，原先的主世界未被读取或改写。以前的详细记录和结果保留在 [历史进度](../prototypes/notes/2026-10-26-progress.md)，不作为本次验证的替代。
+- 在 `.tmp/reorganization-verification/` 的隔离代码副本上运行 `node .../prototypes/verify.mjs`，退出码 0：62 个 Node 测试、282 个环境检查及既有角色、UI、创建、信息隔离、配置和模型客户端检查通过；使用合成数据，不调用真实模型或浏览器。日志为 `.tmp/reorganization-verification/checks.log`。
+- 使用新路径的实际源码、临时独立存档和临时端口检查 `/`、`/api/state`、`/app.js`、Three.js 静态资源及场景模块，均返回 HTTP 200；服务已关闭。故事文件哈希保持一致，文档本地链接已检查。
+- 进一步移除迁移后遗留的空 `scratch/` 目录；根 README 改为简短英文介绍。
+- 移除唯一原型目录下多余的 `main` 层级，所有入口、CI、文档和仓库根目录定位统一改为 `prototypes/`；修正因目录深度变化而受影响的配置、存档和观察脚本路径。
+- 在当前工作树运行 `node prototypes/verify.mjs`，退出码 0：62 个 Node 测试、282 个行为检查、配置 17/17、模型客户端 39/39 全部通过，未调用真实模型或浏览器；使用隔离存档做 HTTP 冒烟，`/`、`/api/state`、`/app.js`、Three.js 静态资源和场景模块均返回 200。
+- 本轮新增角色级秘密行动验证：资源和行动支持 `visibility: { actors, clues }`，行动支持 `performers`；地点、知情、当前观察、可执行权限和主观记忆保持分离。新增[《红发会》小起点夹具](../prototypes/fixtures/red-headed-league.mjs)及 8 个定向测试，覆盖 Wilson、Spaulding、Holmes、地下挖掘、线索揭示、跨地点银行警戒、通用失败、严格引用和复制后观察一致性。
+- 本轮 `node prototypes/verify.mjs` 退出码 0：70 个 Node 测试全部通过。此前一次全量运行在观察投影向后兼容测试上发现 3 个失败，已修正为仅对带 story 的角色观察隐藏 author-facing 地点描述，并保留无 story 旧观察的完整序列化形状。
+- 使用真实 `.env` 配置在全新隔离目录 `.tmp/prototype/red-headed-live-vpQN87/` 完成一次三阶段创世，3 次真实模型调用通过完整世界、引用、规则、几何和运行检查，输出 4 个地点、3 个角色、4 个资源、2 个过程、5 个行动，并产生角色级 `visibility`/`performers`。没有确认进入作者当前世界，也没有启动浏览器。
+- 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/world-models.md)、[记忆研究](research/memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创世记为语义完全正确。
+- 已把创世接受前的 `auditCandidatePrivacy()` 接入 `checkWorldCandidate()`：确定性检查覆盖作者级 premise/地点叙述、隐藏实体标识、他人目标与前史是否进入角色观察；有限片段重合检查覆盖公开文本中的私有目标和隐藏机制。通过的草稿保存审计限制，命中的候选以 `privacy-audit-failed` 拒绝。审计明确标注不能证明同义改写、暗示、推理或后续对白安全。
+- 《红发会》夹具新增 Wilson 出勤计数与反事实分支测试：Wilson 继续赴红发会、Holmes 检查地下室获得进度信息但仍无 Spaulding 执行权、Spaulding 挖掘到阈值后银行警戒变化；原点副本彼此独立，不写死银行抢劫结局。
+- 当前工作树验证已扩展为 72 个 Node 测试及既有环境检查，全部通过；本次仍未启动真实模型或浏览器验收。
+- 已启动本地体验服务 `node prototypes/server.mjs`，地址 `http://127.0.0.1:5175/`；只读冒烟确认 `/`、`/api/state`、`/api/events`、`/app.js` 和 `/world-scene.js` 可访问。服务复用现有存档“山雨未停”（世界第 30 分钟、revision 39），没有重置或覆盖当前世界；当时存档处于 `actor:invalid-decision` 等待状态。
+- CI 路径已更新，但此次未运行 GitHub Actions 或浏览器验收，不能据历史截图推断迁移后的真实浏览器体验。历史截图、真实模型轨迹和有限场景实验见原型说明和历史进度；`.tmp/` 内证据不是永久存储。
+- 整理前工作区已包含大量跟踪文件删除与未跟踪原型；未暂存、提交、恢复旧代码或改变既有迁移决定。
 
-**门 G1(P1 完成)——已通过(2026-10-25)**:四轨(domain 15 测/store/clock 13 测/llm,共 30 测)由四个 GPT-6-Luna high codex 工人在独立 worktree 并行完成,验收合并全绿;tsc 零错。
+## 下一步
 
-**门 G2(集成冒烟)——已通过(2026-10-25,代码级)**:G2 竖切测试(web/test/g2-vertical.test.ts)打通 store→runtime(mock beat)→revision→projection→3D 编译→增量重建(44 测全绿);竖切暴露并修复了 projection 桥拱默认值超坡度预算的问题(拱高按跨度钳制)。浏览器可见的实时推进冒烟按资源规则延后(MemAvailable<4G 时本机不跑 GUI,待云端 CI 或内存充裕)。P2 三轨(runtime+http / web shell / renderer)由三个 GPT-6-Luna codex 工人并行完成。
+1. 用更多真实生成草稿和同义改写样例评估接受前隐私审计的误报、漏报与返修成本；不能把片段检查升级成语义安全证明。
+2. 继续验证短期经历账本与长期检索、reflection、Plan 失效和 revision fork；当前只证明了有来源的有限经历和保存恢复，不应把目标架构当作已实现。
+3. 如需确认本次目录调整后的浏览器交互，按项目云端优先与权限规则安排 CI 验收；必要时再根据实际使用情况清理确认无用的原型代码和历史产物。
 
-**门 G3(可玩)——代码级完成(2026-10-25,提交 be23f14/f53efcf)**:P3 三轨(live 接线/编辑器+创世+记忆视图/在场对话+附身+新闻播报)由三个 codex 工人并行完成,58 测全绿,四块面板已挂进壳(事件日志/对话/新闻播报/编辑器/记忆对照五个标签页)。真实 LLM 的 G3 验收(灵魂 A/B、真对话、长期把玩)待用户授权 GROQ secret——scripts/ab-memory.mjs 与 .github/workflows/llm-live.yml 已就绪。
+4. 主题场景已有《红发会》专用程序化配方与有限视觉证据，见下方第二轮记录；通用主题内容包仍待实验。拟让 LLM 生成 `styleBrief`、街区拓扑和稳定场景锚点，由程序化配方负责建筑、道路与陈设等，并继续验证多视角构图、通行、局部编辑和浏览器资源。
 
-### P1 引擎四轨(并行,子 agent 或主 agent 分轨)
+5. 在主题内容包之前补一个空间基底实验：增加语义地点图、房间／道路／门洞关系和小型区块建造网格；让角色观察从同一空间基底派生 `placeId`、`roomId`、当前位置、出口、可见对象和已知地图。LLM 只提交受限蓝图或建造操作，程序执行占用、碰撞、通行和稳定对象绑定。暂不引入 Minecraft 服务器或运行时。
 
-| 轨 | 内容 | 独立验收 | 依赖 |
-| --- | --- | --- | --- |
-| A domain | applyOps(JSON Pointer 子集、value 直接值、remove 禁值)、changedPaths、记忆行校验(owner/about 引用、valence/importance 范围)、fork/plan 纯函数 | fixtures+`ops-invalid` 全过;纯函数零 I/O | P0 |
-| B store | SQLite schema(lines/revisions/drafts/llm_calls/**memories+FTS5 trigram**/**memory_reflections**)、T1–T4、崩溃恢复、log 分页、按 owner/可见集检索查询 | 临时目录测试:T1–T4、重启、FTS5 命中 | P0.5 接口 |
-| C clock | 单调钟采样+倍速积分、**整数分钟提交**、暂停/恢复、到期事件计算、**在场降速/恢复挂钩** | fake timers:24×、暂停、降速、到期顺序 | P0 |
-| D llm | OpenAI 兼容 client(候选回退/预算/审计/等待与超时分离)+ **分层记忆组装**(世界全量+近窗+owner 可见集检索+R/I/Rel×C 公式+超预算裁剪次序)+ prompt 模板 | mock fetch:回退/预算/审计/公式确定性(同输入同 prompt) | P0.5 接口 |
+6. 先实现独立的空间关系层：固定世界坐标约定，按地点／建筑锚点计算方位、邻接、距离区间和路径关系；为角色增加带 `source`、`revision`、`certainty` 的 `spatial-belief` 记忆。先用现有 `places[].position` 与连接图验证“家东边有商店”，再把查询扩展到房间和区块网格。
 
-### P2 三轨(并行)
+7. 将建造入口定为工具驱动循环：模型通过事务性 `createRoom`、`connectPortal`、`buildStructure`、`placeObject`、`inspectSpace`、`renderPreview` 和局部 `repair` 修改 `SpatialWorld`；工具返回诊断、变更 ID、revision 和预览，渲染器从空间状态派生。优先提供宏建造操作，逐 voxel 操作只用于局部修补，不允许模型直接写 Three.js 运行时代码。
 
-| 轨 | 内容 | 独立验收 |
-| --- | --- | --- |
-| E runtime+http | beat 调度、T1–T4 编排、SSE、重启恢复、错误重试、**chat 事件提交路径**(对话入史+降速窗口到期 beat 的抢占策略在此实现) | mock llm 集成测试:8 个原型观察场景移植 |
-| F web/shell | React 壳、API client、多元宇宙总览、线控制、log 分页、**三栏对照视图** | fixtures 驱动组件测试;可与 P1 并行启动(仅依赖 contract fixtures) |
-| G renderer | engine/projection(WorldState→SceneDocument 投影,含位置=op 可改)+ web/renderers/3d(从 geometry-lab solid 后端提纯,recipeHash 增量) | golden view 测试:fixtures 世界→稳定截图/统计;增量只重建脏部件 |
+8. Minecraft 实验按文末[立项](#2026-10-27-minecraft-agent-社会实验立项)推进：C 路线（Luanti）的 M0 已跑通（服务端启停、agent 每步被推进、世界差异、失败可检出），下一步按用户“先 C 小规模跑通再定”之后的判断走——要么在 C 上继续 M1 容量阶梯／M2 实验编排，要么回到 A 路线做对比。它与上面 4、5、6 项分属两条线：主原型继续不引入 Minecraft 运行时。
+## 2026-10-27 红发会重做与验收
 
-**门 G2(集成冒烟)**:E+F+G 联通——mock beat 驱动 3D 画面实时推进、倍速/暂停可见。这是**首个可看竖切**。
+- 用户指出旧的“山雨未停”体验不应继续使用。本轮删除 `.data/prototype/state.json`、`creation.json` 和旧 `model-calls.jsonl`，重新建立唯一运行入口的《红发会》起点：第 0 分钟、revision 0、暂停；3 个地点、3 位人物、5 个资源，场景标题为“萨克斯·科堡广场 · 案件现场”。没有恢复或启动旧存档。
+- `prototypes/fixtures/red-headed-league.mjs` 现在同时提供红发会专属的紧凑场景布局：当铺、地下室、银行拥有不同房间尺寸和程序化陈设，地点位置与房间绑定保持一致。`prototypes/geometry/solid.js` 为当铺柜台、地下室工作台／隧道入口和银行柜台／立柱增加区分度；完整世界、空间、绑定和 solid 编译检查通过。
+- `prototypes/ui/index.html`、`style.css` 重做为维多利亚伦敦调查档案视觉：暗煤黑、雾蓝灰、旧纸金和暗红；首屏直接显示红发会冲突，运行页以现场总览、案件时间线、暂停／播放／下一人行动组成同一体验。保留既有状态、SSE、键盘焦点、移动布局和 reduced-motion 行为。
+- 浏览器检查先发现动态模块请求 `/prototypes/geometry/*` 导致三维区域空白，已修复为服务实际暴露的 `/geometry/*`。随后用本机独立、禁用 GPU 的 headless Chrome 延迟截图检查桌面和移动尺寸：画布存在、无 `data-scene-error`，三处现场可见；移动截图无横向溢出。截图证据在 `.tmp/browser/rhl-final-visual.png`、`.tmp/browser/rhl-mobile.png`，仅作本轮临时证据。
+- CUA 浏览器入口当时不可用（`Browser is not available: iab`），所以本轮使用 AGENTS 允许的本机兜底：启动前确认 `MemAvailable` 约 4.8–5.4 GiB、内存 PSI 低、`/tmp` 使用率约 2%，headless Chrome 禁用 GPU 且一次只运行一个实例；截图后关闭了临时浏览器进程。软件 WebGL 仅用于视觉回归，不代表目标设备性能验收。
+- 本轮新增架构经验已写入[架构](design/2026-10-27-target-architecture.md)和[3D 生成研究](research/3d-generation.md)，红发会起点与主题化壳层经验写入[世界模型研究](research/world-models.md)。
 
-### P3 三轨(并行)
+### 本轮待收尾验证
 
-| 轨 | 内容 | 备注 |
-| --- | --- | --- |
-| H live 接线+灵魂 A/B | 真实模型接入、预算全开、云端 CI workflow_dispatch 验证;**灵魂 A/B**(偏见记忆 vs 中性记忆同局面对照) | 需用户授权 GROQ secret 用于 CI |
-| I 编辑器+创世 | 草稿/提议/diff/确认分岔 UI、**对话式创世**(产出 WorldState+前史记忆种子)、记忆视图 | 依赖 F |
-| J 在场 | 入世对话(chat call kind 全链)、附身切换、**新闻播报追更**(重要度分级)、记忆问询面板 | 依赖 E+H |
+1. 运行 `node prototypes/verify.mjs`，确认完整 Node 测试、环境检查、模型客户端检查仍通过。
+2. 对 `/`、`/api/state`、`/api/events`、静态模块做 HTTP 冒烟，并用 `git diff --check` 检查文本变更。
+3. 保留新《红发会》服务运行给用户体验；如果后续继续改 UI，先停止服务或使用新状态文件，避免后台写回覆盖验证结果。
 
-**门 G3(可玩)**:真实 LLM 驱动、可 fork、可对话、可追更——用户开始长期把玩,"好不好玩"进入实测。
+### 收尾结果
 
-### P3-W 世界表示优先的环境模拟探索（文档已补充，实验未开工）
+- `node prototypes/verify.mjs`：72/72 Node 测试、282/282 行为检查、26/26 UI 检查、17/17 配置检查、39/39 模型客户端检查全部通过；无真实模型调用、无私有配置读取、无云端任务。
+- `git diff --check` 通过。最终存档只读确认：`generated-world-v1`、标题“红发会：庞大的阴影”、第 0 分钟、revision 0、暂停、无等待；HTTP `/`、`/api/state`、`/api/events` 及 `/geometry/*` 静态资源返回 200。
+- 桌面与移动 headless 截图检查完成，画布存在且无场景错误；CUA 的 `iab` 浏览器入口不可用，因此截图使用 AGENTS 允许的本机兜底，不能把它记为云端浏览器验收。
+- 新服务已重新启动并保持运行，供用户体验；当前不会自动推进，因为存档处于暂停状态。
 
-这是新增需求的设计与验证轨道，先解决表示，再验证 Simulator / Verifier；现有 G3 可玩门不覆盖本轨的新目标。2026-10-25 用户明确本轮只写文档、做好计划，不立即实现。当前已有[设计草案](architecture/DESIGN-world-representation.md)与[分阶段计划](PLAN-world-representation.md)；文档形成不代表过门或授权启动实验。
+## 2026-10-27 红发会第二轮场景美术原型
 
-| 步骤 | 产物 | 收口依据 |
-| --- | --- | --- |
-| W1 纸上建模 | 场景与真实性范围；A/B 等义表示、概念表、参考与异常轨迹 | 关键区别可表达，未知/过程/预测分清，语义先收敛 |
-| W2 独立表示实验（后续） | 私有格式、检查与玩具过程，先在独立数据上观察多步、干预与扩展 | 状态可保存与复核，不确定和非法变化有诊断，明确能力边界 |
-| W3 有界模型对照（后续） | 同事实、模型与预算下的表示对照，记录状态错误、未知处理与成本 | 能判断收益和代价，不用额外知识或文笔代替表示验收 |
-| W4 引擎集成验证（后续） | ops/revision/store/Runtime 衔接，时间、延迟失效、fork/重启、观察隔离与契约影响表 | 区分已验证复用项、必要修复与新能力后，提出正式实现范围 |
+- 针对“房间剖面图过丑”的反馈，保留同一 `SceneDocument`、world binding 和角色级权限，给 `victorian-archive` palette 增加主题化 solid 配方：湿石广场、正面街道、砖墙、石材、橱窗、门框、当铺招牌、银行柱廊、地下拱口、台阶和少量路灯。通用世界继续使用原有 room recipe。
+- 浏览器端由 `createPlainMaterials()` 切换为已有 `createMaterials()` 程序纹理；Node/CPU 路径仍使用 plain 材质。这样浏览器截图能看到砖、木、石材粗糙度，同时不增加模型下载和服务端 GPU 依赖。
+- 根据截图连续返修：删除遮挡主体的完整屋顶板，保留檐口与开敞剖面；主题场景按内容包围盒收紧取景；把球形路灯改成细杆和矩形灯箱，并把街道连接与灯位移到建筑正面。最终截图为 `.tmp/browser/rhl-street-v5.png`，真实 canvas 存在且 `data-scene-error` 为空。
+- 新增红发会场景词汇的编译回归测试，确认共享场景文档能产出铺石地面、当铺招牌、地下拱口、银行柱子、正面街道和路灯；本轮没有改变 world 事实、角色观察、行动权限或模拟规则。
+- 视觉证据仍是本机禁用 GPU 的软件 WebGL 截图，证明页面加载、材质、构图和场景初始化；尚未证明目标设备帧率、显存或生产级美术质量。截图表明场景已从调试房间推进为可辨识的案件街区，但仍是程序化原型。
 
-**门 GW（尚未通过）**：场景、表示、验证依据与对照结果收敛后，再决定实现范围、调用拆分及轨道依赖。当前 ops/revision/store/渲染边界作为衔接基础；需要契约变更时走既有协议。因果图、规律积累、生成代码和模型训练不预设为过门条件。重型实验按 §4 的资源规则安排。
+### 本轮待收尾验证
 
-### P4 收口(并行度低)
+1. 运行完整 `node prototypes/verify.mjs`，确认新增测试、环境检查、UI 和模型客户端检查全部通过。
+2. 停止本轮启动的 headless Chrome 进程，重新读取 API 状态和静态资源；按需要把体验存档恢复到红发会第 0 分钟暂停起点。
+3. 只保留用户需要的 `5175` 服务运行，并向用户报告真实截图证据与仍未验证的设备性能边界。
 
-单命令打包(engine serve web/dist)、云自托管文档与卷挂载说明、E2E 全量(云端:桌面/手机/2D3D 并排/编辑器/多元宇宙/暂停)、性能测量(revision 大小与频率→是否改增量存储;fork 深链深度→是否物化前缀)。
+### 本轮收尾结果
 
-**P4 状态(2026-10-25,提交 d4ea1d9)**:单命令 `npm run wispiva` 已通(vite 构建 671ms→引擎启动→SPA 200→/api/state 合法快照→退出冻结,无残留进程);[DEPLOY.md](DEPLOY.md) 与 scripts/measure-revisions.mjs 就绪;65 测全绿。浏览器 E2E 全量仍按资源规则留待云端 CI。
+- 修复视觉回归测试对静态合批后节点名的错误假设：测试现在检查合批前的主题部件词汇，以及合批后稳定的 `userData.parts`；不改变渲染实现。
+- 修复房间和角色 Canvas 标签在精简 Canvas 替身中缺少 `stroke()` 时的兼容性，真实浏览器仍保留描边效果。
+- `node prototypes/verify.mjs` 退出码 0：73/73 Node 测试、282/282 行为检查、26/26 UI 检查、17/17 配置检查、39/39 模型客户端检查全部通过；本轮验证没有真实模型调用或云端任务。
+- HTTP 冒烟通过：`/`、`/api/state`、`/api/events`、`/app.js`、`/style.css`、`/world-scene.js`、`/geometry/scene-compiler.js`、`/geometry/materials.js` 和 Three.js 静态资源均返回 200。
+- 当前体验存档已重新建立为红发会第 0 分钟、revision 0、暂停、无等待；三位人物回到当铺、地下室和银行，行动账本为空，资源回到起点数量。没有使用普通 `reset`，也没有恢复旧“山雨未停”世界。
+- 使用本机单实例、禁用 GPU、`--ozone-platform=x11` 的 headless Chrome 验收真实页面：Three.js canvas 存在、`data-scene-error` 为空、没有 page error、桌面页面无横向溢出。截图证据为 `.tmp/browser-final/rhl-final-start.png`；这仍是软件 WebGL 的页面与构图验收，不代表目标设备帧率或生产级美术质量。
+- 服务已在 `http://127.0.0.1:5175/` 的持久终端会话中重新启动并保持运行，当前存档暂停，不会自行推进。
 
-## 4. 验证与资源规则
+## 2026-10-27 Minecraft agent 社会实验立项
 
-- 每轨自带定向测试,合并点跑交集;全量回归只在门与 CI。
-- 本机内存规则照 AGENTS.md:并行前 `free -h`+PSI;浏览器/构建类重型操作云端优先,本机兜底条件 MemAvailable≥4G 且 PSI 低;服务实例复用。
-- 证据纪律沿用:观察结论进 docs,一次性代码不进 main。
+- 用户决定把[研究文档](research/minecraft-agent-societies.md)中的方向作为**延伸研究**启动，硬约束是**只能用免费资源**（免费模型端点、仅本机使用；容量测量也全部本机跑，不启用云端任务），并要求环境**优先开源、不为 Minecraft 付费**。位置定为仓库顶层 `experiments/minecraft-societies/`，计划与边界见[实验说明](../experiments/minecraft-societies/README.md)。
+- 用户最初答复为“一定要用真 MC”，随后澄清其本意是“找类似 MC 的开源项目，不打算为 MC 付费”。本轮据此纠正了一条事实：**Minecraft Java 版服务端免费、离线模式不需要账号、不需要买游戏**，需要付费的只是“正版客户端登录在线模式服务器”，与本研究无关；MC 本体确实**不开源**（Paper 是它的补丁分支）。因此环境改为 A（Paper）／B（flying-squid）／C（Luanti）三选一，**尚未决定**。
+- 位置决策经过比较：不建 `scratch/`，也不把 `prototypes/` 搬进去。`scratch/` 是本轮整理刚作为迁移残留移除的目录；`prototypes/` 是 AGENTS.md 规定的唯一原型入口。实验需要的是独立运行时（自己的依赖、CI、Java 与 MC 服务端），不是多一层目录。AGENTS.md 已补充“独立实验放 `experiments/<方向>/`”一条。
+- 本轮只做立项与核实，**没有实现、没有下载 MC 服务端、没有安装 Java、没有启动服务器或 bot、没有调用真实模型、没有发起云端任务**，也没有改动 `prototypes/` 的任何文件。
+- 实际核实的事实（HTTP 查询与本机检查）：本机未安装 Java（`mise` 可用户级装 21/25，`apt` 有 openjdk-21 候选但需 sudo）；Paper 旧 API `api.papermc.io/v2` 已 sunset，现用 `fill.papermc.io/v3` 可访问；可用版本含 `1.21.11`、`26.1`、`26.3`（`26.3` 要求 Java ≥ 25）；`mineflayer@4.39.0` 依赖的 `minecraft-data` 实测支持到 `1.21.11` 与 `26.1`，因此固定 Paper `1.21.11` + Java 21，最终以 bot 实际连上为准；仓库为 public，Actions 标准 runner 免费；Mineflayer 与服务端均无头，不需 GPU/Xvfb。
+- 路线：技能循环自己写最小实现（不引入 Mindcraft 作运行时）。原计划把 M1–M3 放云端免费 runner，**已按用户指示改为全部本机执行**；M4 真实 LLM 只在本机小规模（3–5 agent）接免费端点，密钥不进 CI、不读 `.env`。
+- **C 路线（Luanti）已实测通过**：本机未安装任何系统包、未使用 sudo、未安装 Java，用 `apt-get download` + `dpkg-deb -x` 把 `luanti`/`luanti-server`/`luanti-data`/`luanti-game-minetest` 四个 deb（10.2 MB）与 6 个缺失 `.so` 解包到 `.tmp/luanti-probe/`，`luantiserver` 直接启动（`Luanti 5.10.0`，LuaJIT 2.1）。许可证读自包内 `copyright`：引擎 LGPL-2.1+，Minetest Game 代码 LGPL-2.1-only、素材 CC-BY-SA-3.0。
+- **C 路线的服务端实体容量已实测**：每步 O(1) 工作时 2 万实体保持实时（11.02–11.04 step/s，峰值 RSS 167 MiB），崩塌点来自每实体计算量而非实体数——朴素 O(N²) 邻域感知在 1000→5000 之间跌破实时（4.4 step/s），10000 时 0.92 step/s。原始日志与基准代码见 `experiments/minecraft-societies/bench/`。这组数字为研究文档“距离 LOD 是千级以上关键设计”补上了本项目自己的证据，但也**只覆盖 tick 与内存，不覆盖 LLM 成本与 agent 行为**。
+- **C 路线暴露的硬性工程前提**（实测，研究文档原先未记录）：无玩家时实体不会被 step，必须 `forceload`；且只有在区块 emerge 完成后才能生成实体，否则实体会在活跃区块管理周期（2.0 s）中被**静默删除**，而 `add_entity` 全程返回有效对象、不报错。另记录默认限制：`max_objects_per_block = 256`、`max_forceloaded_blocks = 16`（可 -1 解除）、`active_block_range = 4`、`dedicated_server_step = 0.09`。
+- **C 路线的外部生态核查**（只读检索，未克隆未运行）：VoxeLibre（原 MineClone2，权威仓库在 Mesehub，GitHub 仅镜像）仍在维护（0.92.4，2026-10-18），代码 GPL-3.0-or-later、媒体 CC BY-SA 4.0，要求 Luanti ≥ 5.10，自述 beta、未 feature-complete；Luanti 引擎**不自带任何可玩游戏**（只有 devtest），Minetest Game 处于仅维护状态；**LLM agent／多智能体社会模拟方向在 Luanti 生态基本空白**（无规模化先例，arXiv 标题摘要零命中，客户端协议库孱弱且多已停更，官方 `doc/protocol.txt` 仍是 2011 年的未完成草案）；官方客户端 mod API（CSM）**无法操纵玩家**（`LocalPlayer` 只有 getter），因此“以玩家身份接入”的外部客户端必须自研协议实现，C 路线现实形态是**全程服务端 Lua mod 实体**。
+- 未决（阻塞下一步）：① 环境 A／B／C 三选一未定（C 已按用户要求先做小规模验证，见下节）；② 研究问题、指标与对照组尚未确定，M4 之前必须定，否则只是“能动的世界”；③ 免费模型端点具体是哪一个待用户确认（不读 `.env`）；④ ContentDB 于 2026-10-26 因安全事件下线维护，Luanti 内容包的包搜索核实与 VoxeLibre 的实际安装验证需等其恢复；⑤ 是否接受 C 路线“agent 不是玩家、没有玩家视角”这一形态差异。
+- 证据边界：本节为立项与核实记录；**A 路线（Paper/Minecraft）没有任何本项目的实测数据**。C 路线已有服务端实体 tick/内存实测与 M0 闭环实测，见下节。
 
-## 5. 变更
+## 2026-10-27 Minecraft 实验 M0（C 路线）跑通
 
-计划本身按需修订;轨道间接口变更视同 contract 变更(影响多轨,须同步所有任务书)。
+按用户指示“先 C 小规模跑通再定”，本轮把 C 路线从“能启动服务端”推进到“有一份可运行的 agent 闭环”，代码与原始证据在 [experiments/minecraft-societies](../experiments/minecraft-societies/README.md)。
+
+- **零 sudo、零 Java、零系统包**：新增 `runtime/bootstrap.sh`，把 11 个 deb 下载后 `dpkg-deb -x` 解包成项目内运行时（`.runtime/`，约 60 MB，脚本幂等，已下好的包不重下）。实测镜像会间歇性连不上（`cn.archive.ubuntu.com` 超时、`security.ubuntu.com` 正常），脚本按“还缺哪些”重试三次。解包后 `luantiserver --version` 自检通过，产物哈希写入 `.runtime/manifest.sha256`。
+- **新增 M0 agent 运行时**：`agent/mod/society/init.lua`（引擎胶水：forceload／emerge、生成、推进、执行、记账、事件格式）与 `agent/mod/society/policy.lua`（决策层，确定性桩，6 条规则）。分工是刻意的：M4 接 LLM 只替换 `policy.lua`，不动引擎胶水。`agent/run.sh` 是启停夹具，带硬校验，一次只允许一个服务端在跑。
+- **四条退出条件的实测结果**（实时基准 11.1 step/s，详见[证据](<../experiments/minecraft-societies/agent/evidence/m0-2026-10-27.md>)）：5 agent×10 决策 23 s／45 MiB／step 率 11.08；20 agent×8 决策 19 s／46 MiB／step 率 11.08；SIGTERM 停止路径 15 s 并留下完整账；反向用例 5 s 内被检出。
+  - **可重复启停**：同配置连跑两次，确定性事件序列逐行一致（73 行）。比对不含墙钟与 step/s 统计行——真实时间本来就不可复现。可重复靠两条设计：决策由一个 `globalstep` **按 agent id 排序**驱动（写在实体 `on_step` 里会因引擎遍历区块顺序不稳定而随机化交错），随机性用固定种子 LCG 而非 `math.random`。
+  - **每步被推进**：每个统计区间 `stepped_delta` 等于 agent 数（5/5、20/20），`on_step` 只用于记这个证据。
+  - **世界真的变了**：关服时用 `find_nodes_in_area` 回读地图，标记方块数与 mod 自记计数一致（`marks_counter=6 marks_in_world=6 ok=true`）——“世界变了”由世界本身证明，不由程序变量证明。
+  - **失败说得清**：反向用例把 `society_spacing` 设成 64，生成点落到 forceload 范围外，`add_entity` 五个全部返回有效对象、一个错都不报，1 秒后只剩 1 个（活下来的那个生成点在范围内）；程序自己检出并报出 `fail=agents-lost-after-spawn alive=1 expected=5 hint=emerge-race-or-active-block-purge`。夹具用 `--expect-fail` 要求“检测到失败才算通过”，静默通过反而判 FAIL。
+- **本轮仍未做**：没有接 LLM（决策是 6 条规则的桩）、没有持久化（`static_save=false`，每次从空世界重新生成）、没有客户端连接、规模只到 20、未做长时间稳定性测试；引擎仍是 5.10.0（不含上游 2025-04-08 的 k-d 树空间索引）。容量阶梯是 M1，快照与重置是 M3，真实 LLM 是 M4。
+- **未决不变**：环境 A／B／C 仍未最终选定（C 现在是唯一有本项目闭环证据的路线，但“agent 不是玩家、没有玩家视角”这一形态差异仍需用户确认）；研究问题、指标与对照组仍未定；免费模型端点仍未确认。
