@@ -1,6 +1,6 @@
 # Minecraft 式 LLM Agent 社会实验
 
-状态：**本轮 Luanti 实现、容量测量与真实模型配对已完成**。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
+状态：**第一轮已完成；第二轮感知调度优化与检索记忆评估正在执行**。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
 
 研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../../docs/research/2026-10-28-minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../../docs/architecture.md)，近期进度和待决事项见[工作计划](../../docs/PLAN.md)。
 
@@ -201,3 +201,12 @@ experiments/minecraft-societies/
 - M0 部分**只覆盖"能起停、被推进、失败说得清"**：决策是 6 条规则的确定性桩，**没有 LLM**、没有持久化、没有玩家在场、规模只到 20、引擎是 5.10.0（不含上游 2025-04-08 的 k-d 树空间索引），且全部只在本机跑过。
 - **没有**验证：多人／客户端在场时的表现、长时间稳定性、A 路线（Paper）的任何数据、大规模真实模型吞吐及长期社会行为。新运行中的模型动作、资源操作和快照重置证据分别见上文与 [执行计划](PLAN.md)。
 - 容量、token 与费用在研究文档中的估算仍**未被本项目实测推翻或确认**。
+
+
+## 第二轮复现入口
+
+`experiment/cloud-run-opt-*` 运行新旧完整规则负载的五次交替对照（1000／5000／10000 各占一台 runner）；`experiment/cloud-run-memory-*` 运行四类受控记忆任务和有界模型并发探针。新 artifact 名为 `society-results-1000`、`society-results-5000`、`society-results-10000`，记忆任务和其他单任务为 `society-results-0`。用 `gh run download <ID> -D .tmp/<新目录>` 下载全部，需先创建项目 `.tmp` 并设置 `TMPDIR="$PWD/.tmp"`。
+
+默认 `society_optimized=true`；设为 false 使用保留的旧扫描／追赶调度进行对照。两侧都以角色 ID 稳定排序邻居。索引在角色移动后立即更新；节点缓存仅用于本实验无外部写入的世界，所有本 mod 写入都会失效对应 16³ 格，未加载格不缓存。预算是每 callback 25 ms 的软上限，单次动作无法被抢占；角色全部完成一轮后才进入下一轮。
+
+`model/memory_eval.py` 通过 Lua 桥接直接调用运行时的同一份 `memory.lua`；模型用量、任务评分与调用错误单独归档。词项检索不提供语义理解、长期总结或事实真伪判断。

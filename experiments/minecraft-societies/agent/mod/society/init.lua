@@ -408,6 +408,13 @@ local function decide_and_act(self)
 	if MODEL then
 		if not self._pending then
 			request_id = request_id + 1
+			local query_parts = {GOAL}
+			if self._last_action then query_parts[#query_parts+1] = minetest.write_json(self._last_action) end
+			for _, id in ipairs(obs.nearby_agents) do query_parts[#query_parts+1] = "agent " .. id end
+			for _, node in ipairs(obs.local_view and obs.local_view.nodes or {}) do
+				query_parts[#query_parts+1] = node.name
+			end
+			local memory_query = table.concat(query_parts, " ")
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
 				self_id = self._id, time = minetest.get_gametime(), persona = self._persona, goal = GOAL,
@@ -416,7 +423,8 @@ local function decide_and_act(self)
 				last_action = self._last_action, incoming_messages = self._inbox,
 				visible_nodes = obs.local_view and obs.local_view.nodes or {},
 				inventory = self._resources:inventory(),
-				memory = MODEL_MEMORY and self._episodic:select(GOAL, {strategy=MEMORY_MODE, max_entries=8, max_chars=4096}) or {},
+				memory_query = memory_query,
+				memory = MODEL_MEMORY and self._episodic:select(memory_query, {strategy=MEMORY_MODE, max_entries=8, max_chars=4096}) or {},
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			context.local_actions = action_context.describe(minetest, pos,
@@ -677,7 +685,7 @@ minetest.after(1, function()
 	for bx = lo, hi do
 		for bz = lo, hi do
 			tried = tried + 1
-			if minetest.forceload_block({x = bx, y = 0, z = bz}, true, -1) then
+			if minetest.forceload_block({x = bx * 16, y = 0, z = bz * 16}, true, -1) then
 				ok = ok + 1
 			end
 		end

@@ -39,7 +39,7 @@ jobs:
           cd ..
           python3 -B -m unittest -v test_snapshot.py
           cd scale
-          python3 -B -m unittest -v test_queue_sim.py
+          python3 -B -m unittest -v test_queue_sim.py test_compare.py
           cd ../analysis
           python3 -B -m unittest -v
       - name: Prepare runtime
@@ -78,7 +78,7 @@ jobs:
       - name: Verify resource actions with deterministic fixture
         run: |
           exp=experiments/minecraft-societies
-          "$exp/agent/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1
+          "$exp/agent/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1 --set society_memory_mode=retrieval
           grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
           grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
       - name: Capacity ladder
@@ -147,6 +147,7 @@ jobs:
         run: |
           mkdir -p memory-results
           python3 -B experiments/minecraft-societies/model/memory_eval.py --output memory-results/tasks.json
+          python3 -B experiments/minecraft-societies/model/memory_eval.py --probe --output memory-results/concurrency.json
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:

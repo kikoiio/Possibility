@@ -85,7 +85,7 @@ def run(count,cognition,optimized,trial,decisions=12,profile=False):
     label=f'ci-opt-{count}-{str(cognition).lower()}-{str(optimized).lower()}-{trial}'
     if profile: label+='-profile'
     args=[str(EXP/'agent/run.sh'),'--label',label,'--agents',str(count),'--decisions',str(decisions),
-          '--interval','2','--seconds','240','--set','society_bound=128','--set','society_spacing=2',
+          '--interval','2','--seconds',str(max(240,decisions*20)),'--set','society_bound=128','--set','society_spacing=2',
           '--set',f'society_cognition={str(cognition).lower()}',
           '--set',f'society_optimized={str(optimized).lower()}',
           '--set',f'society_profile={str(profile).lower()}']
@@ -106,6 +106,7 @@ def main():
     ap.add_argument('--repeats',type=int,default=5)
     ap.add_argument('--output',type=Path,required=True)
     ap.add_argument('--long-decisions',type=int,default=60)
+    ap.add_argument('--long-only',action='store_true')
     args=ap.parse_args()
     args.output.parent.mkdir(parents=True,exist_ok=True)
     runs=[]
@@ -122,7 +123,7 @@ def main():
             'Intervals are targets. Round wall includes yields; round active excludes yields.',
             'Each side alternates within trial on one runner; trial order reverses.',
             'Behavior hashes omit timestamps and scheduling configuration.']},indent=2)+'\n')
-    for count in map(int,args.counts.split(',')):
+    for count in ([] if args.long_only else map(int,args.counts.split(','))):
         for cognition in (False,True):
             for trial in range(1,args.repeats+1):
                 for optimized in ((False,True) if trial%2 else (True,False)):
