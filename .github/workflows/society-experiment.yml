@@ -93,6 +93,23 @@ jobs:
               python3 "$exp/scale/queue_sim.py" --agents "$count" --workers "$workers" --latency 3 --seconds 60 --interval 2 --max-wait 30 > "$GITHUB_WORKSPACE/scale-results/queue-simulation/${count}-${workers}.json"
             done
           done
+          python3 - <<'PY'
+          import gzip
+          from pathlib import Path
+          import shutil
+          for log in Path('experiments/minecraft-societies/agent/evidence').glob('ci-large-*.log'):
+              with log.open('rb') as source, gzip.open(str(log) + '.gz', 'wb') as target:
+                  shutil.copyfileobj(source, target, 1024 * 1024)
+              log.unlink()
+              log.with_suffix('.events').unlink(missing_ok=True)
+              report = log.with_suffix('.report.txt')
+              header = []
+              with report.open() as source:
+                  for line in source:
+                      if line.startswith('--- SOCIETY'): break
+                      header.append(line)
+              report.write_text(''.join(header))
+          PY
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
