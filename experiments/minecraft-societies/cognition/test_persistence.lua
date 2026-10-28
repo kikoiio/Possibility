@@ -58,6 +58,8 @@ assert(b._persona == nil and b._target == nil and b._memory.idle_streak == 0
   and next(b._memory.met) == nil and b._episodic:size() == 0)
 local cleared = persistence.snapshot(b)
 assert(cleared.persona == nil and cleared.target == nil and #cleared.memory.met == 0)
+cleared.memory.met = nil; cleared.episodic = nil
+assert(persistence.restore(b, cleared) and b._episodic:size() == 0 and next(b._memory.met) == nil)
 -- The destination memory's own FIFO capacity governs retained episodes.
 local small = agent(1)
 persistence.restore(small, s)

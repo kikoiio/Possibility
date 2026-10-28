@@ -40,6 +40,7 @@ local function array(t)
 end
 
 local function episodes(entries)
+  entries = entries or {}
   local out = {}
   for i = 1, array(entries) do
     local e = entries[i]
@@ -60,8 +61,9 @@ local function normalise(s)
     and s.rng == math.floor(s.rng), "invalid RNG state")
   assert(type(s.memory) == "table", "invalid rule memory")
   local met, seen = {}, {}
-  for i = 1, array(s.memory.met) do
-    local id = s.memory.met[i]
+  local stored_met = s.memory.met or {}
+  for i = 1, array(stored_met) do
+    local id = stored_met[i]
     assert(id_ok(id) and not seen[id], "invalid or duplicate met id")
     seen[id] = true
     met[i] = id
