@@ -20,7 +20,7 @@
 
 ## 下一步
 
-1. 审阅主线基线中的删除范围和文档准确性，特别是本地配置路径（`.gitignore` 忽略根 `config.json`，本文旧记录写 `.data/wispiva/config.json`）。
+1. 审阅主线基线中的删除范围和文档准确性；本地配置的结论已确定（见下方约束）。
 2. 验证真实模型对长故事素材、起点与信息边界的处理，评估隐私审计的漏报、误报和返修成本。创建世界失败时不得用固定样例冒充模型结果。
 3. 明确空间方案的最小验证：先检查地点坐标、连接、方位与角色空间认知，再决定房间、道路、门洞和建造操作的扩展；通用主题内容包依赖空间基底，不把现有红发会专用造型视为通用能力。
 4. 验证角色经历与长期检索、反思、计划失效及分岔继承；已有有限经历和保存恢复不能代表这些目标已完成。
@@ -32,3 +32,4 @@
 - Luanti 路线使用服务端实体而非玩家客户端，是否接受这一形态仍待决定；环境选型和 LLM 社会行为尚无结论。
 - 原型与实验分支已推送远端并设置了上游追踪（`proto/world-genesis`、`experiment/minecraft-societies`）。早先的远端 `prototype/review-*` 审查分支已删除，其改动均已在 `proto/world-genesis` 中。真实配置、存档、依赖目录和实验运行时不在分支提交中。`.tmp/branch-migration/working-copy/` 是可恢复的本地临时备份，不是永久归档。
 - 原型依赖 `three` 未入库；在新工作区运行 `node prototypes/verify.mjs` 前，需在 `prototypes/` 下 `npm install`（可从本地 npm 缓存离线完成）。
+- 本地模型配置只有一个入口：根目录 `.env`（或 `WISPIVA_ENV_FILE` 指定的文件），由 `prototypes/model/config.mjs` 用 `parseEnv` 读取 `WISPIVA_LLM_BASE_URL`、`WISPIVA_LLM_MODEL`、`WISPIVA_LLM_API_KEY`。v1 引擎的 JSON 配置文件支持已随代码删除，`.gitignore` 中相关的 `/config.json` 规则一并移除；`.data/` 仍整体忽略。
