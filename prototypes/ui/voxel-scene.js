@@ -59,7 +59,7 @@ export async function createVoxelScene(host, initialWorld) {
   const chunks = new Map(), materials = new Map(), textures = new Map();
   // A simple backdrop gives the model a visual base without adding world cells.
   const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 64),
-    new THREE.MeshStandardMaterial({ color: 0x4a5558, roughness: 1, side: THREE.DoubleSide }));
+    new THREE.MeshStandardMaterial({ color: 0x353c40, roughness: 1, side: THREE.DoubleSide }));
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
   const target = new THREE.Vector3();

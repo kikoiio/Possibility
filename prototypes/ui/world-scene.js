@@ -510,7 +510,7 @@ export function buildWorldThree(THREE, shell, initialState, compiler, { createPl
         scene.add(ground);
       }
       ground.position.set(x, y - 0.42, z);      ground.scale.setScalar(extent);
-      ground.material.color.set(palette === 'victorian-archive' ? '#34383b' : rainy ? '#3e5148' : '#4a5558');
+      ground.material.color.set(palette === 'victorian-archive' ? '#34383b' : rainy ? '#3e5148' : '#353c40');
       ground.material.needsUpdate = true;
     };
     // The drag hint shares the chip row instead of floating in a corner: on a
