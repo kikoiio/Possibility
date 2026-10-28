@@ -92,6 +92,7 @@ run_once() {
   rm -rf "$world"
   mkdir -p "$world/worldmods/society"
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"

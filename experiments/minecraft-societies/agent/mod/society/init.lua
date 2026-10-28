@@ -14,6 +14,8 @@
 -- 引擎遍历活跃区块的顺序不保证稳定，把决策放进 on_step 会让日志交错随机化。
 
 local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
+local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
+local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -31,6 +33,7 @@ local STEP = tonumber(cfg("society_step", "2"))
 local STATS_EVERY = tonumber(cfg("society_stats_interval", "5"))
 local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
+local COGNITION = cfg("society_cognition", "false") == "true"
 
 -- persona 在 M0 里只是一个稳定标签，不影响行为；M2 起它才承载设定。
 local PERSONAS = {
@@ -280,6 +283,19 @@ local function decide_and_act(self)
 	pos = {x = fp(pos.x), y = fp(pos.y), z = fp(pos.z)}
 
 	local obs = observe(self, pos)
+	if COGNITION then
+		local local_obs, err = cognition_observe.observe(minetest, self.object,
+			{radius = SENSE, node_names = {MARK_NODE}})
+		if not local_obs then
+			ev("fail=observation agent=%d reason=%s", self._id, err)
+			S.failed = "observation"
+			return
+		end
+		self._episodic:add({time = minetest.get_gametime(),
+			text = string.format("nearby agents=%d marks=%d", #local_obs.agents, #local_obs.nodes),
+			source = {kind = "observation", id = self._id}})
+		obs.local_view = local_obs
+	end
 	local action = policy.decide({
 		id = self._id,
 		persona = self._persona,
@@ -345,6 +361,7 @@ local function spawn_agents()
 			le._decisions = 0
 			le._marks_placed = 0
 			le._memory = {met = {}, idle_streak = 0}
+			le._episodic = cognition_memory.new(32)
 			agents[i] = le
 			S.spawned = S.spawned + 1
 		end
