@@ -322,6 +322,7 @@ export function createCampExperience({ stateFile = join(root, '.data/prototype/s
 const files = { '/': ['ui/index.html', 'text/html'], '/app.js': ['ui/app.js', 'text/javascript'], '/style.css': ['ui/style.css', 'text/css'],
   '/scene.js': ['ui/scene.js', 'text/javascript'],
   '/world-scene.js': ['ui/world-scene.js', 'text/javascript'],
+  '/voxel-scene.js': ['ui/voxel-scene.js', 'text/javascript'],
   '/vendor/three.module.js': ['node_modules/three/build/three.module.js', 'text/javascript'],
   '/vendor/three.core.js': ['node_modules/three/build/three.core.js', 'text/javascript'],
   '/vendor/BufferGeometryUtils.js': ['node_modules/three/examples/jsm/utils/BufferGeometryUtils.js', 'text/javascript'] };

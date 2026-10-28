@@ -8,6 +8,7 @@ import { checkWorldCandidate, buildGenesisMessages } from './world-genesis.mjs';
 import { parseGeneratedJSON } from './model/generated-json.mjs';
 import { parseGenesisOutput, compileGenesisRecords, GENESIS_STAGES, readGenesisStage } from './genesis-records.mjs';
 import { emptyDialogue, validDialogue, checkDiscussion, buildDiscussionMessages } from './creation-dialogue.mjs';
+import { createVoxelWorldStore } from './voxel-world.mjs';
 const clone = value => structuredClone(value);
 
 export function createWorldCreation({ stateFile, createExperience, configLoader = loadModelConfig, fetchImpl = globalThis.fetch } = {}) {
@@ -30,6 +31,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     if (typeof saved.source?.name === 'string' && saved.source.name.length <= 120 && typeof saved.source?.text === 'string' && saved.source.text.length <= 100000 && saved.source.text.trim()) creation.source = saved.source;
     if (saved.pending) creation.dialogue.ready = false;
   }
+  creation.voxelId = /^[0-9a-f-]{36}$/.test(saved?.voxelId || '') ? saved.voxelId : randomUUID();
+  let voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) });
   // Fixed experiments are backups, never an active world in the creation flow.
   // Move the original bytes before opening a runtime (which could resume autonomy).
   if (existsSync(stateFile)) {
@@ -56,7 +59,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   const model = { pending: false, kind: 'creation', actorId: null, progress: null, lastResult: creation.lastResult };
   const persist = () => save({ schemaVersion: 1, ...creation, pending: Boolean(active && !active.controller.signal.aborted) });
   const state = () => ({ ...(inner?.state() ?? { world: null, worldMinute: 0, revision: 0, paused: true, speed: 24, waiting: null, actors: {}, autonomy: { enabled: false, waitingReason: null }, scene: null, model: { pending: false } }),
-    creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), hasWorld: Boolean(inner) },
+    creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), voxel: voxel.state(), hasWorld: Boolean(inner) },
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
   const response = (ok, message, extra = {}) => ({ ok, message, ...extra, state: state() });
   const blocked = () => Boolean(active || inner?.state().model.pending);
@@ -74,7 +77,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     switch (body?.type) {
       case 'creation-open': case 'reset':
         if (blocked()) return response(false, '请先完成或取消当前模型调用。');
-        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; creation.source = null; }
+        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; creation.source = null; creation.voxelId = randomUUID(); voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) }); }
         inner?.control({ type: 'pause' }); creation.mode = 'create'; creation.lastResult = null; epoch++; persist();
         return response(true, '从一个新想法开始，现有世界已暂停并保留。');
       case 'creation-resume':
@@ -84,8 +87,16 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再更换素材。');
         if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > 100000)) return response(false, '请选择不超过 10 万字的非空文本文件。');
         creation.source = body.source ? { name: body.source.name.trim(), text: body.source.text } : null;
+        creation.voxelId = randomUUID(); voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) });
         creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; epoch++; persist();
         return response(true, creation.source ? '素材已保存。告诉我想从哪里开始。' : '素材已移除，可以从自己的想法开始。');
+      }
+      case 'voxel-undo': case 'voxel-redo': {
+        if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再修改建造草稿。');
+        try {
+          voxel[body.type === 'voxel-undo' ? 'undo' : 'redo']({ baseRevision: body.baseRevision });
+          persist(); return response(true, body.type === 'voxel-undo' ? '已撤销上一次建造。' : '已恢复上一次建造。');
+        } catch (error) { return response(false, error.message || '修改未完成。'); }
       }
       case 'world-discard':
         if (blocked() || !creation.draft || creation.draft.id !== body.draftId) return response(false, '这个世界草稿已经变化。');
@@ -93,12 +104,14 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       case 'world-accept': {
         if (blocked() || !creation.draft || creation.draft.id !== body.draftId) return response(false, '这个世界草稿已经变化，不能创建。');
         if (creation.draft.baseConversationRevision !== undefined && creation.draft.baseConversationRevision !== creation.dialogue.revision) return response(false, '讨论已经更新，请先按新的设定生成草稿，再确认进入。');
+        if (creation.draft.baseVoxelId !== undefined && (creation.draft.baseVoxelId !== creation.voxelId || creation.draft.baseVoxelRevision !== voxel.state().revision)) return response(false, '建造草稿已经改变，请重新检查起点。');
+        if (voxel.state().cells.length) return response(false, '体素场景尚未与人物及地点绑定，暂时不能进入模拟；建造草稿已保存。');
         const checked = checkWorldCandidate(creation.draft.definition);
         if (!checked.ok) return response(false, '草稿未通过检查。', checked);
         const { definition } = checked;
         const next = new CampSimulation({ world: definition.world }); next.pause();
         const origin = next.view(1);
-        const genesis = { draftId: creation.draft.id, description: creation.draft.description, initialMemories: definition.initialMemories, instanceId: origin.instanceId, worldTitle: definition.world.title, scene: clone(definition.scene), adjustments: clone(creation.draft.adjustments || []), dialogue: clone(creation.dialogue) };
+        const genesis = { draftId: creation.draft.id, description: creation.draft.description, initialMemories: definition.initialMemories, instanceId: origin.instanceId, worldTitle: definition.world.title, scene: clone(definition.scene), voxel: voxel.state(), adjustments: clone(creation.draft.adjustments || []), dialogue: clone(creation.dialogue) };
         const ledgers = Object.fromEntries(definition.world.actors.map(a => [a.id, { entries: [], lastDecision: null }]));
         const experience = { ledgers, autonomy: { enabled: false, waitingReason: null, nextActorId: definition.world.actors[0].id }, lastResult: null, recovery: null,
           pending: false, pendingKind: null, genesis, scene: { document: definition.scene, revision: 0, draft: null, lastResult: null } };
@@ -141,7 +154,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     let result = { ok: false, reason: 'request-failed', message: '讨论没有完成，你的输入已保留。' };
     try {
       persist(); const { llm } = configLoader();
-      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source), fetchImpl, signal: controller.signal, onProgress: publish });
+      const voxelBasis = voxel.state();
+      const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source, voxelBasis), fetchImpl, signal: controller.signal, onProgress: publish });
       appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify({ role: 'world-discussion', ...r.audit })+'\n', { mode: 0o600 });
       if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '已停止回复，你的输入仍保留。' };
       else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: '这次回复未完成，可以继续发送消息；没有改变草稿。' };
@@ -149,11 +163,16 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       else {
         let value; try { value = parseGeneratedJSON(r.content).value; } catch {}
         if (!checkDiscussion(value)) result = { ok: false, reason: 'invalid-discussion', message: '回复格式不完整，请继续说明你的想法；没有据此生成世界。' };
+        else if (value.commands?.length && voxelBasis.cells.length > 5000) result = { ok: false, reason: 'scene-too-large', message: '当前场景过大，无法完整提供给模型；这次没有修改场景。' };
         else {
-          creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: value.reply.trim() });
-          creation.dialogue.summary = value.summary.trim();
-          creation.dialogue.ready = value.ready && creation.dialogue.messages.filter(m => m.role === 'user').length >= 2;
-          result = { ok: true, message: value.reply.trim() };
+          try { if (value.commands?.length) voxel.apply({ baseRevision: voxelBasis.revision, commands: value.commands }); }
+          catch (error) { result = { ok: false, reason: 'invalid-building', message: `建造未完成：${error.message}` }; }
+          if (result.reason !== 'invalid-building') {
+            creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: value.reply.trim() });
+            creation.dialogue.summary = value.summary.trim();
+            creation.dialogue.ready = value.ready && creation.dialogue.messages.filter(m => m.role === 'user').length >= 2;
+            result = { ok: true, message: value.reply.trim() };
+          }
         }
       }
     } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '回复或保存未完成，请检查模型连接与本地存储。' }; }
@@ -216,6 +235,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         if (checked && !checked.ok) result = { ...checked, message: '生成结果未通过世界规则或三维场景检查，请调整想法后再试。' };
         else if (checked) {
           creation.draft = { id: randomUUID(), description: description.trim(), definition: checked.definition,
+            baseVoxelId: creation.voxelId, baseVoxelRevision: voxel.state().revision,
             ...(conversational ? { baseConversationRevision: creation.dialogue.revision } : {}),
             adjustments: [...adjustments, ...checked.adjustments], privacyAudit: checked.privacyAudit, createdAt: new Date().toISOString() };
           result = { ok: true, message: '这一片起点已生成。看看画面和规律，可以继续告诉我哪里要改，满意后再进入。' };
