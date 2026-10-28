@@ -12,7 +12,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import ctypes
 import ctypes.util
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -29,11 +29,16 @@ import adapter
 ROOT = Path(__file__).resolve().parents[1]
 HARD_CALL_LIMIT = 48
 PROBE_REQUESTS = 8
+SCORE_CATEGORIES = ('correct', 'abstained', 'wrong_source_target', 'stale_fact_used',
+                    'known_failure_repeated', 'wrong_target', 'wrong_action',
+                    'wrong_answer', 'unscored')
+SCORE_FLAGS = ('abstained', 'wrong_source_target', 'stale_fact_used',
+               'known_failure_repeated', 'wrong_target', 'wrong_action')
 SAFE_ERRORS = frozenset({
     'invalid_config', 'invalid_context', 'request_too_large', 'transport_error',
     'invalid_content_type', 'response_too_large', 'output_too_large',
     'invalid_response', 'incomplete_response', 'provider_failed', 'invalid_action',
-    'deadline_exceeded', 'worker_failed', 'unexpected_error',
+    'deadline_exceeded', 'worker_failed', 'unexpected_error', 'rate_limited',
 })
 
 
@@ -144,6 +149,8 @@ class Case:
     events: list
     nearby: list
     expected: dict
+    # Scorer-only oracle. context_for deliberately enumerates provider fields.
+    score_oracle: dict = field(default_factory=dict)
 
 
 def cases(seed):
@@ -153,6 +160,9 @@ def cases(seed):
     old_code, new_code = ('key_' + ''.join(rng.choices('abcdefghjkmnpqrstuvwxyz', k=8))
                           for _ in range(2))
     failed, safe = rng.sample(['basalt', 'willow', 'slate', 'birch'], 2)
+    # Roles are chosen before an independent permutation of the displayed IDs.
+    # Neither recipient nor informant occupies a prescribed list position.
+    rng.shuffle(nearby)
 
     def event(at, text, kind='agent', identifier=informant):
         return {'time': at, 'text': text, 'source': {'kind': kind, 'id': identifier}}
@@ -167,24 +177,28 @@ def cases(seed):
     return [
         Case('delayed_recall', seed, 'cedar cache passphrase', recall,
              [event(1, f'The cedar cache passphrase is {old_code}.')] + distractors,
-             nearby, {'kind': 'say', 'target': recipient, 'text': old_code}),
+             nearby, {'kind': 'say', 'target': recipient, 'text': old_code},
+             {'abstention_text': 'unknown'}),
         Case('source_attribution', seed, 'amber cache location informant',
              prefix + 'Tell the original informant of the amber cache location, '
              'using the memory source ID as target and text ack. '
              f'If unavailable, tell agent {recipient} with text unknown.',
              [event(1, 'The amber cache location is north meadow.')] + distractors,
-             nearby, {'kind': 'say', 'target': informant, 'text': 'ack'}),
+             nearby, {'kind': 'say', 'target': informant, 'text': 'ack'},
+             {'abstention_text': 'unknown', 'source_attribution': True}),
         Case('stale_fact', seed, 'cedar cache passphrase', recall +
              ' Prefer the latest timestamp when matching facts conflict.',
              [event(1, f'The cedar cache passphrase is {old_code}.'),
               event(3, f'The cedar cache passphrase is {new_code}.')] + distractors,
-             nearby, {'kind': 'say', 'target': recipient, 'text': new_code}),
+             nearby, {'kind': 'say', 'target': recipient, 'text': new_code},
+             {'abstention_text': 'unknown', 'stale_answer': old_code}),
         Case('avoiding_known_failure', seed, 'bridge crossing failed safe alternative',
              prefix + f'Tell agent {recipient} the safe alternative bridge recorded '
              'after a failed crossing. Use only its name as text; if unavailable use unknown.',
              [event(1, f'The {failed} bridge crossing failed; the safe alternative is {safe}.',
                     'action', recipient)] + distractors,
-             nearby, {'kind': 'say', 'target': recipient, 'text': safe}),
+             nearby, {'kind': 'say', 'target': recipient, 'text': safe},
+             {'abstention_text': 'unknown', 'failed_answer': failed}),
     ]
 
 
@@ -202,6 +216,42 @@ def correct_action(action, expected):
             and {key: value for key, value in action.items() if key != 'why'} == expected)
 
 
+def score_details(action, expected, oracle=None):
+    """Classify an adapter-validated action using only the private Case oracle.
+
+    Labels never contain answers or IDs. None means unmeasured (no validated
+    response or an inapplicable task); false means measured and not observed.
+    Flags can overlap, while category is exclusive in the precedence below.
+    Abstention and known mistakes require exact text, never inferred intent.
+    """
+    result = {'scored': action is not None, 'category': 'unscored',
+              **{flag: None for flag in SCORE_FLAGS}}
+    if action is None:
+        return result
+    oracle = oracle or {}
+    say = action.get('kind') == 'say'
+    text = action.get('text') if say else None
+    if oracle.get('abstention_text') is not None:
+        result['abstained'] = say and text == oracle['abstention_text']
+    abstained = result['abstained'] is True
+    result['wrong_target'] = say and not abstained and action.get('target') != expected.get('target')
+    result['wrong_action'] = action.get('kind') != expected.get('kind')
+    if oracle.get('source_attribution') is True:
+        result['wrong_source_target'] = result['wrong_target']
+    if oracle.get('stale_answer') is not None:
+        result['stale_fact_used'] = say and text == oracle['stale_answer']
+    if oracle.get('failed_answer') is not None:
+        result['known_failure_repeated'] = say and text == oracle['failed_answer']
+    if correct_action(action, expected):
+        result['category'] = 'correct'
+    else:
+        result['category'] = next((flag for flag in (
+            'abstained', 'stale_fact_used', 'known_failure_repeated',
+            'wrong_source_target', 'wrong_action', 'wrong_target') if result[flag] is True),
+            'wrong_answer')
+    return result
+
+
 def audit_usage(audit):
     """No token estimates: a missing audit keeps the exact total unknown.
 
@@ -209,6 +259,8 @@ def audit_usage(audit):
     total. When supplied it must agree. Booleans are never accepted as counts.
     """
     usage = audit.get('usage') if isinstance(audit, dict) else None
+    if isinstance(usage, dict) and usage.get('invalid') is True:
+        return {'status': 'invalid', 'tokens': None}
     if not isinstance(usage, dict) or not all(key in usage for key in ('input_tokens', 'output_tokens')):
         return {'status': 'missing', 'tokens': None}
     counts = [usage['input_tokens'], usage['output_tokens']]
@@ -222,12 +274,18 @@ def audit_usage(audit):
                                                 output_tokens=counts[1], total_tokens=total)}
 
 
+def _goal_recipient(goal):
+    match = re.search(r'\b(?:tell|to) agent (\d+)\b', goal, flags=re.IGNORECASE)
+    if not match:
+        raise ValueError('fixture_missing_recipient')
+    return int(match[1])
+
+
 def _fixture_transport(config, body):
     """Read selected facts, rather than an oracle or strategy, through the API."""
     context = json.loads(json.loads(body)['input'][1]['content'])
     goal = context['goal']
-    target_match = re.search(r'Tell agent (\d+)', goal)
-    target = int(target_match[1]) if target_match else context['observation']['nearby_agents'][0]
+    target = _goal_recipient(goal)
     text = 'unknown'
     facts = sorted(context.get('memory', []), key=lambda event: event['time'], reverse=True)
     if 'original informant' in goal:
@@ -253,15 +311,17 @@ def _fixture_transport(config, body):
     return ('data: ' + compact(response) + '\n\n').encode()
 
 
-def evaluate_decision(config, context, expected, transport=None):
+def evaluate_decision(config, context, expected, transport=None, *, score_oracle=None):
     """One adapter attempt, including safe failure accounting; never retry."""
     started = time.monotonic()
     audit, error, valid, correct = {}, None, False, False
+    details = score_details(None, expected)
     try:
         kwargs = {} if transport is None else {'transport': transport}
         result = adapter.decide(config, context, **kwargs)
         audit = result['audit']
         valid, correct = True, correct_action(result['action'], expected)
+        details = score_details(result['action'], expected, score_oracle)
     except adapter.ModelError as exc:
         error = str(exc) if str(exc) in SAFE_ERRORS else 'unexpected_error'
         audit = exc.audit
@@ -271,6 +331,7 @@ def evaluate_decision(config, context, expected, transport=None):
     if type(latency) not in (int, float) or not math.isfinite(latency) or latency < 0:
         latency = None
     return {'valid_action': valid, 'correct': correct, 'error': error,
+            'score_details': details,
             'adapter_called': True, 'elapsed_ms': (time.monotonic() - started) * 1000,
             'provider_latency_ms': latency, 'token_audit': audit_usage(audit)}
 
@@ -285,7 +346,8 @@ def _worker(fixture, deadline):
                   if fixture else adapter.Config.from_env())
         config = replace(config, socket_timeout=min(config.socket_timeout, deadline))
         record = evaluate_decision(config, payload['context'], payload['expected'],
-                                   _fixture_transport if fixture else None)
+                                   _fixture_transport if fixture else None,
+                                   score_oracle=payload.get('score_oracle'))
         print(compact(record))
         return 0
     except Exception:
@@ -293,13 +355,14 @@ def _worker(fixture, deadline):
         return 1
 
 
-def invoke(context, expected, *, fixture, deadline):
+def invoke(context, expected, *, fixture, deadline, score_oracle=None):
     command = [sys.executable, str(Path(__file__).resolve()), '--worker', '--deadline', str(deadline)]
     if fixture:
         command.append('--fixture')
     started = time.monotonic()
     try:
-        result = subprocess.run(command, input=compact({'context': context, 'expected': expected}).encode(),
+        result = subprocess.run(command, input=compact({'context': context, 'expected': expected,
+                                                       'score_oracle': score_oracle}).encode(),
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 timeout=deadline, check=False)
         if result.returncode or len(result.stdout) > 4096:
@@ -307,7 +370,7 @@ def invoke(context, expected, *, fixture, deadline):
         record = json.loads(result.stdout)
         if not isinstance(record, dict) or set(record) != {
                 'valid_action', 'correct', 'error', 'adapter_called', 'elapsed_ms',
-                'provider_latency_ms', 'token_audit'}:
+                'provider_latency_ms', 'token_audit', 'score_details'}:
             raise ValueError
     except subprocess.TimeoutExpired:
         record = _failed_record('deadline_exceeded')
@@ -319,6 +382,7 @@ def invoke(context, expected, *, fixture, deadline):
 
 def _failed_record(code):
     return {'valid_action': False, 'correct': False, 'error': code,
+            'score_details': score_details(None, {}),
             'adapter_called': None, 'elapsed_ms': None, 'provider_latency_ms': None,
             'token_audit': {'status': 'missing', 'tokens': None}}
 
@@ -331,7 +395,16 @@ def summarize(records):
     totals = dict(input_tokens=0, output_tokens=0, total_tokens=0)
     audits = {'complete': 0, 'missing': 0, 'invalid': 0}
     errors = {}
+    categories = dict.fromkeys(SCORE_CATEGORIES, 0)
+    flags = {flag: {'count': 0, 'measured': 0} for flag in SCORE_FLAGS}
     for record in records:
+        details = record['score_details']
+        categories[details['category']] += 1
+        for flag in SCORE_FLAGS:
+            value = details[flag]
+            if type(value) is bool:
+                flags[flag]['measured'] += 1
+                flags[flag]['count'] += int(value)
         audit = record['token_audit']
         audits[audit['status']] += 1
         if audit['tokens'] is not None:
@@ -341,6 +414,7 @@ def summarize(records):
             errors[record['error']] = errors.get(record['error'], 0) + 1
     return {'requests': len(records), 'valid_actions': sum(r['valid_action'] for r in records),
             'correct': sum(r['correct'] for r in records),
+            'score_categories': categories, 'score_flags': flags,
             'incorrect': sum(r['valid_action'] and not r['correct'] for r in records),
             'errors': errors, 'error_count': sum(errors.values()),
             'adapter_completions': sum(r['adapter_called'] is True for r in records),
@@ -369,7 +443,8 @@ def task_suite(lua, seeds, *, capacity=16, max_entries=2, max_chars=512,
                 plan.append((case, strategy, selection))
     for case, strategy, selection in plan:
         context = context_for(case, selection['entries'])
-        record = invoke(context, case.expected, fixture=fixture, deadline=deadline)
+        record = invoke(context, case.expected, fixture=fixture, deadline=deadline,
+                        score_oracle=case.score_oracle)
         record.update(task=case.task, seed=case.seed, strategy=strategy,
                       event_stream_sha256=digest(case.events), query_sha256=digest(case.query),
                       goal_sha256=digest(case.goal), context_sha256=digest(context),
@@ -393,6 +468,7 @@ def task_suite(lua, seeds, *, capacity=16, max_entries=2, max_chars=512,
             'budget_units': 'compact_complete_entry_json_utf8_bytes_including_array_punctuation',
             'limitations': ['Lexical/entity matching with recency ties cannot reliably resolve conflicting facts or paraphrases.',
                             'Synthetic tasks measure exact legal messages, not world action execution.',
+                            'Abstention and known mistakes require exact legal say text; other wrong replies are not evidence of stale-fact use or repeated failure.',
                             'Three paired seeds are exploratory, not statistical proof of model quality.']}
 
 
@@ -464,7 +540,7 @@ def main(argv=None):
         report = (concurrency_probe(levels, **kwargs) if levels else
                   task_suite(LuaMemory(args.lua), args.seeds, capacity=args.capacity,
                              max_entries=args.max_entries, max_chars=args.max_chars, **kwargs))
-        report.update(schema_version=1, fixture=args.fixture,
+        report.update(schema_version=2, fixture=args.fixture,
                       evidence_kind='synthetic_fixture' if args.fixture else 'actual_configured_model',
                       token_usage_kind='synthetic_fixture' if args.fixture else 'provider_reported',
                       model_sha256=digest(config.model),
@@ -474,6 +550,17 @@ def main(argv=None):
                       planned_calls=calls, call_limit=args.max_calls, retries=0,
                       max_output_tokens=256, deadline_seconds=args.deadline,
                       objective='exact_legal_say_action',
+                      score_semantics={
+                          'oracle_in_provider_context': False,
+                          'flags_may_overlap': True,
+                          'unmeasured_flag_value': None,
+                          'summary_flag_denominator': 'measured',
+                          'abstention_match': 'exact_task_oracle_text',
+                          'known_mistake_match': 'exact_task_oracle_text',
+                          'category_precedence': [
+                              'correct', 'abstained', 'stale_fact_used', 'known_failure_repeated',
+                              'wrong_source_target', 'wrong_action', 'wrong_target', 'wrong_answer'],
+                          'provider_or_validation_failure_category': 'unscored'},
                       audit_ok=report['summary']['exact_token_totals'] is not None)
         output = compact(report) + '\n'
         if args.output:

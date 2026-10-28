@@ -15,6 +15,10 @@ import memory_eval as evaluation
 CONFIG = adapter.Config('https://fixture.invalid/v1', 'fixture', 'private-key-never-log')
 
 
+def other_target(case):
+    return next(agent for agent in case.nearby if agent != case.expected['target'])
+
+
 def response(action, usage=None):
     event = {'type': 'response.completed', 'response': {'status': 'completed',
              'output': [{'type': 'message', 'content': [{'type': 'output_text',
@@ -25,7 +29,10 @@ def response(action, usage=None):
 
 
 def completed_record(correct=True):
+    expected = {'kind': 'say', 'target': 1, 'text': 'ack'}
+    action = {**expected, 'why': 'model', 'text': 'ack' if correct else 'other'}
     return {'valid_action': True, 'correct': correct, 'error': None,
+            'score_details': evaluation.score_details(action, expected),
             'adapter_called': True, 'elapsed_ms': 1, 'provider_latency_ms': 1,
             'wall_ms': 2, 'token_audit': evaluation.audit_usage(
                 {'usage': {'input_tokens': 12, 'output_tokens': 4}})}
@@ -69,7 +76,8 @@ class MemoryEvaluationTests(unittest.TestCase):
         def offline(context, expected, **kwargs):
             seen.append(copy.deepcopy(context))
             result = evaluation.evaluate_decision(CONFIG, context, expected,
-                                                  evaluation._fixture_transport)
+                                                  evaluation._fixture_transport,
+                                                  score_oracle=kwargs.get('score_oracle'))
             result['wall_ms'] = 1
             return result
 
@@ -113,7 +121,7 @@ class MemoryEvaluationTests(unittest.TestCase):
         correct = evaluation.evaluate_decision(CONFIG, context, case.expected,
                                                lambda *_: response(case.expected))
         self.assertTrue(correct['correct'])
-        for action in ({**case.expected, 'target': case.nearby[0]},
+        for action in ({**case.expected, 'target': other_target(case)},
                        {**case.expected, 'text': 'ack extra'}, {'kind': 'inspect'}):
             record = evaluation.evaluate_decision(CONFIG, context, case.expected,
                                                    lambda *_, action=action: response(action))
@@ -312,6 +320,245 @@ class MemoryEvaluationTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(evaluation.main([]), 2)
             invoke.assert_not_called()
+
+
+class FinalContractTests(unittest.TestCase):
+    """Generation and mocked-adapter regressions; no fixture/provider requests."""
+
+    def test_role_positions_are_shuffled_after_assignment_and_seeded(self):
+        positions = {'recipient': set(), 'informant': set()}
+        for seed in range(24):
+            generated = evaluation.cases(seed)
+            recall, source = generated[:2]
+            self.assertEqual(generated, evaluation.cases(seed))
+            self.assertEqual(recall.nearby, source.nearby)
+            recipient, informant = recall.expected['target'], source.expected['target']
+            self.assertNotEqual(recipient, informant)
+            self.assertEqual(informant, source.events[0]['source']['id'])
+            positions['recipient'].add(recall.nearby.index(recipient))
+            positions['informant'].add(source.nearby.index(informant))
+        self.assertGreater(len(positions['recipient']), 1)
+        self.assertGreater(len(positions['informant']), 1)
+        self.assertNotEqual(positions['recipient'], {0})
+        self.assertNotEqual(positions['informant'], {1})
+
+    def test_goal_fallback_recipient_is_not_inferred_from_nearby_position(self):
+        different_from_first = False
+        for seed in range(12):
+            recall, source = evaluation.cases(seed)[:2]
+            parsed = evaluation._goal_recipient(source.goal)
+            self.assertEqual(parsed, recall.expected['target'])
+            self.assertNotEqual(parsed, source.expected['target'])
+            different_from_first |= parsed != source.nearby[0]
+        self.assertTrue(different_from_first)
+        self.assertEqual(evaluation._goal_recipient('Return a say action to agent 1 with text ack.'), 1)
+
+    def test_invalid_marker_precedes_missing_or_otherwise_valid_usage(self):
+        for usage in ({'invalid': True},
+                      {'input_tokens': 12, 'invalid': True},
+                      {'input_tokens': 12, 'output_tokens': 4, 'invalid': True},
+                      {'input_tokens': 12, 'output_tokens': 4, 'total_tokens': 16,
+                       'invalid': True}):
+            with self.subTest(usage=usage):
+                self.assertEqual(evaluation.audit_usage({'usage': usage}),
+                                 {'status': 'invalid', 'tokens': None})
+        self.assertEqual(evaluation.audit_usage({'usage': {
+            'input_tokens': 12, 'output_tokens': 4, 'invalid': False}})['status'], 'complete')
+
+    def test_invalid_marker_fails_report_audit_even_when_answer_correct(self):
+        case = evaluation.cases(1)[0]
+        with mock.patch.object(adapter, 'decide', return_value={
+                'action': {**case.expected, 'why': 'model'},
+                'audit': {'usage': {'input_tokens': 12, 'output_tokens': 4, 'invalid': True}}}):
+            record = evaluation.evaluate_decision(CONFIG, evaluation.context_for(case, []),
+                                                  case.expected, score_oracle=case.score_oracle)
+        self.assertTrue(record['correct'])
+        record['wall_ms'] = 1
+        summary = evaluation.summarize([record])
+        self.assertEqual(summary['token_audits']['invalid'], 1)
+        self.assertIsNone(summary['exact_token_totals'])
+        self.assertEqual(summary['known_token_totals']['total_tokens'], 0)
+
+    def test_rate_limit_retains_safe_error_and_is_not_retried(self):
+        case = evaluation.cases(1)[0]
+        with mock.patch.object(adapter, 'decide', side_effect=adapter.ModelError(
+                'rate_limited', audit={'usage': {}})) as decide:
+            record = evaluation.evaluate_decision(CONFIG, evaluation.context_for(case, []),
+                                                  case.expected, score_oracle=case.score_oracle)
+        decide.assert_called_once()
+        self.assertEqual(record['error'], 'rate_limited')
+        self.assertEqual(record['score_details']['category'], 'unscored')
+        record['wall_ms'] = 1
+        summary = evaluation.summarize([record])
+        self.assertEqual(summary['errors'], {'rate_limited': 1})
+        self.assertEqual(summary['token_audits']['missing'], 1)
+        self.assertIsNone(summary['exact_token_totals'])
+
+
+class ScoreDetailTests(unittest.TestCase):
+    """Pure scorer/mocked-adapter checks; no fixture or provider requests."""
+
+    def score(self, case, action):
+        return evaluation.score_details({**action, 'why': 'model'},
+                                        case.expected, case.score_oracle)
+
+    def test_only_exact_abstention_is_abstained_not_wrong_source(self):
+        case = evaluation.cases(1)[1]
+        abstain = {'kind': 'say', 'target': case.nearby[0], 'text': 'unknown'}
+        details = self.score(case, abstain)
+        self.assertEqual(details['category'], 'abstained')
+        self.assertTrue(details['abstained'])
+        self.assertFalse(details['wrong_source_target'])
+        for text in ('Unknown', 'unknown location', 'I do not know'):
+            with self.subTest(text=text):
+                details = self.score(case, {**case.expected, 'text': text})
+                self.assertEqual(details['category'], 'wrong_answer')
+                self.assertFalse(details['abstained'])
+
+    def test_wrong_source_target_is_task_specific_and_primary_score_stays_exact(self):
+        case = evaluation.cases(1)[1]
+        wrong = {**case.expected, 'target': other_target(case)}
+        details = self.score(case, wrong)
+        self.assertEqual(details['category'], 'wrong_source_target')
+        self.assertTrue(details['wrong_source_target'])
+        self.assertTrue(details['wrong_target'])
+        self.assertIsNone(details['stale_fact_used'])
+        self.assertIsNone(details['known_failure_repeated'])
+        self.assertFalse(evaluation.correct_action({**wrong, 'why': 'model'}, case.expected))
+        self.assertEqual(self.score(case, case.expected)['category'], 'correct')
+        other = evaluation.cases(1)[0]
+        details = self.score(other, {**other.expected, 'target': other_target(other)})
+        self.assertEqual(details['category'], 'wrong_target')
+        self.assertIsNone(details['wrong_source_target'])
+
+    def test_stale_fact_requires_old_code_match_not_any_wrong_answer(self):
+        case = evaluation.cases(2)[2]
+        old = case.score_oracle['stale_answer']
+        details = self.score(case, {**case.expected, 'text': old})
+        self.assertEqual(details['category'], 'stale_fact_used')
+        self.assertTrue(details['stale_fact_used'])
+        for text, category in (('unknown', 'abstained'), ('invented_code', 'wrong_answer'),
+                               (old + ' maybe', 'wrong_answer'),
+                               (case.expected['text'], 'correct')):
+            with self.subTest(text=text):
+                details = self.score(case, {**case.expected, 'text': text})
+                self.assertEqual(details['category'], category)
+                self.assertFalse(details['stale_fact_used'])
+        self.assertNotIn(old, evaluation.compact(details))
+
+    def test_failed_bridge_requires_failed_name_and_overlapping_flags_are_explicit(self):
+        case = evaluation.cases(3)[3]
+        failed = case.score_oracle['failed_answer']
+        details = self.score(case, {**case.expected, 'text': failed, 'target': other_target(case)})
+        self.assertEqual(details['category'], 'known_failure_repeated')
+        self.assertTrue(details['known_failure_repeated'])
+        self.assertTrue(details['wrong_target'])
+        self.assertIsNone(details['stale_fact_used'])
+        for text, category in (('unknown', 'abstained'), ('unrelated_bridge', 'wrong_answer'),
+                               (failed + ' bridge', 'wrong_answer'),
+                               (case.expected['text'], 'correct')):
+            with self.subTest(text=text):
+                details = self.score(case, {**case.expected, 'text': text})
+                self.assertEqual(details['category'], category)
+                self.assertFalse(details['known_failure_repeated'])
+        self.assertEqual(self.score(case, {'kind': 'inspect'})['category'], 'wrong_action')
+
+    def test_provider_and_validation_failures_are_unscored_not_known_mistakes(self):
+        case = evaluation.cases(2)[2]
+        for error in ('provider_failed', 'invalid_action', 'transport_error'):
+            with self.subTest(error=error), mock.patch.object(
+                    adapter, 'decide', side_effect=adapter.ModelError(error)):
+                record = evaluation.evaluate_decision(
+                    CONFIG, evaluation.context_for(case, []), case.expected,
+                    score_oracle=case.score_oracle)
+                self.assertFalse(record['correct'])
+                self.assertFalse(record['score_details']['scored'])
+                self.assertEqual(record['score_details']['category'], 'unscored')
+                self.assertTrue(all(record['score_details'][flag] is None
+                                    for flag in evaluation.SCORE_FLAGS))
+        timeout = evaluation._failed_record('deadline_exceeded')
+        timeout['wall_ms'] = 1
+        summary = evaluation.summarize([timeout])
+        self.assertEqual(summary['score_categories']['unscored'], 1)
+        self.assertTrue(all(v == {'count': 0, 'measured': 0}
+                            for v in summary['score_flags'].values()))
+
+    def test_worker_scores_private_oracle_without_passing_it_to_adapter_or_logging_it(self):
+        case = evaluation.cases(2)[2]
+        context = evaluation.context_for(case, [])
+        old = case.score_oracle['stale_answer']
+        payload = evaluation.compact({'context': context, 'expected': case.expected,
+                                      'score_oracle': case.score_oracle}).encode()
+        action = {**case.expected, 'text': old, 'why': 'model'}
+        out = io.StringIO()
+        with mock.patch.object(adapter.Config, 'from_env', return_value=CONFIG), \
+                mock.patch.object(adapter, 'decide', return_value={
+                    'action': action, 'audit': {'usage': {'input_tokens': 5, 'output_tokens': 2}}}) as decide, \
+                mock.patch.object(evaluation.sys, 'stdin', mock.Mock(buffer=io.BytesIO(payload))), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(evaluation._worker(False, 5), 0)
+        decide.assert_called_once()
+        self.assertEqual(decide.call_args.args[1], context)
+        self.assertEqual(decide.call_args.kwargs, {})
+        self.assertNotIn(old, evaluation.compact(context))
+        self.assertNotIn('score_oracle', context)
+        self.assertNotIn('expected', context)
+        record = json.loads(out.getvalue())
+        self.assertFalse(record['correct'])
+        self.assertTrue(record['score_details']['stale_fact_used'])
+        self.assertNotIn(old, out.getvalue())
+        self.assertNotIn(CONFIG.api_key, out.getvalue())
+
+    def test_invoke_serializes_oracle_outside_provider_context(self):
+        case = evaluation.cases(3)[3]
+        context = evaluation.context_for(case, [])
+        record = completed_record()
+        record.pop('wall_ms')
+        with mock.patch.object(evaluation.subprocess, 'run', return_value=
+                subprocess.CompletedProcess([], 0, evaluation.compact(record).encode())) as run:
+            evaluation.invoke(context, case.expected, fixture=False, deadline=1,
+                              score_oracle=case.score_oracle)
+        run.assert_called_once()
+        payload = json.loads(run.call_args.kwargs['input'])
+        self.assertEqual(payload['score_oracle'], case.score_oracle)
+        self.assertEqual(payload['context'], context)
+        self.assertNotIn('score_oracle', payload['context'])
+        self.assertNotIn('failed_answer', evaluation.compact(payload['context']))
+
+    def test_task_summary_counts_categories_and_only_applicable_flags(self):
+        lua = mock.Mock(runtime='mock')
+        lua.select.return_value = {'entries': [], 'stored_entries': 13, 'serialized_chars': 2}
+
+        def mocked_decision(context, expected, *, score_oracle, **kwargs):
+            record = completed_record()
+            record['score_details'] = evaluation.score_details(
+                {**expected, 'why': 'model'}, expected, score_oracle)
+            return record
+
+        with mock.patch.object(evaluation, 'invoke', side_effect=mocked_decision):
+            report = evaluation.task_suite(lua, [1, 2, 3])
+        summary = report['summary']
+        self.assertEqual(summary['correct'], 24)
+        self.assertEqual(summary['score_categories']['correct'], 24)
+        self.assertEqual(sum(summary['score_categories'].values()), 24)
+        self.assertEqual(summary['score_flags']['abstained'], {'count': 0, 'measured': 24})
+        for flag in ('wrong_source_target', 'stale_fact_used', 'known_failure_repeated'):
+            self.assertEqual(summary['score_flags'][flag], {'count': 0, 'measured': 6})
+            self.assertEqual(report['by_strategy']['retrieval']['score_flags'][flag],
+                             {'count': 0, 'measured': 3})
+
+    def test_summary_does_not_relabel_wrong_answers_as_known_mistakes(self):
+        records = []
+        for case in evaluation.cases(1):
+            record = completed_record(False)
+            record['score_details'] = self.score(case, {**case.expected, 'text': 'unrelated_answer'})
+            records.append(record)
+        summary = evaluation.summarize(records)
+        self.assertEqual(summary['score_categories']['wrong_answer'], 4)
+        self.assertEqual(summary['score_categories']['stale_fact_used'], 0)
+        self.assertEqual(summary['score_categories']['known_failure_repeated'], 0)
+        self.assertEqual(summary['score_flags']['stale_fact_used'], {'count': 0, 'measured': 1})
+        self.assertEqual(summary['score_flags']['known_failure_repeated'], {'count': 0, 'measured': 1})
 
 
 if __name__ == '__main__':

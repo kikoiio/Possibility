@@ -205,7 +205,7 @@ experiments/minecraft-societies/
 
 ## 第二轮复现入口
 
-`experiment/cloud-run-opt-*` 运行新旧完整规则负载的五次交替对照（1000／5000／10000 各占一台 runner）；`experiment/cloud-run-memory-*` 运行四类受控记忆任务和有界模型并发探针。新 artifact 名为 `society-results-1000`、`society-results-5000`、`society-results-10000`，记忆任务和其他单任务为 `society-results-0`。用 `gh run download <ID> -D .tmp/<新目录>` 下载全部，需先创建项目 `.tmp` 并设置 `TMPDIR="$PWD/.tmp"`。
+`experiment/cloud-run-opt-*` 运行新旧完整规则负载的五次交替对照（1000／5000／10000 各占一台 runner）；`experiment/cloud-run-memory-*` 运行四类受控记忆任务和有界模型并发探针。模型任务有单独串行组，可与容量任务在独立 runner 并行。新 artifact 名为 `society-results-1000`、`society-results-5000`、`society-results-10000`，记忆任务和其他单任务为 `society-results-0`。用 `gh run download <ID> -D .tmp/<新目录>` 下载全部，需先创建项目 `.tmp` 并设置 `TMPDIR="$PWD/.tmp"`。
 
 默认 `society_optimized=true`；设为 false 使用保留的旧扫描／追赶调度进行对照。两侧都以角色 ID 稳定排序邻居。索引在角色移动后立即更新；节点缓存仅用于本实验无外部写入的世界，所有本 mod 写入都会失效对应 16³ 格，未加载格不缓存。预算是每 callback 25 ms 的软上限，单次动作无法被抢占；角色全部完成一轮后才进入下一轮。
 

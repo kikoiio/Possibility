@@ -1,5 +1,7 @@
 import asyncio
+import io
 import json
+import traceback
 import unittest
 from unittest import mock
 
@@ -11,10 +13,11 @@ CTX = {'observation': {'has_target': False, 'nearby_agents': [2, 3]},
        'bounds': {'min': {'x': -5, 'y': 1, 'z': -5}, 'max': {'x': 5, 'y': 1, 'z': 5}}}
 
 
-def stream(action, status='completed'):
+def stream(action, status='completed', *, usage=None):
     events = [{'type': 'response.output_text.delta', 'delta': json.dumps(action)},
               {'type': 'response.completed', 'response': {'status': status,
-               'usage': {'input_tokens': 12, 'output_tokens': 4, 'ignored': 'secret-key'}}}]
+               'usage': {'input_tokens': 12, 'output_tokens': 4, 'ignored': 'secret-key'}
+               if usage is None else usage}}]
     return ''.join('data: ' + json.dumps(e) + '\n\n' for e in events).encode()
 
 
@@ -48,6 +51,46 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result['audit']['usage'], {'input_tokens': 12, 'output_tokens': 4})
         self.assertNotIn('secret-key', repr(result))
         self.assertNotIn('secret-key', repr(CONFIG))
+
+    def test_invalid_present_token_fields_are_marked_while_valid_counts_survive(self):
+        valid = {'input_tokens': 12, 'output_tokens': 4, 'total_tokens': 16}
+        for field in valid:
+            for value in (None, True, False, -1, 10**9 + 1, 12.0, 0.5,
+                          float('nan'), float('inf'), -float('inf'), 'private-count', {}, []):
+                with self.subTest(field=field, value=value):
+                    usage = {**valid, field: value, 'ignored': 'secret-key'}
+                    result = adapter.decide(
+                        CONFIG, CTX, transport=lambda *_: stream({'kind': 'inspect'}, usage=usage),
+                    )
+                    expected = {**valid, 'invalid': True}
+                    del expected[field]
+                    self.assertEqual(result['audit']['usage'], expected)
+                    self.assertEqual(result['action'], {'kind': 'inspect', 'why': 'model'})
+                    self.assertNotIn('secret-key', repr(result))
+                    self.assertNotIn('private-count', repr(result))
+
+    def test_absent_token_fields_and_valid_boundary_counts_keep_existing_semantics(self):
+        for usage, expected in (
+            ({}, {}),
+            ({'input_tokens': 12}, {'input_tokens': 12}),
+            ({'input_tokens': 0, 'output_tokens': 10**9, 'total_tokens': 10**9},
+             {'input_tokens': 0, 'output_tokens': 10**9, 'total_tokens': 10**9}),
+            ({'input_tokens': 12, 'output_tokens': 4, 'invalid': True, 'ignored': 'secret-key'},
+             {'input_tokens': 12, 'output_tokens': 4}),
+        ):
+            with self.subTest(usage=usage):
+                result = adapter.decide(
+                    CONFIG, CTX, transport=lambda *_: stream({'kind': 'inspect'}, usage=usage),
+                )
+                self.assertEqual(result['audit']['usage'], expected)
+
+    def test_invalid_usage_marker_survives_invalid_action_audit(self):
+        usage = {'input_tokens': 12, 'output_tokens': 4, 'total_tokens': 'private-count'}
+        with self.assertRaisesRegex(adapter.ModelError, '^invalid_action$') as caught:
+            adapter.decide(CONFIG, CTX, transport=lambda *_: stream({'kind': 'advance'}, usage=usage))
+        self.assertEqual(caught.exception.audit['usage'],
+                         {'input_tokens': 12, 'output_tokens': 4, 'invalid': True})
+        self.assertNotIn('private-count', repr(caught.exception.audit))
 
     def test_actions_and_context_constraints(self):
         valid = [{'kind': 'inspect'}, {'kind': 'mark'}, {'kind': 'wander', 'point': {'x': 5, 'y': 1, 'z': -5}},
@@ -113,6 +156,29 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaises(adapter.ModelError) as caught:
                 adapter.decide(CONFIG, CTX)
         self.assertNotIn('secret-key', str(caught.exception))
+
+    def test_http_429_is_rate_limited_and_other_http_errors_remain_transport_errors(self):
+        for status, expected in ((429, 'rate_limited'), (401, 'transport_error'),
+                                 (403, 'transport_error'), (500, 'transport_error')):
+            with self.subTest(status=status):
+                failure = adapter.urllib.error.HTTPError(
+                    'https://private-provider.invalid/?key=secret-key', status,
+                    'private-provider-message', {'Retry-After': 'private-header'},
+                    io.BytesIO(b'private-provider-payload'),
+                )
+                self.addCleanup(failure.close)
+                with mock.patch('urllib.request.build_opener') as build_opener:
+                    build_opener.return_value.open.side_effect = failure
+                    with self.assertRaises(adapter.ModelError) as caught:
+                        adapter.decide(CONFIG, CTX)
+                    build_opener.return_value.open.assert_called_once()
+                error = caught.exception
+                self.assertEqual(error.args, (expected,))
+                self.assertEqual(error.audit['usage'], {})
+                self.assertIsInstance(error.audit['latency_ms'], int)
+                rendered = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+                for private in ('private-provider', 'private-header', 'secret-key'):
+                    self.assertNotIn(private, str(error) + repr(error.audit) + rendered)
 
 class BridgeTests(unittest.TestCase):
     def test_protocol_and_failure_paths_without_credentials(self):

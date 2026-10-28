@@ -96,6 +96,8 @@ def _transport(config: Config, body: bytes) -> bytes:
             return data
     except ModelError:
         raise
+    except urllib.error.HTTPError as error:
+        raise ModelError('rate_limited' if error.code == 429 else 'transport_error') from None
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         raise ModelError('transport_error') from None
 
@@ -140,8 +142,11 @@ def _parse_stream(data: bytes) -> tuple[str, dict]:
         if not text or len(text) > MAX_TEXT:
             raise ModelError('invalid_response')
         usage = completed.get('usage') or {}
-        safe_usage = {k: usage[k] for k in ('input_tokens', 'output_tokens', 'total_tokens')
+        token_fields = ('input_tokens', 'output_tokens', 'total_tokens')
+        safe_usage = {k: usage[k] for k in token_fields
                       if type(usage.get(k)) is int and 0 <= usage[k] <= 10**9}
+        if any(k in usage and k not in safe_usage for k in token_fields):
+            safe_usage['invalid'] = True
         return text, safe_usage
     except ModelError:
         raise

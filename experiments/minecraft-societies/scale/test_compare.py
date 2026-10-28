@@ -150,6 +150,11 @@ class InspectRunTests(unittest.TestCase):
                 result = self.inspect(self.changed_events('verify ', verify))
                 self.assertIs(result['correct'], False)
 
+    def test_nonzero_engine_exit_vetoes_complete_action_counters(self):
+        result = self.inspect(exit_code=1, validation='停止方式: self-shutdown（退出码 1，运行 2s）\n  结果: FAIL\n')
+        self.assertIs(result['correct'], False)
+        self.assertEqual(result['engine_exit_code'], 1)
+
     def test_step_rate_only_failure_preserves_workload_correctness(self):
         events = self.changed_events(
             'stats t=5.0 ', 'stats t=5.0 agents=3/3 stepped_delta=3 steps_per_sec=2 decisions=3',

@@ -1,0 +1,8 @@
+{
+  "git_sha": "00a42fc5642d5fa12b4d412a6ab0960011dbe6cb",
+  "run_id": "40742337174",
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.43",
+  "cpu_count": 4,
+  "engine_package": "luanti-server\t5.10.0+dfsg-5+deb13u1build0.26.04.1",
+  "mem_total": "MemTotal:       16367524 kB"
+}

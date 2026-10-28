@@ -9,4 +9,4 @@
 | 研究 | 综合材料；文件名前缀为研究日期 | 2026-10-28 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 见计划 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
 | 原型 | 分支快照；不整体合并主线 | 2026-10-28 | `proto/world-genesis`，`prototypes/README.md` |
-| 独立实验 | Luanti：第一轮证据；第二轮感知调度优化与检索记忆评估进行中 | 2026-10-28 | [实验说明](../experiments/minecraft-societies/README.md)、[执行计划](../experiments/minecraft-societies/PLAN.md) |
+| 独立实验 | Luanti：第一轮证据；第二轮感知调度与记忆实现完成；修正区块保活后云端评估中 | 2026-10-28 | [实验说明](../experiments/minecraft-societies/README.md)、[执行计划](../experiments/minecraft-societies/PLAN.md) |

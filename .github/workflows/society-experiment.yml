@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: society-experiment
+  group: ${{ startsWith(github.ref_name, 'experiment/cloud-run-memory-') && 'society-model-experiment' || 'society-experiment' }}
   cancel-in-progress: false
 jobs:
   experiment:
@@ -148,6 +148,10 @@ jobs:
           mkdir -p memory-results
           python3 -B experiments/minecraft-societies/model/memory_eval.py --output memory-results/tasks.json
           python3 -B experiments/minecraft-societies/model/memory_eval.py --probe --output memory-results/concurrency.json
+      - name: Soft callback budget tradeoff
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-memory-') }}
+        run: |
+          python3 -B experiments/minecraft-societies/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:

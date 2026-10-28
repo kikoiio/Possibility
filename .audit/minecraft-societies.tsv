@@ -21,3 +21,7 @@ ts	phase	decision	why	evidence	result
 2026-10-28T17:46:41.094148+00:00	final-audit	独立核对容量与队列数字	4表行、12运行、重复轨迹和模拟表均与源数据一致	https://github.com/kikoiio/Wispiva/actions/runs/40735966920	no mismatches
 2026-10-28T17:46:41.094151+00:00	integrity	流式复核永久归档及文档本地链接	逐项文件大小与SHA-256验证；不依赖过期artifact	experiments/minecraft-societies/scale/evidence/2026-10-28-large-repeated/manifest.json	109 declared files verified
 2026-10-28T17:46:41.094153+00:00	complete	本轮范围完成	41Python+4Lua5.1套件、云端闭环和独立审查；万级实时与记忆收益未达证据要求	experiments/minecraft-societies/PLAN.md	ready for experiment-branch delivery; main unchanged
+2026-10-28T18:24:37.921446+00:00	plan	启动第二轮	先更新计划，再并行索引与记忆实现；主agent集成并集中编排云端	experiments/minecraft-societies/PLAN.md	in progress
+2026-10-28T18:24:37.921463+00:00	implementation	感知与调度	空间索引、节点缓存、分帧稳定顺序、真实决策间隔与完整负载对照	770ddb6;00a42fc	7 Lua suites and existing41 Python tests passed in cloud
+2026-10-28T18:24:37.921467+00:00	diagnostic	修正原有forceload坐标	5000优化侧30秒后249存活；不以步率改善掩盖失员，保留原始失败	40742337174;18ab62c	rerunning both sides with identical correction
+2026-10-28T18:24:37.921469+00:00	cancellation	停止被替代作业	本任务旧版本及pending模型作业在正式模型调用前停止	40742109445;40742337174;40743715126	no other tasks touched
