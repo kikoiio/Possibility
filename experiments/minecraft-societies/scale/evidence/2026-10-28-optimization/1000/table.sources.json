@@ -1,0 +1,22 @@
+[
+  {
+    "path": "experiments/minecraft-societies/scale/evidence/2026-10-28-optimization/1000/comparison.json",
+    "source_sha": "18ab62c48555df43378238a503010eacc7057b33",
+    "behavior_equivalence": [
+      {
+        "count": 1000,
+        "cognition": false,
+        "runs": 10,
+        "distinct_behavior_hashes": 1,
+        "equal": true
+      },
+      {
+        "count": 1000,
+        "cognition": true,
+        "runs": 10,
+        "distinct_behavior_hashes": 1,
+        "equal": true
+      }
+    ]
+  }
+]

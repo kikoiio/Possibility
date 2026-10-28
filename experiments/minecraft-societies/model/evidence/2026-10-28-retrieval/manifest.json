@@ -1,0 +1,36 @@
+{
+  "files": [
+    {
+      "bytes": 16948,
+      "path": "concurrency.json",
+      "sha256": "932b4368c20b46091a893ee6eab5009678f48a5abde43ca9d3119c182d63cac2"
+    },
+    {
+      "bytes": 894239,
+      "path": "observed-results.json",
+      "sha256": "6bcb79512f37ae2441284f04468bb69ddd422b5051f3c795f001ac57ed51c4cc"
+    },
+    {
+      "bytes": 287,
+      "path": "run-metadata.json",
+      "sha256": "af4e06b2e6c915b55888ff30d04ec2cc528d61446445b89e7a304345f27e2ec6"
+    },
+    {
+      "bytes": 1801,
+      "path": "summary.md",
+      "sha256": "db08b963c91ad7f20042209d844b67ded36307b5b7da78e9eca6ded57e81199c"
+    },
+    {
+      "bytes": 29607,
+      "path": "tasks.json",
+      "sha256": "e1f7a8dc24050baa5a05f300c81220d3c1f4d06f4d84cde60a98c58cda0b0b4a"
+    }
+  ],
+  "run_id": "40746181765",
+  "source_sha": {
+    "cognition/memory.lua": "1ca5171310c13012565778ff40dae3907a81d096fe740cd7132145051b392849",
+    "cognition/test_retrieval.lua": "c2eae5fd79b03ab4e7b4ce54f353b40f1ff072a0f1caab4cec86d22777b72822",
+    "model/adapter.py": "1d6c89fecb89afece34603cf201a9c08d3d0f754dbacb0c3a7f414f2f107ed89",
+    "model/memory_eval.py": "edf61690ff319e76164f8224c24ba2f18401354516f4e2d66b1f8aa189207b94"
+  }
+}

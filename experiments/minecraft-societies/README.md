@@ -1,6 +1,6 @@
 # Minecraft 式 LLM Agent 社会实验
 
-状态：**第一轮已完成；第二轮感知调度优化与检索记忆评估正在执行**。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
+状态：**第一轮已完成；第二轮实现、真实模型记忆评估与预算调优已完成，10000-agent 最终容量作业正在云端收尾**。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
 
 研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../../docs/research/2026-10-28-minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../../docs/architecture.md)，近期进度和待决事项见[工作计划](../../docs/PLAN.md)。
 
@@ -160,7 +160,7 @@ runtime/bootstrap.sh    # 下载 11 个 deb -> 解包到 .runtime/root -> 修软
 
 ### 2026-10-28 新增实验能力
 
-最新结果见 [万级重复容量](scale/evidence/2026-10-28-large-repeated/summary.md) 和 [真实模型记忆对照](model/evidence/2026-10-28-memory-paired/summary.md)。完整规则负载的万级实时验收未通过，记忆收益尚未证实。规则 agent 的早期短时容量测量见 [阶梯结果](scale/evidence/2026-10-28-agent.md)。真实模型在 [40729157211](https://github.com/kikoiio/Wispiva/actions/runs/40729157211) 中产生六个有效动作；在 [40730088350](https://github.com/kikoiio/Wispiva/actions/runs/40730088350) 中自主采集两次资源。两次均为三个角色的小样本，不代表大规模模型吞吐或可复现的社会行为。
+最新结果见 [预算调优](scale/evidence/2026-10-28-budget-tuning/summary.md) 和 [真实模型记忆检索对照](model/evidence/2026-10-28-retrieval/summary.md)。1000/5000 的完整规则负载五次交替对照已完成；10000 正在云端收尾。65 ms 是当前默认预算，但万级实际决策间隔仍约 5 秒，未达到 2 秒目标。受控真实模型任务中检索 12/12、FIFO 0/12；这不代表开放世界长期记忆或社会行为。规则 agent 的早期短时容量测量见 [阶梯结果](scale/evidence/2026-10-28-agent.md)。
 
 `agent/run.sh --model` 使用单个独立进程、私有文件队列和受约束动作连接模型；环境变量 `XUNFEI_OPENAI_RESPONSE_URL`、`XUNFEI_MODEL`、`XUNFEI_API_KEY` 由调用方提供，不读取 `.env`。参数 `--fake-model` 使用完全确定性的测试夹具，不调用模型；新事件明确记录 origin，旧证据须结合运行配置区分两者。每个格式无效的模型决策最多尝试三次，逐次记录错误、延迟和可用 token 数；当前桥接是串行的，并非千人模型调度器。
 
@@ -205,8 +205,10 @@ experiments/minecraft-societies/
 
 ## 第二轮复现入口
 
-`experiment/cloud-run-opt-*` 运行新旧完整规则负载的五次交替对照（1000／5000／10000 各占一台 runner）；`experiment/cloud-run-memory-*` 运行四类受控记忆任务和有界模型并发探针。模型任务有单独串行组，可与容量任务在独立 runner 并行。新 artifact 名为 `society-results-1000`、`society-results-5000`、`society-results-10000`，记忆任务和其他单任务为 `society-results-0`。用 `gh run download <ID> -D .tmp/<新目录>` 下载全部，需先创建项目 `.tmp` 并设置 `TMPDIR="$PWD/.tmp"`。
+`experiment/cloud-run-opt-*` 运行新旧完整规则负载的五次交替对照（1000／5000／10000 各占一台 runner）；`experiment/cloud-run-memory-*` 运行四类受控记忆任务、有界模型并发探针和预算取舍；`experiment/cloud-run-budget-*` 只跑预算取舍，`experiment/cloud-run-verify-*` 只跑单测与引擎集成，不调用真实模型。模型任务有单独串行组，可与容量任务在独立 runner 并行。新 artifact 名为 `society-results-1000`、`society-results-5000`、`society-results-10000`，记忆任务和其他单任务为 `society-results-0`。用 `gh run download <ID> -D .tmp/<新目录>` 下载全部，需先创建项目 `.tmp` 并设置 `TMPDIR="$PWD/.tmp"`。
 
-默认 `society_optimized=true`；设为 false 使用保留的旧扫描／追赶调度进行对照。两侧都以角色 ID 稳定排序邻居。索引在角色移动后立即更新；节点缓存仅用于本实验无外部写入的世界，所有本 mod 写入都会失效对应 16³ 格，未加载格不缓存。预算是每 callback 25 ms 的软上限，单次动作无法被抢占；角色全部完成一轮后才进入下一轮。
+默认 `society_optimized=true`；设为 false 使用保留的旧扫描／追赶调度进行对照。两侧都以角色 ID 稳定排序邻居。索引在角色移动后立即更新；节点缓存仅用于本实验无外部写入的世界，所有本 mod 写入都会失效对应 16³ 格，未加载格不缓存。预算默认是每 callback 65 ms 的软上限；这是 10,000＋cognition 的 25／50／65 ms 五次调优中唯一同时保持 5/5 步率门槛通过并取得最低完整耗时的选择。单次动作无法被抢占；角色全部完成一轮后才进入下一轮。实际决策间隔仍约 5 秒，未达到 2 秒目标。
 
 `model/memory_eval.py` 通过 Lua 桥接直接调用运行时的同一份 `memory.lua`；模型用量、任务评分与调用错误单独归档。词项检索不提供语义理解、长期总结或事实真伪判断。
+
+`round.wall_ms` 包含分帧等待；历史键 `round.cpu_ms` 是排除等待的活动墙钟时间，并非操作系统 CPU 时间。后续预算对照另在 `.rss` 第三列采样引擎进程 CPU ticks，报告 `last_sample_engine_cpu_s`；一秒采样不保证捕获瞬时 RSS 或最后不足一秒的 CPU。

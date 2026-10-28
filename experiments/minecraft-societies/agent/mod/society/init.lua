@@ -25,7 +25,7 @@ local STEP = tonumber(cfg("society_step", "2"))
 local STATS_EVERY = tonumber(cfg("society_stats_interval", "5"))
 local OPTIMIZED = cfg("society_optimized", "true") == "true"
 local PROFILE = cfg("society_profile", "false") == "true"
-local FRAME_BUDGET = tonumber(cfg("society_frame_budget_ms", "25"))
+local FRAME_BUDGET = tonumber(cfg("society_frame_budget_ms", "65"))
 local MEMORY_MODE = cfg("society_memory_mode", "fifo")
 local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
