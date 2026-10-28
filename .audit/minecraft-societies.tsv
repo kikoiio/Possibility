@@ -1,0 +1,4 @@
+ts	phase	decision	why	evidence	result
+2026-10-28T16:31:29Z	frame	采用 Luanti 与分层容量实验	用户接受服务端实体并要求探索规模、互动与记忆	experiments/minecraft-societies/PLAN.md	open
+2026-10-28T16:31:29Z	cloud	以专用分支 push 触发 GitHub Actions	实验工作流不在默认分支，且无需改动主线	https://github.com/kikoiio/Wispiva/actions/runs/40725938081	in-progress
+2026-10-28T16:31:29Z	cognition	加入局部观察和角色独立的有界记忆	模型只接收角色可得信息	experiments/minecraft-societies/cognition/README.md	first cloud engine check passed

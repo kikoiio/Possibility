@@ -1,0 +1,68 @@
+name: Society experiment
+on:
+  push:
+    branches: [ 'experiment/cloud-run-*' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 30
+    steps:
+      - name: Install runtime
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti-server luanti-game-minetest
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: |
+          cd experiments/minecraft-societies/cognition
+          lua5.1 test.lua
+          lua5.1 test_persistence.lua
+          cd ../model
+          python3 -B -m unittest -v
+          cd ..
+          python3 -B -m unittest -v test_snapshot.py
+      - name: Prepare runtime
+        run: |
+          rt="$GITHUB_WORKSPACE/experiments/minecraft-societies/.runtime"
+          mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
+          ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
+          cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
+          mkdir -p "$rt/home/.minetest"
+          ln -s ../.luanti/games "$rt/home/.minetest/games"
+      - name: Run agent loop with cognition
+        run: |
+          experiments/minecraft-societies/agent/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
+      - name: Copy and reset world
+        run: |
+          exp=experiments/minecraft-societies
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-reset.run1"
+          "$exp/agent/run.sh" --label ci-reset --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
+          count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
+          test "$count" -eq 5
+      - name: Capacity ladder
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
+        run: |
+          python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
+      - name: Model-driven agent loop
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 300 --model
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: society-results
+          path: |
+            scale-results/
+            experiments/minecraft-societies/agent/evidence/ci-cognition.*
+            experiments/minecraft-societies/agent/evidence/ci-model.*
+            experiments/minecraft-societies/agent/evidence/ci-reset.*
+          if-no-files-found: warn
+          retention-days: 14

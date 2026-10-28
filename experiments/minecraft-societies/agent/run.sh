@@ -40,6 +40,8 @@ SECONDS_MAX=180
 REPEAT=1
 PORT=30077
 EXPECT_FAIL=""
+MODEL=0
+RESUME=0
 EXTRA_SETTINGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -52,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     --repeat) REPEAT="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --expect-fail) EXPECT_FAIL="$2"; shift 2 ;;
+    --model) MODEL=1; shift ;;
+    --resume) RESUME=1; shift ;;
     --set) EXTRA_SETTINGS+=("$2"); shift 2 ;;
     -h|--help) command sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "run.sh: 未知参数 $1" >&2; exit 2 ;;
@@ -89,9 +93,18 @@ run_once() {
   local report="$EVIDENCE/$LABEL.$tag.report.txt"
   local failed=()
 
-  rm -rf "$world"
+  if [[ "$RESUME" -eq 1 ]]; then
+    [[ -d "$world" ]] || { echo "找不到要恢复的世界: $world" >&2; return 1; }
+  else
+    rm -rf "$world"
+  fi
   mkdir -p "$world/worldmods/society"
+  local spool=""
+  if [[ "$MODEL" -eq 1 ]]; then
+    spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
+  fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
@@ -106,6 +119,16 @@ run_once() {
     echo "society_count = $AGENTS"
     echo "society_decide_interval = $INTERVAL"
     echo "society_max_decisions = $DECISIONS"
+    echo "society_persist = true"
+    if [[ "$RESUME" -eq 1 ]]; then
+      echo "society_restore = true"
+      echo "society_reset_minds = true"
+    fi
+    if [[ "$MODEL" -eq 1 ]]; then
+      echo "society_model = true"
+      echo "society_cognition = true"
+      echo "society_spool = $spool"
+    fi
     if [[ ${#EXTRA_SETTINGS[@]} -gt 0 ]]; then
       for kv in "${EXTRA_SETTINGS[@]}"; do echo "$kv"; done
     fi
@@ -114,10 +137,18 @@ run_once() {
   : > "$log"
   : > "$rssfile"
 
+  local worker_pid=""
+  if [[ "$MODEL" -eq 1 ]]; then
+    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 > "$world/worker.log" 2>&1 &
+    worker_pid=$!
+  fi
   HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" "$ENGINE" \
     --config "$conf" --world "$world" --gameid minetest_game \
     --logfile "$log" > /dev/null 2>&1 &
   local pid=$!
+  trap 'kill -TERM "$pid" ${worker_pid:+"$worker_pid"} 2>/dev/null || true; wait "$pid" 2>/dev/null || true; [[ -z "$worker_pid" ]] || wait "$worker_pid" 2>/dev/null || true' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 
   local peak_kb=0 t=0
   while kill -0 "$pid" 2>/dev/null && [[ "$t" -lt "$SECONDS_MAX" ]]; do
@@ -148,6 +179,11 @@ run_once() {
   fi
   wait "$pid" 2>/dev/null
   local exit_code=$?
+  if [[ -n "$worker_pid" ]]; then
+    kill -TERM "$worker_pid" 2>/dev/null || true
+    wait "$worker_pid" 2>/dev/null || true
+  fi
+  trap - EXIT INT TERM
 
   if kill -0 "$pid" 2>/dev/null; then
     failed+=("进程未退出（pid $pid）")
@@ -189,6 +225,13 @@ run_once() {
     fi
     command grep -q 'SOCIETY check stage=spawn .* ok=true' "$log" || failed+=("生成后存活校验未通过")
     command grep -q 'SOCIETY verify .* ok=true' "$log" || failed+=("缺少世界回读核对（verify ok=true）")
+    if [[ "$MODEL" -eq 1 ]]; then
+      local model_actions
+      model_actions=$(command grep -c 'SOCIETY ev=model-action ' "$log" || true)
+      if [[ "$DECISIONS" -gt 0 && "$model_actions" -ne $((AGENTS * DECISIONS)) ]]; then
+        failed+=("模型动作数 $model_actions，不等于预期 $((AGENTS * DECISIONS))")
+      fi
+    fi
     if [[ -z "$stats_total" || "$stats_total" -eq 0 ]]; then
       failed+=("没有任何 SOCIETY stats（服务端可能一个统计周期都没跑到）")
     fi

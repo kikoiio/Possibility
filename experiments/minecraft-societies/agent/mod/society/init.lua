@@ -14,6 +14,9 @@
 -- 引擎遍历活跃区块的顺序不保证稳定，把决策放进 on_step 会让日志交错随机化。
 
 local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
+local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
+local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
+local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -31,6 +34,16 @@ local STEP = tonumber(cfg("society_step", "2"))
 local STATS_EVERY = tonumber(cfg("society_stats_interval", "5"))
 local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
+local COGNITION = cfg("society_cognition", "false") == "true"
+local MODEL = cfg("society_model", "false") == "true"
+local PERSIST = cfg("society_persist", "false") == "true"
+local RESTORE = cfg("society_restore", "false") == "true"
+local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
+local storage = minetest.get_mod_storage()
+local initial_state = storage:get_string("agent_state")
+if PERSIST then storage:set_string("agent_state", "") end
+local SPOOL = cfg("society_spool", "")
+local request_id = 0
 
 -- persona 在 M0 里只是一个稳定标签，不影响行为；M2 起它才承载设定。
 local PERSONAS = {
@@ -250,6 +263,18 @@ local function apply(self, action, pos)
 		return
 	end
 
+	if kind == "say" then
+		local recipient = agents[action.target]
+		if recipient then
+			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
+				source = {kind = "agent", id = self._id}})
+			self._episodic:add({time = minetest.get_gametime(), text = action.text,
+				source = {kind = "self", id = self._id}})
+			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
+				minetest.sha256(action.text))
+		end
+		return
+	end
 	self._memory.idle_streak = self._memory.idle_streak + 1
 	ev("ev=unknown-action agent=%d persona=%s kind=%s", self._id, self._persona, kind)
 end
@@ -280,7 +305,91 @@ local function decide_and_act(self)
 	pos = {x = fp(pos.x), y = fp(pos.y), z = fp(pos.z)}
 
 	local obs = observe(self, pos)
-	local action = policy.decide({
+	if COGNITION and not self._pending then
+		local local_obs, err = cognition_observe.observe(minetest, self.object,
+			{radius = SENSE, node_names = {MARK_NODE}})
+		if not local_obs then
+			ev("fail=observation agent=%d reason=%s", self._id, err)
+			S.failed = "observation"
+			minetest.request_shutdown()
+			return
+		end
+		self._episodic:add({time = minetest.get_gametime(),
+			text = string.format("nearby agents=%d marks=%d", #local_obs.agents, #local_obs.nodes),
+			source = {kind = "observation", id = self._id}})
+		obs.local_view = local_obs
+	end
+	local action
+	if MODEL then
+		if not self._pending then
+			request_id = request_id + 1
+			local context = {observation = {has_target = obs.has_target,
+				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
+				persona = self._persona, goal = "Explore, leave marks, and interact with nearby agents.",
+				memory = self._episodic:list(),
+				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
+					max = {x = BOUND, y = pos.y, z = BOUND}}}
+			local path = SPOOL .. "/request-" .. request_id .. ".json"
+			if not minetest.safe_file_write(path, minetest.write_json({id = request_id, context = context})) then
+				ev("fail=model-request-write agent=%d", self._id)
+				S.failed = "model-request-write"
+				minetest.request_shutdown()
+				return
+			end
+			self._pending = {id = request_id, started = minetest.get_us_time()}
+			ev("ev=model-request agent=%d request=%d", self._id, request_id)
+			return
+		end
+		local path = SPOOL .. "/response-" .. self._pending.id .. ".json"
+		local f = io.open(path, "r")
+		if not f then
+			if minetest.get_us_time() - self._pending.started > (COUNT * 45 + 30) * 1000000 then
+				ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
+				S.failed = "model-timeout"
+				minetest.request_shutdown()
+			end
+			return
+		end
+		local result = minetest.parse_json(f:read("*a"))
+		f:close()
+		os.remove(path)
+		local id = self._pending.id
+		self._pending = nil
+		if not result or result.id ~= id or result.ok ~= true or type(result.action) ~= "table" then
+			ev("fail=model-response agent=%d request=%d error=%s", self._id, id,
+				result and tostring(result.error) or "invalid")
+			S.failed = "model-response"
+			minetest.request_shutdown()
+			return
+		end
+		action = result.action
+		local valid = action.kind == "inspect" or action.kind == "mark"
+			or (action.kind == "advance" and self._target ~= nil)
+		if action.kind == "approach" or action.kind == "say" then
+			for _, other in ipairs(obs.nearby_agents) do
+				if other == action.target then valid = true end
+			end
+			if action.kind == "say" then
+				valid = valid and type(action.text) == "string" and #action.text > 0
+					and #action.text <= 240 and not action.text:find("[%c]")
+			end
+		elseif action.kind == "wander" and type(action.point) == "table" then
+			local p = action.point
+			valid = type(p.x) == "number" and type(p.y) == "number" and type(p.z) == "number"
+				and p.x == math.floor(p.x) and p.z == math.floor(p.z)
+				and p.y == pos.y and in_bounds(p)
+		end
+		if not valid then
+			ev("ev=model-stale agent=%d request=%d", self._id, id)
+			return
+		end
+		local audit = result.audit or {}
+		local usage = audit.usage or {}
+		ev("ev=model-action agent=%d request=%d kind=%s latency_ms=%s input_tokens=%s output_tokens=%s",
+			self._id, id, action.kind, tostring(audit.latency_ms or "unknown"),
+			tostring(usage.input_tokens or "unknown"), tostring(usage.output_tokens or "unknown"))
+	else
+		action = policy.decide({
 		id = self._id,
 		persona = self._persona,
 		home = self._home,
@@ -289,7 +398,8 @@ local function decide_and_act(self)
 		memory = self._memory,
 		wander_radius = WANDER,
 		rng = function(n) return rng_next(self, n) end,
-	})
+		})
+	end
 	action.observation = obs
 	apply(self, action, pos)
 
@@ -324,6 +434,18 @@ minetest.register_entity("society:agent", {
 })
 
 local function spawn_agents()
+	local saved
+	if RESTORE then
+		saved = minetest.parse_json(initial_state)
+		if type(saved) ~= "table" or #saved ~= COUNT then
+			ev("fail=restore-invalid expected=%d", COUNT)
+			S.failed = "restore-invalid"
+			minetest.request_shutdown()
+			return
+		end
+		S.marks = #minetest.find_nodes_in_area(
+			{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND}, {MARK_NODE})
+	end
 	local cols = math.ceil(math.sqrt(COUNT))
 	local offset = -math.floor((cols - 1) * SPACING / 2)
 	for i = 0, COUNT - 1 do
@@ -345,6 +467,21 @@ local function spawn_agents()
 			le._decisions = 0
 			le._marks_placed = 0
 			le._memory = {met = {}, idle_streak = 0}
+			le._episodic = cognition_memory.new(32)
+			if saved then
+				local ok = pcall(persistence.restore, le, saved[i + 1], {reset_minds = RESET_MINDS})
+				if not ok or le._id ~= i then
+					ev("fail=restore-invalid agent=%d", i)
+					S.failed = "restore-invalid"
+					minetest.request_shutdown()
+					return
+				end
+				if RESET_MINDS then
+					le._persona = "new-" .. PERSONAS[(i % #PERSONAS) + 1]
+					le._decisions = 0
+				end
+				ev("ev=restore agent=%d reset=%s memories=%d", i, tostring(RESET_MINDS), le._episodic:size())
+			end
 			agents[i] = le
 			S.spawned = S.spawned + 1
 		end
@@ -448,7 +585,7 @@ minetest.register_globalstep(function(dtime)
 		S.driver_rounds = S.driver_rounds + 1
 		for i = 0, COUNT - 1 do
 			local le = agents[i]
-			if le and le.object and le.object:get_pos() then
+			if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
 				decide_and_act(le)
 			end
 		end
@@ -478,6 +615,19 @@ end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
+	if PERSIST and not S.failed then
+		local saved = {}
+		for i = 0, COUNT - 1 do
+			local ok, snapshot = pcall(persistence.snapshot, agents[i])
+			if not ok or not snapshot then
+				ev("fail=persist agent=%d", i)
+				return
+			end
+			saved[#saved + 1] = snapshot
+		end
+		storage:set_string("agent_state", minetest.write_json(saved))
+		ev("persist agents=%d", #saved)
+	end
 	-- 计数器是 mod 自己的账，不是世界的账。这里回读地图核对一次：
 	-- 「世界真的变了」必须由世界本身证明，而不是由我们的变量证明。
 	local in_world = #minetest.find_nodes_in_area(
