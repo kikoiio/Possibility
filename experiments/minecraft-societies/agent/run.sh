@@ -40,6 +40,9 @@ SECONDS_MAX=180
 REPEAT=1
 PORT=30077
 EXPECT_FAIL=""
+MODEL=0
+FIXTURE=0
+RESUME=0
 EXTRA_SETTINGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -52,11 +55,19 @@ while [[ $# -gt 0 ]]; do
     --repeat) REPEAT="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --expect-fail) EXPECT_FAIL="$2"; shift 2 ;;
+    --model) MODEL=1; shift ;;
+    --fake-model) MODEL=1; FIXTURE=1; shift ;;
+    --resume) RESUME=1; shift ;;
     --set) EXTRA_SETTINGS+=("$2"); shift 2 ;;
     -h|--help) command sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "run.sh: 未知参数 $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ ! "$LABEL" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "run.sh: label 只能包含字母、数字、下划线和连字符" >&2
+  exit 2
+fi
 
 if [[ ! -x "$ENGINE" ]]; then
   echo "run.sh: 找不到引擎 $ENGINE —— 先跑 runtime/bootstrap.sh" >&2
@@ -89,9 +100,18 @@ run_once() {
   local report="$EVIDENCE/$LABEL.$tag.report.txt"
   local failed=()
 
-  rm -rf "$world"
+  if [[ "$RESUME" -eq 1 ]]; then
+    [[ -d "$world" ]] || { echo "找不到要恢复的世界: $world" >&2; return 1; }
+  else
+    rm -rf "$world"
+  fi
   mkdir -p "$world/worldmods/society"
+  local spool=""
+  if [[ "$MODEL" -eq 1 ]]; then
+    spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
+  fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
@@ -106,6 +126,16 @@ run_once() {
     echo "society_count = $AGENTS"
     echo "society_decide_interval = $INTERVAL"
     echo "society_max_decisions = $DECISIONS"
+    echo "society_persist = true"
+    if [[ "$RESUME" -eq 1 ]]; then
+      echo "society_restore = true"
+      echo "society_reset_minds = true"
+    fi
+    if [[ "$MODEL" -eq 1 ]]; then
+      echo "society_model = true"
+      echo "society_cognition = true"
+      echo "society_spool = $spool"
+    fi
     if [[ ${#EXTRA_SETTINGS[@]} -gt 0 ]]; then
       for kv in "${EXTRA_SETTINGS[@]}"; do echo "$kv"; done
     fi
@@ -114,10 +144,20 @@ run_once() {
   : > "$log"
   : > "$rssfile"
 
+  local worker_pid=""
+  if [[ "$MODEL" -eq 1 ]]; then
+    local worker_flags=()
+    if [[ "$FIXTURE" -eq 1 ]]; then worker_flags+=(--fixture); fi
+    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 "${worker_flags[@]}" > "$world/worker.log" 2>&1 &
+    worker_pid=$!
+  fi
   HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" "$ENGINE" \
     --config "$conf" --world "$world" --gameid minetest_game \
     --logfile "$log" > /dev/null 2>&1 &
   local pid=$!
+  trap 'kill -TERM "$pid" ${worker_pid:+"$worker_pid"} 2>/dev/null || true; wait "$pid" 2>/dev/null || true; [[ -z "$worker_pid" ]] || wait "$worker_pid" 2>/dev/null || true' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 
   local peak_kb=0 t=0
   while kill -0 "$pid" 2>/dev/null && [[ "$t" -lt "$SECONDS_MAX" ]]; do
@@ -148,6 +188,11 @@ run_once() {
   fi
   wait "$pid" 2>/dev/null
   local exit_code=$?
+  if [[ -n "$worker_pid" ]]; then
+    kill -TERM "$worker_pid" 2>/dev/null || true
+    wait "$worker_pid" 2>/dev/null || true
+  fi
+  trap - EXIT INT TERM
 
   if kill -0 "$pid" 2>/dev/null; then
     failed+=("进程未退出（pid $pid）")
@@ -181,14 +226,26 @@ run_once() {
       || failed+=("预期的失败 $EXPECT_FAIL 没有出现（检测失效）")
     command grep -q 'SOCIETY done result=fail' "$log" \
       || failed+=("失败没有以 done result=fail 收尾")
-    command grep -q 'SOCIETY check stage=spawn .* ok=false' "$log" \
-      || failed+=("预期失败，但生成后存活校验仍报 ok=true（说明失败是静默的）")
+    if [[ "$EXPECT_FAIL" == agents-lost* ]]; then
+      command grep -q 'SOCIETY check stage=spawn .* ok=false' "$log" \
+        || failed+=("预期角色丢失，但没有失败的存活校验")
+    fi
   else
     if command grep -q 'SOCIETY fail=' "$log"; then
       failed+=("出现失败行：$(command grep -o 'SOCIETY fail=[^ ]*' "$log" | sort -u | tr '\n' ' ')")
     fi
     command grep -q 'SOCIETY check stage=spawn .* ok=true' "$log" || failed+=("生成后存活校验未通过")
     command grep -q 'SOCIETY verify .* ok=true' "$log" || failed+=("缺少世界回读核对（verify ok=true）")
+    if [[ "$MODEL" -eq 1 ]]; then
+      command grep -q 'SOCIETY resource-verify .* ok=true' "$log" || failed+=("资源总量回读核对未通过")
+    fi
+    if [[ "$MODEL" -eq 1 ]]; then
+      local model_actions
+      model_actions=$(command grep -c 'SOCIETY ev=model-action ' "$log" || true)
+      if [[ "$DECISIONS" -gt 0 && "$model_actions" -ne $((AGENTS * DECISIONS)) ]]; then
+        failed+=("模型动作数 $model_actions，不等于预期 $((AGENTS * DECISIONS))")
+      fi
+    fi
     if [[ -z "$stats_total" || "$stats_total" -eq 0 ]]; then
       failed+=("没有任何 SOCIETY stats（服务端可能一个统计周期都没跑到）")
     fi
@@ -209,13 +266,21 @@ run_once() {
     else
       echo "预期结果: 成功"
     fi
+    if [[ "$FIXTURE" -eq 1 ]]; then
+      echo "执行模式: deterministic-fixture (not a model)"
+    elif [[ "$MODEL" -eq 1 ]]; then
+      echo "执行模式: real-model"
+      echo "模型: ${XUNFEI_MODEL:-${WISPIVA_LLM_MODEL:-not-configured}}"
+    else
+      echo "执行模式: rule-policy"
+    fi
     echo "峰值 RSS: $((peak_kb / 1024)) MiB"
     echo
     echo "--- 配置 ---"
     command sed 's/^/  /' "$conf"
     echo
     echo "--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---"
-    sha256sum "$ENGINE" "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" | command sed 's/^/  /'
+    sha256sum "$ENGINE" "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$EXP/cognition/"*.lua "$EXP/model/"*.py | command sed 's/^/  /'
     echo
     echo "--- 校验 ---"
     echo "  stats 行数: ${stats_total:-0}"
@@ -249,14 +314,16 @@ for i in $(seq 1 "$REPEAT"); do
   run_once "run$i" || rc=1
 done
 
-if [[ "$REPEAT" -ge 2 ]]; then
-  if diff -q "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run2.events" > /dev/null; then
-    echo "[$LABEL] 可重复性: run1 与 run2 的确定性事件序列完全一致（$(wc -l < "$EVIDENCE/$LABEL.run1.events") 行）"
-  else
-    echo "[$LABEL] 可重复性: FAIL —— 两次运行事件序列不同："
-    diff "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run2.events" | head -20
-    rc=1
-  fi
+if [[ "$REPEAT" -ge 2 && "$MODEL" -eq 0 ]]; then
+  for i in $(seq 2 "$REPEAT"); do
+    if diff -q "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run$i.events" > /dev/null; then
+      echo "[$LABEL] 可重复性: run1 与 run$i 的确定性事件序列完全一致（$(wc -l < "$EVIDENCE/$LABEL.run1.events") 行）"
+    else
+      echo "[$LABEL] 可重复性: FAIL —— run1 与 run$i 事件序列不同："
+      diff "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run$i.events" | head -20
+      rc=1
+    fi
+  done
 fi
 
 exit $rc
