@@ -37,6 +37,7 @@ local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
 local COGNITION = cfg("society_cognition", "false") == "true"
 local MODEL = cfg("society_model", "false") == "true"
+local SEED_RESOURCES = cfg("society_seed_resources", "false") == "true"
 local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local PERSIST = cfg("society_persist", "false") == "true"
@@ -519,7 +520,7 @@ local function spawn_agents()
 				ev("ev=restore agent=%d reset=%s memories=%d", i, tostring(RESET_MINDS), le._episodic:size())
 			end
 			le._resources = resources.new(minetest, obj, le._restored_inventory)
-			if MODEL and not RESTORE then
+			if (MODEL or SEED_RESOURCES) and not RESTORE then
 				local resource_pos = {x = at.x + 1, y = at.y, z = at.z}
 				if in_bounds(resource_pos) and minetest.get_node(resource_pos).name == "air" then
 					minetest.set_node(resource_pos, {name = "society:resource"})

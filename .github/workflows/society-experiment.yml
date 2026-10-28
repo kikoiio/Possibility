@@ -51,7 +51,7 @@ jobs:
           grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
           grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') }}
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
           python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
@@ -66,6 +66,18 @@ jobs:
               echo "$label exit=$rc" >> "$exp/agent/evidence/ci-agent-status.txt"
             done
           done
+      - name: Large agent capacity ladder
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
+        run: |
+          exp=experiments/minecraft-societies
+          for cognition in false true; do
+            for count in 5000 10000; do
+              label="ci-large-${count}-${cognition}"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 120 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+              echo "$label exit=$rc" >> "$exp/agent/evidence/ci-large-status.txt"
+            done
+          done
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
@@ -74,6 +86,22 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+      - name: Explore interactions with and without memory
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          exp=experiments/minecraft-societies
+          "$exp/agent/run.sh" --label ci-base --agents 3 --decisions 8 --interval 1 --set society_spacing=2 --set society_seed_resources=true --set society_cognition=true
+          for memory in true false; do
+            python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-base.run1" "$exp/agent/worlds/ci-memory-${memory}.run1"
+            rc=0
+            "$exp/agent/run.sh" --label "ci-memory-${memory}" --agents 3 --decisions 6 --interval 1 --seconds 600 --resume --model --set society_spacing=2 --set society_model_memory="$memory" --set society_log_messages=true || rc=$?
+            echo "memory=$memory exit=$rc" >> "$exp/agent/evidence/ci-memory-status.txt"
+          done
+          ! grep -qv 'exit=0' "$exp/agent/evidence/ci-memory-status.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -85,5 +113,7 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-reset.*
             experiments/minecraft-societies/agent/evidence/ci-agent-*
             experiments/minecraft-societies/agent/evidence/ci-resource.*
+            experiments/minecraft-societies/agent/evidence/ci-memory-*
+            experiments/minecraft-societies/agent/evidence/ci-large-*
           if-no-files-found: warn
           retention-days: 14
