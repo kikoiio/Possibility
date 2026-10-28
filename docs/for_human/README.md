@@ -1,8 +1,9 @@
 # 人类阅读入口
 
-Wispiva 让作者从一个想法出发，逐步建立世界，再观察环境和角色的变化。项目仍处于原型阶段。[项目意图与产品需求](../intent.md)解释产品目标和验收方向。
+Wispiva 让作者从一个想法出发，逐步建立世界，再观察环境和角色的变化。项目仍处于研究和原型阶段。[项目意图与产品需求](../intent.md)解释产品目标和验收方向。
 
-- 想体验当前原型：阅读[主原型说明](../../prototypes/README.md)，从文本讨论开始，生成候选并确认后进入世界。
-- 想了解当前能力和局限：阅读[当前实现地图](../architecture.md)，其中有目标、实现、证据与缺口的对应表。
-- 想查看未来设计与研究：[目标架构方案](../design/2026-10-27-target-architecture.md)是提案，不代表当前实现；[文档索引](../README.md)列出研究和独立实验。
-- 想了解正在做什么：阅读[工作计划](../PLAN.md)，注意区分近期状态与历史记录。
+- 查看项目现状与历史证据：[当前架构](../architecture.md)和[工作计划](../PLAN.md)。
+- 查看未来方案：[目标架构设计](../design/2026-10-27-target-architecture.md)是提案，不代表当前主线已实现。
+- 查看创世原型：检出 `proto/world-genesis`，阅读其中 `prototypes/README.md`。
+- 查看独立社会实验：检出 `experiment/minecraft-societies`，阅读其中 `experiments/minecraft-societies/README.md`。
+- 查找其他主题：[文档索引](../README.md)。

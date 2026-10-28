@@ -2,7 +2,7 @@
 
 更新时间：2026-10-27。
 
-状态：**已立项为 Wispiva 的延伸研究；C 路线（Luanti）已跑通 M0 小规模闭环，环境选型待定**，落地位置与计划见 [experiments/minecraft-societies](../../experiments/minecraft-societies/README.md)。本文不改变 Wispiva 当前“不引入 Minecraft 运行时”的结论；两者关系见[与 Wispiva 的关系](#与-wispiva-的关系)。
+状态：**已立项为 Wispiva 的延伸研究；C 路线（Luanti）已跑通 M0 小规模闭环，环境选型待定**，落地位置与计划见 experiments/minecraft-societies（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。本文不改变 Wispiva 当前“不引入 Minecraft 运行时”的结论；两者关系见[与 Wispiva 的关系](#与-wispiva-的关系)。
 
 ## 问题与范围
 
@@ -57,13 +57,13 @@
 
 #### 2026-10-27 本机实测补充（Luanti 路线）
 
-上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见[实测证据](../../experiments/minecraft-societies/bench/luanti-entity-scale-2026-10-27.txt)。
+上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见实测证据（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/bench/luanti-entity-scale-2026-10-27.txt`）。
 
 - 纯服务端实体（无客户端连接）可以承载远超原先担心的规模：每步 O(1) 工作时 **2 万实体仍保持实时**（11.02–11.04 step/s），峰值 RSS 167 MiB。内存与实体数不是瓶颈。
 - 崩塌来自每实体的计算量，而不是实体数量：朴素的 O(N²) 邻域感知在 **1000→5000 之间跌破实时**（4.4 step/s），10000 时降到 0.92 step/s。这给“距离 LOD 是关键设计”一条补上了本项目自己的数字。
 - 无玩家时实体不会被 step，必须 `forceload`；且只在区块 emerge 完成后再生成实体，否则实体会被活跃区块管理周期**静默删除**（`add_entity` 不报错）。这是服务端 NPC 路线的硬性工程前提，原先未记录。
 - 以上只覆盖 tick 与内存容量，**没有**覆盖 LLM 调用成本、延迟与 agent 行为。Minecraft/Paper 路线（玩家 bot）仍无本项目实测数据。
-- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见[实验说明](../../experiments/minecraft-societies/README.md)与 `experiments/minecraft-societies/agent/evidence/`。
+- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见实验说明（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）与 `experiments/minecraft-societies/agent/evidence/`。
 
 ### LLM 调用量
 

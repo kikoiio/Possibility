@@ -1,11 +1,8 @@
 # Agent 入口
 
-- 接手仓库任务时，先阅读 [docs/PLAN.md](docs/PLAN.md)，了解当前阶段、已有证据和下一项工作，再按需阅读相关需求、架构与研究。
-- 文档和源码追踪入口见 [docs/for_agent/README.md](docs/for_agent/README.md)；当前实现、目标需求和目标架构分别见 [docs/architecture.md](docs/architecture.md)、[docs/intent.md](docs/intent.md) 和[目标架构方案](docs/design/2026-10-27-target-architecture.md)。
-- 主原型的使用、配置和验证入口见 [prototypes/README.md](prototypes/README.md)；独立实验的依赖、验证和证据见各自 README，当前为 [experiments/minecraft-societies/README.md](experiments/minecraft-societies/README.md)。
-- 执行前核对工作区差异和实际文件；不把计划、设计方案或历史测试结果当作当前实现已经通过验证。
-- 任务取得进展或中断时，更新 PLAN 的相关进度、产物路径、验证结果、未完成项和下一步；不要只把交接信息留在对话中。
-- 项目级产品需求、架构、计划与研究放在 `docs/`；`docs/source-texts/` 只放原始故事文本。原型代码、测试、夹具、原型说明和原型专属记录放在 `prototypes/`。
-- 唯一原型维护在 `prototypes/`：已有的场景生成、编译、模拟、角色与记忆应接入同一入口继续迭代，不为每项能力另建独立体验页、服务或模型配置。旧样例保留作回归夹具。
-- 独立实验放 `experiments/<方向>/`，与唯一原型分开：自己的依赖、自己的 CI、自己的说明，不接入原型入口，也不把实验运行时（如 Java、Minecraft 服务端）带进 `prototypes/` 和主项目依赖。实验仍属 Wispiva 的延伸研究，进度与证据同样写进 PLAN。
-- 体验从文本创世开始：世界初始定义与场景由 LLM 生成，经程序检查和用户确认后建立起源。固定样例只能用于示例或回归，不得在创世失败时替代模型结果冒充成功。
+- 接手仓库任务时，先阅读 [docs/PLAN.md](docs/PLAN.md)，再按需阅读 [Agent 导航](docs/for_agent/README.md)、需求、架构和研究。先核对工作区差异与实际文件，不把设计、计划或历史结果当作当前验证。
+- 任务取得进展或中断时，更新 `docs/PLAN.md` 的进度、产物、验证结果、未完成项和下一步。
+- 项目级需求、架构、计划与研究放在 `docs/`；`docs/source-texts/` 只放原始故事文本。
+- 一次性原型放在 `proto/<方向>` 分支，不合并到主线；在相关计划或设计记录目的、结论、分支、提交及证据。现有创世原型保存在 `proto/world-genesis`，不可把固定样例冒充模型创世结果。
+- 独立研究实验按方向使用 `experiment/<方向>` 分支，与原型隔离，维护独立依赖、验证、说明和证据；Minecraft 社会实验位于 `experiment/minecraft-societies`。项目级研究结论和进度记录仍留在 `docs/` 与 `docs/PLAN.md`。
+- 新功能应在适当的功能分支开发，基于需求重新实现与验证；不得把一次性原型分支整体合并进主线。

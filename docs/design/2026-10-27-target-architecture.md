@@ -4,7 +4,7 @@ status: draft
 
 # Wispiva 目标架构方案
 
-Wispiva 为 wisps of ideas 提供持续存在、演化和产生后果的 simulation infrastructure。本文件描述目标模块职责、数据与时间语义、主观记忆、展示和接口方案；产品目标见[需求](../intent.md)，当前统一体验入口见[主原型](../../prototypes/README.md)，已整合原几何实验与营地模拟。
+Wispiva 为 wisps of ideas 提供持续存在、演化和产生后果的 simulation infrastructure。本文件描述目标模块职责、数据与时间语义、主观记忆、展示和接口方案；产品目标见[需求](../intent.md)，当前统一体验入口见主原型（`proto/world-genesis` 分支：`prototypes/README.md`），已整合原几何实验与营地模拟。
 
 项目处于原型验证阶段。模块划分、数据结构、接口与技术选型通过实验检验，再用于产品实现；本文的方案不代表已有运行系统或验证结论。独立原型可以采用适合实验的最小结构，保留其与产品约束的对应关系。
 
@@ -162,11 +162,11 @@ reflection 由情境触发：强烈旧忆闯入现在、当前事件与已有讲
 
 位置、尺寸、朝向及影响模拟的空间参数属于 world 事实。`projectWorld` 从 world 派生两类输出：轻量 `RendererView` 供壳层总览、定位与连线使用；`SceneDocument` 供 3D 场景编译与渲染使用。view 与 scene 不是同一种结构，也不是第二个事实源。场景及几何缓存可重建，不能作为独立持久事实修改。
 
-3D 渲染器只消费 scene 及其编译产物，不直接读写 world；壳层负责 API 交互与数据分发。scene 的跨 HTTP 形状纳入 §9 的通信契约，不能靠前后端私有约定绕过版本与消费者同步。共享场景语义及编译实现见[主原型场景文档](../../prototypes/geometry/scene-document.js)与[编译器](../../prototypes/geometry/scene-compiler.js)。
+3D 渲染器只消费 scene 及其编译产物，不直接读写 world；壳层负责 API 交互与数据分发。scene 的跨 HTTP 形状纳入 §9 的通信契约，不能靠前后端私有约定绕过版本与消费者同步。共享场景语义及编译实现见主原型场景文档（`proto/world-genesis` 分支：`prototypes/geometry/scene-document.js`）与编译器（`proto/world-genesis` 分支：`prototypes/geometry/scene-compiler.js`）。
 
 几何按 recipeHash 内容键做部件级增量重建，移除对象时释放对应资源。未知 kind 可进入 view.others，缺省几何用于降级显示；简单占位不能替代视觉质量要求。创世与局部编辑均经 ops/revision 后重投影，局部修订后执行完整结构与空间复检；生成返修受总预算限制。
 
-3D 在观看端浏览器渲染，无人观看时服务端只推进世界，不持续渲染各条线。基本创世不依赖用户安装 Blender、CUDA 或下载大型模型权重，普通常驻服务不要求 GPU。场景构造任务与世界时间调度隔离并设资源预算。几何实验入口见 [Geometry Lab](../../prototypes/README.md)。
+3D 在观看端浏览器渲染，无人观看时服务端只推进世界，不持续渲染各条线。基本创世不依赖用户安装 Blender、CUDA 或下载大型模型权重，普通常驻服务不要求 GPU。场景构造任务与世界时间调度隔离并设资源预算。几何实验入口见 Geometry Lab（`proto/world-genesis` 分支：`prototypes/README.md`）。
 
 ## 7. 持久化、事务与恢复
 

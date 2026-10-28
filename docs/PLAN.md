@@ -2,9 +2,17 @@
 
 更新日期：2026-10-28。
 
+## 2026-10-28 原型与实验分支迁移
+
+- 按用户新指示，将创世原型保存到 `proto/world-genesis`，提交 `40206a2414713b89bfd4e19a7b9347183dec0867`；将 Minecraft 社会实验保存到 `experiment/minecraft-societies`，提交 `7e33189e144d76d5a18a13c462b26c502f74b797`。两者分别保留代码、说明、检查和相应 CI 定义；仅有本地分支，没有推送或合并。
+- 两个提交都基于同一原始 HEAD 创建，包含迁移时的共享项目工作区快照及各自目录，不会修改主工作区暂存区。逐一核对了原型 66 个文件及实验 30 个文件的 Git 对象与迁移前工作区内容一致。私有 `.env`、`.data/`、`node_modules/` 和实验 `.runtime/` 没有纳入提交。
+- 原始目录及其未入库的依赖、运行时和工作流移至 `.tmp/branch-migration/working-copy/`，便于恢复；此位置是本机临时备份，并非永久归档。未触碰 `.data/` 和真实配置，未终止用户进程。
+- 主线的运行说明、架构、导航和 `AGENTS.md` 已改为分支入口；下方历史记录描述当时的路径和验证，不代表主线仍有相应目录。后续从相应分支继续验证；分支创建后尚未重新运行原型测试或实验。
+- 原有主工作区还有大量未提交的旧代码删除和新文档，迁移没有暂存或提交这些主线改动。两个分支为本地快照，其共享文档保存的是迁移前状态；主线更新尚未同步到分支。
+
 ## 2026-10-28 按 development-docs 整理文档与架构
 
-- 补充 `prototypes/`、`experiments/` 与根目录 `AGENTS.md` 的入口和边界说明：主原型持续运行，独立实验拥有自己的依赖、证据和检查入口。技能对一次性原型的分支约定与项目明确要求冲突时，以项目要求为准，不迁走现有代码。
+- 当时补充了 `prototypes/`、`experiments/` 与根目录 `AGENTS.md` 的入口和边界；这条旧位置约定已由上方用户要求的分支迁移取代。
 - 将原 `docs/PRD.md` 完整迁入[项目意图与产品需求](intent.md)，把当前实现地图迁入[标准架构入口](architecture.md)，原目标架构方案迁入[设计文档](design/2026-10-27-target-architecture.md)。分别说明目标、现状与方案，更新内部链接，并增加目标、源码、证据和缺口的对应表。
 - 增加[人类阅读入口](for_human/README.md)和 [Agent 追踪入口](for_agent/README.md)，统一收录于[文档索引](README.md)。根 README 增加最短启动方式；仓库要求的本文件及原型、实验的独立位置不变。
 - `docs/research/` 中现有研究为跨多日期持续更新的综合材料，不足以无歧义地改成某一天冻结的研究记录；暂保留原路径和内容，在索引中明确其生命周期与日期边界。历史 `PLAN.md` 记录按项目规则保留，不改写成已完成的目标设计。
@@ -19,13 +27,13 @@
 
 - 基线为大量未提交的迁移：180 个跟踪文件删除，原型、实验和多份文档尚未跟踪。保留现有工作，不暂存、不恢复或删除旧代码，也未读取真实配置和存档。
 - 根目录的 `ddg.html` 是 DuckDuckGo 页面，`index.js` 是引用不存在的外部分包的打包文件，未发现项目引用；两份文件移至 `.tmp/project-organization-2026-10-28/` 暂存，未删除。该目录被 Git 忽略，不是永久归档；如需恢复，可将文件移回根目录。
-- 修正实验说明：Luanti 实验没有依赖锁文件，运行时哈希清单不能固定后续软件下载版本。新增[独立 CI 定义](../.github/workflows/minecraft-societies.yml)，仅手动触发 shell 和 Lua 语法检查；尚未运行，使用前仍需依当前规则告知并取得许可。原型依赖与锁文件一致，`.env`、`.data/`、实验运行时及生成世界被忽略。
+- 修正实验说明：Luanti 实验没有依赖锁文件，运行时哈希清单不能固定后续软件下载版本。新增独立 CI 定义（`experiment/minecraft-societies` 分支：`.github/workflows/minecraft-societies.yml`），仅手动触发 shell 和 Lua 语法检查；尚未运行，使用前仍需依当前规则告知并取得许可。原型依赖与锁文件一致，`.env`、`.data/`、实验运行时及生成世界被忽略。
 - 本轮运行 `node prototypes/verify.mjs`，退出码 0；包括 73/73 Node 测试、282/282 环境检查、17/17 配置检查、39/39 模型客户端检查，未调用真实模型或浏览器。日志为 `.tmp/project-organization-2026-10-28/prototype-verify.log`。三份实验 shell 脚本通过 `bash -n`，三份 Lua 源文件通过本机 LuaJIT 语法解析，CI YAML 可解析，文档本地链接目标存在；这不代表 CI、实验运行时或浏览器已重新验收。
 - 待处理：独立 CI 尚未运行，不能视为实验闭环验收；尚未全面逐项确认所有旧代码、历史证据和新文件是否应纳入最终提交，也尚未完成迁移的浏览器验收。相关盘点和决定记录在 `.audit/project-organization.todo.md` 与 `.audit/project-organization.tsv`。
 
 ## 当前状态
 
-- 当前唯一运行原型在 [prototypes](../prototypes/README.md)：文本对话创世、有限世界规则、角色调用、动态流和实时 3D 已接入同一服务。启动命令为 `node prototypes/server.mjs`，默认地址 `http://127.0.0.1:5175/`。
+- 创世与模拟原型保存在 `proto/world-genesis` 分支（`prototypes/README.md`）；Minecraft 社会实验保存在 `experiment/minecraft-societies` 分支。主工作区不再提供这两个目录或原型启动入口。
 - 原型使用 Node.js、ES modules、Three.js 和 JSON 存档；[目标架构](design/2026-10-27-target-architecture.md)不代表 React、Hono、SQLite 等均已实现。[产品需求](intent.md)描述目标，[当前架构](architecture.md)描述实现。
 - 现有证据支持有限资源、阈值过程、离散行动和小规模角色调用；完整小说因果、长期相关性记忆、反思、分岔、任意物理与复杂 3D 未实现或未验证。创世失败不得以固定故事冒充成功。
 
@@ -38,13 +46,13 @@
 
 - `docs/PRD.md` 保存需求，`docs/ARCHITECTURE.md` 保存目标架构，`docs/research/` 保存项目级研究，`docs/source-texts/` 只放原始文本；根 README 仅作简短介绍。
 - 将原型统一整理在 `prototypes/`，把原型说明、专属实验报告与历史记录移入原型目录，并将测试、山庄夹具及辅助脚本分到 `tests/`、`fixtures/`、`scripts/`。旧营地、voxel、山庄样例仍被代码或回归检查引用，本轮未因名称或年代删除。原型可能存在的其他冗余仍需逐项判断。
-- 更新代码引用、验证入口、CI 工作流和项目文档链接。`.data/prototype/` 存档位置保持不变，原先的主世界未被读取或改写。以前的详细记录和结果保留在 [历史进度](../prototypes/notes/2026-10-26-progress.md)，不作为本次验证的替代。
+- 更新代码引用、验证入口、CI 工作流和项目文档链接。`.data/prototype/` 存档位置保持不变，原先的主世界未被读取或改写。以前的详细记录和结果保留在 历史进度（`proto/world-genesis` 分支：`prototypes/notes/2026-10-26-progress.md`），不作为本次验证的替代。
 - 在 `.tmp/reorganization-verification/` 的隔离代码副本上运行 `node .../prototypes/verify.mjs`，退出码 0：62 个 Node 测试、282 个环境检查及既有角色、UI、创建、信息隔离、配置和模型客户端检查通过；使用合成数据，不调用真实模型或浏览器。日志为 `.tmp/reorganization-verification/checks.log`。
 - 使用新路径的实际源码、临时独立存档和临时端口检查 `/`、`/api/state`、`/app.js`、Three.js 静态资源及场景模块，均返回 HTTP 200；服务已关闭。故事文件哈希保持一致，文档本地链接已检查。
 - 进一步移除迁移后遗留的空 `scratch/` 目录；根 README 改为简短英文介绍。
 - 移除唯一原型目录下多余的 `main` 层级，所有入口、CI、文档和仓库根目录定位统一改为 `prototypes/`；修正因目录深度变化而受影响的配置、存档和观察脚本路径。
 - 在当前工作树运行 `node prototypes/verify.mjs`，退出码 0：62 个 Node 测试、282 个行为检查、配置 17/17、模型客户端 39/39 全部通过，未调用真实模型或浏览器；使用隔离存档做 HTTP 冒烟，`/`、`/api/state`、`/app.js`、Three.js 静态资源和场景模块均返回 200。
-- 本轮新增角色级秘密行动验证：资源和行动支持 `visibility: { actors, clues }`，行动支持 `performers`；地点、知情、当前观察、可执行权限和主观记忆保持分离。新增[《红发会》小起点夹具](../prototypes/fixtures/red-headed-league.mjs)及 8 个定向测试，覆盖 Wilson、Spaulding、Holmes、地下挖掘、线索揭示、跨地点银行警戒、通用失败、严格引用和复制后观察一致性。
+- 本轮新增角色级秘密行动验证：资源和行动支持 `visibility: { actors, clues }`，行动支持 `performers`；地点、知情、当前观察、可执行权限和主观记忆保持分离。新增《红发会》小起点夹具（`proto/world-genesis` 分支：`prototypes/fixtures/red-headed-league.mjs`）及 8 个定向测试，覆盖 Wilson、Spaulding、Holmes、地下挖掘、线索揭示、跨地点银行警戒、通用失败、严格引用和复制后观察一致性。
 - 本轮 `node prototypes/verify.mjs` 退出码 0：70 个 Node 测试全部通过。此前一次全量运行在观察投影向后兼容测试上发现 3 个失败，已修正为仅对带 story 的角色观察隐藏 author-facing 地点描述，并保留无 story 旧观察的完整序列化形状。
 - 使用真实 `.env` 配置在全新隔离目录 `.tmp/prototype/red-headed-live-vpQN87/` 完成一次三阶段创世，3 次真实模型调用通过完整世界、引用、规则、几何和运行检查，输出 4 个地点、3 个角色、4 个资源、2 个过程、5 个行动，并产生角色级 `visibility`/`performers`。没有确认进入作者当前世界，也没有启动浏览器。
 - 真实模型输出暴露一个新的研究问题：模型把地下计划写进公开 `world.story.premise` 和地点 `description`，结构校验无法发现自然语言泄漏。角色观察现已不再携带 author-facing premise；含 story 的角色观察也不传地点描述。该失败和后续约束已写入[世界模型研究](research/world-models.md)、[记忆研究](research/memory.md)与[架构](design/2026-10-27-target-architecture.md)，不能把这次创世记为语义完全正确。
@@ -118,7 +126,7 @@
 
 ## 2026-10-27 Minecraft agent 社会实验立项
 
-- 用户决定把[研究文档](research/minecraft-agent-societies.md)中的方向作为**延伸研究**启动，硬约束是**只能用免费资源**（免费模型端点、仅本机使用；容量测量也全部本机跑，不启用云端任务），并要求环境**优先开源、不为 Minecraft 付费**。位置定为仓库顶层 `experiments/minecraft-societies/`，计划与边界见[实验说明](../experiments/minecraft-societies/README.md)。
+- 用户决定把[研究文档](research/minecraft-agent-societies.md)中的方向作为**延伸研究**启动，硬约束是**只能用免费资源**（免费模型端点、仅本机使用；容量测量也全部本机跑，不启用云端任务），并要求环境**优先开源、不为 Minecraft 付费**。位置定为仓库顶层 `experiments/minecraft-societies/`，计划与边界见实验说明（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。
 - 用户最初答复为“一定要用真 MC”，随后澄清其本意是“找类似 MC 的开源项目，不打算为 MC 付费”。本轮据此纠正了一条事实：**Minecraft Java 版服务端免费、离线模式不需要账号、不需要买游戏**，需要付费的只是“正版客户端登录在线模式服务器”，与本研究无关；MC 本体确实**不开源**（Paper 是它的补丁分支）。因此环境改为 A（Paper）／B（flying-squid）／C（Luanti）三选一，**尚未决定**。
 - 位置决策经过比较：不建 `scratch/`，也不把 `prototypes/` 搬进去。`scratch/` 是本轮整理刚作为迁移残留移除的目录；`prototypes/` 是 AGENTS.md 规定的唯一原型入口。实验需要的是独立运行时（自己的依赖、CI、Java 与 MC 服务端），不是多一层目录。AGENTS.md 已补充“独立实验放 `experiments/<方向>/`”一条。
 - 本轮只做立项与核实，**没有实现、没有下载 MC 服务端、没有安装 Java、没有启动服务器或 bot、没有调用真实模型、没有发起云端任务**，也没有改动 `prototypes/` 的任何文件。
@@ -133,11 +141,11 @@
 
 ## 2026-10-27 Minecraft 实验 M0（C 路线）跑通
 
-按用户指示“先 C 小规模跑通再定”，本轮把 C 路线从“能启动服务端”推进到“有一份可运行的 agent 闭环”，代码与原始证据在 [experiments/minecraft-societies](../experiments/minecraft-societies/README.md)。
+按用户指示“先 C 小规模跑通再定”，本轮把 C 路线从“能启动服务端”推进到“有一份可运行的 agent 闭环”，代码与原始证据在 experiments/minecraft-societies（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。
 
 - **零 sudo、零 Java、零系统包**：新增 `runtime/bootstrap.sh`，把 11 个 deb 下载后 `dpkg-deb -x` 解包成项目内运行时（`.runtime/`，约 60 MB，脚本幂等，已下好的包不重下）。实测镜像会间歇性连不上（`cn.archive.ubuntu.com` 超时、`security.ubuntu.com` 正常），脚本按“还缺哪些”重试三次。解包后 `luantiserver --version` 自检通过，产物哈希写入 `.runtime/manifest.sha256`。
 - **新增 M0 agent 运行时**：`agent/mod/society/init.lua`（引擎胶水：forceload／emerge、生成、推进、执行、记账、事件格式）与 `agent/mod/society/policy.lua`（决策层，确定性桩，6 条规则）。分工是刻意的：M4 接 LLM 只替换 `policy.lua`，不动引擎胶水。`agent/run.sh` 是启停夹具，带硬校验，一次只允许一个服务端在跑。
-- **四条退出条件的实测结果**（实时基准 11.1 step/s，详见[证据](<../experiments/minecraft-societies/agent/evidence/m0-2026-10-27.md>)）：5 agent×10 决策 23 s／45 MiB／step 率 11.08；20 agent×8 决策 19 s／46 MiB／step 率 11.08；SIGTERM 停止路径 15 s 并留下完整账；反向用例 5 s 内被检出。
+- **四条退出条件的实测结果**（实时基准 11.1 step/s，详见证据（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/agent/evidence/m0-2026-10-27.md`））：5 agent×10 决策 23 s／45 MiB／step 率 11.08；20 agent×8 决策 19 s／46 MiB／step 率 11.08；SIGTERM 停止路径 15 s 并留下完整账；反向用例 5 s 内被检出。
   - **可重复启停**：同配置连跑两次，确定性事件序列逐行一致（73 行）。比对不含墙钟与 step/s 统计行——真实时间本来就不可复现。可重复靠两条设计：决策由一个 `globalstep` **按 agent id 排序**驱动（写在实体 `on_step` 里会因引擎遍历区块顺序不稳定而随机化交错），随机性用固定种子 LCG 而非 `math.random`。
   - **每步被推进**：每个统计区间 `stepped_delta` 等于 agent 数（5/5、20/20），`on_step` 只用于记这个证据。
   - **世界真的变了**：关服时用 `find_nodes_in_area` 回读地图，标记方块数与 mod 自记计数一致（`marks_counter=6 marks_in_world=6 ok=true`）——“世界变了”由世界本身证明，不由程序变量证明。
