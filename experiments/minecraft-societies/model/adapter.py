@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import time
 import urllib.error
@@ -172,12 +173,37 @@ def _validate_action(text: str, context: Mapping[str, Any]) -> dict:
         raise ModelError('invalid_action') from None
 
 
+def _normalize_context(context: Mapping[str, Any]) -> dict:
+    """Lua JSON can encode integral coordinates and identifiers as floats."""
+    def integer(value):
+        if type(value) not in (int, float) or not math.isfinite(value) or int(value) != value:
+            raise ModelError('invalid_context')
+        return int(value)
+    try:
+        ctx = dict(context)
+        obs = dict(ctx['observation'])
+        nearby = obs.get('nearby_agents') or []
+        if not isinstance(nearby, list):
+            raise ModelError('invalid_context')
+        obs['nearby_agents'] = [integer(value) for value in nearby]
+        ctx['observation'] = obs
+        bounds = ctx['bounds']
+        ctx['bounds'] = {side: {axis: integer(bounds[side][axis]) for axis in ('x', 'y', 'z')}
+                         for side in ('min', 'max')}
+        return ctx
+    except (TypeError, KeyError, ValueError, OverflowError):
+        raise ModelError('invalid_context') from None
+
+
 def decide(config: Config, context: Mapping[str, Any], *, transport: Callable[[Config, bytes], bytes] = _transport) -> dict:
     """Blocking bridge. Return action and safe audit metadata, or raise ModelError."""
     config.endpoint()
     try:
+        context = _normalize_context(context)
         data = json.dumps(context, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False)
         body = json.dumps({'model': config.model, 'stream': True,
+                           'text': {'format': {'type': 'json_object'}},
+                           'reasoning': {'effort': 'none'}, 'max_output_tokens': 256,
                            'input': [{'role': 'system', 'content': PROMPT},
                                      {'role': 'user', 'content': data}]},
                           ensure_ascii=True, separators=(',', ':')).encode()

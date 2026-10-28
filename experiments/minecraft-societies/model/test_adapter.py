@@ -19,6 +19,15 @@ def stream(action, status='completed'):
 
 
 class AdapterTests(unittest.TestCase):
+    def test_lua_integral_numbers_are_accepted_without_accepting_booleans(self):
+        ctx = {'observation': {'nearby_agents': [2.0]},
+               'bounds': {'min': {'x': -5.0, 'y': 1.0, 'z': -5.0},
+                          'max': {'x': 5.0, 'y': 1.0, 'z': 5.0}}}
+        result = adapter.decide(CONFIG, ctx, transport=lambda *_: stream({'kind': 'approach', 'target': 2}))
+        self.assertEqual(result['action']['target'], 2)
+        ctx['observation']['nearby_agents'] = [True]
+        with self.assertRaises(adapter.ModelError):
+            adapter.decide(CONFIG, ctx, transport=lambda *_: stream({'kind': 'inspect'}))
     def test_message_only_to_observed_agent_with_bounded_text(self):
         context = {'observation': {'nearby_agents': [2]}}
         self.assertEqual(adapter._validate_action('{"kind":"say","target":2,"text":"hello"}', context)['kind'], 'say')
