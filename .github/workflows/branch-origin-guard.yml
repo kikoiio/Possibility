@@ -17,8 +17,8 @@ jobs:
           SOURCE_BRANCH: ${{ github.head_ref }}
         run: |
           case "$SOURCE_BRANCH" in
-            proto/*|experiment/*)
-              echo "Branches under proto/ and experiment/ must not be merged into main."
+            proto/*|prototype/*|experiment/*)
+              echo "Branches under proto/, prototype/ and experiment/ must not be merged into main."
               exit 1
               ;;
             *) echo "Source branch is allowed." ;;
