@@ -330,7 +330,8 @@ local function decide_and_act(self)
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
-			if not minetest.safe_file_write(path, minetest.write_json({id = request_id, context = context})) then
+			local encoded = string.format('{"id":%d,"context":%s}', request_id, minetest.write_json(context))
+			if not minetest.safe_file_write(path, encoded) then
 				ev("fail=model-request-write agent=%d", self._id)
 				S.failed = "model-request-write"
 				minetest.request_shutdown()

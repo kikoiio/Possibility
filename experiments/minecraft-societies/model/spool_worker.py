@@ -84,12 +84,16 @@ def process_one(directory, path, timeout, runner=run_bridge):
             if len(raw) > MAX_LINE:
                 raise ValueError
             request = json.loads(raw)
-            if (not isinstance(request, dict) or set(request) != {'id', 'context'}
-                    or type(request['id']) is not int or request['id'] != request_id
-                    or not isinstance(request['context'], dict)):
-                raise ValueError
-        except (OSError, ValueError, TypeError, UnicodeError):
-            result = {'id': request_id, 'ok': False, 'error': 'invalid_request'}
+            if not isinstance(request, dict) or set(request) != {'id', 'context'}:
+                raise ValueError('invalid_shape')
+            if type(request['id']) is not int or request['id'] != request_id:
+                raise ValueError('invalid_id')
+            if not isinstance(request['context'], dict):
+                raise ValueError('invalid_context')
+        except (OSError, ValueError, TypeError, UnicodeError) as exc:
+            reason = str(exc)
+            result = {'id': request_id, 'ok': False, 'error': reason if reason in
+                      ('invalid_shape', 'invalid_id', 'invalid_context') else 'invalid_request'}
         else:
             try:
                 result = runner(request, directory / 'STOP', timeout)

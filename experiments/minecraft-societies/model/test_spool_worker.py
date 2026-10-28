@@ -28,7 +28,7 @@ class SpoolTests(unittest.TestCase):
         path = self.root / 'request-4.json'
         path.write_text(json.dumps(request))
         worker.process_one(self.root, path, 1)
-        self.assertEqual(json.loads((self.root / 'response-4.json').read_text())['error'], 'invalid_request')
+        self.assertEqual(json.loads((self.root / 'response-4.json').read_text())['error'], 'invalid_id')
         self.assertFalse(list(self.root.glob('.response-*.tmp')))
 
     def test_timeout_and_stop_cleanup(self):
