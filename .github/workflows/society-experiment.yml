@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: society-experiment
+  cancel-in-progress: false
 jobs:
   experiment:
     runs-on: ubuntu-24.04
@@ -22,6 +25,7 @@ jobs:
           lua5.1 test.lua
           lua5.1 test_persistence.lua
           lua5.1 test_resource_actions.lua
+          lua5.1 test_action_context.lua
           cd ../model
           python3 -B -m unittest -v
           cd ..
@@ -94,6 +98,15 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+      - name: Repeated 1000-agent capacity measurement
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
+        run: |
+          exp=experiments/minecraft-societies
+          for cognition in false true; do
+            rc=0
+            "$exp/agent/run.sh" --label "ci-repeat-${cognition}" --agents 1000 --decisions 12 --interval 2 --seconds 90 --repeat 3 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+            echo "cognition=$cognition exit=$rc" >> "$exp/agent/evidence/ci-repeat-status.txt"
+          done
       - name: Explore interactions with and without memory
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
@@ -103,11 +116,16 @@ jobs:
         run: |
           exp=experiments/minecraft-societies
           "$exp/agent/run.sh" --label ci-base --agents 3 --decisions 8 --interval 1 --set society_spacing=2 --set society_seed_resources=true --set society_cognition=true
-          for memory in true false; do
-            python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-base.run1" "$exp/agent/worlds/ci-memory-${memory}.run1"
-            rc=0
-            "$exp/agent/run.sh" --label "ci-memory-${memory}" --agents 3 --decisions 6 --interval 1 --seconds 600 --resume --model --set society_spacing=2 --set society_model_memory="$memory" --set society_log_messages=true || rc=$?
-            echo "memory=$memory exit=$rc" >> "$exp/agent/evidence/ci-memory-status.txt"
+          for trial in 1 2 3; do
+            order="true false"
+            if [ "$trial" = 2 ]; then order="false true"; fi
+            for memory in $order; do
+              label="ci-memory-${memory}-${trial}"
+              python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-base.run1" "$exp/agent/worlds/${label}.run1"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents 3 --decisions 8 --interval 1 --seconds 600 --resume --model --set society_spacing=2 --set society_model_memory="$memory" --set society_log_messages=true --set 'society_goal=Work with nearby agents to gather resources and build a shared structure. Tell a neighbor your plan or progress. Choose actions yourself; evaluate feedback and adjust.' || rc=$?
+              echo "trial=$trial memory=$memory exit=$rc" >> "$exp/agent/evidence/ci-memory-status.txt"
+            done
           done
           ! grep -qv 'exit=0' "$exp/agent/evidence/ci-memory-status.txt"
       - uses: actions/upload-artifact@v4
@@ -123,5 +141,6 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-resource.*
             experiments/minecraft-societies/agent/evidence/ci-memory-*
             experiments/minecraft-societies/agent/evidence/ci-large-*
+            experiments/minecraft-societies/agent/evidence/ci-repeat-*
           if-no-files-found: warn
           retention-days: 14

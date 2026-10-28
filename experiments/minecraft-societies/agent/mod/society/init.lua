@@ -18,6 +18,7 @@ local cognition_observe = dofile(minetest.get_modpath("society") .. "/observatio
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
+local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -40,6 +41,7 @@ local MODEL = cfg("society_model", "false") == "true"
 local SEED_RESOURCES = cfg("society_seed_resources", "false") == "true"
 local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
+local GOAL = cfg("society_goal", "Explore, gather resources, build, and interact with nearby agents.")
 local PERSIST = cfg("society_persist", "false") == "true"
 local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
@@ -285,9 +287,12 @@ local function apply(self, action, pos)
 
 	if kind == "gather" or kind == "build" then
 		local ok, reason = self._resources[kind](self._resources, action.point, "society:resource")
+		self._last_action = {kind = kind, point = action.point, ok = ok, reason = reason or "verified"}
 		self._episodic:add({time = minetest.get_gametime(),
-			text = string.format("%s %s; inventory=%d", kind, ok and "succeeded" or "failed",
-				self._resources:count("society:resource")), source = {kind = "action", id = self._id}})
+			text = string.format("%s at %d,%d,%d %s: %s; inventory=%d", kind,
+				action.point.x, action.point.y, action.point.z, ok and "succeeded" or "failed",
+				reason or "verified", self._resources:count("society:resource")),
+			source = {kind = "action", id = self._id}})
 		ev("ev=resource agent=%d action=%s ok=%s reason=%s inventory=%d", self._id, kind,
 			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
 		return
@@ -295,6 +300,9 @@ local function apply(self, action, pos)
 	if kind == "say" then
 		local recipient = agents[action.target]
 		if recipient then
+			recipient._inbox[#recipient._inbox + 1] = {time = minetest.get_gametime(),
+				from = self._id, text = action.text}
+			if #recipient._inbox > 8 then table.remove(recipient._inbox, 1) end
 			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
 				source = {kind = "agent", id = self._id}})
 			self._episodic:add({time = minetest.get_gametime(), text = action.text,
@@ -358,12 +366,17 @@ local function decide_and_act(self)
 			request_id = request_id + 1
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
-				persona = self._persona, goal = "Explore, gather resources, build, and interact with nearby agents.",
+				self_id = self._id, time = minetest.get_gametime(), persona = self._persona, goal = GOAL,
+				nearby_positions = obs.local_view and obs.local_view.agents or {},
+				movement_target = self._target,
+				last_action = self._last_action, incoming_messages = self._inbox,
 				visible_nodes = obs.local_view and obs.local_view.nodes or {},
 				inventory = self._resources:inventory(),
 				memory = MODEL_MEMORY and self._episodic:list() or {},
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
+			context.local_actions = action_context.describe(minetest, pos,
+				context.visible_nodes, context.inventory, context.bounds)
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
 			local encoded = string.format('{"id":%d,"context":%s}', request_id, minetest.write_json(context))
 			if not minetest.safe_file_write(path, encoded) then
@@ -373,6 +386,7 @@ local function decide_and_act(self)
 				return
 			end
 			self._pending = {id = request_id, started = minetest.get_us_time()}
+			self._inbox = {}
 			ev("ev=model-request agent=%d request=%d", self._id, request_id)
 			return
 		end
@@ -451,6 +465,9 @@ local function decide_and_act(self)
 	end
 	action.observation = obs
 	apply(self, action, pos)
+	if action.kind ~= "gather" and action.kind ~= "build" then
+		self._last_action = {kind = action.kind, status = "applied"}
+	end
 
 	self._decisions = self._decisions + 1
 	S.decisions = S.decisions + 1
@@ -517,6 +534,7 @@ local function spawn_agents()
 			le._marks_placed = 0
 			le._memory = {met = {}, idle_streak = 0}
 			le._episodic = cognition_memory.new(32)
+			le._inbox = {}
 			if saved then
 				local ok, detail = pcall(persistence.restore, le, saved[i + 1], {reset_minds = RESET_MINDS})
 				if not ok or le._id ~= i then

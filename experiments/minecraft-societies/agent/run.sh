@@ -111,7 +111,7 @@ run_once() {
     spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
   fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
-  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
