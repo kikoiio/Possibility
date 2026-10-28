@@ -1,6 +1,6 @@
 # Wispiva 主原型
 
-这是 Wispiva 当前唯一的运行原型，包含创世、模拟、模型调用和三维展示；它不是多个互相独立的体验。产品目标见[项目意图](../docs/intent.md)，现有能力与缺口见[当前架构](../docs/architecture.md)，工作进度见[计划](../docs/PLAN.md)。[独立实验](../experiments/minecraft-societies/README.md)不接入此运行入口或依赖。
+这是 Wispiva 当前唯一的运行原型，包含创世、模拟、模型调用和三维展示；它不是多个互相独立的体验。产品目标见[项目意图](../docs/intent.md)，现有能力与缺口见[当前架构](../docs/architecture.md)，工作进度见[计划](../docs/PLAN.md)。独立实验位于 `experiment/minecraft-societies` 分支，不接入此运行入口或依赖。
 
 在仓库根目录安装依赖并启动：
 
