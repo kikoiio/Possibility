@@ -1,0 +1,10 @@
+SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+SOCIETY banner count=5 interval=2.00 max_decisions=10 seed=20261027 spacing=64 bound=32 sense=12 step=2
+SOCIETY artifact init_sha256=dcbed98fd0a0bfe09973dc90fb3e18e586d10dea2b09d9c10637862fbf9fd63f policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+SOCIETY forceload blocks=25/25 bound=32
+SOCIETY spawn count=5 ok=5 spacing=64 bound=32
+SOCIETY check stage=spawn alive=1 expected=5 ok=false
+SOCIETY fail=agents-lost-after-spawn alive=1 expected=5 hint=emerge-race-or-active-block-purge
+SOCIETY summary spawned=5 alive=1 decisions=0 rounds=0 marks=0 meetings=0 actions=advance:0,approach:0,inspect:0,mark:0,wander:0,unknown:0
+SOCIETY done result=fail reason=agents-lost-after-spawn
+SOCIETY verify marks_counter=0 marks_in_world=0 ok=true

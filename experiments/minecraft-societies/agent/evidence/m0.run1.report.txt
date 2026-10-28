@@ -1,0 +1,108 @@
+=== M0 运行报告 m0.run1 ===
+时间: 2026-10-27T21:01:05-04:00
+停止方式: self-shutdown（退出码 0，运行 23s）
+峰值 RSS: 45 MiB
+
+--- 配置 ---
+  bind_address = 127.0.0.1
+  port = 30077
+  mg_name = singlenode
+  max_users = 8
+  creative_mode = true
+  enable_damage = false
+  server_announce = false
+  dedicated_server_step = 0.09
+  max_forceloaded_blocks = -1
+  society_count = 5
+  society_decide_interval = 2.0
+  society_max_decisions = 10
+
+--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---
+  d6c1d25c67f4c3d2c0411015d2dec0f06ee2dc19301460531b880eec39570cba  /home/neo/Projects/Wispiva/experiments/minecraft-societies/.runtime/root/usr/libexec/luanti/luantiserver
+  dcbed98fd0a0bfe09973dc90fb3e18e586d10dea2b09d9c10637862fbf9fd63f  /home/neo/Projects/Wispiva/experiments/minecraft-societies/agent/mod/society/init.lua
+  c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd  /home/neo/Projects/Wispiva/experiments/minecraft-societies/agent/mod/society/policy.lua
+
+--- 校验 ---
+  stats 行数: 3
+  每区间最少被推进的 agent: 5 / 5
+  最低 steps_per_sec: 11.08（实时基准 11.1）
+  结果: PASS
+
+--- SOCIETY 事件（原文）---
+SOCIETY banner engine="Luanti 5.10.0" proto=37..46 lua=LuaJIT 2.1.1761786044 mod=society policy=m0-stub-1
+SOCIETY banner count=5 interval=2.00 max_decisions=10 seed=20261027 spacing=8 bound=32 sense=12 step=2
+SOCIETY artifact init_sha256=dcbed98fd0a0bfe09973dc90fb3e18e586d10dea2b09d9c10637862fbf9fd63f policy_sha256=c69252d24452cceba54af5c563a2ddb25af2d068352468f1b4560b5a5df357bd
+SOCIETY forceload blocks=25/25 bound=32
+SOCIETY spawn count=5 ok=5 spacing=8 bound=32
+SOCIETY check stage=spawn alive=5 expected=5 ok=true
+SOCIETY ev=mark agent=0 persona=atlas at=-7,1,-8 marks_total=1
+SOCIETY ev=approach agent=1 persona=birch target=0 at=-6,1,-8
+SOCIETY ev=mark agent=2 persona=cinder at=7,1,-8 marks_total=2
+SOCIETY ev=approach agent=3 persona=delta target=0 at=-8,1,-6
+SOCIETY ev=approach agent=4 persona=ember target=0 at=-6,1,-8
+SOCIETY ev=approach agent=0 persona=atlas target=1 at=-2,1,-8
+SOCIETY ev=move agent=1 persona=birch to=-2,1,-8 remaining=4 why=en-route
+SOCIETY ev=approach agent=2 persona=cinder target=4 at=2,1,0
+SOCIETY ev=move agent=3 persona=delta to=-8,1,-2 remaining=4 why=en-route
+SOCIETY ev=move agent=4 persona=ember to=0,1,-2 remaining=6 why=en-route
+SOCIETY stats t=6.0 agents=5/5 stepped_delta=5 steps_per_sec=11.11 decisions=10 marks=2 meetings=0 actions=advance:3,approach:5,inspect:0,mark:2,wander:0,unknown:0
+SOCIETY ev=move agent=0 persona=atlas to=-6,1,-8 remaining=4 why=en-route
+SOCIETY ev=move agent=1 persona=birch to=-4,1,-8 remaining=2 why=en-route
+SOCIETY ev=arrive agent=1 persona=birch at=-4,1,-8
+SOCIETY ev=meet agent=1 persona=birch with=0 persona=atlas at=-4,1,-8
+SOCIETY ev=move agent=2 persona=cinder to=8,1,-6 remaining=6 why=en-route
+SOCIETY ev=move agent=3 persona=delta to=-8,1,-4 remaining=2 why=en-route
+SOCIETY ev=arrive agent=3 persona=delta at=-8,1,-4
+SOCIETY ev=move agent=4 persona=ember to=-2,1,-2 remaining=6 why=en-route
+SOCIETY ev=move agent=0 persona=atlas to=-4,1,-8 remaining=2 why=en-route
+SOCIETY ev=arrive agent=0 persona=atlas at=-4,1,-8
+SOCIETY ev=inspect agent=1 persona=birch at=-4,1,-8 neighbours=3 marks_nearby=2
+SOCIETY ev=move agent=2 persona=cinder to=6,1,-6 remaining=6 why=en-route
+SOCIETY ev=approach agent=3 persona=delta target=0 at=-6,1,-8
+SOCIETY ev=move agent=4 persona=ember to=-2,1,-4 remaining=4 why=en-route
+SOCIETY ev=inspect agent=0 persona=atlas at=-4,1,-8 neighbours=4 marks_nearby=2
+SOCIETY ev=inspect agent=1 persona=birch at=-4,1,-8 neighbours=4 marks_nearby=2
+SOCIETY ev=move agent=2 persona=cinder to=6,1,-4 remaining=4 why=en-route
+SOCIETY ev=move agent=3 persona=delta to=-8,1,-6 remaining=2 why=en-route
+SOCIETY ev=arrive agent=3 persona=delta at=-8,1,-6
+SOCIETY ev=move agent=4 persona=ember to=-4,1,-4 remaining=4 why=en-route
+SOCIETY stats t=11.0 agents=5/5 stepped_delta=5 steps_per_sec=11.08 decisions=25 marks=2 meetings=1 actions=advance:14,approach:6,inspect:3,mark:2,wander:0,unknown:0
+SOCIETY ev=inspect agent=0 persona=atlas at=-4,1,-8 neighbours=4 marks_nearby=2
+SOCIETY ev=wander agent=1 persona=birch why=stalled target=1,1,-9
+SOCIETY ev=move agent=2 persona=cinder to=4,1,-4 remaining=4 why=en-route
+SOCIETY ev=approach agent=3 persona=delta target=0 at=-6,1,-8
+SOCIETY ev=move agent=4 persona=ember to=-4,1,-6 remaining=2 why=en-route
+SOCIETY ev=arrive agent=4 persona=ember at=-4,1,-6
+SOCIETY ev=meet agent=4 persona=ember with=0 persona=atlas at=-4,1,-6
+SOCIETY ev=meet agent=4 persona=ember with=1 persona=birch at=-4,1,-6
+SOCIETY ev=wander agent=0 persona=atlas why=stalled target=3,1,-7
+SOCIETY ev=move agent=1 persona=birch to=-2,1,-8 remaining=3 why=en-route
+SOCIETY ev=move agent=2 persona=cinder to=4,1,-2 remaining=2 why=en-route
+SOCIETY ev=arrive agent=2 persona=cinder at=4,1,-2
+SOCIETY ev=move agent=3 persona=delta to=-6,1,-6 remaining=2 why=en-route
+SOCIETY ev=arrive agent=3 persona=delta at=-6,1,-6
+SOCIETY ev=meet agent=3 persona=delta with=0 persona=atlas at=-6,1,-6
+SOCIETY ev=meet agent=3 persona=delta with=4 persona=ember at=-6,1,-6
+SOCIETY ev=inspect agent=4 persona=ember at=-4,1,-6 neighbours=4 marks_nearby=2
+SOCIETY stats t=16.0 agents=5/5 stepped_delta=5 steps_per_sec=11.08 decisions=35 marks=2 meetings=5 actions=advance:19,approach:7,inspect:5,mark:2,wander:2,unknown:0
+SOCIETY ev=move agent=0 persona=atlas to=-2,1,-8 remaining=5 why=en-route
+SOCIETY ev=move agent=1 persona=birch to=0,1,-8 remaining=1 why=en-route
+SOCIETY ev=arrive agent=1 persona=birch at=0,1,-8
+SOCIETY ev=approach agent=2 persona=cinder target=0 at=0,1,-8
+SOCIETY ev=inspect agent=3 persona=delta at=-6,1,-6 neighbours=4 marks_nearby=1
+SOCIETY ev=inspect agent=4 persona=ember at=-4,1,-6 neighbours=4 marks_nearby=2
+SOCIETY ev=move agent=0 persona=atlas to=0,1,-8 remaining=3 why=en-route
+SOCIETY ev=inspect agent=1 persona=birch at=0,1,-8 neighbours=4 marks_nearby=2
+SOCIETY ev=move agent=2 persona=cinder to=4,1,-4 remaining=4 why=en-route
+SOCIETY ev=inspect agent=3 persona=delta at=-6,1,-6 neighbours=4 marks_nearby=1
+SOCIETY ev=wander agent=4 persona=ember why=stalled target=10,1,2
+SOCIETY ev=move agent=0 persona=atlas to=2,1,-8 remaining=1 why=en-route
+SOCIETY ev=arrive agent=0 persona=atlas at=2,1,-8
+SOCIETY ev=inspect agent=1 persona=birch at=0,1,-8 neighbours=4 marks_nearby=2
+SOCIETY ev=move agent=2 persona=cinder to=2,1,-4 remaining=4 why=en-route
+SOCIETY ev=wander agent=3 persona=delta why=stalled target=-19,1,1
+SOCIETY ev=move agent=4 persona=ember to=-2,1,-6 remaining=12 why=en-route
+SOCIETY summary spawned=5 alive=5 decisions=50 rounds=10 marks=2 meetings=5 actions=advance:26,approach:8,inspect:10,mark:2,wander:4,unknown:0
+SOCIETY done result=ok reason=decisions-reached
+SOCIETY verify marks_counter=2 marks_in_world=2 ok=true
+SOCIETY shutdown alive=5 spawned=5 decisions=50 rounds=10 marks=2 meetings=5 actions=advance:26,approach:8,inspect:10,mark:2,wander:4,unknown:0

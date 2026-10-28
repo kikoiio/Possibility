@@ -1,0 +1,8 @@
+# 就地物化的运行时与下载的 deb：可由 runtime/bootstrap.sh 重建，不入库。
+.runtime/
+
+# 每次运行生成的世界（地图、worldmods 副本、server.conf）：丢弃即可重建。
+agent/worlds/
+
+# 基准的一次性运行目录。
+bench/run/
