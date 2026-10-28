@@ -226,8 +226,10 @@ run_once() {
       || failed+=("预期的失败 $EXPECT_FAIL 没有出现（检测失效）")
     command grep -q 'SOCIETY done result=fail' "$log" \
       || failed+=("失败没有以 done result=fail 收尾")
-    command grep -q 'SOCIETY check stage=spawn .* ok=false' "$log" \
-      || failed+=("预期失败，但生成后存活校验仍报 ok=true（说明失败是静默的）")
+    if [[ "$EXPECT_FAIL" == agents-lost* ]]; then
+      command grep -q 'SOCIETY check stage=spawn .* ok=false' "$log" \
+        || failed+=("预期角色丢失，但没有失败的存活校验")
+    fi
   else
     if command grep -q 'SOCIETY fail=' "$log"; then
       failed+=("出现失败行：$(command grep -o 'SOCIETY fail=[^ ]*' "$log" | sort -u | tr '\n' ' ')")

@@ -67,6 +67,7 @@ local S = {
 	finished = false, failed = nil,
 }
 
+local summary_and_stop
 local agents = {}
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
@@ -355,7 +356,7 @@ local function decide_and_act(self)
 		if not local_obs then
 			ev("fail=observation agent=%d reason=%s", self._id, err)
 			S.failed = "observation"
-			minetest.request_shutdown()
+			summary_and_stop()
 			return
 		end
 		local marks, resource_count = 0, 0
@@ -390,7 +391,7 @@ local function decide_and_act(self)
 			if not minetest.safe_file_write(path, encoded) then
 				ev("fail=model-request-write agent=%d", self._id)
 				S.failed = "model-request-write"
-				minetest.request_shutdown()
+				summary_and_stop()
 				return
 			end
 			self._pending = {id = request_id, started = minetest.get_us_time()}
@@ -403,7 +404,7 @@ local function decide_and_act(self)
 			os.remove(path)
 			ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
 			S.failed = "model-timeout"
-			minetest.request_shutdown()
+			summary_and_stop()
 			return
 		end
 		local f = io.open(path, "r")
@@ -432,7 +433,7 @@ local function decide_and_act(self)
 				result and tostring(result.error) or "invalid", tostring(audit.latency_ms or "unknown"),
 				tostring(usage.input_tokens or "unknown"), tostring(usage.output_tokens or "unknown"))
 			S.failed = "model-response"
-			minetest.request_shutdown()
+			summary_and_stop()
 			return
 		end
 		action = result.action
@@ -514,7 +515,7 @@ local function spawn_agents()
 		if type(saved) ~= "table" or #saved ~= COUNT then
 			ev("fail=restore-invalid expected=%d", COUNT)
 			S.failed = "restore-invalid"
-			minetest.request_shutdown()
+			summary_and_stop()
 			return
 		end
 		for i = 1, COUNT do
@@ -522,7 +523,7 @@ local function spawn_agents()
 			if not ok or state.id ~= i - 1 or not in_bounds(state.pos) then
 				ev("fail=restore-invalid agent=%d reason=validation", i - 1)
 				S.failed = "restore-invalid"
-				minetest.request_shutdown()
+				summary_and_stop()
 				return
 			end
 		end
@@ -561,7 +562,7 @@ local function spawn_agents()
 						tostring(detail):gsub("%s+", "_"), tostring(state.id),
 						type(state.memory and state.memory.met), type(state.episodic))
 					S.failed = "restore-invalid"
-					minetest.request_shutdown()
+					summary_and_stop()
 					return
 				end
 				if RESET_MINDS then
@@ -589,7 +590,7 @@ local function spawn_agents()
 	end
 end
 
-local function summary_and_stop()
+summary_and_stop = function()
 	ev("summary spawned=%d alive=%d decisions=%d rounds=%d marks=%d meetings=%d actions=%s",
 		S.spawned, alive_agents(), S.decisions, S.driver_rounds, S.marks, S.meets, action_string())
 	ev("done result=%s reason=%s", S.failed and "fail" or "ok", S.failed or "decisions-reached")
@@ -687,6 +688,7 @@ minetest.register_globalstep(function(dtime)
 			local le = agents[i]
 			if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
 				decide_and_act(le)
+				if S.failed then return end
 			end
 		end
 		ev("round number=%d wall_ms=%.2f", S.driver_rounds,
