@@ -10,6 +10,7 @@ const output = resolve('.tmp/prototype/voxel-browser');
 mkdirSync(output, { recursive: true });
 const temporary = mkdtempSync(join(output, 'state-'));
 const inputs = [], errors = [], checks = [];
+const visual = { syntheticModelCalls: 0, screenshots: [] };
 const options = {
   stateFile: join(temporary, 'state.json'),
   configLoader: () => ({ llm: { baseUrl: 'https://fixture.invalid/v1', model: 'synthetic-voxel-browser', apiKey: 'synthetic-only' } }),
@@ -22,6 +23,33 @@ const options = {
         ? [{ op: 'replace', from: [1, 0, 0], to: [1, 1, 0], match: 'wood', material: 'glass' }]
         : assert.fail('Unexpected synthetic model call');
     const value = { reply: inputs.length === 1 ? '已建起木墙。' : '已把中间两块换成玻璃。', summary: '一面带玻璃的墙。', ready: false, commands };
+    return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] });
+  },
+};
+const visualCommands = [
+  { op: 'fill', from: [-6, 0, -6], to: [6, 0, 6], material: 'grass' },
+  { op: 'fill', from: [-3, 1, -3], to: [3, 4, 3], material: 'wood' },
+  { op: 'fill', from: [-2, 1, -2], to: [2, 4, 2], material: null },
+  { op: 'fill', from: [0, 1, 3], to: [0, 2, 3], material: null },
+  { op: 'fill', from: [2, 2, 3], to: [2, 3, 3], material: 'glass' },
+  { op: 'fill', from: [3, 2, 0], to: [3, 3, 1], material: 'glass' },
+  { op: 'fill', from: [-4, 5, -4], to: [4, 5, 4], material: 'roof' },
+  { op: 'fill', from: [-3, 6, -3], to: [3, 6, 3], material: 'roof' },
+  { op: 'fill', from: [-2, 7, -2], to: [2, 7, 2], material: 'roof' },
+  { op: 'fill', from: [-1, 8, -1], to: [1, 8, 1], material: 'roof' },
+  { op: 'fill', from: [5, 1, -4], to: [5, 3, -4], material: 'wood' },
+  { op: 'fill', from: [4, 4, -5], to: [6, 5, -3], material: 'leaves' },
+];
+const visualOptions = {
+  stateFile: join(temporary, 'visual', 'state.json'),
+  configLoader: options.configLoader,
+  fetchImpl: async (_url, init) => {
+    visual.syntheticModelCalls++;
+    assert.equal(visual.syntheticModelCalls, 1, 'Unexpected visual fixture call');
+    const input = JSON.parse(JSON.parse(init.body).input.at(-1).content);
+    assert.equal(input.voxel.revision, 0);
+    assert.deepEqual(input.voxel.cells, []);
+    const value = { reply: '草地上的木屋建好了。', summary: '草地、带窗户和屋顶的木屋，还有一棵树。', ready: false, commands: visualCommands };
     return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] });
   },
 };
@@ -147,13 +175,48 @@ export async function createVoxelScene(host, initialWorld) {
   assert.equal(inputs.length, 2);
   assert.deepEqual(errors, []);
   checks.push('service restart restores the isolated saved scene');
-  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: true, checks, syntheticModelCalls: inputs.length, realModelCalls: 0, errors }, null, 2));
+
+  // A separate service and save keep the visual fixture independent of the
+  // fill/replace history while reusing the real page and renderer.
+  await new Promise(resolve => server.close(resolve));
+  mkdirSync(join(temporary, 'visual'), { recursive: true });
+  ({ server } = createCampServer(visualOptions));
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('#creation-input').disabled);
+  assert.deepEqual(cells(await state()), []);
+  await send('请在草地上建一座带窗户和屋顶的木屋，旁边种一棵树。');
+  const scene = await state();
+  assert.equal(scene.revision, 1);
+  const blocks = new Map(scene.cells.map(cell => [cell.position.join(','), cell.material]));
+  for (const [position, material] of [['-6,0,-6', 'grass'], ['-3,1,-3', 'wood'], ['2,2,3', 'glass'], ['0,8,0', 'roof'], ['5,4,-4', 'leaves']]) {
+    assert.equal(blocks.get(position), material, `Unexpected material at ${position}`);
+  }
+  assert.equal(blocks.has('0,1,3'), false, 'The doorway should be open');
+  await page.waitForFunction(revision => window.__observedVoxelRevision === revision, scene.revision);
+  assert(!emptyImage.equals(await rendered()), 'The visual fixture must render on the canvas');
+  await shot('07-visual-scene');
+  visual.screenshots.push('07-visual-scene.png');
+  await page.locator('#voxel-scene canvas').screenshot({ path: join(output, '08-visual-canvas.png') });
+  visual.screenshots.push('08-visual-canvas.png');
+  visual.cells = scene.cells.length;
+  assert.equal(visual.syntheticModelCalls, 1);
+  assert.equal(inputs.length, 2);
+  assert.deepEqual(errors, []);
+  checks.push('independent grass and roofed cabin fixture renders for visual review');
+  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: true, checks, syntheticModelCalls: inputs.length, visual, realModelCalls: 0, errors }, null, 2));
 } catch (error) {
   if (page) await shot('failure').catch(() => {});
-  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: false, checks, error: error.message, syntheticModelCalls: inputs.length, realModelCalls: 0, errors }, null, 2));
+  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: false, checks, error: error.message, syntheticModelCalls: inputs.length, visual, realModelCalls: 0, errors }, null, 2));
   throw error;
 } finally {
-  if (browser) await browser.close();
-  if (server?.listening) await new Promise(resolve => server.close(resolve));
-  rmSync(temporary, { recursive: true, force: true });
+  try {
+    if (browser) await browser.close();
+  } finally {
+    try {
+      if (server?.listening) await new Promise(resolve => server.close(resolve));
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }
 }

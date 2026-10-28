@@ -32,7 +32,19 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     if (saved.pending) creation.dialogue.ready = false;
   }
   creation.voxelId = /^[0-9a-f-]{36}$/.test(saved?.voxelId || '') ? saved.voxelId : randomUUID();
-  let voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) });
+  const openVoxel = (id, expected = 0) => {
+    const file = join(directory, `voxel-${id}.json`);
+    try {
+      if (expected > 0 && !existsSync(file)) throw Error('已保存的体素草稿文件缺失');
+      return createVoxelWorldStore({ file });
+    } catch {
+      const message = '建造草稿文件缺失或损坏；原文件已保留，请恢复后重启。';
+      creation.lastResult = { ok: false, reason: 'voxel-recovery', message };
+      const fail = () => { throw Error(message); };
+      return { state: () => ({ revision: expected, cells: [], objects: [], canUndo: false, canRedo: false, error: message }), apply: fail, undo: fail, redo: fail };
+    }
+  };
+  let voxel = openVoxel(creation.voxelId, Number.isSafeInteger(saved?.voxelRevision) ? saved.voxelRevision : 0);
   // Fixed experiments are backups, never an active world in the creation flow.
   // Move the original bytes before opening a runtime (which could resume autonomy).
   if (existsSync(stateFile)) {
@@ -57,7 +69,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   if (inner && creation.mode === 'create') inner.control({ type: 'pause' });
   let active = null, epoch = 0;
   const model = { pending: false, kind: 'creation', actorId: null, progress: null, lastResult: creation.lastResult };
-  const persist = () => save({ schemaVersion: 1, ...creation, pending: Boolean(active && !active.controller.signal.aborted) });
+  const persist = () => save({ schemaVersion: 1, ...creation, voxelRevision: voxel.state().revision, pending: Boolean(active && !active.controller.signal.aborted) });
   const state = () => ({ ...(inner?.state() ?? { world: null, worldMinute: 0, revision: 0, paused: true, speed: 24, waiting: null, actors: {}, autonomy: { enabled: false, waitingReason: null }, scene: null, model: { pending: false } }),
     creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), voxel: voxel.state(), hasWorld: Boolean(inner) },
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
@@ -77,7 +89,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     switch (body?.type) {
       case 'creation-open': case 'reset':
         if (blocked()) return response(false, '请先完成或取消当前模型调用。');
-        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; creation.source = null; creation.voxelId = randomUUID(); voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) }); }
+        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.draft = null; creation.source = null; creation.voxelId = randomUUID(); voxel = openVoxel(creation.voxelId); }
         inner?.control({ type: 'pause' }); creation.mode = 'create'; creation.lastResult = null; epoch++; persist();
         return response(true, '从一个新想法开始，现有世界已暂停并保留。');
       case 'creation-resume':
@@ -87,9 +99,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再更换素材。');
         if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > 100000)) return response(false, '请选择不超过 10 万字的非空文本文件。');
         creation.source = body.source ? { name: body.source.name.trim(), text: body.source.text } : null;
-        creation.voxelId = randomUUID(); voxel = createVoxelWorldStore({ file: join(directory, `voxel-${creation.voxelId}.json`) });
         creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; epoch++; persist();
-        return response(true, creation.source ? '素材已保存。告诉我想从哪里开始。' : '素材已移除，可以从自己的想法开始。');
+        return response(true, creation.source ? '素材已保存，现有建造保留。告诉我想从哪里开始。' : '素材已移除，现有建造保留。');
       }
       case 'voxel-undo': case 'voxel-redo': {
         if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再修改建造草稿。');
@@ -103,6 +114,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         creation.draft = null; persist(); return response(true, '草稿已放弃。');
       case 'world-accept': {
         if (blocked() || !creation.draft || creation.draft.id !== body.draftId) return response(false, '这个世界草稿已经变化，不能创建。');
+        if (voxel.state().error) return response(false, voxel.state().error);
         if (creation.draft.baseConversationRevision !== undefined && creation.draft.baseConversationRevision !== creation.dialogue.revision) return response(false, '讨论已经更新，请先按新的设定生成草稿，再确认进入。');
         if (creation.draft.baseVoxelId !== undefined && (creation.draft.baseVoxelId !== creation.voxelId || creation.draft.baseVoxelRevision !== voxel.state().revision)) return response(false, '建造草稿已经改变，请重新检查起点。');
         if (voxel.state().cells.length) return response(false, '体素场景尚未与人物及地点绑定，暂时不能进入模拟；建造草稿已保存。');
@@ -142,6 +154,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   const discussStep = async ({ message } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '先结束当前请求，再继续讨论。', { reason: 'busy' });
+    if (voxel.state().error) return response(false, voxel.state().error, { reason: 'voxel-recovery' });
     if (typeof message !== 'string' || !message.trim() || message.length > 8000) return response(false, '写下你的想法或想调整的细节。', { reason: 'invalid-message' });
     if (creation.dialogue.messages.length >= 78 || creation.dialogue.messages.reduce((n, m) => n + m.text.length, 0) + message.length > 40000) return response(false, '这段讨论已经很长，请先生成并确认这一小片起点。', { reason: 'conversation-limit' });
     const controller = new AbortController(), startEpoch = epoch;
@@ -181,6 +194,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   const worldStep = async ({ description, conversationRevision } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '请先进入创建页并结束当前调用。', { reason: 'busy' });
+    if (voxel.state().error) return response(false, voxel.state().error, { reason: 'voxel-recovery' });
     const conversational = creation.dialogue.messages.length > 0 || conversationRevision !== undefined;
     if (conversational) {
       if (!creation.dialogue.ready || conversationRevision !== creation.dialogue.revision) return response(false, '先把这一小片起点讨论清楚，再按当前设定生成。', { reason: 'discussion-required' });

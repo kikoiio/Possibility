@@ -3,6 +3,7 @@ import { dirname, basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { prepareVoxelEdit } from './voxel-building.mjs';
+import { expandVoxelTools } from './voxel-tools.mjs';
 
 const materials = new Set(['grass', 'dirt', 'stone', 'wood', 'glass', 'water', 'leaves', 'roof']);
 const key = position => position.join(',');
@@ -85,6 +86,7 @@ export function createVoxelWorldStore({ file }) {
     apply({ baseRevision, commands }) {
       checkRevision(baseRevision);
       if (!Array.isArray(commands) || !commands.length || commands.length > 128) throw new Error('建造操作无效');
+      commands = expandVoxelTools(commands);
       const cellCommands = [], objects = new Map(data.objects.map(o => [o.id, o]));
       for (const command of commands) {
         if (!command || typeof command !== 'object') throw new Error('不支持的建造操作');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createPrototypeExperience } from '../server.mjs';
 
@@ -29,4 +29,11 @@ test('conversation edits persist, undo and reject invalid model operations', asy
   assert.equal(experience.control({ type: 'voxel-undo', baseRevision: revision }).state.creation.voxel.cells.length, 0);
   assert.equal(experience.control({ type: 'voxel-redo', baseRevision: revision }).ok, false);
   assert.equal(experience.control({ type: 'voxel-redo', baseRevision: revision + 1 }).state.creation.voxel.cells.length, 2);
+  experience.close();
+  rmSync(join(dir, readdirSync(dir).find(name => name.startsWith('voxel-'))));
+  experience = createPrototypeExperience(options);
+  assert.match(experience.state().creation.voxel.error, /缺失或损坏/);
+  assert.equal((await experience.discussStep({ message: '继续建造' })).reason, 'voxel-recovery');
+  experience.close(); experience = createPrototypeExperience(options);
+  assert.match(experience.state().creation.voxel.error, /缺失或损坏/);
 });
