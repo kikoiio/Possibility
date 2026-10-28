@@ -20,6 +20,9 @@ a._resources = {inventory = function() return stock end}
 a._episodic:add({time = 1, text = "one", source = {kind = "agent", id = 0}})
 a._episodic:add({time = 2, text = "two", source = {kind = "observation", id = "x"}})
 local s = assert(persistence.snapshot(a))
+local validated = persistence.validate(s)
+validated.pos.x = 900
+assert(s.pos.x == 1 and a.object:get_pos().x == 1)
 assert(s.version == 1 and s.id == 0 and s.pos.y == 2 and s.rng == 123)
 assert(s.inventory.wood == 7 and s.inventory.stone == 0)
 assert(#s.memory.met == 3 and s.memory.met[1] == 0 and s.memory.met[2] == 17 and s.memory.met[3] == "17")

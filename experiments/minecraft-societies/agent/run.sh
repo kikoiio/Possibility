@@ -264,13 +264,21 @@ run_once() {
     else
       echo "预期结果: 成功"
     fi
+    if [[ "$FIXTURE" -eq 1 ]]; then
+      echo "执行模式: deterministic-fixture (not a model)"
+    elif [[ "$MODEL" -eq 1 ]]; then
+      echo "执行模式: real-model"
+      echo "模型: ${XUNFEI_MODEL:-${WISPIVA_LLM_MODEL:-not-configured}}"
+    else
+      echo "执行模式: rule-policy"
+    fi
     echo "峰值 RSS: $((peak_kb / 1024)) MiB"
     echo
     echo "--- 配置 ---"
     command sed 's/^/  /' "$conf"
     echo
     echo "--- 产物哈希（行为数字必须能对应到这个二进制与这份源码）---"
-    sha256sum "$ENGINE" "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" | command sed 's/^/  /'
+    sha256sum "$ENGINE" "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$EXP/cognition/"*.lua "$EXP/model/"*.py | command sed 's/^/  /'
     echo
     echo "--- 校验 ---"
     echo "  stats 行数: ${stats_total:-0}"

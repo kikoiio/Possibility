@@ -50,6 +50,9 @@ jobs:
           "$exp/agent/run.sh" --label ci-reset --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
           count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
           test "$count" -eq 5
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-invalid-retry.run1"
+          "$exp/agent/run.sh" --label ci-invalid-retry --agents 4 --decisions 8 --interval 1 --resume --expect-fail restore-invalid
+          "$exp/agent/run.sh" --label ci-invalid-retry --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
       - name: Verify resource actions with deterministic fixture
         run: |
           exp=experiments/minecraft-societies
@@ -80,7 +83,7 @@ jobs:
             for count in 5000 10000; do
               label="ci-large-${count}-${cognition}"
               rc=0
-              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 120 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 12 --interval 2 --seconds 180 --repeat 3 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
               echo "$label exit=$rc" >> "$exp/agent/evidence/ci-large-status.txt"
             done
           done
@@ -137,6 +140,7 @@ jobs:
             experiments/minecraft-societies/agent/evidence/ci-cognition.*
             experiments/minecraft-societies/agent/evidence/ci-model.*
             experiments/minecraft-societies/agent/evidence/ci-reset.*
+            experiments/minecraft-societies/agent/evidence/ci-invalid-retry.*
             experiments/minecraft-societies/agent/evidence/ci-agent-*
             experiments/minecraft-societies/agent/evidence/ci-resource.*
             experiments/minecraft-societies/agent/evidence/ci-memory-*

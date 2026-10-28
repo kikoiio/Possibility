@@ -47,9 +47,10 @@ local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
-if PERSIST then storage:set_string("agent_state", "") end
+if PERSIST and not RESTORE then storage:set_string("agent_state", "") end
 local SPOOL = cfg("society_spool", "")
 local request_id = 0
+local step_count, last_us = 0, minetest.get_us_time()
 
 -- persona 在 M0 里只是一个稳定标签，不影响行为；M2 起它才承载设定。
 local PERSONAS = {
@@ -198,7 +199,7 @@ local function apply(self, action, pos)
 		if not np then
 			ev("ev=target-dropped agent=%d persona=%s reason=out-of-bounds", self._id, self._persona)
 			self._target = nil
-			return
+			return false, "out-of-bounds"
 		end
 		local d = math.max(math.abs(self._target.x - np.x), math.abs(self._target.z - np.z))
 		ev("ev=move agent=%d persona=%s to=%d,%d,%d remaining=%d why=%s",
@@ -207,7 +208,7 @@ local function apply(self, action, pos)
 			self._target = nil
 			ev("ev=arrive agent=%d persona=%s at=%d,%d,%d", self._id, self._persona, np.x, np.y, np.z)
 		end
-		return
+		return true, "moved"
 	end
 
 	if kind == "wander" then
@@ -216,7 +217,7 @@ local function apply(self, action, pos)
 		ev("ev=wander agent=%d persona=%s why=%s target=%d,%d,%d",
 			self._id, self._persona, action.why or "-", self._target.x, self._target.y, self._target.z)
 		self._memory.idle_streak = 0
-		return
+		return true, "destination-set"
 	end
 
 	if kind == "approach" then
@@ -226,7 +227,7 @@ local function apply(self, action, pos)
 			ev("ev=approach-failed agent=%d persona=%s target=%s reason=gone",
 				self._id, self._persona, tostring(action.target))
 			self._memory.idle_streak = self._memory.idle_streak + 1
-			return
+			return false, "gone"
 		end
 		-- 走到「身边」而不是「身上」：停在一步之外，别和对方重叠。
 		local tx, tz = fp(tp.x), fp(tp.z)
@@ -240,7 +241,7 @@ local function apply(self, action, pos)
 			self._id, self._persona, action.target,
 			self._target.x, self._target.y, self._target.z)
 		self._memory.idle_streak = 0
-		return
+		return true, "destination-set"
 	end
 
 	if kind == "mark" then
@@ -250,7 +251,7 @@ local function apply(self, action, pos)
 			ev("ev=mark-skipped agent=%d persona=%s at=%d,%d,%d reason=out-of-bounds",
 				self._id, self._persona, at.x, at.y, at.z)
 			self._memory.idle_streak = self._memory.idle_streak + 1
-			return
+			return false, "out-of-bounds"
 		end
 		local before = minetest.get_node(at).name
 		if before ~= "air" then
@@ -258,7 +259,7 @@ local function apply(self, action, pos)
 			ev("ev=mark-skipped agent=%d persona=%s at=%d,%d,%d reason=occupied by=%s",
 				self._id, self._persona, at.x, at.y, at.z, before)
 			self._memory.idle_streak = self._memory.idle_streak + 1
-			return
+			return false, "occupied"
 		end
 		minetest.set_node(at, {name = MARK_NODE})
 		local after = minetest.get_node(at).name
@@ -267,14 +268,14 @@ local function apply(self, action, pos)
 			ev("ev=mark-failed agent=%d persona=%s at=%d,%d,%d after=%s",
 				self._id, self._persona, at.x, at.y, at.z, after)
 			self._memory.idle_streak = self._memory.idle_streak + 1
-			return
+			return false, "write-not-verified"
 		end
 		S.marks = S.marks + 1
 		self._marks_placed = self._marks_placed + 1
 		ev("ev=mark agent=%d persona=%s at=%d,%d,%d marks_total=%d",
 			self._id, self._persona, at.x, at.y, at.z, S.marks)
 		self._memory.idle_streak = 0
-		return
+		return true, "world-verified"
 	end
 
 	if kind == "inspect" then
@@ -282,7 +283,7 @@ local function apply(self, action, pos)
 		ev("ev=inspect agent=%d persona=%s at=%d,%d,%d neighbours=%d marks_nearby=%d",
 			self._id, self._persona, fp(pos.x), fp(pos.y), fp(pos.z),
 			#action.observation.nearby_agents, action.observation.marks_nearby)
-		return
+		return true, "observed"
 	end
 
 	if kind == "gather" or kind == "build" then
@@ -295,7 +296,7 @@ local function apply(self, action, pos)
 			source = {kind = "action", id = self._id}})
 		ev("ev=resource agent=%d action=%s ok=%s reason=%s inventory=%d", self._id, kind,
 			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
-		return
+		return ok, reason or "world-verified"
 	end
 	if kind == "say" then
 		local recipient = agents[action.target]
@@ -313,11 +314,13 @@ local function apply(self, action, pos)
 				ev("ev=message-text agent=%d recipient=%d text=%s", self._id, action.target,
 					minetest.write_json(action.text):gsub("[\r\n]", ""))
 			end
+			return true, "delivered"
 		end
-		return
+		return false, "recipient-gone"
 	end
 	self._memory.idle_streak = self._memory.idle_streak + 1
 	ev("ev=unknown-action agent=%d persona=%s kind=%s", self._id, self._persona, kind)
+	return false, "unknown-action"
 end
 
 -- 走到邻居身边时记一次接触：这不是决策，是执行结果反馈进记忆。
@@ -355,8 +358,13 @@ local function decide_and_act(self)
 			minetest.request_shutdown()
 			return
 		end
+		local marks, resource_count = 0, 0
+		for _, node in ipairs(local_obs.nodes) do
+			if node.name == MARK_NODE then marks = marks + 1 end
+			if node.name == "society:resource" then resource_count = resource_count + 1 end
+		end
 		self._episodic:add({time = minetest.get_gametime(),
-			text = string.format("nearby agents=%d marks=%d", #local_obs.agents, #local_obs.nodes),
+			text = string.format("nearby agents=%d marks=%d resources=%d", #local_obs.agents, marks, resource_count),
 			source = {kind = "observation", id = self._id}})
 		obs.local_view = local_obs
 	end
@@ -391,13 +399,15 @@ local function decide_and_act(self)
 			return
 		end
 		local path = SPOOL .. "/response-" .. self._pending.id .. ".json"
+		if minetest.get_us_time() - self._pending.started > (COUNT * 135 + 30) * 1000000 then
+			os.remove(path)
+			ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
+			S.failed = "model-timeout"
+			minetest.request_shutdown()
+			return
+		end
 		local f = io.open(path, "r")
 		if not f then
-			if minetest.get_us_time() - self._pending.started > (COUNT * 135 + 30) * 1000000 then
-				ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
-				S.failed = "model-timeout"
-				minetest.request_shutdown()
-			end
 			return
 		end
 		local result = minetest.parse_json(f:read("*a"))
@@ -448,8 +458,8 @@ local function decide_and_act(self)
 		end
 		local audit = result.audit or {}
 		local usage = audit.usage or {}
-		ev("ev=model-action agent=%d request=%d kind=%s latency_ms=%s input_tokens=%s output_tokens=%s",
-			self._id, id, action.kind, tostring(audit.latency_ms or "unknown"),
+		ev("ev=model-action agent=%d request=%d kind=%s origin=%s latency_ms=%s input_tokens=%s output_tokens=%s",
+			self._id, id, action.kind, action.why == "fixture" and "fixture" or "model", tostring(audit.latency_ms or "unknown"),
 			tostring(usage.input_tokens or "unknown"), tostring(usage.output_tokens or "unknown"))
 	else
 		action = policy.decide({
@@ -464,10 +474,8 @@ local function decide_and_act(self)
 		})
 	end
 	action.observation = obs
-	apply(self, action, pos)
-	if action.kind ~= "gather" and action.kind ~= "build" then
-		self._last_action = {kind = action.kind, status = "applied"}
-	end
+	local ok, reason = apply(self, action, pos)
+	self._last_action = {kind = action.kind, point = action.point, ok = ok, reason = reason}
 
 	self._decisions = self._decisions + 1
 	S.decisions = S.decisions + 1
@@ -509,6 +517,16 @@ local function spawn_agents()
 			minetest.request_shutdown()
 			return
 		end
+		for i = 1, COUNT do
+			local ok, state = pcall(persistence.validate, saved[i])
+			if not ok or state.id ~= i - 1 or not in_bounds(state.pos) then
+				ev("fail=restore-invalid agent=%d reason=validation", i - 1)
+				S.failed = "restore-invalid"
+				minetest.request_shutdown()
+				return
+			end
+		end
+		if PERSIST then storage:set_string("agent_state", "") end
 		S.marks = #minetest.find_nodes_in_area(
 			{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND}, {MARK_NODE})
 	end
@@ -564,6 +582,7 @@ local function spawn_agents()
 		end
 	end
 	ev("spawn count=%d ok=%d spacing=%d bound=%d", COUNT, S.spawned, SPACING, BOUND)
+	step_count, last_us = 0, minetest.get_us_time()
 	if MODEL or SEED_RESOURCES then
 		local in_world, inventory = resource_total()
 		resource_initial = in_world + inventory
@@ -617,8 +636,7 @@ minetest.after(1, function()
 		end)
 end)
 
-local driver_acc, stats_acc = 0, 0
-local step_count, last_us = 0, minetest.get_us_time()
+local driver_acc = 0
 
 local function emit_stats()
 	local now = minetest.get_us_time()
@@ -664,12 +682,15 @@ minetest.register_globalstep(function(dtime)
 			break
 		end
 		S.driver_rounds = S.driver_rounds + 1
+		local round_started = minetest.get_us_time()
 		for i = 0, COUNT - 1 do
 			local le = agents[i]
 			if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
 				decide_and_act(le)
 			end
 		end
+		ev("round number=%d wall_ms=%.2f", S.driver_rounds,
+			(minetest.get_us_time() - round_started) / 1000)
 		if MAX_DECISIONS > 0 then
 			local done = true
 			for i = 0, COUNT - 1 do
@@ -681,15 +702,14 @@ minetest.register_globalstep(function(dtime)
 			end
 			if done then
 				S.finished = true
+				emit_stats()
 				summary_and_stop()
 				return
 			end
 		end
 	end
 
-	stats_acc = stats_acc + dtime
-	if stats_acc >= STATS_EVERY then
-		stats_acc = 0
+	if (minetest.get_us_time() - last_us) / 1000000 >= STATS_EVERY then
 		emit_stats()
 	end
 end)

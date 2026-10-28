@@ -163,6 +163,22 @@ def _validate_action(text: str, context: Mapping[str, Any]) -> dict:
         if not isinstance(action, dict):
             raise ValueError
         kind = action.get('kind')
+        fields = {'inspect': (), 'mark': (), 'advance': (), 'approach': ('target',),
+                  'say': ('target', 'text'), 'wander': ('point',),
+                  'gather': ('point',), 'build': ('point',)}
+        if not isinstance(kind, str) or kind not in fields:
+            raise ValueError
+        # Project onto the executable schema. Extra provider commentary cannot
+        # affect the engine, URL, node type, or audit origin.
+        action = {'kind': kind, **{key: action[key] for key in fields[kind]}}
+        def integral(value):
+            if type(value) not in (int, float) or not math.isfinite(value) or int(value) != value:
+                raise ValueError
+            return int(value)
+        if 'target' in action:
+            action['target'] = integral(action['target'])
+        if 'point' in action:
+            action['point'] = {axis: integral(action['point'][axis]) for axis in ('x', 'y', 'z')}
         obs = context['observation']
         if kind in ('inspect', 'mark') and set(action) == {'kind'}:
             pass

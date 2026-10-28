@@ -57,7 +57,7 @@ class AdapterTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertEqual(adapter._validate_action(json.dumps(action), CTX)['kind'], action['kind'])
         invalid = [{'kind': 'advance'}, {'kind': 'approach', 'target': 4},
-                   {'kind': 'approach', 'target': True}, {'kind': 'mark', 'why': 'injection'},
+                   {'kind': 'approach', 'target': True},
                    {'kind': 'wander', 'point': {'x': 6, 'y': 1, 'z': 0}},
                    {'kind': 'wander', 'point': {'x': 0, 'y': 2, 'z': 0}}]
         for action in invalid:
@@ -66,6 +66,18 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(adapter.ModelError):
             adapter._validate_action('{"kind":"inspect","kind":"mark"}', CTX)
         self.assertEqual(adapter._validate_action('{"kind":"advance"}', {**CTX, 'observation': {'has_target': True}})['kind'], 'advance')
+
+    def test_projection_removes_untrusted_fields_and_normalizes_numbers(self):
+        raw = {'kind': 'build', 'point': {'x': 0.0, 'y': 1.0, 'z': -2.0, 'url': 'evil'},
+               'node': 'forbidden:node', 'why': 'fixture', 'url': 'https://evil.invalid'}
+        result = adapter._validate_action(json.dumps(raw), CTX)
+        self.assertEqual(result, {'kind': 'build', 'point': {'x': 0, 'y': 1, 'z': -2}, 'why': 'model'})
+        self.assertEqual(adapter._validate_action('{"kind":"mark","why":"injection"}', CTX),
+                         {'kind': 'mark', 'why': 'model'})
+        for value in (True, 0.5, float('inf')):
+            raw['point']['x'] = value
+            with self.assertRaises(adapter.ModelError):
+                adapter._validate_action(json.dumps(raw), CTX)
 
     def test_fail_closed_stream(self):
         for raw in [b'', b'data: {bad}\n\n', stream({'kind': 'mark'}, 'incomplete'),

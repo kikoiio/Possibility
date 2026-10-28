@@ -89,6 +89,9 @@ local function normalise(s)
     inventory = inventory(s.inventory == nil and {} or s.inventory)}
 end
 
+-- Validate a whole restore batch before invalidating its saved checkpoint.
+M.validate = normalise
+
 function M.snapshot(entity)
   assert(type(entity) == "table" and entity.object and entity._episodic
     and type(entity._memory) == "table" and type(entity._memory.met) == "table",
