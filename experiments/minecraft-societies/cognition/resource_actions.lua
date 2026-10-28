@@ -39,18 +39,24 @@ end
 
 local function copy_pos(p) return {x = p.x, y = p.y, z = p.z} end
 
+function M.validate_inventory(value)
+  assert(type(value) == "table", "invalid inventory")
+  local stock = {}
+  for name, count in pairs(value) do
+    assert(valid_name(name) and finite(count) and count >= 0 and count <= MAX_COUNT
+      and count == math.floor(count), "invalid inventory entry")
+    if count > 0 then stock[name] = count end
+  end
+  return stock
+end
+
 function M.new(engine, object, initial_inventory)
   assert(type(engine) == "table" and type(engine.get_node_or_nil) == "function"
     and type(engine.set_node) == "function", "engine read and write functions required")
   assert((type(object) == "table" or type(object) == "userdata")
     and type(object.get_pos) == "function", "actor object required")
   assert(initial_inventory == nil or type(initial_inventory) == "table", "invalid inventory")
-  local stock = {}
-  for name, count in pairs(initial_inventory or {}) do
-    assert(valid_name(name) and finite(count) and count >= 0 and count <= MAX_COUNT
-      and count == math.floor(count), "invalid inventory entry")
-    if count > 0 then stock[name] = count end
-  end
+  local stock = M.validate_inventory(initial_inventory or {})
   local actions, busy = {}, false
 
   function actions:count(name)

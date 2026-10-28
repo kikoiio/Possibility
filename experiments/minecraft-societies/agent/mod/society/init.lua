@@ -520,6 +520,7 @@ local function spawn_agents()
 		end
 		for i = 1, COUNT do
 			local ok, state = pcall(persistence.validate, saved[i])
+			if ok then ok = pcall(resources.validate_inventory, state.inventory) end
 			if not ok or state.id ~= i - 1 or not in_bounds(state.pos) then
 				ev("fail=restore-invalid agent=%d reason=validation", i - 1)
 				S.failed = "restore-invalid"

@@ -314,14 +314,16 @@ for i in $(seq 1 "$REPEAT"); do
   run_once "run$i" || rc=1
 done
 
-if [[ "$REPEAT" -ge 2 ]]; then
-  if diff -q "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run2.events" > /dev/null; then
-    echo "[$LABEL] 可重复性: run1 与 run2 的确定性事件序列完全一致（$(wc -l < "$EVIDENCE/$LABEL.run1.events") 行）"
-  else
-    echo "[$LABEL] 可重复性: FAIL —— 两次运行事件序列不同："
-    diff "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run2.events" | head -20
-    rc=1
-  fi
+if [[ "$REPEAT" -ge 2 && "$MODEL" -eq 0 ]]; then
+  for i in $(seq 2 "$REPEAT"); do
+    if diff -q "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run$i.events" > /dev/null; then
+      echo "[$LABEL] 可重复性: run1 与 run$i 的确定性事件序列完全一致（$(wc -l < "$EVIDENCE/$LABEL.run1.events") 行）"
+    else
+      echo "[$LABEL] 可重复性: FAIL —— run1 与 run$i 事件序列不同："
+      diff "$EVIDENCE/$LABEL.run1.events" "$EVIDENCE/$LABEL.run$i.events" | head -20
+      rc=1
+    fi
+  done
 fi
 
 exit $rc

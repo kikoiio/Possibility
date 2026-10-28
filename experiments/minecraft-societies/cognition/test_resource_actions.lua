@@ -69,6 +69,12 @@ assert(not full:gather(p, "default:wood") and full:count("default:wood") == 2147
 assert(not pcall(resource.new, engine, actor, {["group:stone"] = 1}))
 assert(not pcall(resource.new, engine, actor, {["default:wood"] = -1}))
 assert(not pcall(resource.new, engine, actor, {["default:wood"] = 0/0}))
+-- Restore preflight uses exactly the constructor's name/count constraints.
+assert(not pcall(resource.validate_inventory, {["society:resource"] = 2147483648}))
+assert(not pcall(resource.validate_inventory, {["group:stone"] = 1}))
+local validated_stock = resource.validate_inventory({["society:resource"] = 2})
+validated_stock["society:resource"] = 9
+assert(a:count("society:resource") == 0)
 -- A nested action during a write must not spend the same stock twice.
 world[key(p)] = "air"
 local original_write = engine.set_node

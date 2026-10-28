@@ -103,6 +103,8 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(adapter.ModelError) as caught:
             adapter.decide(CONFIG, CTX, transport=broken)
         self.assertNotIn('secret-key', str(caught.exception))
+        self.assertIsInstance(caught.exception.audit['latency_ms'], int)
+        self.assertEqual(caught.exception.audit['usage'], {})
         result = asyncio.run(adapter.decide_async(CONFIG, CTX, transport=lambda *_: stream({'kind': 'inspect'})))
         self.assertEqual(result['action']['kind'], 'inspect')
 
