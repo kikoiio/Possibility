@@ -1,0 +1,1385 @@
+{
+  "behavior_equivalence": [
+    {
+      "count": 10000,
+      "cognition": false,
+      "runs": 10,
+      "distinct_behavior_hashes": 1,
+      "equal": true
+    },
+    {
+      "count": 10000,
+      "cognition": true,
+      "runs": 10,
+      "distinct_behavior_hashes": 1,
+      "equal": true
+    }
+  ],
+  "source_sha": "18ab62c48555df43378238a503010eacc7057b33",
+  "runs": [
+    {
+      "label": "ci-opt-10000-false-false-1",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.07,
+        "min": 0.04,
+        "max": 2.9
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 5565.465,
+        "min": 5275.59,
+        "max": 5777.22
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 68.829127,
+        "decisions_per_sec": 1743.448,
+        "object_queries": 240000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 66839778.0,
+        "max_callback_us": 28122687.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 5.581774,
+        "min_s": 5.230421,
+        "max_s": 5.924299,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 276,
+      "count": 10000,
+      "cognition": false,
+      "optimized": false,
+      "trial": 1,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 73.861309474,
+      "evidence_processing_s": 2.474039991000012
+    },
+    {
+      "label": "ci-opt-10000-false-true-1",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 19,
+        "median": 11.04,
+        "min": 10.99,
+        "max": 11.28
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 7717.42,
+        "min": 6728.28,
+        "max": 8168.91
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 2151.915,
+        "min": 1883.87,
+        "max": 2277.37
+      },
+      "performance": {
+        "elapsed_s": 95.44773,
+        "decisions_per_sec": 1257.233,
+        "object_queries": 240000.0,
+        "node_hits": 1484737.0,
+        "node_misses": 6601.0,
+        "callback_us": 25802594.0,
+        "max_callback_us": 26077.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 7.79175,
+        "min_s": 6.528222,
+        "max_s": 8.51779,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 327,
+      "count": 10000,
+      "cognition": false,
+      "optimized": true,
+      "trial": 1,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 101.061676586,
+      "evidence_processing_s": 2.4948718179999787
+    },
+    {
+      "label": "ci-opt-10000-false-true-2",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 19,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.28
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 7803.595,
+        "min": 6640.7,
+        "max": 8264.64
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 2175.355,
+        "min": 1857.5,
+        "max": 2306.73
+      },
+      "performance": {
+        "elapsed_s": 95.456396,
+        "decisions_per_sec": 1257.118,
+        "object_queries": 240000.0,
+        "node_hits": 1484737.0,
+        "node_misses": 6601.0,
+        "callback_us": 25816346.0,
+        "max_callback_us": 26426.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 7.805312,
+        "min_s": 6.359841,
+        "max_s": 8.498287,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 326,
+      "count": 10000,
+      "cognition": false,
+      "optimized": true,
+      "trial": 2,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 101.003342481,
+      "evidence_processing_s": 2.507785876000014
+    },
+    {
+      "label": "ci-opt-10000-false-false-2",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.07,
+        "min": 0.04,
+        "max": 2.87
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 5557.84,
+        "min": 5251.15,
+        "max": 5820.09
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 68.808936,
+        "decisions_per_sec": 1743.96,
+        "object_queries": 240000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 66817216.0,
+        "max_callback_us": 27991379.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 5.572901,
+        "min_s": 5.251125,
+        "max_s": 5.981344,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 276,
+      "count": 10000,
+      "cognition": false,
+      "optimized": false,
+      "trial": 2,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 74.88686106499995,
+      "evidence_processing_s": 2.4905198760000076
+    },
+    {
+      "label": "ci-opt-10000-false-false-3",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.07,
+        "min": 0.04,
+        "max": 2.9
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 5456.695,
+        "min": 5100.68,
+        "max": 5734.54
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 67.581047,
+        "decisions_per_sec": 1775.646,
+        "object_queries": 240000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 65572438.0,
+        "max_callback_us": 27556768.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 5.470882,
+        "min_s": 5.076776,
+        "max_s": 5.832441,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 285,
+      "count": 10000,
+      "cognition": false,
+      "optimized": false,
+      "trial": 3,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 72.87644515199997,
+      "evidence_processing_s": 2.496183520999921
+    },
+    {
+      "label": "ci-opt-10000-false-true-3",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 19,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.28
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 7580.514999999999,
+        "min": 6345.01,
+        "max": 8161.39
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 2115.645,
+        "min": 1766.9,
+        "max": 2276.77
+      },
+      "performance": {
+        "elapsed_s": 92.913038,
+        "decisions_per_sec": 1291.53,
+        "object_queries": 240000.0,
+        "node_hits": 1484737.0,
+        "node_misses": 6601.0,
+        "callback_us": 25122665.0,
+        "max_callback_us": 26479.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 7.563032,
+        "min_s": 6.255576,
+        "max_s": 8.422227,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 279,
+      "count": 10000,
+      "cognition": false,
+      "optimized": true,
+      "trial": 3,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 97.98722499300004,
+      "evidence_processing_s": 2.507512356999996
+    },
+    {
+      "label": "ci-opt-10000-false-true-4",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 19,
+        "median": 11.04,
+        "min": 10.98,
+        "max": 11.27
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 7538.844999999999,
+        "min": 6367.45,
+        "max": 8170.94
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 2102.805,
+        "min": 1781.64,
+        "max": 2284.65
+      },
+      "performance": {
+        "elapsed_s": 93.024483,
+        "decisions_per_sec": 1289.983,
+        "object_queries": 240000.0,
+        "node_hits": 1484737.0,
+        "node_misses": 6601.0,
+        "callback_us": 25157248.0,
+        "max_callback_us": 26825.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 7.576937,
+        "min_s": 6.256414,
+        "max_s": 8.601444,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 368,
+      "count": 10000,
+      "cognition": false,
+      "optimized": true,
+      "trial": 4,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 97.93633353400003,
+      "evidence_processing_s": 2.5047349719999374
+    },
+    {
+      "label": "ci-opt-10000-false-false-4",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.07,
+        "min": 0.04,
+        "max": 2.94
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 5529.969999999999,
+        "min": 5232.3,
+        "max": 5648.21
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 68.253237,
+        "decisions_per_sec": 1758.158,
+        "object_queries": 240000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 66264173.0,
+        "max_callback_us": 27765813.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 5.537766,
+        "min_s": 5.185433,
+        "max_s": 5.810161,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 339,
+      "count": 10000,
+      "cognition": false,
+      "optimized": false,
+      "trial": 4,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 73.84651423700006,
+      "evidence_processing_s": 2.4966641309999886
+    },
+    {
+      "label": "ci-opt-10000-false-false-5",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.06,
+        "min": 0.04,
+        "max": 2.8
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 5621.975,
+        "min": 5345.11,
+        "max": 6018.61
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 70.137343,
+        "decisions_per_sec": 1710.929,
+        "object_queries": 240000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 68137469.0,
+        "max_callback_us": 28442331.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 5.675018,
+        "min_s": 5.338747,
+        "max_s": 6.128115,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 366,
+      "count": 10000,
+      "cognition": false,
+      "optimized": false,
+      "trial": 5,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 75.84285738200003,
+      "evidence_processing_s": 2.512734931999944
+    },
+    {
+      "label": "ci-opt-10000-false-true-5",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 19,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.27
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 7662.74,
+        "min": 6441.3,
+        "max": 8177.31
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 2131.13,
+        "min": 1791.6,
+        "max": 2282.72
+      },
+      "performance": {
+        "elapsed_s": 93.576859,
+        "decisions_per_sec": 1282.368,
+        "object_queries": 240000.0,
+        "node_hits": 1484737.0,
+        "node_misses": 6601.0,
+        "callback_us": 25242520.0,
+        "max_callback_us": 26890.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 7.595819,
+        "min_s": 6.181649,
+        "max_s": 8.50572,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 319,
+      "count": 10000,
+      "cognition": false,
+      "optimized": true,
+      "trial": 5,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 98.98032232000003,
+      "evidence_processing_s": 2.5265221660000634
+    },
+    {
+      "label": "ci-opt-10000-true-false-1",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.055,
+        "min": 0.02,
+        "max": 1.71
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 11048.380000000001,
+        "min": 10538.2,
+        "max": 11347.69
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 134.406436,
+        "decisions_per_sec": 892.814,
+        "object_queries": 360000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 132403610.0,
+        "max_callback_us": 55510031.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 11.042693,
+        "min_s": 10.508819,
+        "max_s": 11.42977,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 578,
+      "count": 10000,
+      "cognition": true,
+      "optimized": false,
+      "trial": 1,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 140.26789162199998,
+      "evidence_processing_s": 2.5136919229998966
+    },
+    {
+      "label": "ci-opt-10000-true-true-1",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 35,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.26
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14325.41,
+        "min": 12871.88,
+        "max": 14952.46
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 4011.67,
+        "min": 3596.42,
+        "max": 4191.8
+      },
+      "performance": {
+        "elapsed_s": 172.935607,
+        "decisions_per_sec": 693.9,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 47695913.0,
+        "max_callback_us": 27986.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.267587,
+        "min_s": 12.775106,
+        "max_s": 15.121326,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 588,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": 1,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 180.50958554099998,
+      "evidence_processing_s": 2.5083228119999603
+    },
+    {
+      "label": "ci-opt-10000-true-true-2",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 34,
+        "median": 11.04,
+        "min": 11.02,
+        "max": 11.28
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14112.635,
+        "min": 12605.67,
+        "max": 14513.11
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 3957.8599999999997,
+        "min": 3525.56,
+        "max": 4076.55
+      },
+      "performance": {
+        "elapsed_s": 170.864527,
+        "decisions_per_sec": 702.311,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 47110760.0,
+        "max_callback_us": 28067.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.063935,
+        "min_s": 12.607945,
+        "max_s": 14.846058,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 590,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": 2,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 178.44042472799993,
+      "evidence_processing_s": 2.510539005000055
+    },
+    {
+      "label": "ci-opt-10000-true-false-2",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.04,
+        "min": 0.02,
+        "max": 1.91
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 9949.255000000001,
+        "min": 9370.91,
+        "max": 10074.79
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 120.778492,
+        "decisions_per_sec": 993.554,
+        "object_queries": 360000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 118791749.0,
+        "max_callback_us": 49795888.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 9.92387,
+        "min_s": 9.312193,
+        "max_s": 10.296706,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 557,
+      "count": 10000,
+      "cognition": true,
+      "optimized": false,
+      "trial": 2,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 128.15300282499993,
+      "evidence_processing_s": 2.5244670380000116
+    },
+    {
+      "label": "ci-opt-10000-true-false-3",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.04,
+        "min": 0.02,
+        "max": 1.92
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 9773.415,
+        "min": 9232.69,
+        "max": 9971.01
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 118.76392,
+        "decisions_per_sec": 1010.408,
+        "object_queries": 360000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 116740735.0,
+        "max_callback_us": 48699672.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 9.738602,
+        "min_s": 9.196501,
+        "max_s": 10.02431,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 565,
+      "count": 10000,
+      "cognition": true,
+      "optimized": false,
+      "trial": 3,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 126.13941134399988,
+      "evidence_processing_s": 2.4948039019998305
+    },
+    {
+      "label": "ci-opt-10000-true-true-3",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 35,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.27
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14545.125,
+        "min": 13048.15,
+        "max": 14958.41
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 4078.46,
+        "min": 3649.6,
+        "max": 4195.52
+      },
+      "performance": {
+        "elapsed_s": 174.805358,
+        "decisions_per_sec": 686.478,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 48223798.0,
+        "max_callback_us": 27973.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.450936,
+        "min_s": 12.956282,
+        "max_s": 15.478723,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 584,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": 3,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 182.47036750999996,
+      "evidence_processing_s": 2.5095917580001696
+    },
+    {
+      "label": "ci-opt-10000-true-true-4",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 35,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.27
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14239.775,
+        "min": 13158.46,
+        "max": 14858.79
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 3994.26,
+        "min": 3686.44,
+        "max": 4154.22
+      },
+      "performance": {
+        "elapsed_s": 173.741073,
+        "decisions_per_sec": 690.683,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 47864954.0,
+        "max_callback_us": 28042.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.315093,
+        "min_s": 13.158665,
+        "max_s": 15.121361,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 588,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": 4,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 180.4223618709998,
+      "evidence_processing_s": 2.5182716550002624
+    },
+    {
+      "label": "ci-opt-10000-true-false-4",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.055,
+        "min": 0.02,
+        "max": 1.72
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 10965.17,
+        "min": 10564.94,
+        "max": 11142.47
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 133.324318,
+        "decisions_per_sec": 900.061,
+        "object_queries": 360000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 131329854.0,
+        "max_callback_us": 54796263.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 10.959818,
+        "min_s": 10.513644,
+        "max_s": 11.281577,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 575,
+      "count": 10000,
+      "cognition": true,
+      "optimized": false,
+      "trial": 4,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 140.24051763999978,
+      "evidence_processing_s": 2.51633697699981
+    },
+    {
+      "label": "ci-opt-10000-true-false-5",
+      "exit_code": 1,
+      "correct": true,
+      "realtime_pass": false,
+      "steps_per_sec": {
+        "n": 4,
+        "median": 0.055,
+        "min": 0.02,
+        "max": 1.75
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 10887.89,
+        "min": 10455.7,
+        "max": 11265.22
+      },
+      "round_active_ms": null,
+      "performance": {
+        "elapsed_s": 133.024857,
+        "decisions_per_sec": 902.087,
+        "object_queries": 360000.0,
+        "node_hits": 0.0,
+        "node_misses": 0.0,
+        "callback_us": 131035509.0,
+        "max_callback_us": 55018453.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 10.945518,
+        "min_s": 10.442517,
+        "max_s": 11.319186,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 551,
+      "count": 10000,
+      "cognition": true,
+      "optimized": false,
+      "trial": 5,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 140.255409203,
+      "evidence_processing_s": 2.512538640999992
+    },
+    {
+      "label": "ci-opt-10000-true-true-5",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 35,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.32
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14321.91,
+        "min": 13332.11,
+        "max": 14870.03
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 4012.08,
+        "min": 3740.85,
+        "max": 4172.58
+      },
+      "performance": {
+        "elapsed_s": 173.450911,
+        "decisions_per_sec": 691.838,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 47847958.0,
+        "max_callback_us": 28200.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.327598,
+        "min_s": 13.14462,
+        "max_s": 15.475706,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 578,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": 5,
+      "decisions_per_agent": 12,
+      "profile": false,
+      "process_wall_s": 180.47280226800012,
+      "evidence_processing_s": 2.5049828989999696
+    },
+    {
+      "label": "ci-opt-10000-true-true-long",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 178,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.27
+      },
+      "round_wall_ms": {
+        "n": 60,
+        "median": 14731.31,
+        "min": 13343.65,
+        "max": 16322.88
+      },
+      "round_active_ms": {
+        "n": 60,
+        "median": 4132.375,
+        "min": 3745.12,
+        "max": 4588.94
+      },
+      "performance": {
+        "elapsed_s": 900.719846,
+        "decisions_per_sec": 666.134,
+        "object_queries": 1200000.0,
+        "node_hits": 14868054.0,
+        "node_misses": 141914.0,
+        "callback_us": 251032677.0,
+        "max_callback_us": 28787.0,
+        "observe_us": 0.0,
+        "action_us": 0.0,
+        "contact_us": 0.0,
+        "log_us": 0.0
+      },
+      "cadence": {
+        "samples": 590000.0,
+        "mean_s": 14.977979,
+        "min_s": 13.163857,
+        "max_s": 16.666319,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "600000",
+        "rounds": "60",
+        "marks": "252",
+        "meetings": "652922",
+        "actions": "advance:473185,approach:329,inspect:43748,mark:252,wander:82486,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "1d98e9012974486608d3e5547576d51a7cf0c8b7fdae245fe9b95b35c750a021",
+      "peak_engine_rss_mib": 1124,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": "long",
+      "decisions_per_agent": 60,
+      "profile": false,
+      "process_wall_s": 914.7119190180001,
+      "evidence_processing_s": 10.345589686999574
+    },
+    {
+      "label": "ci-opt-10000-true-true-diagnostic-profile",
+      "exit_code": 0,
+      "correct": true,
+      "realtime_pass": true,
+      "steps_per_sec": {
+        "n": 34,
+        "median": 11.04,
+        "min": 11.03,
+        "max": 11.26
+      },
+      "round_wall_ms": {
+        "n": 12,
+        "median": 14235.83,
+        "min": 12967.65,
+        "max": 14682.24
+      },
+      "round_active_ms": {
+        "n": 12,
+        "median": 3988.1800000000003,
+        "min": 3629.91,
+        "max": 4119.56
+      },
+      "performance": {
+        "elapsed_s": 172.373556,
+        "decisions_per_sec": 696.162,
+        "object_queries": 240000.0,
+        "node_hits": 2966580.0,
+        "node_misses": 16096.0,
+        "callback_us": 47494210.0,
+        "max_callback_us": 28080.0,
+        "observe_us": 39439066.0,
+        "action_us": 2707001.0,
+        "contact_us": 4723070.0,
+        "log_us": 4563401.0
+      },
+      "cadence": {
+        "samples": 110000.0,
+        "mean_s": 14.186577,
+        "min_s": 12.866112,
+        "max_s": 15.021405,
+        "target_s": 2.0
+      },
+      "summary": {
+        "spawned": "10000",
+        "alive": "10000",
+        "decisions": "120000",
+        "rounds": "12",
+        "marks": "247",
+        "meetings": "194686",
+        "actions": "advance:80017,approach:66,inspect:17805,mark:247,wander:21865,say:0,gather:0,build:0,unknown:0"
+      },
+      "failures": [],
+      "behavior_sha256": "2574a01e6626028262590d57fad8fcaf8db01fd6b6cc9b74d436f6325f52491f",
+      "peak_engine_rss_mib": 559,
+      "count": 10000,
+      "cognition": true,
+      "optimized": true,
+      "trial": "diagnostic",
+      "decisions_per_agent": 12,
+      "profile": true,
+      "process_wall_s": 178.4418002530001,
+      "evidence_processing_s": 2.5324807840001995
+    }
+  ],
+  "notes": [
+    "Engine RSS excludes model workers; no model in capacity runs.",
+    "Intervals are targets. Round wall includes yields; round active excludes yields.",
+    "Each side alternates within trial on one runner; trial order reverses.",
+    "Behavior hashes omit timestamps and scheduling configuration."
+  ]
+}

@@ -25,3 +25,4 @@ ts	phase	decision	why	evidence	result
 2026-10-28T18:24:37.921463+00:00	implementation	感知与调度	空间索引、节点缓存、分帧稳定顺序、真实决策间隔与完整负载对照	770ddb6;00a42fc	7 Lua suites and existing41 Python tests passed in cloud
 2026-10-28T18:24:37.921467+00:00	diagnostic	修正原有forceload坐标	5000优化侧30秒后249存活；不以步率改善掩盖失员，保留原始失败	40742337174;18ab62c	rerunning both sides with identical correction
 2026-10-28T18:24:37.921469+00:00	cancellation	停止被替代作业	本任务旧版本及pending模型作业在正式模型调用前停止	40742109445;40742337174;40743715126	no other tasks touched
+2026-10-28	second-round-final	40743613235 / 40746181765 / 40753203801	1000/5000/10000 five-repeat capacity, actual retrieval memory, budget tuning, final verify	aa81567a0fab5a907dc428372ced0b26a7d7ec52	10000 full workload complete; retrieval 12/12 vs FIFO 0/12; 65ms selected; verify success
