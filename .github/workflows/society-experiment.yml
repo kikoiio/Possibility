@@ -105,8 +105,39 @@ jobs:
           test "$(grep -c 'SOCIETY ev=restore agent=.* reset=false' "$exp/agent/evidence/ci-memory-keep.run1.log")" -eq 3
           grep -q 'SOCIETY summary .*decisions=6 ' "$exp/agent/evidence/ci-memory-keep.run1.log"
           grep -q 'SOCIETY long-term-checkpoint records=[1-9]' "$exp/agent/evidence/ci-memory-keep.run1.log"
+      - name: Verify a confirmed disposable Luanti world preview
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from luanti.genesis.preview import prepare_preview, launch
+          from luanti.genesis.store import DraftStore
+          root = Path('.ci-preview').absolute()
+          root.mkdir(mode=0o700)
+          draft = json.loads(Path('luanti/genesis/example.json').read_text(encoding='utf-8'))
+          draft['actors'] = [dict(draft['actors'][0], id=ident, name=ident) for ident in ('alice', 'bob', 'cora')]
+          draft['memories'] = [{'actorId': a['id'], 'text': 'A synthetic private memory.'} for a in draft['actors']]
+          store = DraftStore(root / 'drafts.sqlite', create=True)
+          try:
+              record = store.create(draft)
+              store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
+              preview, count = prepare_preview(store, record['id'], record['revision'], root)
+          finally:
+              store.close()
+          rt = Path('luanti/.runtime').absolute()
+          status = launch(preview, count, engine=rt / 'root/usr/libexec/luanti/luantiserver',
+                          runtime_home=rt / 'home', libdir=rt / 'root/usr/lib/x86_64-linux-gnu',
+                          port=30077, seconds=120, fixture=True)
+          log_path = preview / 'world/preview.log'
+          log = log_path.read_text(errors='replace') if log_path.exists() else ''
+          if status or 'SOCIETY ev=message ' not in log or 'origin=fixture' not in log:
+              print('\n'.join(log.splitlines()[-60:]))
+              raise SystemExit(status or 1)
+          print('Confirmed fixture preview spawned and recorded messages; not a persistent world or model evidence.')
+          PY
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-verify-') && !startsWith(github.ref_name, 'experiment/cloud-run-budget-') && !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-verify-') && !startsWith(github.ref_name, 'experiment/cloud-run-genesis-') && !startsWith(github.ref_name, 'experiment/cloud-run-budget-') && !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
           python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
@@ -184,6 +215,42 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           luanti/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+      - name: Generate two synthetic world drafts with the configured model
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-genesis-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p genesis-results
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from luanti.genesis.compiler import compile_plan
+          from luanti.genesis.genesis import generate
+          from luanti.genesis.model_adapter import responses_model
+          from luanti.model.adapter import Config
+          model = responses_model(Config.from_env())
+          results = []
+          for index, intent in enumerate((
+              'A rainy fishing harbor with three residents who repair boats and trade fish.',
+              'A quiet mountain library with three caretakers and a garden.'), 1):
+              try:
+                  draft = generate(intent, model)
+                  Path(f'genesis-results/draft-{index}.json').write_text(
+                      json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')
+                  plan = compile_plan(draft)
+                  result = {'index': index, 'ok': True, 'actors': len(draft['actors']),
+                            'places': len(draft['places']), 'unsupported': plan['unsupported'],
+                            'token_usage': None}
+              except Exception as exc:
+                  result = {'index': index, 'ok': False,
+                            'error': getattr(exc, 'code', type(exc).__name__), 'token_usage': None}
+              results.append(result)
+              print(json.dumps(result, ensure_ascii=False))
+          Path('genesis-results/results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          if not all(result['ok'] for result in results): raise SystemExit(1)
+          PY
       - name: Repeated 1000-agent capacity measurement
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         run: |
@@ -235,6 +302,7 @@ jobs:
             luanti/agent/evidence/ci-agent-*
             luanti/agent/evidence/ci-resource.*
             luanti/agent/evidence/ci-memory-*
+            genesis-results/
             luanti/agent/evidence/ci-large-*
             luanti/agent/evidence/ci-repeat-*
             luanti/agent/evidence/ci-opt-*

@@ -43,7 +43,7 @@ Run at repository root. The CLI consumes an already obtained model response; it 
 ```sh
 python3 -m luanti.genesis validate luanti/genesis/example.json
 python3 -m luanti.genesis generate --intent '安静的河谷，有一位旅人' --response luanti/genesis/example.json > /path/to/new-draft.json
-python3 -m unittest luanti.genesis.test_genesis luanti.genesis.test_store luanti.genesis.test_compiler -v
+python3 -m unittest luanti.genesis.test_genesis luanti.genesis.test_store luanti.genesis.test_compiler luanti.genesis.test_preflight luanti.genesis.test_preview -v
 ```
 
 The second command demonstrates the offline interface with a fixture; production callers must provide a response generated for the current intent. Invalid input exits nonzero and prints safe diagnostics to stderr. The CLI does not establish that an arbitrary supplied response matches the intent.
@@ -91,6 +91,45 @@ Every object has exactly the fields shown. `places` and `actors` contain 1–16 
 Connections are undirected, normalized to `from < to`, sorted, and represent only semantic relationships. They are not routes, do not promise walkability, and cannot authorize movement through the map. All IDs come from the draft's restricted ASCII ID format, and the plan has no filesystem paths; the integration must independently constrain any paths it chooses. Role, goal and prior memory seeds occur only under the relevant `private_actors` key. `public_plan` returns an independent copy of the public section, excluding all private actors. Structural validation cannot identify a secret that the model copied into a name or other ostensibly public text; review public content before exposure. Never give the full plan or another actor's private entry to a global or actor observation.
 
 `unsupported` always includes the four codes shown, and includes `{"code":"descriptive_rule_not_executed","rule_id":ID}` for every proposed rule, ordered by rule ID. Rule descriptions are not included and no rules execute. `CompileError.code` is `invalid_draft`, `actor_count`, `out_of_bounds`, or `spatial_conflict`; `diagnostics` is a list of safe path/code pairs when available. Invalid references, duplicate IDs/grid cells and path-like IDs are rejected by the draft validator. No partial plan is returned on failure. The resulting format is an integration plan, not the existing Lua persistence schema or proof that terrain, rules, memories or agents were installed.
+
+## Runtime preflight: deliberately blocked
+
+Persistent-world integration remains blocked. After explicit `DraftStore.confirm(id, revision, world_checkpoint_path)` has completed, an authorized service can call:
+
+```python
+from luanti.genesis.store import DraftStore
+from luanti.genesis.preflight import preflight, PreflightError
+
+store = DraftStore('/private/drafts.sqlite')
+try:
+    result = preflight(store, draft_id, revision, '/private/new-luanti-world')
+finally:
+    store.close()
+assert result['status'] == 'blocked' and result['launchable'] is False
+# result['plan'] contains private_actors and must stay private.
+```
+
+`preflight` checks the exact confirmed ID and revision, recompiles the draft, replays the confirmed `WorldStore` via a read-only SQLite connection, checks its initial event and full snapshot against that draft, requires world version 1, and checks that the proposed absolute runtime path currently does not exist. It rejects description-only rules, indoor places, semantic connections and invalid/out-of-bounds layouts. The path check neither reserves the path nor protects against concurrent replacement; a future launcher must atomically create an independent directory and revalidate all inputs at the point of use. The caller must control the store and directories and prevent untrusted concurrent replacement.
+
+Success returns `{draft_id, revision, world_path, status: "blocked", launchable: false, plan, blockers}`. The blockers explicitly identify missing cross-store crash recovery, per-character private runtime projection, terrain/spawn verification and runtime world creation. The return is a review artifact, **not permission or a token to launch**. Errors raise `PreflightError` with a safe `code` and optional path/code diagnostics. A pending or unconfirmed draft, stale revision, occupied runtime path, changed/corrupt origin or unsupported draft fails closed. No world is created and no Luanti files or settings are changed.
+
+`WorldStore` and Luanti's map and normal-shutdown character/long-term checkpoint cannot currently commit atomically or reconcile after a crash. The existing runtime also supplies one global goal rather than verified per-actor private goals, roles and seeds. A complete integration needs an explicit recoverable authority/commit protocol, retained draft-to-ordinal identity, fail-closed launch and restore, private per-actor model projection, and terrain/spawn checks. Until those exist, do not use this preflight result to launch or resume a persistent world. The separate disposable preview below does not bypass these persistent-world blockers. Long-term memory and existing restore behavior remain unchanged.
+
+## Disposable Luanti preview
+
+This separate path is **one-shot and disposable**, not a persistent-world integration or a restore. It uses `preflight` to verify the confirmed draft and initial WorldStore, but does not treat its `launchable: false` result as persistent-launch permission. It never writes back to the draft or WorldStore. Create a private root first, then explicitly invoke (engine execution requires the resource coordination established by the user):
+
+```sh
+install -d -m 700 /absolute/private/preview-root
+python3 -m luanti.genesis.preview --draft-db /private/drafts.sqlite \
+  --draft-id DRAFT_ID --revision REVISION --preview-root /absolute/private/preview-root --fixture
+```
+
+Omit `--fixture` to use the existing model bridge and its caller-provided environment. The preview-specific fixture emits deterministic say, wander and advance decisions with `origin=fixture`; it does not call a real model. Say requires another actor in observation range; a one-actor preview cannot demonstrate conversation. `LUANTI_RT` chooses the existing runtime root (default `luanti/.runtime`), `--port` defaults to 30077 and `--seconds` defaults to 180. The launcher creates a unique mode-0700 directory and mode-0600 manifest after checking the root is owned by the caller and inaccessible to group/others; a conflict never overwrites an existing path. The root contains sibling `private/` and `world/` directories: the all-actor manifest and model spool reside only under `private/`, outside the Luanti world and mod media trees. The manifest is mode 0600 and private directories are mode 0700; the engine and worker inherit umask 077 for their temporary requests, responses and logs. The draft database and origin checkpoint must each be owned by the caller with mode 0600 and have a caller-owned parent inaccessible to group/others. Existing source files are never removed or overwritten. The entire preview, including incomplete or abandoned private requests and temporary files, is retained after success, failure or interruption; the owner must remove it after confirming no process is using it. It must not be resumed or treated as a committed world. The caller must avoid concurrent engines and coordinate heavy execution.
+
+Only confirmed exact revisions with 1–5 actors, no descriptive rules, no connections, no indoor places and compiler-valid coordinates are accepted. At most eight seeds per actor and 4096 bytes of encoded private profile are accepted; over-limit input is rejected rather than truncated. The runtime creates a uniform grass plane and uses compiled spawn positions. Places are represented only by their grid coordinates: names/descriptions, structures, terrain features, and connectivity are not rendered. Spawn feet/head and ground are checked after emergence; this does not implement general terrain/path validation. Descriptive rules and space types outside this subset are rejected. The launcher disables persistence, restore and long-term memory for this disposable preview; the pre-existing default and long-term paths remain unchanged. Actors receive normal local observations and can inspect, move, approach and address a nearby actor. A successful say delivers its text only to the sender and named recipient, and the recipient receives it in its inbox and episodic memory. Preview speech is not displayed as a public nametag or printed in logs; the event log records a digest. Actors may deliberately reveal their own private information through say or behavior. Mark, gather and build are rejected with an explicit `preview-world-write-unsupported` result and logged as rejected; the next request carries the failure as immediate feedback. The decision is not rewritten as an inspect action. Each actor's `goal`, `role` and full `memory_seeds` are copied only to its own model context as `goal` and `genesis_profile`. These seeds are prompt context, not durable episodic or long-term records. Public text may still contain secrets mistakenly authored there and needs human review. Outgoing model requests transmit the current actor’s profile to the configured provider; the provider can retain or correlate requests. Private profiles are not directly injected into another actor’s prompt, but voluntary speech and observable actions can communicate information. Local protections do not constrain a malicious same-user process, a provider that discloses data, or a user who has placed private text in publicly visible fields.
+
+The launcher binds the server to localhost and enables the visual character settings; a local Luanti client can be used to view the three-dimensional preview, subject to the engine/client validation below. The launcher sets `secure.trusted_mods = society` so that this locally supplied mod can access the private manifest and spool outside the world; this grants that mod broad filesystem access as the launching user. The real secure-mod configuration and client media behavior need engine verification. The launcher monitors the worker and engine, enforces a timeout, checks the preview marker, successful completion and spawn liveness in the log, and returns nonzero on failure. It stops only its own children. It is not a cross-process security boundary against other processes running as the same user, and path availability is rechecked by exclusive creation, not reserved by preflight. The real Luanti engine, its secure-file access to the manifest outside the world, client media enumeration, emergence, rendering, networking and cleanup have not been tested by this implementation's lightweight tests; run those centrally before relying on the preview.
 
 ## Draft storage and explicit confirmation
 

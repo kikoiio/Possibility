@@ -1,0 +1,30 @@
+{
+  "run_id": 40824126197,
+  "source_commit": "67c4fa54ea395d8f34a301728334cdb6091ee9af",
+  "fixture": false,
+  "model": "configured provider; exact name not recorded",
+  "token_usage": null,
+  "intents": [
+    "A rainy fishing harbor with three residents who repair boats and trade fish.",
+    "A quiet mountain library with three caretakers and a garden."
+  ],
+  "files": [
+    {
+      "file": "draft-1.json",
+      "sha256": "9ebb7dabed85c8be2ba634fb16464533de8f4f8a7bc6e639ee1ef58e7233daee",
+      "actors": 3,
+      "places": 3,
+      "memories": 3,
+      "rules": 0
+    },
+    {
+      "file": "draft-2.json",
+      "sha256": "a878c1909573d0c6447e58b8c63230f7b7a4e6ec9d07bc89b111debe58180103",
+      "actors": 3,
+      "places": 3,
+      "memories": 3,
+      "rules": 3
+    }
+  ],
+  "limits": "Draft structure only; exact provider model and token usage not captured. Runtime integration, semantic fidelity, privacy and visual quality are not validated."
+}

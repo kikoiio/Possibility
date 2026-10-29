@@ -43,6 +43,16 @@ local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
+local GENESIS_PREVIEW = cfg("society_genesis_preview", "false") == "true"
+local preview_module, preview_actors
+if GENESIS_PREVIEW then
+    assert(not PERSIST and not RESTORE and not LONG_TERM and MODEL and COGNITION and not LOG_MESSAGES and BOUND == 32 and initial_state == "", "preview requires a fresh isolated nonpersistent world")
+    preview_module = dofile(minetest.get_modpath("society") .. "/genesis_preview.lua")
+    local file = assert(io.open(cfg("society_genesis_private_manifest", ""), "rb"), "missing preview manifest")
+    local raw = file:read(32769); file:close()
+    assert(#raw <= 32768, "preview manifest too large")
+    preview_actors = preview_module.validate(minetest.parse_json(raw), COUNT)
+end
 local SPOOL = cfg("society_spool", "")
 local request_id = 0
 local step_count, last_us = 0, minetest.get_us_time()
@@ -229,6 +239,11 @@ local function apply(self, action, pos)
 	end
 	S.actions[kind] = (S.actions[kind] or 0) + 1
 
+	if GENESIS_PREVIEW and (kind == "mark" or kind == "gather" or kind == "build") then
+		ev("ev=preview-action-rejected agent=%d action=%s reason=world-write-unsupported", self._id, kind)
+		return false, "preview-world-write-unsupported"
+	end
+
 	if kind == "advance" then
 		local np = step_toward(self, pos, self._target)
 		if not np then
@@ -338,6 +353,14 @@ local function apply(self, action, pos)
 	end
 	if kind == "say" then
 		local recipient = agents[action.target]
+		if GENESIS_PREVIEW then
+			local ok, reason = preview_module.deliver(self, recipient, action.text, minetest.get_gametime())
+			if ok then
+				if VISUAL then self.object:set_properties({nametag=self._persona .. "\n" .. action.text}) end
+				ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target, minetest.sha256(action.text))
+			end
+			return ok, reason
+		end
 		if recipient and recipient.object and recipient.object:get_pos() then
 			recipient._inbox[#recipient._inbox + 1] = {time = minetest.get_gametime(),
 				from = self._id, text = action.text}
@@ -428,7 +451,7 @@ local function decide_and_act(self)
 	if MODEL then
 		if not self._pending then
 			request_id = request_id + 1
-			local query_parts = {GOAL}
+			local query_parts = {GENESIS_PREVIEW and self._genesis.goal or GOAL}
 			if self._last_action then query_parts[#query_parts+1] = minetest.write_json(self._last_action) end
 			for _, id in ipairs(obs.nearby_agents) do query_parts[#query_parts+1] = "agent " .. id end
 			for _, node in ipairs(obs.local_view and obs.local_view.nodes or {}) do
@@ -458,8 +481,10 @@ local function decide_and_act(self)
 				memory = selected_memory, memory_scope = memory_info,
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
+			if GENESIS_PREVIEW then preview_module.attach_context(context, self._genesis) end
 			context.local_actions = action_context.describe(minetest, pos,
 				context.visible_nodes, context.inventory, context.bounds)
+			if GENESIS_PREVIEW then context.preview_unsupported_actions = {"mark", "gather", "build"} end
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
 			local encoded = string.format('{"id":%d,"context":%s}', request_id, minetest.write_json(context))
 			if not minetest.safe_file_write(path, encoded) then
@@ -646,6 +671,7 @@ local function spawn_agents()
 		local x = offset + (i % cols) * SPACING
 		local z = offset + math.floor(i / cols) * SPACING
 		local at = {x = ORIGIN.x + x, y = ORIGIN.y, z = ORIGIN.z + z}
+		if GENESIS_PREVIEW then at = preview_actors[i + 1].position end
 		local obj = minetest.add_entity(at, "society:agent")
 		if not obj then
 			ev("fail=spawn agent=%d at=%d,%d,%d reason=add_entity-returned-nil", i, at.x, at.y, at.z)
@@ -654,6 +680,7 @@ local function spawn_agents()
 			local le = obj:get_luaentity()
 			le._id = i
 			le._persona = PERSONAS[(i % #PERSONAS) + 1]
+			if GENESIS_PREVIEW then le._genesis = preview_actors[i + 1]; le._persona = le._genesis.name end
 			if VISUAL then
 				local colors = {"#65a8dd", "#e5a768", "#b790d3", "#77bb8c", "#e487a0"}
 				obj:set_properties({visual="mesh", mesh="character.b3d", visual_size={x=1, y=1},
@@ -690,7 +717,7 @@ local function spawn_agents()
 			-- character's persisted lifetime counter.
 			le._run_start_decisions = le._decisions
 			le._resources = resources.new(minetest, obj, le._restored_inventory)
-			if (MODEL or SEED_RESOURCES) and not RESTORE then
+			if (MODEL or SEED_RESOURCES) and not RESTORE and not GENESIS_PREVIEW then
 				local resource_pos = {x = at.x + 1, y = at.y, z = at.z}
 				if in_bounds(resource_pos) and minetest.get_node(resource_pos).name == "air" then
 					minetest.set_node(resource_pos, {name = "society:resource"})
@@ -754,6 +781,7 @@ minetest.after(1, function()
 		end
 	end
 	ev("forceload blocks=%d/%d bound=%d", ok, tried, BOUND)
+	if GENESIS_PREVIEW and ok ~= tried then fail("preview-forceload", "loaded=%d expected=%d", ok, tried); return end
 
 	minetest.emerge_area({x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 16, z = BOUND},
 		function(blockpos, action, calls_remaining)
@@ -765,6 +793,18 @@ minetest.after(1, function()
 						end
 					end
 				end
+                if GENESIS_PREVIEW then
+                    for _, actor in ipairs(preview_actors) do
+                        local p = actor.position
+                        local ground = minetest.get_node_or_nil({x=p.x, y=0, z=p.z})
+                        local feet = minetest.get_node_or_nil(p)
+                        local head = minetest.get_node_or_nil({x=p.x, y=2, z=p.z})
+                        if not ground or ground.name ~= "default:dirt_with_grass" or not feet or feet.name ~= "air" or not head or head.name ~= "air" then
+                            fail("preview-unsafe-spawn", "agent=%d", actor.ordinal); return
+                        end
+                    end
+                    ev("preview mode=disposable persistent=false terrain=flat connections=none")
+                end
 				spawn_agents()
 				minetest.after(1, verify_spawn)
 			end
