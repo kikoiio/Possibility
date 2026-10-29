@@ -27,19 +27,20 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
-          (
-            cd cognition
-            lua5.1 test.lua
-            lua5.1 test_persistence.lua
-            lua5.1 test_resource_actions.lua
-            lua5.1 test_action_context.lua
-            lua5.1 test_spatial.lua
-            lua5.1 test_runtime.lua
-            lua5.1 test_retrieval.lua
-            lua5.1 test_long_term_memory.lua
-            lua5.1 test_long_term_integration.lua
-            lua5.1 test_world_events.lua
-          )
+          {
+            (
+              cd cognition
+              lua5.1 test.lua
+              lua5.1 test_persistence.lua
+              lua5.1 test_resource_actions.lua
+              lua5.1 test_action_context.lua
+              lua5.1 test_spatial.lua
+              lua5.1 test_runtime.lua
+              lua5.1 test_retrieval.lua
+              lua5.1 test_long_term_memory.lua
+              lua5.1 test_long_term_integration.lua
+              lua5.1 test_world_events.lua
+            )
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
           python3 -B -m unittest -v engine/luanti/test_snapshot.py
           python3 -B -m unittest -v engine/luanti/test_world_identity.py engine/luanti/test_world_lock.py engine/luanti/test_world_session.py engine/luanti/test_launch.py
@@ -47,7 +48,7 @@ jobs:
           python3 -B -m unittest discover -s validation/luanti/analysis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s genesis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s world -t . -p 'test_*.py' -v
-          ) 2>&1 | tee unit-tests.log
+          } 2>&1 | tee unit-tests.log
       - name: Prepare runtime
         run: |
           uptime
