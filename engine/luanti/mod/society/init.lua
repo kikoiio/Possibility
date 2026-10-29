@@ -1275,6 +1275,15 @@ local function apply_product_projection()
 			end
 		end
 	end
+	-- Luanti's normal map-save cadence is asynchronous. Flush the emerged
+	-- origin region through VoxelManip before publishing the product commit,
+	-- so a restart cannot observe a committed projection with an old map.
+	local vm = minetest.get_voxel_manip(
+		{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND})
+	vm:read_from_map()
+	local map_data = vm:get_data()
+	vm:set_data(map_data)
+	vm:write_to_map()
 	local committed = product_state:commit("origin-projection:" .. genesis_manifest.origin_event_id, target)
 	local encoded = minetest.write_json(committed)
 	storage:set_string("product_state", encoded)
