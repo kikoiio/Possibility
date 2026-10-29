@@ -62,7 +62,8 @@ jobs:
           rt="$GITHUB_WORKSPACE/engine/luanti/.runtime"
           mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
           ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
-          ln -s "$(command -v luanti)" "$rt/root/usr/libexec/luanti/luanti"
+          test -x /usr/games/luanti
+          ln -s /usr/games/luanti "$rt/root/usr/libexec/luanti/luanti"
           cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
           mkdir -p "$rt/home/.minetest"
           ln -s ../.luanti/games "$rt/home/.minetest/games"
