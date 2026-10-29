@@ -194,7 +194,9 @@ export async function createVoxelScene(host, initialWorld) {
     const next = readCells(world), dirty = new Set();
     if (cutawayEnabled) {
       const roofs = world.objects.filter(o => o.kind === 'roof');
-      for (const [id, cell] of next) if (cell.material === 'roof' || roofs.some(o => cell.position.every((v, i) => v >= o.from[i] && v <= o.to[i]))) next.delete(id);
+      const members = new Set(roofs.flatMap(o => o.members || []).map(p => p.join(',')));
+      for (const [id, cell] of next) if (members.has(id) || roofs.some(o => o.members === undefined &&
+          cell.position.every((v, i) => v >= o.from[i] && v <= o.to[i])) || !roofs.length && cell.material === 'roof') next.delete(id);
     }
     for (const id of new Set([...cells.keys(), ...next.keys()])) {
       const old = cells.get(id), current = next.get(id);

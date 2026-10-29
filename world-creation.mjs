@@ -12,6 +12,7 @@ import { createVoxelWorldStore } from './voxel-world.mjs';
 import { bindVoxelWorld } from './voxel-bindings.mjs';
 import { retrieveSource } from './model/source-retrieval.mjs';
 import { normalizeBuildingCommands, describeChanges, recoverableAttempt } from './creation-attempt.mjs';
+import { inspectVoxelSpaces } from './geometry/voxel-inspection.js';
 const clone = value => structuredClone(value);
 const MAX_SOURCE_CHARACTERS = 5_000_000;
 
@@ -297,8 +298,10 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
               prepared = voxel.prepare({ baseRevision: voxelBasis.revision, commands: normalized.commands });
               attempt.changes = describeChanges(prepared.changes);
               attempt.toRevision = prepared.state.revision;
+              const inspection = inspectVoxelSpaces(prepared.state);
               result = { ok: true, message: prepared.state.revision === voxelBasis.revision ? '已检查建造步骤，场景没有变化。' :
-                `已保存本次建造：新增 ${attempt.changes.added}、替换 ${attempt.changes.replaced}、移除 ${attempt.changes.removed} 个方块；更新 ${attempt.changes.objects} 个对象。` };
+                `已保存本次建造：新增 ${attempt.changes.added}、替换 ${attempt.changes.replaced}、移除 ${attempt.changes.removed} 个方块；更新 ${attempt.changes.objects} 个对象。${inspection.issues.length ? ` 空间检查还有 ${inspection.issues.length} 项待处理，请查看画布下方。` : ''}`,
+                diagnostics: inspection.issues.map(i => ({ path: `objects.${i.objectId}.${i.code}`, message: i.message })) };
               attempt.outcome = prepared.state.revision === voxelBasis.revision ? 'unchanged' : 'committed';
             } catch (error) { result = fail('invalid-building', error.diagnostics ? error.message : '建造步骤未通过检查，这次没有修改。可重试或缩小范围。', error.diagnostics ?? [{ path: 'commands', message: error.message }]); }
           }

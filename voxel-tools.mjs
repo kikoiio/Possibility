@@ -40,9 +40,11 @@ export function expandVoxelTools(commands) {
   for (const command of commands) {
     if (!command || typeof command !== 'object' || Array.isArray(command)) throw new Error('不支持的建造操作');
     const { op } = command;
+    if (command.objectId !== undefined && !validString(command.objectId)) throw new Error('对象 ID 无效');
     if (op === 'copy') throw new Error('copy 需要当前世界，无法展开');
-    if (op === 'remove-object') {
+    if (op === 'remove-object' || op === 'paint-object') {
       if (!validString(command.id)) throw new Error('对象 ID 无效');
+      if (op === 'paint-object') checkMaterial(command.material);
       append(command);
       continue;
     }
@@ -62,7 +64,8 @@ export function expandVoxelTools(commands) {
     const [x0, y0, z0] = command.from, [x1, y1, z1] = command.to;
     const fill = (xa, ya, za, xb, yb, zb) => {
       if (xa > xb || ya > yb || za > zb) return;
-      append({ op: 'fill', from: [xa, ya, za], to: [xb, yb, zb], material: command.material }, true);
+      append({ op: 'fill', from: [xa, ya, za], to: [xb, yb, zb], material: command.material,
+        ...(command.objectId === undefined ? {} : { objectId: command.objectId }) }, true);
     };
     if (op === 'roof') {
       for (let x = x0; x <= x1; x++) {

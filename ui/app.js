@@ -1,10 +1,12 @@
+import { inspectVoxelSpaces } from './geometry/voxel-inspection.js';
+
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
   'main', 'page-title', 'world-time', 'connection-label', 'connection-retry', 'more-menu',
   'new-world', 'world-resume', 'archive-controls', 'world-archives', 'world-open',
   'world-create', 'world-experience', 'dialogue-scroll', 'dialogue-log', 'dialogue-empty',
   'creation-summary', 'creation-summary-text', 'creation-status', 'creation-form', 'creation-input', 'creation-send',
-  'creation-mode', 'creation-recovery', 'creation-retry', 'creation-adjust', 'voxel-status', 'voxel-empty', 'voxel-frame', 'voxel-interior',
+  'creation-mode', 'creation-recovery', 'creation-retry', 'creation-adjust', 'voxel-status', 'voxel-empty', 'voxel-frame', 'voxel-interior', 'voxel-inspection',
   'source-input', 'source-status', 'source-remove', 'voxel-scene', 'voxel-undo', 'voxel-redo',
   'generate-actions', 'generate-hint', 'world-generate', 'world-draft', 'world-draft-scene',
   'world-draft-title', 'world-draft-description', 'world-draft-summary', 'draft-stale', 'world-accept',
@@ -420,6 +422,14 @@ function syncScene(slot, key, next) {
 }
 
 function syncVoxel(slot, key, world) {
+  if (slot === slots.voxel && ui['voxel-inspection'].dataset.signature !== `${key}/${world.revision}`) {
+    const inspection = inspectVoxelSpaces(world), host = ui['voxel-inspection'];
+    host.dataset.signature = `${key}/${world.revision}`;
+    host.replaceChildren();
+    host.hidden = !inspection.issues.length;
+    if (inspection.issues.length) host.append(node('summary', `空间检查 · ${inspection.issues.length} 项待处理`),
+      ...inspection.issues.map(i => node('p', i.message)), node('p', '检查仅覆盖单层矩形建筑。保存的变化可以继续修改，外观仍需你查看。'));
+  }
   const signature = JSON.stringify([world.revision, world.actors || []]);
   const accepted = () => {
     slot.host.dataset.revision = String(world.revision);

@@ -19,7 +19,7 @@ function material(value) {
 
 /** Expand and validate a complete edit before it can touch an engine world.
  * readCell must return a registered material name or null for an empty cell. */
-export function prepareVoxelEdit(commands, readCell, allowedMaterials) {
+export function prepareVoxelEdit(commands, readCell, allowedMaterials, { onWrite } = {}) {
   if (!Array.isArray(commands) || !commands.length || commands.length > MAX_COMMANDS || typeof readCell !== 'function' || !(allowedMaterials instanceof Set)) {
     throw new Error('建造操作无效');
   }
@@ -38,9 +38,11 @@ export function prepareVoxelEdit(commands, readCell, allowedMaterials) {
     if (match !== undefined && match !== null && !allowedMaterials.has(match)) throw new Error('方块类型未注册');
     for (let x = from[0]; x <= to[0]; x++) for (let y = from[1]; y <= to[1]; y++) for (let z = from[2]; z <= to[2]; z++) {
       const position = [x, y, z], id = key(position), entry = staged.get(id);
+      if (command.selection && !command.selection.has(id)) continue;
       const current = entry ? entry.after : readCell(position);
       if (current !== null && (typeof current !== 'string' || !allowedMaterials.has(current))) throw new Error('无法读取已加载的方块');
       if (command.op === 'replace' && current !== match) continue;
+      onWrite?.(position, command, current, target);
       if (entry) entry.after = target;
       else staged.set(id, { position, before: current, after: target });
     }

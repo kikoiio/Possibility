@@ -290,6 +290,9 @@ body { background: var(--studio-bg); color: var(--studio-text); }
 .conversation-body { display: grid; min-height: 0; flex: 1; grid-template-rows: auto minmax(0, 1fr) auto auto; }
 .conversation-body { grid-template-rows: auto minmax(80px, 1fr) auto auto auto auto auto; }
 .canvas-status { flex: none; padding: 6px 13px; border-bottom: 1px solid var(--studio-line); color: var(--studio-muted); font-size: 11px; }
+.voxel-inspection { flex: none; max-height: 30%; overflow: auto; padding: 10px 13px; border-top: 1px solid var(--studio-line); color: #e2b47e; font-size: 11px; overflow-wrap: anywhere; }
+.voxel-inspection summary { cursor: pointer; }
+.voxel-inspection p { margin-top: 7px; color: var(--studio-muted); line-height: 1.6; }
 .canvas-empty { position: absolute; z-index: 2; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; pointer-events: none; }
 .canvas-empty strong { color: var(--studio-text); font-size: clamp(20px, 2.5vw, 30px); font-weight: 500; }
 .canvas-empty span { color: var(--studio-muted); font-size: 13px; line-height: 1.9; }

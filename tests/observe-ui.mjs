@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { setImmediate as flush } from 'node:timers/promises';
+import { inspectVoxelSpaces } from '../geometry/voxel-inspection.js';
 
 const html = readFileSync(new URL('../ui/index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../ui/style.css', import.meta.url), 'utf8');
@@ -192,10 +193,10 @@ async function page(initial = emptyState(), options = {}) {
     if (holdScenes) await new Promise((resolve) => sceneStarts.push(resolve));
     return instance;
   } });
-  // Substitute exactly the renderer import. The rest of app.js runs unchanged.
+  // Inject the actual pure inspection module; substitute only renderer loading.
   assert.equal(app.split("import('./scene.js')").length, 2);
-  const context = vm.createContext({ document, window, EventSource: MemorySource, performance: { now: () => now }, fetch: fetchUI, AbortController, TextDecoder, console, __loadSceneModule: loadScene });
-  new vm.Script(app.replace("import('./scene.js')", '__loadSceneModule()')).runInContext(context);
+  const context = vm.createContext({ document, window, inspectVoxelSpaces, EventSource: MemorySource, performance: { now: () => now }, fetch: fetchUI, AbortController, TextDecoder, console, __loadSceneModule: loadScene });
+  new vm.Script(app.replace("import { inspectVoxelSpaces } from './geometry/voxel-inspection.js';", '').replace("import('./scene.js')", '__loadSceneModule()')).runInContext(context);
   const api = {
     document, elements, requests, sources, scenes, timers, sceneStarts,
     $(id) { return document.getElementById(id); },

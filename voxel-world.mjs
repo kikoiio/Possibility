@@ -12,8 +12,12 @@ const validPosition = p => Array.isArray(p) && p.length === 3 && p.every(n => Nu
 const validMaterial = m => m === null || materials.has(m);
 const validString = s => typeof s === 'string' && s.length <= 256 && s.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(s);
 const validObject = o => o && validString(o.id) && validString(o.name) && validString(o.kind) &&
-  validPosition(o.from) && validPosition(o.to) && o.from.every((n, i) => n <= o.to[i]);
-const copyObject = o => o === null ? null : ({ id: o.id, name: o.name, kind: o.kind, from: [...o.from], to: [...o.to] });
+  validPosition(o.from) && validPosition(o.to) && o.from.every((n, i) => n <= o.to[i]) &&
+  (o.members === undefined || Array.isArray(o.members) && o.members.length <= 5000 &&
+    o.members.every(p => validPosition(p) && inside(p, o)) && new Set(o.members.map(key)).size === o.members.length);
+const inside = (p, o) => p.every((v, i) => v >= o.from[i] && v <= o.to[i]);
+const copyObject = o => o === null ? null : ({ id: o.id, name: o.name, kind: o.kind, from: [...o.from], to: [...o.to],
+  ...(o.members === undefined ? {} : { members: o.members.map(p => [...p]) }) });
 const validCellChange = c => c && validPosition(c.position) && validMaterial(c.before) && validMaterial(c.after) && c.before !== c.after;
 const validObjectChange = c => c && validString(c.id) && (c.before === null || validObject(c.before) && c.before.id === c.id) &&
   (c.after === null || validObject(c.after) && c.after.id === c.id) && !isDeepStrictEqual(c.before, c.after);
@@ -41,6 +45,12 @@ function validateStore(data) {
       !objects.every(validObject) || new Set(objects.map(o => o.id)).size !== objects.length ||
       !Array.isArray(data.undo) || !data.undo.every(validBatch) || !Array.isArray(data.redo) || !data.redo.every(validBatch)) {
     throw new Error('体素世界文件无效');
+  }
+  const occupied = new Set(data.cells.map(c => key(c.position))), owned = new Set();
+  for (const object of objects) for (const p of object.members || []) {
+    const id = key(p);
+    if (!occupied.has(id) || owned.has(id)) throw new Error('体素世界的方块归属无效');
+    owned.add(id);
   }
   return { ...data, objects: objects.map(copyObject) };
 }
@@ -98,19 +108,53 @@ export function createVoxelWorldStore({ file, snapshot, onSave }) {
       checkRevision(baseRevision);
       if (!Array.isArray(commands) || !commands.length || commands.length > 128) throw new Error('建造操作无效');
       commands = expandVoxelTools(commands);
-      const cellCommands = [], objects = new Map(data.objects.map(o => [o.id, o]));
+      const cellCommands = [], objects = new Map(data.objects.map(o => [o.id, copyObject(o)]));
       for (const command of commands) {
         if (!command || typeof command !== 'object') throw new Error('不支持的建造操作');
         if (command.op === 'object') {
-          if (!validObject(command)) throw new Error('对象定义无效');
-          objects.set(command.id, copyObject(command));
+          if (!validObject(command) || command.members !== undefined) throw new Error('对象定义无效；方块归属由建造操作记录');
+          objects.set(command.id, { ...copyObject(command),
+            ...(objects.get(command.id)?.members === undefined ? {} : { members: objects.get(command.id).members }) });
         } else if (command.op === 'remove-object') {
           if (!validString(command.id)) throw new Error('对象 ID 无效');
           objects.delete(command.id);
         } else cellCommands.push(command);
       }
       const cells = new Map(data.cells.map(c => [key(c.position), c.material]));
-      const cellChanges = cellCommands.length ? prepareVoxelEdit(cellCommands, p => cells.get(key(p)) ?? null, materials) : [];
+      const memberships = new Map([...objects.values()].filter(o => o.members !== undefined).map(o => [o.id, new Set(o.members.map(key))]));
+      const owners = new Map();
+      for (const [id, members] of memberships) for (const p of members) {
+        if (!owners.has(p)) owners.set(p, new Set());
+        owners.get(p).add(id);
+      }
+      let scopedScan = 0;
+      const edits = cellCommands.map(command => {
+        if (Object.hasOwn(command, 'selection')) throw new Error('不支持直接指定内部选择范围');
+        if (command.op !== 'paint-object') return command;
+        const object = objects.get(command.id);
+        if (!object || object.members === undefined) throw new Error('这个部件尚无精确方块归属，请先明确重建该部件，不能按包围范围猜测换色');
+        const volume = object.from.reduce((n, v, i) => n * (object.to[i] - v + 1), 1);
+        scopedScan += volume;
+        if (scopedScan > 32768) throw new Error('部件操作扫描范围过大');
+        return { op: 'fill', from: object.from, to: object.to, material: command.material, objectId: object.id,
+          selection: memberships.get(object.id) };
+      });
+      for (const command of edits) if (command.objectId !== undefined && !objects.has(command.objectId)) throw new Error('建造操作引用了未登记的对象');
+      const cellChanges = edits.length ? prepareVoxelEdit(edits, p => cells.get(key(p)) ?? null, materials, {
+        onWrite(position, command, before, after) {
+          const id = key(position), owner = command.objectId;
+          if (owner !== undefined && !inside(position, objects.get(owner))) throw new Error('建造操作超出所属对象范围');
+          if (owner === undefined && before === after) return;
+          for (const old of owners.get(id) || []) if (old !== owner || after === null) memberships.get(old).delete(id);
+          owners.set(id, new Set());
+          if (owner !== undefined && after !== null) {
+            if (!memberships.has(owner)) memberships.set(owner, new Set());
+            memberships.get(owner).add(id); owners.get(id).add(owner);
+          }
+        },
+      }) : [];
+      for (const [id, members] of memberships) objects.get(id).members = [...members].map(p => p.split(',').map(Number));
+      if ([...objects.values()].some(o => !validObject(o))) throw new Error('对象范围与方块归属不一致，请同时修改部件和范围');
       const count = data.cells.length + cellChanges.reduce((n, c) => n + (c.after === null ? -1 : 0) + (c.before === null ? 1 : 0), 0);
       if (count > 5000) throw new Error('方块总数不能超过 5000');
       const beforeObjects = new Map(data.objects.map(o => [o.id, o]));
