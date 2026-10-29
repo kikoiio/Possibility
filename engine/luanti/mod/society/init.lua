@@ -63,6 +63,10 @@ local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
 local LONG_TERM = cfg("society_long_term_memory", "false") == "true"
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local GOAL = cfg("society_goal", "Explore, gather resources, build, and interact with nearby agents.")
+local VIEW_GUIDE = cfg("society_view_guide", "false") == "true"
+local VIEW_SPAWN = cfg("society_view_spawn", "false") == "true"
+local VIEW_ACCEPTANCE = cfg("society_view_acceptance", "false") == "true"
+local VIEW_GUIDE_SPEED = tonumber(cfg("society_view_guide_speed", "1.5"))
 local EVENT_NAMESPACE = cfg("society_event_namespace", "default")
 assert(type(EVENT_NAMESPACE) == "string" and EVENT_NAMESPACE ~= "" and #EVENT_NAMESPACE <= 128,
 	"invalid society_event_namespace")
@@ -76,6 +80,10 @@ local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
 local product_state
 local product_active_run = false
+local offline_seconds = 0
+local product_clock_bootstrap = false
+local environment_process
+local environment_last_time = 0
 local function save_product_state()
 	assert(WORLD_PRODUCT and product_state, "product state unavailable")
 	local encoded = minetest.write_json(product_state:export())
@@ -88,12 +96,23 @@ local function freeze_product_state(reason)
 	local ok, frozen = pcall(product_state.freeze, product_state, reason)
 	if ok then
 		local encoded = minetest.write_json(frozen)
-		storage:set_string("product_state", encoded)
-		minetest.log("error", "SOCIETY product-world frozen reason=" .. tostring(reason):gsub("%s+", "_"))
+		local written = pcall(storage.set_string, storage, "product_state", encoded)
+		if not written or storage:get_string("product_state") ~= encoded then
+			minetest.log("error", "SOCIETY product-world freeze-write-failed reason=" .. tostring(reason):gsub("%s+", "_"))
+		else
+			minetest.log("error", "SOCIETY product-world frozen reason=" .. tostring(reason):gsub("%s+", "_"))
+		end
 	else
 		minetest.log("error", "SOCIETY product-world freeze-failed reason=" .. tostring(reason):gsub("%s+", "_")
 			.. " error=" .. tostring(frozen):gsub("%s+", "_"))
 	end
+end
+local function set_product_clock(engine_time, wall_time)
+	if not WORLD_PRODUCT or not product_state then return end
+	local existing = product_state:clock()
+	product_state:set_clock({version=1, logical_time=environment_last_time,
+		engine_time=math.max(0, math.floor(engine_time or 0)),
+		saved_wall_time=existing and existing.saved_wall_time or math.max(0, math.floor(wall_time or os.time()))})
 end
 if WORLD_PRODUCT then
 	local raw_state = storage:get_string("product_state")
@@ -142,12 +161,15 @@ local S = {
 	finished = false, failed = nil,
 }
 
+local view_landmarks, view_route = {}, {}
+local view_guide, view_route_index = nil, 1
+local view_route_seen, view_players = {}, {}
+
 local summary_and_stop
+local ev, fail
 local agents = {}
 local history = long_term_memory.new()
 local event_log = world_events.new()
-local environment_process
-local environment_last_time = 0
 if WORLD_PRODUCT then
 	local raw = storage:get_string("environment_state")
 	if raw ~= "" then
@@ -166,6 +188,24 @@ if WORLD_PRODUCT then
 	end
 	if components.environment > 0 then
 		assert(raw ~= "", "product environment checkpoint is missing while committed state is present")
+	end
+	local clock = product_state:clock()
+	if not clock then
+		local committed = components.map > 0 or components.actors > 0 or components.inventory > 0
+			or components.events > 0 or components.memory > 0 or components.environment > 0
+		if committed then
+			freeze_product_state("committed product state is missing logical clock")
+			error("committed product state is missing logical clock")
+		end
+		set_product_clock(environment_last_time, minetest.get_gametime())
+		product_clock_bootstrap = true
+		save_product_state()
+	else
+		if clock.logical_time ~= environment_last_time then
+			freeze_product_state("logical clock differs from environment checkpoint")
+			error("logical clock differs from environment checkpoint")
+		end
+		offline_seconds = math.max(0, math.floor(os.time()) - clock.saved_wall_time)
 	end
 end
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
@@ -210,7 +250,7 @@ local function resource_total()
 	return in_world, inventory
 end
 
-local function ev(fmt, ...)
+ev = function(fmt, ...)
 	local started = PROFILE and minetest.get_us_time()
 	minetest.log("action", "SOCIETY " .. string.format(fmt, ...))
 	if started then profile.log = profile.log + minetest.get_us_time()-started end
@@ -253,6 +293,155 @@ minetest.register_node("society:resource", {
 	description = "society resource", tiles = {"default_stone.png^[colorize:#33aa66:180"},
 	groups = {cracky = 3},
 })
+
+local function view_send(player, message)
+	if player and player:is_player() then
+		minetest.chat_send_player(player:get_player_name(), "[Wispiva] " .. message)
+	end
+end
+
+local function view_interact(landmark, player, source)
+	local place = landmark and landmark._place_name or "this place"
+	local description = landmark and landmark._place_description or "A place in the world."
+	local player_name = player and player:is_player() and player:get_player_name() or "fixture"
+	view_send(player, place .. ": " .. description)
+	if landmark then
+		landmark.object:set_properties({nametag = place .. "\nRead: " .. description})
+	end
+	ev("view interaction player=%s place=%s source=%s", player_name, tostring(landmark and landmark._place_id or "unknown"), source or "player")
+end
+
+minetest.register_entity("society:view_landmark", {
+		initial_properties = {
+			visual = "cube",
+			visual_size = {x = 0.8, y = 1.2},
+			textures = {"default_stone.png^[colorize:#d39b4a:180"},
+			physical = false,
+			collide_with_objects = false,
+			pointable = true,
+			static_save = false,
+		},
+		on_rightclick = function(self, clicker)
+			view_interact(self, clicker, "player")
+		end,
+	})
+
+minetest.register_entity("society:view_guide", {
+		initial_properties = {
+			visual = "cube",
+			visual_size = {x = 0.7, y = 1.4},
+			textures = {"default_stone.png^[colorize:#63b4d8:180"},
+			physical = false,
+			collide_with_objects = false,
+			pointable = true,
+			static_save = false,
+			nametag = "Wispiva guide\nFollow the route",
+			nametag_color = "#ffffff",
+		},
+		on_rightclick = function(self, clicker)
+			view_send(clicker, "Follow the guide to each named place, then right-click a landmark to inspect it.")
+			ev("view guide-interaction player=%s", clicker and clicker:get_player_name() or "fixture")
+		end,
+	})
+
+local function view_landmark_position(place)
+	local radius = place.space == "indoor" and 3 or 2
+	return {x = place.anchor.x + radius + 1, y = 1.5, z = place.anchor.z}
+end
+
+local function spawn_view_scene()
+	if not WORLD_PRODUCT or not VIEW_GUIDE then return end
+	local places = {}
+	for _, place in ipairs(genesis_manifest.public.places or {}) do places[#places + 1] = place end
+	table.sort(places, function(a, b) return a.id < b.id end)
+	for index, place in ipairs(places) do
+		local position = view_landmark_position(place)
+		local object = minetest.add_entity(position, "society:view_landmark")
+		if not object then
+			fail("view-scene", "landmark=%s reason=add_entity-returned-nil", place.id)
+			return
+		end
+		local landmark = object:get_luaentity()
+		landmark._place_id = place.id
+		landmark._place_name = place.name
+		landmark._place_description = place.description or ("The " .. place.name .. " area.")
+		local colors = {"#d39b4a", "#8fc477", "#b58ad9", "#d87878", "#6fa9d8"}
+		object:set_properties({
+			textures = {"default_stone.png^[colorize:" .. colors[((index - 1) % #colors) + 1] .. ":180"},
+			nametag = place.name .. "\nRight-click to inspect",
+			nametag_color = "#ffffff",
+		})
+		view_landmarks[place.id] = landmark
+		view_route[#view_route + 1] = {id = place.id, position = position, name = place.name}
+	end
+	if #view_route == 0 then
+		fail("view-scene", "reason=no-public-places")
+		return
+	end
+	view_guide = minetest.add_entity({x = 0, y = 1.5, z = -16}, "society:view_guide")
+	if not view_guide then
+		fail("view-scene", "guide=missing")
+		return
+	end
+	ev("view scene-ready places=%d observer_spawn=0,2,-20 interaction=landmark-rightclick", #view_route)
+	if VIEW_ACCEPTANCE then
+		minetest.after(2, function()
+			local players = minetest.get_connected_players()
+			if #players > 0 then view_interact(view_landmarks[view_route[1].id], players[1], "fixture") end
+		end)
+	end
+end
+
+local function update_view_scene(dtime)
+	if not view_guide or #view_route == 0 then return end
+	local entity = view_guide:get_luaentity()
+	local current = view_guide:get_pos()
+	if not entity or not current then return end
+	local target = view_route[view_route_index]
+	local dx, dz = target.position.x - current.x, target.position.z - current.z
+	local distance = math.sqrt(dx * dx + dz * dz)
+	if distance <= 0.15 then
+		if not view_route_seen[target.id] then
+			view_route_seen[target.id] = true
+			ev("view guide-arrival place=%s", target.id)
+		end
+		view_guide:set_properties({nametag = "Wispiva guide\nAt " .. target.name})
+		if view_route_index < #view_route then view_route_index = view_route_index + 1 else return end
+		return
+	end
+	local step = math.min(distance, math.max(VIEW_GUIDE_SPEED, 0.1) * dtime)
+	view_guide:set_pos({x = current.x + dx / distance * step, y = current.y, z = current.z + dz / distance * step})
+end
+
+local function update_view_players()
+	if not VIEW_GUIDE then return end
+	for _, player in ipairs(minetest.get_connected_players()) do
+		local name, position = player:get_player_name(), player:get_pos()
+		local prior = view_players[name]
+		if position and prior then
+			local dx, dz = position.x - prior.x, position.z - prior.z
+			if not view_players[name].moved and dx * dx + dz * dz >= 1 then
+				view_players[name].moved = true
+				view_send(player, "You moved through the scene. Look for the named landmark and the guide.")
+				ev("view movement player=%s", name)
+			end
+		end
+		if position then view_players[name] = {x = position.x, z = position.z, moved = prior and prior.moved or false} end
+	end
+end
+
+minetest.register_on_joinplayer(function(player)
+	if not VIEW_GUIDE then return end
+	if VIEW_SPAWN then player:set_pos({x = 0, y = 2, z = -20}) end
+	local name = player:get_player_name()
+	view_players[name] = nil
+	view_send(player, "Welcome. Move with WASD, look around, and right-click a named landmark for feedback.")
+	ev("view join player=%s", name)
+end)
+
+minetest.register_on_leaveplayer(function(player)
+	view_players[player:get_player_name()] = nil
+end)
 
 -- 确定性 PRNG：每个 agent 一份状态，种子固定。
 -- 不用 math.random，因为它受引擎与调用顺序影响，两次运行不一定给出同一序列。
@@ -978,7 +1167,7 @@ summary_and_stop = function()
 	minetest.request_shutdown()
 end
 
-local function fail(reason, fmt, ...)
+fail = function(reason, fmt, ...)
 	S.failed = reason
 	ev("fail=" .. reason .. " " .. fmt, ...)
 	summary_and_stop()
@@ -1076,6 +1265,8 @@ minetest.after(1, function()
 					end
 				end
 				if WORLD_PRODUCT and not apply_product_projection() then return end
+				if WORLD_PRODUCT then spawn_view_scene() end
+				if S.failed then return end
                 if GENESIS_PREVIEW then
                     for _, actor in ipairs(preview_actors) do
                         local p = actor.position
@@ -1180,6 +1371,8 @@ end
 
 minetest.register_globalstep(function(dtime)
 	step_count = step_count + 1
+	update_view_scene(dtime)
+	update_view_players()
 	if S.finished or S.failed or S.spawned == 0 then return end
 	if not advance_product_environment() then return end
 	local frame_started = minetest.get_us_time()

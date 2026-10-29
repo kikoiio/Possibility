@@ -34,6 +34,15 @@ local function same_components(a, b)
   for _, name in ipairs(COMPONENTS) do if a[name] ~= b[name] then return false end end
   return true
 end
+local function clock(value)
+  if value == nil then return nil end
+  assert(type(value) == 'table' and value.version == 1, 'invalid product clock')
+  integer(value.logical_time, 'clock logical_time')
+  integer(value.engine_time, 'clock engine_time')
+  integer(value.saved_wall_time, 'clock saved_wall_time')
+  return {version=1, logical_time=value.logical_time, engine_time=value.engine_time,
+    saved_wall_time=value.saved_wall_time}
+end
 local function validate(value)
   assert(type(value) == 'table' and value.format == 'wispiva-product-state' and value.version == 1,
     'unsupported product state')
@@ -43,6 +52,14 @@ local function validate(value)
   local result = {format=value.format, version=value.version, world_id=value.world_id,
     origin_event_id=value.origin_event_id, phase=value.phase, commit_version=value.commit_version,
     components=components(value.components)}
+  if value.last_operation_id ~= nil then
+    text(value.last_operation_id, 'last_operation_id')
+    assert(value.last_target ~= nil, 'last operation target required')
+    result.last_operation_id, result.last_target = value.last_operation_id, components(value.last_target)
+  elseif value.last_target ~= nil then
+    error('last operation target without operation id')
+  end
+  result.clock = clock(value.clock)
   if value.pending ~= nil then
     assert(type(value.pending) == 'table', 'invalid pending commit')
     text(value.pending.operation_id, 'pending operation_id')
@@ -69,8 +86,21 @@ local function methods(value)
   function state:components() return copy(value.components) end
   function state:version() return value.commit_version end
   function state:pending() return copy(value.pending) end
+  function state:clock() return copy(value.clock) end
+  function state:set_clock(next_clock)
+    assert(value.phase ~= 'FROZEN', 'cannot update a frozen product state')
+    value.clock = clock(next_clock)
+    return self:export()
+  end
   function state:freeze(reason)
-    text(reason, 'freeze reason'); value.phase, value.freeze_reason, value.pending = 'FROZEN', reason, nil
+    text(reason, 'freeze reason')
+    if value.phase == 'FROZEN' then
+      assert(value.freeze_reason == reason, 'frozen product state reason mismatch')
+      return self:export()
+    end
+    value.phase, value.freeze_reason = 'FROZEN', reason
+    -- Keep pending operation evidence. Recovery must inspect the exact
+    -- operation and target; dropping it would make the boundary unauditable.
     return self:export()
   end
   function state:assert_ready()
@@ -78,19 +108,32 @@ local function methods(value)
     return true
   end
   function state:prepare(operation_id, target)
-    text(operation_id, 'operation_id'); assert(value.phase == 'READY' and value.pending == nil, 'product state is not ready')
+    text(operation_id, 'operation_id')
+    local desired = components(target)
+    if value.phase == 'READY' and value.last_operation_id == operation_id then
+      assert(same_components(value.last_target, desired), 'prepared operation target conflict')
+      return self:export()
+    end
+    assert(value.phase == 'READY' and value.pending == nil, 'product state is not ready')
+    for _, name in ipairs(COMPONENTS) do
+      assert(desired[name] >= value.components[name], 'product component cannot regress: ' .. name)
+    end
     value.phase, value.pending, value.freeze_reason = 'PREPARING',
-      {operation_id=operation_id, base_version=value.commit_version, target=components(target)}, nil
+      {operation_id=operation_id, base_version=value.commit_version, target=desired}, nil
     return self:export()
   end
   function state:commit(operation_id, target)
     text(operation_id, 'operation_id')
+    local desired = components(target)
+    if value.phase == 'READY' and value.last_operation_id == operation_id then
+      assert(same_components(value.last_target, desired), 'committed operation target conflict')
+      return self:export()
+    end
     assert(value.phase == 'PREPARING' and value.pending and value.pending.operation_id == operation_id,
       'pending product commit mismatch')
-    local desired = components(target)
     assert(same_components(value.pending.target, desired), 'commit target differs from prepared target')
     value.components, value.commit_version = desired, value.commit_version + 1
-    value.phase, value.pending = 'READY', nil
+    value.phase, value.pending, value.last_operation_id, value.last_target = 'READY', nil, operation_id, desired
     return self:export()
   end
   return state
