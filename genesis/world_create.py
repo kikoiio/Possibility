@@ -9,6 +9,7 @@ per-actor private seed material needed by cognition.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -108,7 +109,7 @@ def build_manifest(row, plan, event, world_id):
     digest = event.get("data", {}).get("draft_sha256")
     if not isinstance(digest, str) or not digest:
         raise WorldCreationError("origin_digest_missing")
-    return {
+    manifest = {
         "format": "wispiva-world-manifest",
         "version": 1,
         "world_id": world_id,
@@ -121,6 +122,13 @@ def build_manifest(row, plan, event, world_id):
         "actors": _runtime_actors(plan),
         "origin_event": copy.deepcopy(event),
     }
+    # The original user input is private creation provenance. It is retained
+    # beside the runtime hand-off and never included in the public spatial view.
+    if row.get("intent") is not None:
+        manifest["intent"] = row["intent"]
+        manifest["intent_sha256"] = hashlib.sha256(
+            row["intent"].encode("utf-8")).hexdigest()
+    return manifest
 
 
 def _install_runtime(stage: Path, manifest_path: Path) -> None:
@@ -202,6 +210,7 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
             "world_id": manifest["world_id"], "draft_id": row["id"],
             "revision": row["revision"], "origin_event_id": event["id"],
             "manifest": "private/wispiva-origin.json",
+            "intent_sha256": manifest.get("intent_sha256"),
         })
         _sync_dir(stage / "private")
         _sync_dir(stage)

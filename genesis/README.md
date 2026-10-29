@@ -1,6 +1,6 @@
 # World genesis v1
 
-This module generates and persists drafts and can explicitly confirm a particular revision into a new `WorldStore` checkpoint. A valid draft is a bounded, referentially consistent proposal, not an executable Luanti world and not evidence that rules or spatial geometry are implemented. It does not connect to a Luanti map or agent runtime. It never falls back to a canned story after a model failure. `example.json` is only a test and documentation fixture.
+This module generates and persists drafts and can explicitly confirm a particular revision into a new `WorldStore` checkpoint. A valid draft is a bounded, referentially consistent proposal, not an executable Luanti world and not evidence that rules or spatial geometry are implemented. It does not connect to a Luanti map or agent runtime. It never falls back to a canned story after a model failure. `example.json` is only a test and documentation fixture; product-shaped intent cases are recorded under [evidence/luanti/genesis/2026-10-29-product-intents](../evidence/luanti/genesis/2026-10-29-product-intents).
 
 ## Contract
 
@@ -36,6 +36,8 @@ draft = generate('安静的河谷，有一位旅人', responses_model(config))
 
 The bridge reuses the existing adapter's bounded HTTPS/SSE transport and parser, currently private APIs; pin or expose those APIs before production integration. It does not use the action-specific `decide` prompt. Provider failures become `GenesisError('model_failed')`; parse and validation failures are `invalid_json` or `invalid_draft` with diagnostics. Generation performs no retries or writes; a provider call occurs only if the caller invokes the configured bridge. The request transmits the intent to the configured provider; the caller controls provider choice and authorization.
 
+`DraftStore.create_from_intent(intent, model)` is the generic persistence entry point. It generates once, stores the exact input intent as private metadata bound to the new draft ID, and returns an editable revision 1. `DraftStore.update` can revise the draft while it remains in `draft` status; `confirm` binds the exact revision and freezes it. The intent is copied only into private creation provenance when `create_world` publishes a product directory. It is never added to `public_view` or the public spatial plan.
+
 ## CLI
 
 Run at repository root. The CLI consumes an already obtained model response; it does not contact a model or load credentials. Redirecting output is optional and should target a new draft file, never an active world:
@@ -43,6 +45,7 @@ Run at repository root. The CLI consumes an already obtained model response; it 
 ```sh
 python3 -m genesis validate genesis/example.json
 python3 -m genesis generate --intent '安静的河谷，有一位旅人' --response genesis/example.json > /path/to/new-draft.json
+python3 -m genesis create-draft --draft-db /private/drafts.sqlite --intent '当前用户的世界描述' --response /private/model-response.json
 python3 -m genesis save --draft-db /private/drafts.sqlite --draft /path/to/new-draft.json
 python3 -m genesis read --draft-db /private/drafts.sqlite --draft-id DRAFT_ID
 python3 -m genesis confirm --draft-db /private/drafts.sqlite --draft-id DRAFT_ID --revision 1 --world-path /private/world.sqlite
@@ -51,7 +54,7 @@ python3 -m genesis create-world --draft-db /private/drafts.sqlite --draft-id DRA
 python3 -m unittest genesis.test_genesis genesis.test_store genesis.test_compiler genesis.test_preflight genesis.test_preview -v
 ```
 
-The second command demonstrates the offline interface with a fixture; production callers must provide a response generated for the current intent. Invalid input exits nonzero and prints safe diagnostics to stderr. The CLI does not establish that an arbitrary supplied response matches the intent.
+The `generate` and `create-draft` commands consume an already obtained model response; they do not contact a model or load credentials. The response must have been generated for the current intent. Invalid input exits nonzero and prints safe diagnostics to stderr. The CLI validates structure and persists the binding, but it does not establish semantic fidelity between an arbitrary supplied response and the intent.
 
 `create-world` is the persistent product path. It requires the exact confirmed
 draft revision and its unchanged origin checkpoint, then publishes a fresh
@@ -60,7 +63,8 @@ Luanti world directory with a stable `wispiva-world-id`, private
 and server configuration. It uses a same-parent atomic directory rename and
 refuses an existing target. A staged directory is retained after a failure for
 inspection. The manifest contains private actor roles, goals and genesis
-seeds, so the directory and every copy of it remain private. Start a created
+seeds, plus the original intent and its digest when the draft was created through
+`create_from_intent`, so the directory and every copy of it remain private. Start a created
 world with `engine/luanti/run_product.sh`; the product runtime projects places
 and connections, injects only each actor's own profile into its model request,
 and records environment changes as world events. `preview` remains disposable.

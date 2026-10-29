@@ -26,6 +26,10 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     check = sub.add_parser('validate'); check.add_argument('draft')
     create = sub.add_parser('generate'); create.add_argument('--intent', required=True); create.add_argument('--response', required=True, help='file containing a model-generated JSON response')
+    create_draft = sub.add_parser('create-draft', help='generate and persist one editable draft with its private intent')
+    create_draft.add_argument('--draft-db', required=True)
+    create_draft.add_argument('--intent', required=True)
+    create_draft.add_argument('--response', required=True, help='file containing a model-generated JSON response')
     save = sub.add_parser('save', help='persist a validated draft in a new or existing private DraftStore')
     save.add_argument('--draft-db', required=True); save.add_argument('--draft', required=True)
     confirm = sub.add_parser('confirm', help='explicitly confirm one draft revision into a new WorldStore')
@@ -52,6 +56,16 @@ def main():
             response = Path(args.response).read_text(encoding='utf-8')
             draft = generate(args.intent, lambda system, user: response)
             _print(draft)
+        elif args.command == 'create-draft':
+            response = Path(args.response).read_text(encoding='utf-8')
+            path = Path(args.draft_db)
+            store = _open_store(path, create=not path.exists())
+            try:
+                record = store.create_from_intent(args.intent, lambda system, user: response)
+            finally:
+                store.close()
+            _print({'id': record['id'], 'revision': record['revision'],
+                    'status': record['status'], 'intent': record['intent']})
         elif args.command == 'save':
             path = Path(args.draft_db)
             store = _open_store(path, create=not path.exists())

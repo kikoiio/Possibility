@@ -1,0 +1,72 @@
+{
+  "format": "wispiva-product-intent-case",
+  "version": 1,
+  "case_id": "canal-dye-house",
+  "intent": "Create a small canal-side indigo dye workshop where three residents prepare cloth, maintain the vats, and trade finished blue fabric. The first world should feel practical and lived in, with a covered work yard, a drying quay, and a market bridge.",
+  "draft_v1": {
+    "schemaVersion": 1,
+    "title": "Canal Dye House",
+    "description": "A canal-side workshop where residents prepare cloth and trade finished fabric.",
+    "places": [
+      {"id": "work_yard", "name": "Covered Work Yard", "description": "A roofed yard with tables for cloth preparation."},
+      {"id": "drying_quay", "name": "Drying Quay", "description": "A canal edge lined with poles for drying cloth."},
+      {"id": "market_bridge", "name": "Market Bridge", "description": "A narrow bridge where finished goods change hands."}
+    ],
+    "actors": [
+      {"id": "sena", "name": "Sena", "role": "Dye worker", "goal": "Keep the vats at the right strength for each order", "placeId": "work_yard"},
+      {"id": "pavel", "name": "Pavel", "role": "Cloth washer", "goal": "Keep the drying quay supplied with clean cloth", "placeId": "drying_quay"},
+      {"id": "niko", "name": "Niko", "role": "Market broker", "goal": "Find fair buyers for the workshop's finished fabric", "placeId": "market_bridge"}
+    ],
+    "memories": [
+      {"actorId": "sena", "text": "I never let anyone see the private recipe written under the third vat."},
+      {"actorId": "pavel", "text": "The loose quay plank is safe only when I place the blue cord beside it."},
+      {"actorId": "niko", "text": "I promised one buyer that the next bolt would carry the old river pattern."}
+    ],
+    "rules": [],
+    "layout": {"places": [
+      {"placeId": "work_yard", "space": "indoor", "grid": [0, 0]},
+      {"placeId": "drying_quay", "space": "outdoor", "grid": [-2, 1]},
+      {"placeId": "market_bridge", "space": "outdoor", "grid": [2, 1]}
+    ], "connections": [
+      {"from": "work_yard", "to": "drying_quay"},
+      {"from": "work_yard", "to": "market_bridge"}
+    ]}
+  },
+  "draft_v2": {
+    "schemaVersion": 1,
+    "title": "Canal Dye House at First Light",
+    "description": "A canal-side indigo workshop where residents prepare cloth, tend the vats, and trade finished blue fabric beneath the morning mist.",
+    "places": [
+      {"id": "work_yard", "name": "Covered Work Yard", "description": "A roofed yard with tables for cloth preparation."},
+      {"id": "drying_quay", "name": "Drying Quay", "description": "A canal edge lined with poles for drying cloth."},
+      {"id": "market_bridge", "name": "Market Bridge", "description": "A narrow bridge where finished goods change hands."}
+    ],
+    "actors": [
+      {"id": "sena", "name": "Sena", "role": "Dye worker", "goal": "Keep the vats at the right strength for each order", "placeId": "work_yard"},
+      {"id": "pavel", "name": "Pavel", "role": "Cloth washer", "goal": "Keep the drying quay supplied with clean cloth", "placeId": "drying_quay"},
+      {"id": "niko", "name": "Niko", "role": "Market broker", "goal": "Find fair buyers for the workshop's finished fabric", "placeId": "market_bridge"}
+    ],
+    "memories": [
+      {"actorId": "sena", "text": "I never let anyone see the private recipe written under the third vat."},
+      {"actorId": "pavel", "text": "The loose quay plank is safe only when I place the blue cord beside it."},
+      {"actorId": "niko", "text": "I promised one buyer that the next bolt would carry the old river pattern."}
+    ],
+    "rules": [
+      {"id": "shared_vats", "description": "The workshop records which vat is in use before a new cloth batch begins."}
+    ],
+    "layout": {"places": [
+      {"placeId": "work_yard", "space": "indoor", "grid": [0, 0]},
+      {"placeId": "drying_quay", "space": "outdoor", "grid": [-2, 1]},
+      {"placeId": "market_bridge", "space": "outdoor", "grid": [2, 1]}
+    ], "connections": [
+      {"from": "work_yard", "to": "drying_quay"},
+      {"from": "work_yard", "to": "market_bridge"}
+    ]}
+  },
+  "confirmation": {"status": "confirmed", "draft_revision": 2, "world_created": true},
+  "private_boundary": {
+    "public_projection_excludes": ["memories", "actors[*].goal"],
+    "private_manifest_includes": ["intent", "actors[*].role", "actors[*].goal", "actors[*].memory_seeds"],
+    "must_not_appear_in_public": ["private recipe", "blue cord", "old river pattern"]
+  }
+}

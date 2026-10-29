@@ -1,0 +1,72 @@
+{
+  "format": "wispiva-product-intent-case",
+  "version": 1,
+  "case_id": "desert-observatory",
+  "intent": "Create a remote desert observatory where three residents track seasonal stars, maintain a cistern, and guide travelers. The world should include a dome, a shaded courtyard, and a caravan approach with clear semantic connections.",
+  "draft_v1": {
+    "schemaVersion": 1,
+    "title": "Desert Observatory",
+    "description": "A remote observatory where residents track stars, maintain water, and guide travelers.",
+    "places": [
+      {"id": "star_dome", "name": "Star Dome", "description": "A stone dome with instruments for watching the night sky."},
+      {"id": "shade_court", "name": "Shade Court", "description": "A courtyard with awnings, benches, and a shared cistern."},
+      {"id": "caravan_approach", "name": "Caravan Approach", "description": "A marked route where travelers arrive from the salt flats."}
+    ],
+    "actors": [
+      {"id": "tala", "name": "Tala", "role": "Sky watcher", "goal": "Record the next seasonal star crossing without losing the instrument notes", "placeId": "star_dome"},
+      {"id": "omid", "name": "Omid", "role": "Cistern keeper", "goal": "Keep enough water available for residents and passing travelers", "placeId": "shade_court"},
+      {"id": "ves", "name": "Ves", "role": "Way guide", "goal": "Help caravans choose a safe approach after sunset", "placeId": "caravan_approach"}
+    ],
+    "memories": [
+      {"actorId": "tala", "text": "The missing brass lens was wrapped in my private chart before the last sandstorm."},
+      {"actorId": "omid", "text": "I count the cistern stones twice when the wind carries dust from the west."},
+      {"actorId": "ves", "text": "A traveler once left a red thread at the safe marker and asked me to keep it hidden."}
+    ],
+    "rules": [],
+    "layout": {"places": [
+      {"placeId": "star_dome", "space": "indoor", "grid": [0, 0]},
+      {"placeId": "shade_court", "space": "outdoor", "grid": [-2, 1]},
+      {"placeId": "caravan_approach", "space": "outdoor", "grid": [2, 1]}
+    ], "connections": [
+      {"from": "star_dome", "to": "shade_court"},
+      {"from": "shade_court", "to": "caravan_approach"}
+    ]}
+  },
+  "draft_v2": {
+    "schemaVersion": 1,
+    "title": "Desert Observatory before the Rains",
+    "description": "A remote observatory before the seasonal rains, where residents track stars, guard water, and guide travelers from the salt flats.",
+    "places": [
+      {"id": "star_dome", "name": "Star Dome", "description": "A stone dome with instruments for watching the night sky."},
+      {"id": "shade_court", "name": "Shade Court", "description": "A courtyard with awnings, benches, and a shared cistern."},
+      {"id": "caravan_approach", "name": "Caravan Approach", "description": "A marked route where travelers arrive from the salt flats."}
+    ],
+    "actors": [
+      {"id": "tala", "name": "Tala", "role": "Sky watcher", "goal": "Record the next seasonal star crossing without losing the instrument notes", "placeId": "star_dome"},
+      {"id": "omid", "name": "Omid", "role": "Cistern keeper", "goal": "Keep enough water available for residents and passing travelers", "placeId": "shade_court"},
+      {"id": "ves", "name": "Ves", "role": "Way guide", "goal": "Help caravans choose a safe approach after sunset", "placeId": "caravan_approach"}
+    ],
+    "memories": [
+      {"actorId": "tala", "text": "The missing brass lens was wrapped in my private chart before the last sandstorm."},
+      {"actorId": "omid", "text": "I count the cistern stones twice when the wind carries dust from the west."},
+      {"actorId": "ves", "text": "A traveler once left a red thread at the safe marker and asked me to keep it hidden."}
+    ],
+    "rules": [
+      {"id": "water_log", "description": "The observatory records cistern use before offering water to a caravan."}
+    ],
+    "layout": {"places": [
+      {"placeId": "star_dome", "space": "indoor", "grid": [0, 0]},
+      {"placeId": "shade_court", "space": "outdoor", "grid": [-2, 1]},
+      {"placeId": "caravan_approach", "space": "outdoor", "grid": [2, 1]}
+    ], "connections": [
+      {"from": "star_dome", "to": "shade_court"},
+      {"from": "shade_court", "to": "caravan_approach"}
+    ]}
+  },
+  "confirmation": {"status": "confirmed", "draft_revision": 2, "world_created": true},
+  "private_boundary": {
+    "public_projection_excludes": ["memories", "actors[*].goal"],
+    "private_manifest_includes": ["intent", "actors[*].role", "actors[*].goal", "actors[*].memory_seeds"],
+    "must_not_appear_in_public": ["missing brass lens", "cistern stones", "red thread"]
+  }
+}

@@ -9,7 +9,7 @@ import sqlite3
 import tempfile
 import uuid
 
-from genesis.genesis import GenesisError, public_view, validate
+from genesis.genesis import GenesisError, generate, public_view, validate
 from world.store import WorldStore
 
 
@@ -38,6 +38,20 @@ def _check_draft(draft):
     if len(data.encode('utf-8')) > 8192:
         raise GenesisError('invalid_draft')
     return data
+
+
+def _check_intent(intent):
+    if intent is None:
+        return None
+    if type(intent) is not str or not intent.strip() or len(intent) > 4000:
+        raise GenesisError('invalid_intent')
+    if any(ord(char) < 32 for char in intent):
+        raise GenesisError('invalid_intent')
+    try:
+        intent.encode('utf-8')
+    except UnicodeError:
+        raise GenesisError('invalid_intent') from None
+    return intent
 
 
 def _sync_dir(directory):
@@ -84,6 +98,7 @@ class DraftStore:
             if create:
                 self.db.execute('BEGIN IMMEDIATE')
                 self.db.execute('CREATE TABLE drafts (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, target TEXT, token TEXT)')
+                self.db.execute('CREATE TABLE draft_intents (draft_id TEXT PRIMARY KEY REFERENCES drafts(id), intent TEXT NOT NULL)')
                 self.db.execute('PRAGMA user_version=1')
                 self.db.execute('COMMIT')
                 _sync_dir(str(self.path.parent))
@@ -93,6 +108,9 @@ class DraftStore:
                 columns = self.db.execute('PRAGMA table_info(drafts)').fetchall()
                 if [c[1] for c in columns] != ['id', 'revision', 'payload', 'status', 'target', 'token']:
                     raise DraftCorrupt('invalid draft schema')
+                self.db.execute('BEGIN IMMEDIATE')
+                self.db.execute('CREATE TABLE IF NOT EXISTS draft_intents (draft_id TEXT PRIMARY KEY REFERENCES drafts(id), intent TEXT NOT NULL)')
+                self.db.execute('COMMIT')
         except Exception:
             if self.db.in_transaction: self.db.execute('ROLLBACK')
             self.db.close()
@@ -102,9 +120,12 @@ class DraftStore:
         self.db.close()
 
     def _row(self, draft_id):
-        row = self.db.execute('SELECT id,revision,payload,status,target,token FROM drafts WHERE id=?', (draft_id,)).fetchone()
+        row = self.db.execute('''SELECT d.id,d.revision,d.payload,d.status,d.target,d.token,
+                                        i.intent
+                                 FROM drafts d LEFT JOIN draft_intents i ON i.draft_id=d.id
+                                 WHERE d.id=?''', (draft_id,)).fetchone()
         if row is None: raise KeyError(draft_id)
-        ident, rev, payload, status, target, token = row
+        ident, rev, payload, status, target, token, intent = row
         try:
             draft = json.loads(payload)
             if (not isinstance(ident, str) or not ident or type(rev) is not int or rev < 1
@@ -113,15 +134,32 @@ class DraftStore:
                 or (status != 'draft' and (not isinstance(target, str) or not os.path.isabs(target)
                     or not isinstance(token, str) or len(token) != 32 or any(c not in '0123456789abcdef' for c in token)))):
                 raise ValueError
+            _check_intent(intent)
         except (ValueError, TypeError, GenesisError, RecursionError):
             raise DraftCorrupt('invalid draft record') from None
-        return {'id': ident, 'revision': rev, 'draft': draft, 'status': status, 'target': target, 'token': token}
+        return {'id': ident, 'revision': rev, 'draft': draft, 'intent': intent,
+                'status': status, 'target': target, 'token': token}
 
-    def create(self, draft):
+    def create(self, draft, *, intent=None):
         payload = _check_draft(draft)
+        intent = _check_intent(intent)
         ident = uuid.uuid4().hex
-        self.db.execute('INSERT INTO drafts VALUES (?, 1, ?, ?, NULL, NULL)', (ident, payload, 'draft'))
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            self.db.execute('INSERT INTO drafts VALUES (?, 1, ?, ?, NULL, NULL)', (ident, payload, 'draft'))
+            if intent is not None:
+                self.db.execute('INSERT INTO draft_intents VALUES (?, ?)', (ident, intent))
+            self.db.execute('COMMIT')
+        except Exception:
+            if self.db.in_transaction: self.db.execute('ROLLBACK')
+            raise
         return self.read(ident)
+
+    def create_from_intent(self, intent, model):
+        """Generate and persist one editable draft while retaining the input intent."""
+        intent = _check_intent(intent)
+        draft = generate(intent, model)
+        return self.create(draft, intent=intent)
 
     def read(self, draft_id):
         row = self._row(draft_id)
