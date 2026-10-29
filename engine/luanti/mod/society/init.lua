@@ -1066,7 +1066,9 @@ minetest.after(1, function()
 	minetest.emerge_area({x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 16, z = BOUND},
 		function(blockpos, action, calls_remaining)
 			if calls_remaining == 0 then
-				if VISUAL or WORLD_PRODUCT then
+				local first_product_projection = WORLD_PRODUCT
+					and product_state:components().map == 0
+				if VISUAL or first_product_projection then
 					for x = -BOUND, BOUND do
 						for z = -BOUND, BOUND do
 							minetest.set_node({x=x, y=0, z=z}, {name="default:dirt_with_grass"})
