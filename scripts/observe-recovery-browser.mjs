@@ -1,0 +1,106 @@
+// Cloud-only integration checks. All model responses and saved state are synthetic.
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { chromium } from 'playwright';
+import { createCampServer } from '../server.mjs';
+if (!process.env.CI) throw Error('Run browser acceptance in GitHub Actions.');
+const output = resolve('.tmp/prototype/recovery-browser'); mkdirSync(output, { recursive: true });
+const temporary = mkdtempSync(join(output, 'state-'));
+const inputs = [], errors = [], checks = [];
+const wood = { op: 'fill', from: [0, 0, 0], to: [4, 0, 4], material: 'wood' };
+const glass = { op: 'fill', from: [1, 1, 0], to: [2, 2, 0], material: 'glass' };
+let server, experience, browser, page;
+const options = { stateFile: join(temporary, 'state.json'),
+  configLoader: () => ({ llm: { baseUrl: 'https://fixture.invalid/v1', model: 'synthetic-recovery', apiKey: 'synthetic' } }),
+  fetchImpl: async (_url, init) => {
+    const input = JSON.parse(JSON.parse(init.body).input.at(-1).content); inputs.push(input);
+    const n = inputs.length;
+    if (n === 6) await new Promise((resolve, reject) => { init.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }); });
+    const commands = n === 1 ? [] : n === 2 ? [wood] : n === 3 ? [{ ...glass, material: 'copper' }] : [glass];
+    return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ reply: '已经全部建好了。', summary: '一小片木地板和玻璃窗。', ready: false, commands }) }] }] });
+  } };
+const start = async port => {
+  ({ server, experience } = createCampServer(options));
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port || 0, '127.0.0.1', resolve); });
+};
+const idle = async () => page.waitForFunction(() => !document.querySelector('#creation-input').disabled);
+const shot = name => page.screenshot({ path: join(output, name + '.png'), fullPage: true });
+const send = async text => { await page.locator('#creation-input').fill(text); await page.locator('#creation-send').click(); await idle(); };
+const state = () => page.request.get('/api/state').then(r => r.json());
+try {
+  await start(); const port = server.address().port;
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--disable-dev-shm-usage'] });
+  page = await browser.newPage({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1440, height: 960 } });
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/'); await idle();
+  assert.equal(await page.locator('#creation-mode').inputValue(), 'build');
+  await page.locator('#voxel-empty').waitFor({ state: 'visible' });
+  await send('现在搭一个木屋起点');
+  await page.locator('#creation-retry').waitFor({ state: 'visible' });
+  assert.equal((await state()).creation.voxel.revision, 0);
+  assert.match(await page.locator('.attempt-result').innerText(), /尚未建造/);
+  await shot('01-not-built');
+  await page.locator('#creation-retry').click(); await idle();
+  await page.waitForFunction(() => document.querySelector('#voxel-scene').dataset.revision === '1');
+  assert.equal(inputs.length, 2);
+  assert.equal((await state()).creation.dialogue.messages.filter(m => m.role === 'user').length, 1);
+  assert.match(await page.locator('#voxel-status').innerText(), /版本 1/);
+  checks.push('text-only response stays unbuilt; explicit retry commits once and matches canvas revision');
+  await send('把窗户换成玻璃');
+  assert.equal((await state()).creation.voxel.revision, 1);
+  await page.locator('#creation-adjust').click();
+  assert.equal(await page.locator('#creation-input').inputValue(), '把窗户换成玻璃');
+  await page.locator('#creation-input').fill('');
+  await page.reload(); await idle();
+  await page.locator('#creation-retry').waitFor({ state: 'visible' });
+  assert.equal(inputs.length, 3);
+  assert.match(await page.locator('#dialogue-log').innerText(), /未完成/);
+  await shot('02-recoverable-error');
+  await page.locator('#creation-retry').click(); await idle();
+  assert.equal((await state()).creation.voxel.revision, 2);
+  assert.equal(inputs[3].previousAttempt.reason, 'invalid-building');
+  checks.push('material errors persist across refresh; retry keeps the intent and includes diagnostics');
+  await send('再应用同样的窗户');
+  assert.equal((await state()).creation.voxel.revision, 2);
+  assert.match(await page.locator('.attempt-result').last().innerText(), /没有变化/);
+  checks.push('identical edits are shown as no change');
+  await page.locator('#creation-input').fill('继续调整窗户');
+  await page.locator('#creation-send').click();
+  await page.locator('#model-progress').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => document.querySelector('#model-phase').textContent.includes('连接'));
+  await page.locator('#model-cancel').click(); await idle();
+  assert.equal((await state()).creation.voxel.revision, 2);
+  assert.match(await page.locator('.attempt-result').last().innerText(), /已取消/);
+  assert.equal(inputs.length, 6);
+  await shot('03-cancelled');
+  await new Promise(resolve => server.close(resolve)); await start(port);
+  await page.reload(); await idle();
+  assert.equal(inputs.length, 6);
+  assert.equal((await state()).creation.voxel.revision, 2);
+  await page.locator('#creation-retry').click(); await idle();
+  assert.equal(inputs.length, 7);
+  assert.equal(inputs[6].voxel.revision, 2);
+  checks.push('cancel and restart preserve the scene and never retry automatically');
+  await page.locator('#creation-mode').selectOption('discuss');
+  await send('先聊聊可以怎样改进');
+  assert.equal((await state()).creation.voxel.revision, 2);
+  assert.match(await page.locator('.attempt-result').last().innerText(), /仅讨论/);
+  await page.locator('#voxel-interior').click();
+  assert.equal(await page.locator('#voxel-interior').getAttribute('aria-pressed'), 'true');
+  await page.locator('#voxel-frame').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  await shot('04-mobile-recovery');
+  assert.deepEqual(errors, []);
+  checks.push('discussion cannot edit; inspection controls work and mobile has no horizontal overflow');
+  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: true, checks, calls: inputs.length, realModelCalls: 0, errors }, null, 2));
+} catch (error) {
+  if (page) await shot('failure').catch(() => {});
+  writeFileSync(join(output, 'report.json'), JSON.stringify({ ok: false, checks, error: error.stack, errors, calls: inputs.length, realModelCalls: 0 }, null, 2));
+  throw error;
+} finally {
+  await browser?.close();
+  if (server?.listening) await new Promise(resolve => server.close(resolve));
+  rmSync(temporary, { recursive: true, force: true });
+}

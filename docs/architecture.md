@@ -1,25 +1,25 @@
-# 当前架构与分支边界
+# 原型架构
 
-核对日期：2026-10-28。本文说明当前原型与独立实验的边界；[目标架构](design/2026-10-27-target-architecture.md)仍是未来方案，[工作计划](PLAN.md)记录当前创建优先级和验证证据。
+核对日期：2026-10-29。本页描述当前工作树；产品目标见[项目意图](intent.md)，计划与历史验收证据见[工作计划](PLAN.md)。
 
-| 内容 | 位置 | 用途与边界 |
-| --- | --- | --- |
-| 产品需求 | [intent.md](intent.md) | 作者、世界、模拟与验收目标。 |
-| 主线计划与研究 | [PLAN.md](PLAN.md)、[文档索引](README.md) | 保留进展和证据；研究结论不等于实现。 |
-| 创建世界与模拟原型 | `proto/world-genesis`，当前提交 `de25b3a` | 保存多轮对话建造、体素世界、有限规则、角色、3D、测试和原型专用 CI；作为探索证据，不整体合并主线。 |
-| Minecraft 社会实验 | `experiment/minecraft-societies`，原始快照 `7e33189e144d76d5a18a13c462b26c502f74b797` | 独立 Luanti 运行时、Lua 代码、M0 证据和单独语法 CI；不接入原型。 |
+## 入口与数据流
 
-分支的提交是对迁移前工作区的快照，并非对上游主线变更的批准。分支可以通过 `git show <分支>:<路径>` 只读查看。分支快照不包含本机 `.env`、`.data/`、`node_modules/` 或实验 `.runtime/`；运行时应在隔离工作区按各分支说明准备。
+`server.mjs` 在本机提供网页、API 和 SSE；`ui/` 展示创建对话、3D 场景和已发生的世界动态。创建过程由 `world-creation.mjs` 管理，`creation-dialogue.mjs` 组织对话和建造意图，`world-genesis.mjs` 将模型生成的条目组装为世界起点。程序校验候选结果，用户确认后才进入世界。
 
-## 目标、原型证据与缺口
+`voxel-building.mjs`、`voxel-tools.mjs`、`voxel-world.mjs` 负责有限体素编辑、对象记录和撤销／重做；`voxel-bindings.mjs` 连接体素与世界语义。确认时保存当前体素快照，运行页使用该快照。`geometry/` 和 `ui/` 将世界状态编译并展示为场景。
 
-| 产品目标 | 原型证据 | 仍未证明 |
-| --- | --- | --- |
-| 文本创建世界与用户确认 | `proto/world-genesis` 的 `prototypes/world-creation.mjs` 和 `tests/dialogue-flow.test.mjs` | 真实模型生成质量与自然语言隐私。 |
-| 世界演化与行动后果 | 同分支 `world-definition.mjs` 和 `tests/conditional-world.test.mjs` | 任意物理与完整小说因果。 |
-| 角色认知与记忆 | 同分支 `actor.mjs` 和 `tests/red-headed-league.test.mjs` | 长期检索、反思和分岔继承。 |
-| 素材检索 | `model/source-retrieval.mjs`、`creation-dialogue.mjs` | 原文留在本地；按当前对话检索片段，模型可请求一次补充检索，避免长文档整体重复进入上下文。 |
-| 实时 3D | 同分支 `geometry/`、`ui/` 和几何测试 | 目标设备性能、复杂几何及生产级视觉质量。 |
-| 社会实验 | `experiment/minecraft-societies` 的 `agent/evidence/m0-2026-10-27.md` | 真实 LLM 社会行为、持久化、长期运行及最终环境选型。 |
+`world-definition.mjs`、`core.mjs` 和 `actor.mjs` 管理规则、事实和角色观察；角色通过自身可见的观察选择行动，程序裁定结果。`activity.mjs` 将已提交变化投影为动态。作者界面是全知视图，角色输入受到信息边界约束。
 
-2026-10-28 原型分支本地验证通过 97 个 Node 测试和 282 项环境检查；GitHub Actions `40734288111` 通过了同一套离线检查及体素浏览器验收。实验 M0 仍由独立分支维护，详见[计划](PLAN.md)。
+`model/` 负责模型配置、请求和素材检索。素材保存在本机，创建对话按需提供检索片段，模型可请求一次补充检索；这不证明长文档理解可靠。
+
+## 保存与边界
+
+`.data/prototype/` 保存创建过程、世界状态、体素与归档。页面关闭后服务仍可推进；服务进程退出时世界冻结，重启不补算离线时间。完整历史仍驻留内存并整体写入文件，长期容量和断电耐久性尚未验证。
+
+当前模拟覆盖地点连接、有限角色信息隔离、行动前提、资源和条件过程；它不是通用物理或完整小说模拟。长期相关性记忆、反思、分岔、连续寻路、复杂空间及大型世界尚未完成或验证。隐私检查只能拦截部分泄漏，不能证明自然语言推理完全安全。
+
+## 检查
+
+`node verify.mjs` 串行运行离线行为检查，使用合成模型，不读取私有模型配置、不调用真实模型，也不启动浏览器。`tests/` 包含定向测试，`scripts/` 包含手动和浏览器观察脚本；`.github/workflows/prototype-preview.yml` 定义云端浏览器验收。浏览器、真实模型和多模型效果需要分别验证，不能从离线测试推断。
+
+本分支只维护主原型；Luanti 社会实验位于独立分支，不是原型运行依赖。

@@ -1,5 +1,22 @@
-# Wispiva
+# Wispiva 原型
 
-A wisp is a spark of an idea. Wispiva gives ideas a world where they can take shape, live, and evolve.
+Wispiva 让想法形成可以观察和演化的世界。本分支用于开发和体验原型：通过对话创建小世界，建造三维场景，再观察角色行动与世界变化。
 
-The project is in research and prototyping. Its [documentation index](docs/README.md) describes the product and current evidence. The world creation prototype is preserved on the `proto/world-genesis` branch; the separate Minecraft societies experiment is on `experiment/minecraft-societies`.
+## 运行
+
+需要 Node.js 24。在仓库根目录执行：
+
+```bash
+npm ci
+node server.mjs
+```
+
+打开 [http://127.0.0.1:5175/](http://127.0.0.1:5175/)。启动和观看不会调用模型；对话、生成和角色自主行动需要按 [.env.example](.env.example) 配置模型服务。实际配置与世界存档保存在本机，不应提交到仓库。
+
+## 体验
+
+从一句想法或 UTF-8 文本素材开始，和模型讨论地点、人物与希望观察的变化。对话可以提出体素建造和修改，支持撤销与重做。设定足够明确后生成预览，检查结果并确认进入世界；运行页可以播放、暂停或单步观察。
+
+当前适合探索小规模场景。角色知情、行动前提、资源变化和地点连接有有限规则；长期记忆、复杂物理、平行世界和大型场景尚未完成或验证。画面质量和真实模型的建造效果仍需实际体验。
+
+现有能力、实现边界与验证方法见[当前架构](docs/architecture.md)，近期重点与既有证据见[工作计划](docs/PLAN.md)，其他资料见[文档索引](docs/README.md)。

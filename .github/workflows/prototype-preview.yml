@@ -18,11 +18,10 @@ jobs:
         with:
           node-version: '24'
       - run: mkdir -p .tmp/ci
-      - run: npm ci --prefix prototypes
+      - run: npm ci
       - name: Offline behavior checks
-        run: node prototypes/verify.mjs
+        run: node verify.mjs
       - name: Browser tooling (CI only)
-        working-directory: prototypes
         run: |
           npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.64.0
           google-chrome --version
@@ -33,15 +32,24 @@ jobs:
           fc-cache -f "$HOME/.local/share/fonts"
           fc-match -f '%{family}' 'Noto Sans CJK SC' | grep -q 'Noto Sans CJK SC'
       - name: Conversation and live activity in a real browser
-        run: node prototypes/scripts/observe-browser.mjs
+        run: node scripts/observe-browser.mjs
       - name: Voxel building in a real browser
-        run: node prototypes/scripts/observe-voxel-browser.mjs
+        run: node scripts/observe-voxel-browser.mjs
+      - name: Creation feedback and explicit recovery
+        run: node scripts/observe-recovery-browser.mjs
       - name: Screenshots and observations
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: prototype-experience
           path: .tmp/prototype/browser/
+          retention-days: 7
+      - name: Recovery screenshots and observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-recovery-experience
+          path: .tmp/prototype/recovery-browser/
           retention-days: 7
       - name: Voxel screenshots and observations
         if: always()
