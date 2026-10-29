@@ -24,7 +24,11 @@ const start = async port => {
   ({ server, experience } = createCampServer(options));
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port || 0, '127.0.0.1', resolve); });
 };
-const idle = async () => page.waitForFunction(() => !document.querySelector('#creation-input').disabled);
+const idle = async () => {
+  await page.waitForFunction(() => !document.querySelector('#creation-input').disabled);
+  const latest = (await state()).creation.attempts.at(-1);
+  if (latest) await page.waitForFunction(id => [...document.querySelectorAll('.attempt-result')].some(el => el.dataset.attemptId === id), latest.id);
+};
 const shot = name => page.screenshot({ path: join(output, name + '.png'), fullPage: true });
 const send = async text => { await page.locator('#creation-input').fill(text); await page.locator('#creation-send').click(); await idle(); };
 const state = () => page.request.get('/api/state').then(r => r.json());

@@ -66,6 +66,10 @@ const currentDraft = () => {
   return activeKind() === 'creation' && pending() || draft?.id === suppressedDraft ? null : draft;
 };
 const latestRetry = () => { const a = list(state?.creation?.attempts).at(-1); return a && ['failed', 'cancelled', 'not-built'].includes(a.outcome) ? a : null; };
+const resumableGeneration = () => {
+  const g = state?.creation?.generation;
+  return g && ['failed', 'cancelled'].includes(g.outcome) && g.conversationRevision === state.creation.dialogue.revision && g.voxelId === state.creation.voxelId && g.voxelRevision === state.creation.voxel?.revision ? g : null;
+};
 const nearBottom = (element) => element.scrollHeight - element.scrollTop - element.clientHeight < 48;
 
 function setConnection(online, message) {
@@ -211,6 +215,7 @@ function renderDialogue() {
       }
     }
     resultNode.hidden = !attempt;
+    resultNode.dataset.attemptId = attempt?.id || '';
     item.children[1].hidden = Boolean(attempt && message.text === attempt.message);
     if (attempt && message.text !== attempt.message) setText(item.children[0], 'Wispiva · 方案说明');
     const slot = hiddenCount ? index + 1 : index;
@@ -225,8 +230,8 @@ function renderDialogue() {
   ui['creation-summary'].hidden = !text(dialogue.summary);
   setText(ui['creation-summary-text'], text(dialogue.summary));
   ui['generate-actions'].hidden = !dialogue.ready;
-  setText(ui['world-generate'], state?.creation?.draft ? '重新生成起点草稿' : '查看起点草稿');
-  setText(ui['generate-hint'], staleDraft() ? '新的想法需要一份新草稿。' : '可以先检查起点，也可以继续聊。');
+  setText(ui['world-generate'], resumableGeneration() ? '继续生成起点草稿' : state?.creation?.draft ? '重新生成起点草稿' : '查看起点草稿');
+  setText(ui['generate-hint'], resumableGeneration() ? `已完成 ${resumableGeneration().completedStages.length} / 3 个步骤。继续时会沿用这些结果。` : staleDraft() ? '新的想法需要一份新草稿。' : '可以先检查起点，也可以继续聊。');
 }
 function draftLines(world) {
   const place = (id) => text(list(world.places).find((entry) => entry.id === id)?.name, id || '起点');
@@ -759,7 +764,7 @@ for (const type of ['undo', 'redo']) {
   });
 }
 ui['world-generate'].addEventListener('click', () => {
-  if (!ui['world-generate'].disabled) return runStep('creation', '/api/world-generate', { conversationRevision: state.creation.dialogue.revision });
+  if (!ui['world-generate'].disabled) return runStep('creation', '/api/world-generate', { conversationRevision: state.creation.dialogue.revision, ...(resumableGeneration() ? { retryGenerationId: resumableGeneration().id } : {}) });
 });
 ui['world-accept'].addEventListener('click', () => {
   if (!ui['world-accept'].disabled) return control({ type: 'world-accept', draftId: currentDraft().id });

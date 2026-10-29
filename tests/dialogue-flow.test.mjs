@@ -21,6 +21,7 @@ function fixture(t, handler) {
   const options = { stateFile: join(directory, 'state.json'), configLoader: () => ({ llm }), fetchImpl: async (_url, init) => {
     const body = JSON.parse(init.body), input = JSON.parse(body.input.at(-1).content); requests.push(input);
     assert.equal(body.stream, true); assert.equal('max_output_tokens' in body, false);
+    if (input.step) assert.equal(body.text, undefined, 'NDJSON generation must not be forced into one JSON object');
     return handler ? handler(input, requests.length) : reply(input.previousSummary !== undefined
       ? { reply: requests.length === 1 ? '先从观测台开始吗？想看见什么变化？' : '先做观测台和档案室，让电量影响记录星图。可以生成，也可以继续改。', summary: '作者选择从小型海岛观测站开始，人物用电量记录星图，海风补能。', ready: true }
       : createGeneratedFixture());
@@ -259,4 +260,23 @@ test('cancelling between generated steps cannot create or resume a partial origi
   assert.equal(result.reason, 'cancelled'); assert.equal(f.requests.length, 2);
   assert.equal(result.state.creation.draft, null); assert.equal(result.state.world, null);
   assert.equal(f.reload().state().model.pending, false);
+});
+
+test('explicit generation recovery resumes durable steps; changed basis requires a fresh origin', async t => {
+  let fail = true;
+  const f = fixture(t, input => input.step === 'rules' && fail ? recordReply([{ type: 'complete', broken: true }]) : recordReply([...stageRecords[input.step], { type: 'complete' }]));
+  const description = '海边灯室。';
+  const first = await f.experience.worldStep({ description });
+  assert.equal(first.ok, false); assert.equal(f.requests.length, 3);
+  const generation = first.state.creation.generation;
+  assert.deepEqual(generation.completedStages, ['places', 'people']);
+  fail = false;
+  const e = f.reload();
+  assert.equal(f.requests.length, 3, 'restart cannot make a model request');
+  const recovered = await e.worldStep({ description, retryGenerationId: generation.id });
+  assert.equal(recovered.ok, true);
+  assert.deepEqual(f.requests.map(r => r.step), ['places', 'people', 'rules', 'rules']);
+  assert.equal(recovered.state.creation.generation.timings.calls.length, 4);
+  assert.equal(recovered.state.creation.generation.outcome, 'ready');
+  assert.equal((await e.worldStep({ description, retryGenerationId: generation.id })).reason, 'stale-basis');
 });

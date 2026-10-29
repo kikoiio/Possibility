@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, renameSync } from 'node:f
 import { join, resolve } from 'node:path';
 import { createPrototypeExperience } from '../server.mjs';
 import { projectVoxelActors } from '../voxel-bindings.mjs';
+import { createGeneratedFixture } from '../world-definition.mjs';
 
 const base = resolve('.tmp/prototype');
 const fill = { op: 'fill', from: [0, 0, 0], to: [2, 0, 0], material: 'wood' };
@@ -160,4 +161,22 @@ test('voxel people use observed locations with exact semantic matches and real h
   world.actors[0].location = 'room';
   for (let x = 0; x <= 2; x++) for (let z = 0; z <= 2; z++) cells.push({ position: [x, 1, z], material: 'wood' }, { position: [x, 2, z], material: 'wood' });
   assert.deepEqual(projectVoxelActors({ world, voxel }), [], 'solid spaces cannot contain a visible person');
+});
+
+test('an unsaved generated origin is not offered for confirmation', async t => {
+  const f = fixture(t, (_input, _n, dir) => {
+    renameSync(join(dir, 'creation.json'), join(dir, 'creation.backup'));
+    mkdirSync(join(dir, 'creation.json'));
+    return createGeneratedFixture();
+  });
+  let r;
+  try { r = await f.experience.worldStep({ description: '小型观测站' }); }
+  finally {
+    rmSync(join(f.directory, 'creation.json'), { recursive: true });
+    renameSync(join(f.directory, 'creation.backup'), join(f.directory, 'creation.json'));
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'save-error');
+  assert.equal(r.state.creation.draft, null);
+  assert.equal(r.state.model.pending, false);
 });

@@ -55,7 +55,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   let saved = null;
   if (existsSync(stagingFile)) { try { saved = JSON.parse(readFileSync(stagingFile, 'utf8')); } catch { /* current world remains untouched */ } }
-  let creation = { mode: 'create', draft: null, lastResult: null, worlds: [], dialogue: emptyDialogue(), source: null, attempts: [] };
+  let creation = { mode: 'create', draft: null, lastResult: null, worlds: [], dialogue: emptyDialogue(), source: null, attempts: [], generation: null };
   if (saved?.schemaVersion === 1) {
     creation.mode = saved.mode === 'world' ? 'world' : 'create';
     if (saved.draft?.id && checkWorldCandidate(saved.draft.definition).ok) creation.draft = saved.draft;
@@ -63,8 +63,9 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     creation.lastResult = saved.pending ? { ok: false, message: '上次创建世界的请求中断，没有自动重试。' } : saved.lastResult ?? null;
     if (validDialogue(saved.dialogue)) creation.dialogue = saved.dialogue;
     if (Array.isArray(saved.attempts)) creation.attempts = saved.attempts.filter(a => typeof a?.id === 'string' && typeof a.userMessageId === 'string' && typeof a.outcome === 'string').slice(-80);
+    if (saved.generation?.id && Array.isArray(saved.generation.records) && Array.isArray(saved.generation.completedStages) && Array.isArray(saved.generation.timings?.calls)) creation.generation = saved.generation;
     if (typeof saved.source?.name === 'string' && saved.source.name.length <= 120 && typeof saved.source?.text === 'string' && saved.source.text.length <= MAX_SOURCE_CHARACTERS && saved.source.text.trim()) creation.source = saved.source;
-    if (saved.pending) creation.dialogue.ready = false;
+    if (saved.pending && saved.pendingKind !== 'creation') creation.dialogue.ready = false;
   }
   creation.voxelId = /^[0-9a-f-]{36}$/.test(saved?.voxelId || '') ? saved.voxelId : randomUUID();
   const openVoxel = (id, expected = 0, snapshot) => {
@@ -85,6 +86,10 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     Object.assign(attempt, { outcome: 'failed', reason: 'interrupted', message: '上次请求中断，输入已保留。可以重试这次请求，或调整后发送。', finishedAt: new Date().toISOString() });
     creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: attempt.message, attemptId: attempt.id });
     creation.lastResult = { ok: false, reason: attempt.reason, message: attempt.message, attemptId: attempt.id };
+  }
+  if (creation.generation?.outcome === 'pending') {
+    creation.generation.outcome = 'failed';
+    creation.lastResult = { ok: false, reason: 'interrupted', message: '上次起点生成中断，已完成的步骤已保存。可点击继续生成，没有自动重试。', generationId: creation.generation.id };
   }
   // Fixed experiments are backups, never an active world in the creation flow.
   // Move the original bytes before opening a runtime (which could resume autonomy).
@@ -113,7 +118,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   const persist = (snapshot = voxel.snapshot?.()) => save({ schemaVersion: 1, ...creation,
     voxelRevision: snapshot?.revision ?? voxel.state().revision,
     ...(snapshot ? { voxelSnapshot: snapshot } : saved?.voxelSnapshot ? { voxelSnapshot: saved.voxelSnapshot } : {}),
-    pending: Boolean(active && !active.finalizing) });
+    pending: Boolean(active && !active.finalizing), pendingKind: active ? model.kind : null });
   const state = () => ({ ...(inner?.state() ?? { world: null, worldMinute: 0, revision: 0, paused: true, speed: 24, waiting: null, actors: {}, autonomy: { enabled: false, waitingReason: null }, scene: null, model: { pending: false } }),
     creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), voxel: voxel.state(), hasWorld: Boolean(inner) },
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
@@ -133,7 +138,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     switch (body?.type) {
       case 'creation-open': case 'reset':
         if (blocked()) return response(false, '请先完成或取消当前模型调用。');
-        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.attempts = []; creation.draft = null; creation.source = null; creation.voxelId = randomUUID(); voxel = openVoxel(creation.voxelId); }
+        if (creation.mode === 'world' || body.type === 'reset') { creation.dialogue = emptyDialogue(); creation.attempts = []; creation.generation = null; creation.draft = null; creation.source = null; creation.voxelId = randomUUID(); voxel = openVoxel(creation.voxelId); }
         inner?.control({ type: 'pause' }); creation.mode = 'create'; creation.lastResult = null; epoch++; persist();
         return response(true, '从一个新想法开始，现有世界已暂停并保留。');
       case 'creation-resume':
@@ -143,7 +148,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         if (blocked() || creation.mode !== 'create') return response(false, '请先结束当前请求，再更换素材。');
         if (body.source !== null && (!body.source || typeof body.source.name !== 'string' || !body.source.name.trim() || body.source.name.length > 120 || typeof body.source.text !== 'string' || !body.source.text.trim() || body.source.text.length > MAX_SOURCE_CHARACTERS)) return response(false, '请选择不超过 500 万字的非空文本文件；大文本会按需检索，不会整篇发送给模型。');
         creation.source = body.source ? { name: body.source.name.trim(), text: body.source.text } : null;
-        creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; epoch++; persist();
+        creation.dialogue.revision++; creation.dialogue.ready = false; creation.dialogue.summary = ''; creation.draft = null; creation.generation = null; epoch++; persist();
         return response(true, creation.source ? '素材已保存，现有建造保留。告诉我想从哪里开始。' : '素材已移除，现有建造保留。');
       }
       case 'voxel-undo': case 'voxel-redo': {
@@ -316,7 +321,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     }
     return { ...result, reply: explanation, attempt: clone(attempt), state: state() };
   };
-  const worldStep = async ({ description, conversationRevision } = {}, { onProgress, signal } = {}) => {
+  const worldStep = async ({ description, conversationRevision, retryGenerationId } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '请先进入创建页并结束当前调用。', { reason: 'busy' });
     if (voxel.state().error) return response(false, voxel.state().error, { reason: 'voxel-recovery' });
     const conversational = creation.dialogue.messages.length > 0 || conversationRevision !== undefined;
@@ -325,10 +330,16 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       description = creation.dialogue.summary;
     }
     if (typeof description !== 'string' || !description.trim() || description.length > 8000) return response(false, '写下一段想要的世界，再开始创建。', { reason: 'invalid-description' });
+    const oldGeneration = creation.generation;
+    if (retryGenerationId && (!oldGeneration || oldGeneration.id !== retryGenerationId || !['failed', 'cancelled'].includes(oldGeneration.outcome) || oldGeneration.description !== description.trim() || oldGeneration.conversationRevision !== creation.dialogue.revision || oldGeneration.voxelId !== creation.voxelId || oldGeneration.voxelRevision !== voxel.state().revision)) return response(false, '起点基准已经变化，请根据当前设定重新生成。', { reason: 'stale-basis' });
     const controller = new AbortController(), startEpoch = epoch;
     const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     // A new request must never leave an older draft looking like the failed result.
     const previousDraft = creation.draft?.definition;
+    const dialogueBeforeGeneration = clone(creation.dialogue);
+    const generation = retryGenerationId ? oldGeneration : { id: randomUUID(), description: description.trim(), conversationRevision: creation.dialogue.revision,
+      voxelId: creation.voxelId, voxelRevision: voxel.state().revision, records: [], completedStages: [], adjustments: [], timings: { totalMs: 0, calls: [] } };
+    generation.outcome = 'pending'; creation.generation = generation;
     creation.draft = null;
     active = { controller, startedAt: performance.now() }; model.pending = true; model.kind = 'creation'; model.lastResult = null;
     const publish = p => { model.progress = p; try { onProgress?.(p); } catch { /* signal handles disconnect */ } };
@@ -336,9 +347,10 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     let result = { ok: false, reason: 'request-failed', message: '创建世界没有完成，没有自动重试。' };
     try {
       persist(); const { llm } = configLoader();
-      const records = [], adjustments = [];
+      const records = clone(generation.records), adjustments = [...generation.adjustments];
       let definition = null, failed = false;
       for (const stage of GENESIS_STAGES) {
+        if (generation.completedStages.includes(stage.id)) continue;
         if (controller.signal.aborted) { result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' }; failed = true; break; }
         const stageProgress = p => publish({ ...p, stageLabel: stage.label, elapsedMs: performance.now() - active.startedAt });
         stageProgress({ phase: 'connecting', outputCharacters: 0 });
@@ -347,7 +359,9 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
           dialogue: conversational ? creation.dialogue : null, source: creation.source, sourceContext, previousDraft,
           diagnostics: creation.lastResult?.diagnostics ?? [], stage, previousRecords: records, voxel: voxel.state(),
         }), fetchImpl, jsonMode: false, signal: controller.signal, onProgress: stageProgress });
-        appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(compactModelAudit('world-genesis', r.audit, { stage: stage.id }))+'\n', { mode: 0o600 });
+        const audit = compactModelAudit('world-genesis', r.audit, { stage: stage.id, generationId: generation.id });
+        generation.timings.calls.push({ stage: stage.id, model: audit.model, elapsedMs: audit.elapsedMs, headersReceivedMs: audit.headersReceivedMs, firstTextMs: audit.firstTextMs, reason: audit.error?.code ?? null });
+        appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(audit)+'\n', { mode: 0o600 });
         if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
         else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: `${stage.label.replace('正在', '')}未完成，请继续讨论或重新生成。` };
         else if (epoch !== startEpoch) result = { ok: false, reason: 'stale-basis', message: '创建基准已变化，旧草稿未保留。' };
@@ -359,6 +373,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
             // definition. It still passes the same full validation below.
             if (parsed.value && !records.length) { definition = parsed.value; break; }
             records.push(...readGenesisStage(parsed.records, stage, records));
+            generation.records = clone(records); generation.adjustments = [...adjustments]; generation.completedStages.push(stage.id);
+            persist();
             continue;
           } catch (error) { result = { ok: false, reason: 'invalid-json', message: error.message, diagnostics: [{ path: stage.id, message: error.message }] }; }
         }
@@ -384,7 +400,21 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         }
       }
     } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '创建世界的请求或保存未完成，请检查配置与本地存储；没有自动重试。' }; }
-    finally { signal?.removeEventListener('abort', abort); active = null; model.pending = false; model.lastResult = result; creation.lastResult = result; persist(); }
+    finally {
+      signal?.removeEventListener('abort', abort);
+      generation.outcome = result.ok ? 'ready' : result.reason === 'cancelled' ? 'cancelled' : 'failed';
+      generation.timings.totalMs += performance.now() - active.startedAt;
+      result.generationId = generation.id;
+      active.finalizing = true; model.lastResult = result; creation.lastResult = result;
+      try { persist(); }
+      catch {
+        creation.draft = null; creation.dialogue = dialogueBeforeGeneration; generation.outcome = 'failed';
+        result = { ok: false, reason: 'save-error', generationId: generation.id, message: '起点草稿未能保存，不能确认进入。请恢复本地存储后重试。' };
+        model.lastResult = result; creation.lastResult = result;
+        try { persist(); } catch { /* Keep the last durable origin intact. */ }
+      }
+      active = null; model.pending = false;
+    }
     return { ...result, state: state() };
   };
   const delegate = name => async (body, options) => {
