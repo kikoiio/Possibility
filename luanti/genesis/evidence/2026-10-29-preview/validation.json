@@ -1,0 +1,16 @@
+{
+  "run_id": 40827303033,
+  "branch": "validation/luanti-verify-20261029-5",
+  "source_commit": "5f6641191d65588b231cb5261a8649e76a8684ae",
+  "workflow": "Wispiva Luanti validation",
+  "conclusion": "success",
+  "job": "validation (0)",
+  "skipped": [
+    "capacity ladder",
+    "agent cognition capacity ladder",
+    "large agent capacity ladder",
+    "model-driven agent loop",
+    "synthetic model world drafts",
+    "repeated 1000-agent capacity measurement"
+  ]
+}

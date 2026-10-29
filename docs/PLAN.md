@@ -14,7 +14,7 @@ status: active
 
 ## 按依赖推进
 
-- [x] **产品目录迁移。** Luanti 运行时与现有组件迁至仓库根目录 `luanti/`，更新工作流和文档路径；保留既有世界、运行时及原始测量证据。验证工作流和临时分支前缀已改为 `wispiva-validation.yml` 与 `validation/luanti-*`；[GitHub Actions 40823710390](https://github.com/kikoiio/Wispiva/actions/runs/40823710390) 在快照 `d909bf58f2ae5c2fa3d66ee9d1acbb558e280891` 上通过 Lua 5.1、引擎和恢复验证，[最新预览验证 40825261813](https://github.com/kikoiio/Wispiva/actions/runs/40825261813) 在快照 `6131f27bb1c2932ce8409b299a41e2b9110acde3` 上通过。历史日志中的旧绝对路径只作为原始证据保留。
+- [x] **产品目录迁移。** Luanti 运行时与现有组件迁至仓库根目录 `luanti/`，更新工作流和文档路径；保留既有世界、运行时及原始测量证据。验证工作流和临时分支前缀已改为 `wispiva-validation.yml` 与 `validation/luanti-*`；[GitHub Actions 40823710390](https://github.com/kikoiio/Wispiva/actions/runs/40823710390) 在快照 `d909bf58f2ae5c2fa3d66ee9d1acbb558e280891` 上通过 Lua 5.1、引擎和恢复验证，[最新结构验证 40827303033](https://github.com/kikoiio/Wispiva/actions/runs/40827303033) 在快照 `5f6641191d65588b231cb5261a8649e76a8684ae` 上通过。历史日志中的旧绝对路径只作为原始证据保留。
 - [ ] **统一创建与状态契约。** 盘点 `proto/world-genesis` 的创建草稿、规则、知情和模型调用接口，与本分支引擎及观察／动作模型比较；定义稳定世界、角色、空间、事件身份和输入投影，记录源码版本。确定世界／Luanti 的权威归属、提交与恢复协议，覆盖部分失败与冲突，不提前假设跨进程原子性。
 
   当前只读审查发现资源节点和库存分开修改、角色主要在正常停服时保存、地图和数据库缺少共同世界身份与事务，以及引擎时间尚未接入逻辑时间。后续先在禁止其他写入者的隔离小区域验证单类资源：以带世界身份和版本的提交为权威、冻结区域、执行并回读投影、重启先对账再开放；对未知状态或不一致应停止。这个协议尚未实现或验证，不能套用于普通玩家可改写的整个世界。
