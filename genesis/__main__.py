@@ -6,6 +6,7 @@ from pathlib import Path
 from .genesis import GenesisError, generate, parse_json, validate
 from .preflight import PreflightError, preflight
 from .store import DraftConflict, DraftCorrupt, DraftStore
+from .world_create import WorldCreationError, create_world
 
 
 def _read_draft(path):
@@ -37,6 +38,9 @@ def main():
     check_confirmed = sub.add_parser('preflight', help='check a confirmed revision without creating a Luanti world')
     check_confirmed.add_argument('--draft-db', required=True); check_confirmed.add_argument('--draft-id', required=True)
     check_confirmed.add_argument('--revision', required=True, type=int); check_confirmed.add_argument('--world-path', required=True)
+    create_world_cmd = sub.add_parser('create-world', help='publish a confirmed draft as a persistent Luanti world')
+    create_world_cmd.add_argument('--draft-db', required=True); create_world_cmd.add_argument('--draft-id', required=True)
+    create_world_cmd.add_argument('--revision', required=True, type=int); create_world_cmd.add_argument('--world-path', required=True)
     args = parser.parse_args()
     try:
         if args.command == 'validate':
@@ -71,12 +75,17 @@ def main():
             try: result = store.recover_confirmation(args.draft_id)
             finally: store.close()
             _print(result)
+        elif args.command == 'create-world':
+            store = _open_store(args.draft_db)
+            try: result = create_world(store, args.draft_id, args.revision, args.world_path)
+            finally: store.close()
+            _print(result)
         else:
             store = _open_store(args.draft_db)
             try: result = preflight(store, args.draft_id, args.revision, args.world_path)
             finally: store.close()
             _print(result)
-    except (GenesisError, DraftConflict, DraftCorrupt, PreflightError, OSError, UnicodeError, ValueError) as error:
+    except (GenesisError, DraftConflict, DraftCorrupt, PreflightError, WorldCreationError, OSError, UnicodeError, ValueError) as error:
         print(json.dumps({'error': getattr(error, 'code', type(error).__name__), 'diagnostics': getattr(error, 'diagnostics', [])}, ensure_ascii=False), file=sys.stderr)
         return 1
     return 0

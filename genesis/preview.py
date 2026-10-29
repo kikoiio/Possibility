@@ -105,8 +105,8 @@ def launch(world, count, *, engine, runtime_home, libdir, port, seconds, fixture
         raise PreflightError('invalid_preview_world')
     mod = world / 'worldmods' / 'society'
     mod.mkdir(parents=True, exist_ok=False, mode=0o700)
-    for name in ('init.lua', 'policy.lua'):
-        shutil.copyfile(ENGINE / 'mod' / 'society' / name, mod / name)
+    for source in (ENGINE / 'mod' / 'society').glob('*.lua'):
+        shutil.copyfile(source, mod / source.name)
     for name in MODULES:
         shutil.copyfile(COGNITION / name, mod / name)
     shutil.copyfile(GENESIS / 'preview.lua', mod / 'genesis_preview.lua')

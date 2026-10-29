@@ -47,10 +47,23 @@ python3 -m genesis save --draft-db /private/drafts.sqlite --draft /path/to/new-d
 python3 -m genesis read --draft-db /private/drafts.sqlite --draft-id DRAFT_ID
 python3 -m genesis confirm --draft-db /private/drafts.sqlite --draft-id DRAFT_ID --revision 1 --world-path /private/world.sqlite
 python3 -m genesis preflight --draft-db /private/drafts.sqlite --draft-id DRAFT_ID --revision 1 --world-path /private/next-world.sqlite
+python3 -m genesis create-world --draft-db /private/drafts.sqlite --draft-id DRAFT_ID --revision 1 --world-path /private/luanti-world
 python3 -m unittest genesis.test_genesis genesis.test_store genesis.test_compiler genesis.test_preflight genesis.test_preview -v
 ```
 
 The second command demonstrates the offline interface with a fixture; production callers must provide a response generated for the current intent. Invalid input exits nonzero and prints safe diagnostics to stderr. The CLI does not establish that an arbitrary supplied response matches the intent.
+
+`create-world` is the persistent product path. It requires the exact confirmed
+draft revision and its unchanged origin checkpoint, then publishes a fresh
+Luanti world directory with a stable `wispiva-world-id`, private
+`private/wispiva-origin.json`, a copied origin checkpoint, projection materials,
+and server configuration. It uses a same-parent atomic directory rename and
+refuses an existing target. A staged directory is retained after a failure for
+inspection. The manifest contains private actor roles, goals and genesis
+seeds, so the directory and every copy of it remain private. Start a created
+world with `engine/luanti/run_product.sh`; the product runtime projects places
+and connections, injects only each actor's own profile into its model request,
+and records environment changes as world events. `preview` remains disposable.
 
 ## Luanti compilation plan v1
 

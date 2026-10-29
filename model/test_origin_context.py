@@ -69,6 +69,9 @@ class OriginContextTests(unittest.TestCase):
             self.assertEqual(context['self']['memories'][0]['seed_id'], f'origin-1:seed:{own}:0')
             self.assertEqual(context['self']['memories'][0]['source'],
                              {'event_id': 'origin-1', 'kind': 'genesis.seed'})
+            self.assertEqual(context['memory'][0]['owner'], own)
+            self.assertEqual(context['memory'][0]['known_by'], [own])
+            self.assertEqual(context['memory'][0]['classification'], 'unknown')
 
     def test_binding_failures_never_call_transport(self):
         cases = [('contract_version', True), ('contract_version', 2),
@@ -87,6 +90,107 @@ class OriginContextTests(unittest.TestCase):
         with self.assertRaises(origin_context.ContextError):
             self.invoke(event=event)
         self.assertEqual(self.calls, [])
+
+    def test_persisted_private_seeds_are_retrievable_in_model_loop(self):
+        event = copy.deepcopy(self.event)
+        draft = event['data']['origin']['draft']
+        draft['memories'] = [
+            {'actorId': 'alice', 'text': 'unrelated childhood garden'},
+            {'actorId': 'traveler', 'text': 'amber traveler secret'},
+            {'actorId': 'alice', 'text': 'amber key hidden at harbor'},
+        ]
+        event['data']['draft_sha256'] = draft_sha256(draft)
+        binding = self.binding()
+        binding['draft_sha256'] = event['data']['draft_sha256']
+        # Simulate the manifest payload after persistence, without engine or I/O.
+        restored = json.loads(json.dumps(event))
+        expected = origin_context.retrieve_genesis_memories(
+            event, binding, query='amber harbor', max_entries=1)
+        self.assertEqual(origin_context.retrieve_genesis_memories(
+            restored, binding, query='amber harbor', max_entries=1), expected)
+        manifest = {'format': 'wispiva-world-creation-materials', 'version': 1,
+                    'world_id': WORLD, 'origin_event': restored,
+                    'projection': {'private_actors': {'traveler': 'amber traveler secret'}},
+                    'confirmation': {'private': 'all actor draft secret'}}
+        projected = origin_context.build_manifest_context(
+            json.loads(json.dumps(manifest)), binding, self.local,
+            memory_query='amber harbor', max_memory_entries=1)
+        origin_context.decide(CONFIG, restored, binding, self.local,
+                              memory_query='amber harbor', max_memory_entries=1,
+                              transport=self.transport)
+        context = json.loads(self.calls[-1]['input'][1]['content'])
+        self.assertEqual(context, projected)
+        self.assertNotIn('all actor draft secret', json.dumps(context))
+        self.assertEqual(context['memory'], expected['memory'])
+        self.assertEqual(context['memory_query'], 'amber harbor')
+        self.assertEqual(context['memory_scope']['available'], 2)
+        self.assertEqual(context['memory_scope']['omitted'], 1)
+        record, = context['memory']
+        self.assertEqual(record, {
+            'world_id': WORLD, 'seed_id': 'origin-1:seed:alice:1', 'owner': 'alice',
+            'text': 'amber key hidden at harbor',
+            'source': {'event_id': 'origin-1', 'kind': 'genesis.seed',
+                       'id': 'origin-1:seed:alice:1'},
+            'known_by': ['alice'], 'classification': 'unknown',
+            'time': None, 'importance': None,
+        })
+        encoded = json.dumps(context)
+        self.assertNotIn('amber traveler secret', encoded)
+        self.assertNotIn('unrelated childhood garden', encoded)
+        self.assertNotIn('traveler private goal', encoded)
+        self.assertEqual([seed['seed_id'] for seed in context['self']['memories']],
+                         [record['seed_id']])
+        self.assertEqual(restored, event)
+        record['known_by'].append('traveler')
+        self.assertEqual(origin_context.retrieve_genesis_memories(
+            restored, binding, query='amber harbor', max_entries=1), expected)
+
+    def test_seed_retrieval_byte_limits_and_empty_owner(self):
+        selected = origin_context.retrieve_genesis_memories(self.event, self.binding())
+        size = len(json.dumps(selected['memory'], ensure_ascii=True, sort_keys=True,
+                              separators=(',', ':')).encode('ascii'))
+        self.assertEqual(selected['memory_scope']['bytes'], size)
+        self.assertEqual(origin_context.retrieve_genesis_memories(
+            self.event, self.binding(), max_bytes=size)['memory'], selected['memory'])
+        for options in ({'max_memory_bytes': size - 1}, {'max_memory_entries': 0}):
+            context = origin_context.build_context(self.event, self.binding(), self.local, **options)
+            self.assertEqual(context['memory'], [])
+            self.assertEqual(context['self']['memories'], [])
+            self.assertEqual(context['memory_scope']['omitted'], 1)
+            self.assertEqual(context['memory_scope']['bytes'], 2)
+            self.assertNotIn('alice private memory', json.dumps(context))
+        event = copy.deepcopy(self.event)
+        draft = event['data']['origin']['draft']
+        draft['memories'] = [m for m in draft['memories'] if m['actorId'] != 'alice']
+        event['data']['draft_sha256'] = draft_sha256(draft)
+        binding = self.binding(); binding['draft_sha256'] = event['data']['draft_sha256']
+        result = origin_context.retrieve_genesis_memories(event, binding, query='traveler')
+        self.assertEqual(result['memory'], [])
+        self.assertEqual(result['memory_scope']['available'], 0)
+        self.assertNotIn('traveler private memory', json.dumps(result))
+
+    def test_invalid_retrieval_options_fail_before_transport(self):
+        for options in ({'memory_query': None}, {'memory_query': 'x' * 513},
+                        {'max_memory_entries': True}, {'max_memory_entries': 9},
+                        {'max_memory_bytes': 1}, {'max_memory_bytes': 4097}):
+            with self.subTest(options=options), self.assertRaises(origin_context.ContextError):
+                origin_context.decide(CONFIG, self.event, self.binding(), self.local,
+                                      transport=self.transport, **options)
+        self.assertEqual(self.calls, [])
+
+    def test_manifest_envelope_and_origin_binding_fail_closed(self):
+        manifest = {'format': 'wispiva-world-creation-materials', 'version': 1,
+                    'world_id': WORLD, 'origin_event': self.event}
+        for field, value in (('format', 'genesis-disposable-preview'), ('version', True),
+                             ('version', 2), ('world_id', None),
+                             ('world_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+                             ('origin_event', {})):
+            invalid = {**manifest, field: value}
+            with self.subTest(field=field, value=value), self.assertRaises(origin_context.ContextError):
+                origin_context.build_manifest_context(invalid, self.binding(), self.local)
+        binding = self.binding(); binding['actor_id'] = 'stranger'
+        with self.assertRaises(origin_context.ContextError):
+            origin_context.build_manifest_context(manifest, binding, self.local)
 
     def test_saved_mapping_survives_serialization_and_is_not_reallocated(self):
         restored = json.loads(json.dumps(self.event))

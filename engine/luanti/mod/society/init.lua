@@ -10,12 +10,27 @@ local action_context = dofile(minetest.get_modpath("society") .. "/action_contex
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
 local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
+local environment_module = dofile(minetest.get_modpath("society") .. "/environment.lua")
+local world_projection = dofile(minetest.get_modpath("society") .. "/world_projection.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
 end
 
-local COUNT = tonumber(cfg("society_count", "5"))
+local WORLD_PRODUCT = cfg("society_world_product", "false") == "true"
+local GENESIS_MANIFEST_PATH = cfg("society_genesis_manifest", "")
+local genesis_manifest
+if WORLD_PRODUCT then
+	assert(GENESIS_MANIFEST_PATH ~= "", "product world requires society_genesis_manifest")
+	local file = assert(io.open(GENESIS_MANIFEST_PATH, "rb"), "missing product genesis manifest")
+	local raw = file:read(131073); file:close()
+	assert(#raw <= 131072, "product genesis manifest too large")
+	genesis_manifest = minetest.parse_json(raw)
+	assert(type(genesis_manifest) == "table" and genesis_manifest.format == "wispiva-world-manifest"
+		and genesis_manifest.version == 1 and type(genesis_manifest.world_id) == "string"
+		and type(genesis_manifest.origin_event_id) == "string", "invalid product genesis manifest")
+end
+local COUNT = WORLD_PRODUCT and #genesis_manifest.actors or tonumber(cfg("society_count", "5"))
 local INTERVAL = tonumber(cfg("society_decide_interval", "2.0"))
 local MAX_DECISIONS = tonumber(cfg("society_max_decisions", "10"))
 local SEED = tonumber(cfg("society_seed", "20261027"))
@@ -48,6 +63,7 @@ local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
 local GENESIS_PREVIEW = cfg("society_genesis_preview", "false") == "true"
+assert(not (WORLD_PRODUCT and GENESIS_PREVIEW), "product world cannot be disposable preview")
 local preview_module, preview_actors
 if GENESIS_PREVIEW then
     assert(not PERSIST and not RESTORE and not LONG_TERM and MODEL and COGNITION and not LOG_MESSAGES and BOUND == 32 and initial_state == "", "preview requires a fresh isolated nonpersistent world")
@@ -80,6 +96,21 @@ local summary_and_stop
 local agents = {}
 local history = long_term_memory.new()
 local event_log = world_events.new()
+local environment_process
+local environment_last_time = 0
+if WORLD_PRODUCT then
+	local raw = storage:get_string("environment_state")
+	if raw ~= "" then
+		local decoded = minetest.parse_json(raw)
+		local ok, loaded = pcall(environment_module.load, decoded)
+		assert(ok, "invalid persisted environment state")
+		environment_process = loaded
+		environment_last_time = loaded:export().time
+	else
+		environment_process = environment_module.new({id="world-resource", resource="society:resource",
+			capacity=16, amount=2, rate=1, time=0})
+	end
+end
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
 local index = spatial.new(math.max(SENSE, 1))
@@ -468,7 +499,13 @@ local function decide_and_act(self)
 	if MODEL then
 		if not self._pending then
 			request_id = request_id + 1
-			local query_parts = {GENESIS_PREVIEW and self._genesis.goal or GOAL}
+			local query_parts = {(GENESIS_PREVIEW or WORLD_PRODUCT) and self._genesis.goal or GOAL}
+			if WORLD_PRODUCT then
+				query_parts[#query_parts + 1] = "role " .. self._genesis.role
+				for _, seed in ipairs(self._genesis.memory_seeds or {}) do
+					query_parts[#query_parts + 1] = "private memory " .. seed.text
+				end
+			end
 			if self._last_action then query_parts[#query_parts+1] = minetest.write_json(self._last_action) end
 			for _, id in ipairs(obs.nearby_agents) do query_parts[#query_parts+1] = "agent " .. id end
 			for _, node in ipairs(obs.local_view and obs.local_view.nodes or {}) do
@@ -488,7 +525,8 @@ local function decide_and_act(self)
 			else selected_memory = {} end
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
-				self_id = self._id, time = minetest.get_gametime(), persona = self._persona, goal = GOAL,
+				self_id = self._id, time = minetest.get_gametime(), persona = self._persona,
+				goal = (GENESIS_PREVIEW or WORLD_PRODUCT) and self._genesis.goal or GOAL,
 				nearby_positions = obs.local_view and obs.local_view.agents or {},
 				movement_target = self._target,
 				last_action = self._last_action, incoming_messages = self._inbox,
@@ -499,6 +537,16 @@ local function decide_and_act(self)
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			if GENESIS_PREVIEW then preview_module.attach_context(context, self._genesis) end
+			if WORLD_PRODUCT then
+				context.origin = {format = "wispiva-world-manifest", version = 1,
+					world_id = genesis_manifest.world_id,
+					origin_event_id = genesis_manifest.origin_event_id,
+					actor_id = self._genesis.actor_id,
+					private_memory_count = #(self._genesis.memory_seeds or {})}
+				context.genesis_profile = {actor_id = self._genesis.actor_id,
+					role = self._genesis.role, goal = self._genesis.goal,
+					memory_seeds = self._genesis.memory_seeds or {}}
+			end
 			context.local_actions = action_context.describe(minetest, pos,
 				context.visible_nodes, context.inventory, context.bounds)
 			if GENESIS_PREVIEW then context.preview_unsupported_actions = {"mark", "gather", "build"} end
@@ -699,10 +747,12 @@ local function spawn_agents()
 	local cols = math.ceil(math.sqrt(COUNT))
 	local offset = -math.floor((cols - 1) * SPACING / 2)
 	for i = 0, COUNT - 1 do
+		local origin_actor = WORLD_PRODUCT and genesis_manifest.actors[i + 1] or nil
 		local x = offset + (i % cols) * SPACING
 		local z = offset + math.floor(i / cols) * SPACING
 		local at = {x = ORIGIN.x + x, y = ORIGIN.y, z = ORIGIN.z + z}
 		if GENESIS_PREVIEW then at = preview_actors[i + 1].position end
+		if origin_actor then at = origin_actor.position end
 		local obj = minetest.add_entity(at, "society:agent")
 		if not obj then
 			ev("fail=spawn agent=%d at=%d,%d,%d reason=add_entity-returned-nil", i, at.x, at.y, at.z)
@@ -712,6 +762,11 @@ local function spawn_agents()
 			le._id = i
 			le._persona = PERSONAS[(i % #PERSONAS) + 1]
 			if GENESIS_PREVIEW then le._genesis = preview_actors[i + 1]; le._persona = le._genesis.name end
+			if origin_actor then
+				le._genesis = origin_actor
+				le._persona = origin_actor.name
+				le._actor_id = origin_actor.actor_id
+			end
 			if VISUAL then
 				local colors = {"#65a8dd", "#e5a768", "#b790d3", "#77bb8c", "#e487a0"}
 				obj:set_properties({visual="mesh", mesh="character.b3d", visual_size={x=1, y=1},
@@ -797,6 +852,28 @@ local function verify_spawn()
 	end
 end
 
+local function apply_product_projection()
+	if not WORLD_PRODUCT then return end
+	local plan = world_projection.plan(genesis_manifest)
+	for _, operation in ipairs(plan.operations) do
+		if operation.kind == "node" then
+			local desired = operation.value
+			local name = desired and desired.name or "air"
+			local current = minetest.get_node(operation.position).name
+			if current ~= name then
+				minetest.set_node(operation.position, {name = name})
+			end
+			if minetest.get_node(operation.position).name ~= name then
+				fail("world-projection", "node=%s expected=%s", operation.key, name)
+				return false
+			end
+		end
+	end
+	ev("origin projection world_id=%s origin_event=%s operations=%d", plan.world_id,
+		plan.origin_event_id, #plan.operations)
+	return true
+end
+
 -- 启动序列：forceload -> emerge -> 生成 -> 校验。
 -- 顺序不能改：无玩家时区块不被激活，实体不会被 step；而在 emerge 完成前生成，
 -- 实体会在活跃区块管理周期里被静默删除，而 add_entity 返回有效对象、不报错。
@@ -817,13 +894,14 @@ minetest.after(1, function()
 	minetest.emerge_area({x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 16, z = BOUND},
 		function(blockpos, action, calls_remaining)
 			if calls_remaining == 0 then
-				if VISUAL then
+				if VISUAL or WORLD_PRODUCT then
 					for x = -BOUND, BOUND do
 						for z = -BOUND, BOUND do
 							minetest.set_node({x=x, y=0, z=z}, {name="default:dirt_with_grass"})
 						end
 					end
 				end
+				if WORLD_PRODUCT and not apply_product_projection() then return end
                 if GENESIS_PREVIEW then
                     for _, actor in ipairs(preview_actors) do
                         local p = actor.position
@@ -877,6 +955,47 @@ local function visit(i)
 		decide_and_act(le)
 	end
 end
+
+local function advance_product_environment()
+	if not WORLD_PRODUCT or not environment_process then return true end
+	local now = math.floor(minetest.get_gametime() or 0)
+	if now <= environment_last_time then return true end
+	local ok, events = pcall(environment_process.advance, environment_process, now)
+	if not ok then
+		fail("environment", "advance=%s", tostring(events):gsub("%s+", "_"))
+		return false
+	end
+	for _, item in ipairs(events) do
+		local committed, event = pcall(event_log.commit, event_log,
+			EVENT_NAMESPACE .. ":" .. item.operation_id, {
+				time = item.time, kind = item.kind, actor = item.actor, ok = item.ok,
+				reason = item.reason, detail = string.format("resource=%s before=%d after=%d",
+					item.resource, item.before, item.after), participants = {},
+			})
+		if not committed then
+			fail("world-event", "environment=%s", tostring(event):gsub("%s+", "_"))
+			return false
+		end
+		local low, high = math.min(item.before, item.after), math.max(item.before, item.after)
+		for amount = low + 1, high do
+			local point = {x = -24 + amount, y = 1, z = -24}
+			if item.after > item.before then
+				if minetest.get_node(point).name == "air" then
+					minetest.set_node(point, {name = "society:resource"})
+				end
+			else
+				if minetest.get_node(point).name == "society:resource" then
+					minetest.set_node(point, {name = "air"})
+				end
+			end
+		end
+		ev("ev=environment kind=%s resource=%s before=%d after=%d event=%s",
+			item.kind, item.resource, item.before, item.after, event.id)
+	end
+	environment_last_time = now
+	return true
+end
+
 local function round_done()
 	if MAX_DECISIONS <= 0 then return false end
 	for i = 0, COUNT - 1 do
@@ -888,6 +1007,7 @@ end
 minetest.register_globalstep(function(dtime)
 	step_count = step_count + 1
 	if S.finished or S.failed or S.spawned == 0 then return end
+	if not advance_product_environment() then return end
 	local frame_started = minetest.get_us_time()
 	local completed = false
 	if OPTIMIZED then
@@ -934,6 +1054,15 @@ end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
+	if WORLD_PRODUCT and environment_process then
+		local encoded = minetest.write_json(environment_process:export())
+		local written = pcall(storage.set_string, storage, "environment_state", encoded)
+		if not written or storage:get_string("environment_state") ~= encoded then
+			ev("fail=persist-environment reason=write-or-readback")
+		else
+			ev("environment-checkpoint time=%d", environment_process:export().time)
+		end
+	end
 	if resource_initial then
 		local in_world, inventory = resource_total()
 		ev("resource-verify initial=%d world=%d inventory=%d ok=%s", resource_initial,

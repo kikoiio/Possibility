@@ -16,6 +16,14 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 `origin_context.py` 是独立的离线输入原型：校验世界、起源、持久角色映射及临时 Luanti 数字 ID，将单一角色的起始记忆与调用者提供的局部观察、消息和反馈按白名单、预算组合后调用适配器。它未接入 Luanti 运行时；身份认证、角色授权和观察真实性仍由调用方负责，允许的文本也须事先经过授权。现有 `adapter.py` 本身接受额外上下文字段，不能将它当作通用的隐私过滤器。
 
+持久起源的 Python 接入点为 `build_manifest_context(manifest, binding, local, ...)`，接受受信任的 `wispiva-world-creation-materials` v1 handoff：检查外层世界身份与绑定，只从其中的 `origin_event` 派生角色上下文，其他全角色材料不会进入提示。`genesis/world_create.py` 发布的 Luanti `wispiva-world-manifest` 由当前产品 Lua 运行时直接投影；后续会把两种 handoff 合并为一个版本化传输协议。文件加载、认证和完整 manifest 校验仍由调用方负责。也可独立调用 `retrieve_genesis_memories(event, binding, query='', max_entries=8, max_bytes=4096)`，从可信的持久 `genesis.created` 载荷检索。返回 `memory`、`memory_query` 和 `memory_scope`，`build_context`／`decide` 已将这份投影用于模型输入。上下文入口接受 `memory_query`、`max_memory_entries`、`max_memory_bytes` 关键字参数；默认查询使用本人私有目标，独立检索接口的空查询则按种子顺序选取。调用方可用当前角色已获授权的局部线索作为查询。
+
+每条记录保留 `world_id`、稳定的 `seed_id`、`owner`、原文以及 `source = {kind: "genesis.seed", event_id, id: seed_id}`；跨世界索引必须使用 `(world_id, seed_id)`。`known_by` 只列拥有者，表示这份种子的授权接收人，不推断其他人的知情状态。`classification = "unknown"`，`time` 和 `importance` 为 `null`：种子没有提供真实性分类、发生时间或重要度，不将起源提交当成种子内容已真实发生的证明，也不生成 L0 事实、L1 存储写入或 L2 反思。
+
+检索使用大小写折叠后的完整词项重合度排序，同分按原始种子顺序；无匹配时按原始顺序回退，选中项最终保留种子顺序。它不做中文分词、语义检索或真实性判断。默认最多 8 条、完整 ASCII 转义紧凑 JSON 数组最多 4096 字节，预算可降低；不截断记录，未选中的数量写入 `memory_scope.omitted`，原始持久种子不变。兼容字段 `self.memories` 仅保留同批选中种子，不能绕过检索预算；整个模型上下文仍受 16000 字节上限约束。此切片只完成 Python 投影及模型调用路径，manifest 文件读取、Lua 主循环接线和长期记忆写回由运行时集成负责。
+
+本切片的低资源定向测试：`python3 -B -m unittest model.test_origin_context -v`，使用内存序列化和假 transport，无引擎、网络或真实模型调用。
+
 `adapter.py` 仅使用标准库；HTTPS 地址由受信任配置固定，拒绝 URL 凭据、查询参数和重定向。兼容流式 Responses SSE，请求／响应／文本均有限长。`text.format=json_object`，单次输出最多 256 token，关闭 reasoning。完成事件、错误、拒绝、无效 JSON 与不合法动作均有明确失败码；不自动改成规则策略。
 
 模型输出投影到白名单字段：`inspect/mark/advance`、带 `target` 的 `approach`、带 `point` 的 `wander/gather/build`、带 `target/text` 的 `say`。忽略多余字段，坐标和 ID 允许数学上为整数的 JSON 数字，拒绝布尔、非有限和小数值。未知字段不能改变端点、节点名或审计来源。邻居目标必须来自观察，坐标必须在边界内；执行前再次按当前世界验证。`why` 由代码固定为 `model`。

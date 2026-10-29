@@ -15,6 +15,7 @@ Inputs have exact schemas; no caller-defined fields are forwarded.
 """
 import json
 import math
+import re
 
 from model import adapter
 from world.origin import OriginError, origin_snapshot
@@ -24,6 +25,8 @@ MAX_ITEMS = 32
 MAX_TEXT_BYTES = 512
 MAX_CONTEXT_BYTES = 16000  # ASCII JSON, as encoded by adapter.decide
 MAX_COORD = 1000000
+MAX_MEMORY_ITEMS = 8
+MAX_MEMORY_BYTES = 4096
 
 
 class ContextError(ValueError):
@@ -76,16 +79,7 @@ def _list(value):
     return value
 
 
-def build_context(event, binding, local):
-    """Validate and compose a detached adapter context from trusted inputs.
-
-    local requires observation {has_target, nearby_agents}, bounds {min,max},
-    incoming_messages [{sender_id,text}], and feedback [{kind,success}].
-    observation may also contain pos. IDs in these fields are zero-based Luanti
-    IDs from the persisted mapping; message text and feedback are caller claims.
-    Optional local_actions has gather_points and build_points, plus optional
-    reach, movement and sensing fields with the action_context fixed values.
-    """
+def _bound_origin(event, binding):
     _fields(binding, ('contract_version', 'world_id', 'origin_event_id',
                       'draft_sha256', 'actor_id', 'runtime_ids', 'luanti_id'))
     if type(binding['contract_version']) is not int or binding['contract_version'] != 1:
@@ -111,6 +105,103 @@ def build_context(event, binding, local):
             or type(binding['luanti_id']) is not int
             or binding['luanti_id'] != actors[binding['actor_id']]['runtime_id'] - 1):
         raise ContextError('binding mismatch')
+    return self_context, saved
+
+
+def _memory_context(self_context, binding, query, max_entries, max_bytes):
+    if query != '':
+        _text(query)
+    elif type(query) is not str:
+        raise ContextError('invalid query')
+    _integer(max_entries, 0, MAX_MEMORY_ITEMS)
+    _integer(max_bytes, 2, MAX_MEMORY_BYTES)
+    terms = set(re.findall(r'\w+', query.casefold()))
+    records = []
+    for seed in self_context['memories']:
+        records.append({
+            'world_id': binding['world_id'], 'seed_id': seed['seed_id'],
+            'owner': self_context['actor_id'], 'text': seed['text'],
+            'source': {**seed['source'], 'id': seed['seed_id']},
+            'known_by': [self_context['actor_id']], 'classification': 'unknown',
+            'time': None, 'importance': None,
+        })
+    ranked = sorted(enumerate(records), key=lambda item: (
+        -len(terms & set(re.findall(r'\w+', item[1]['text'].casefold()))), item[0]))
+    selected, used = [], 2  # The complete compact JSON array, including brackets.
+    for index, record in ranked:
+        if len(selected) == max_entries:
+            break
+        cost = len(json.dumps(record, ensure_ascii=True, sort_keys=True,
+                              separators=(',', ':')).encode('ascii')) + bool(selected)
+        if used + cost <= max_bytes:
+            selected.append((index, record))
+            used += cost
+    selected.sort(key=lambda item: item[0])
+    memories = [record for _, record in selected]
+    return {'memory': memories, 'memory_query': query,
+            'memory_scope': {'mode': 'genesis.lexical', 'world_id': binding['world_id'],
+                             'owner': self_context['actor_id'], 'available': len(records),
+                             'selected': len(memories), 'omitted': len(records) - len(memories),
+                             'bytes': used, 'max_entries': max_entries, 'max_bytes': max_bytes}}
+
+
+def retrieve_genesis_memories(event, binding, *, query='', max_entries=MAX_MEMORY_ITEMS,
+                             max_bytes=MAX_MEMORY_BYTES):
+    """Retrieve private seeds from a manifest's trusted genesis.created payload.
+
+    The manifest loader supplies the persisted event and binding, not a public
+    draft or an arbitrary actor profile. Matching is lexical, with original seed
+    order breaking ties; no match falls back to that order. Selected records
+    retain seed order. Knowledge is restricted to the owner, truth classification
+    is unknown, and absent occurrence time/importance remain None. These records
+    are model context, not fabricated L0 facts or writes to the L1/L2 store.
+    """
+    self_context, _ = _bound_origin(event, binding)
+    return _memory_context(self_context, binding, query, max_entries, max_bytes)
+
+
+def build_manifest_context(manifest, binding, local, *, memory_query='',
+                           max_memory_entries=MAX_MEMORY_ITEMS,
+                           max_memory_bytes=MAX_MEMORY_BYTES):
+    """Project one actor from trusted persisted creation materials.
+
+    Only origin_event is consumed; projection/confirmation and other all-actor
+    materials never enter the prompt. The loader still authenticates the file
+    and verifies the complete manifest; this checks its envelope and binding.
+    """
+    if (type(manifest) is not dict
+            or manifest.get('format') != 'wispiva-world-creation-materials'
+            or type(manifest.get('version')) is not int or manifest['version'] != 1
+            or 'origin_event' not in manifest or type(binding) is not dict
+            or not isinstance(manifest.get('world_id'), str)
+            or manifest['world_id'] != binding.get('world_id')):
+        raise ContextError('invalid creation manifest')
+    return build_context(manifest['origin_event'], binding, local,
+                         memory_query=memory_query, max_memory_entries=max_memory_entries,
+                         max_memory_bytes=max_memory_bytes)
+
+
+def build_context(event, binding, local, *, memory_query='',
+                  max_memory_entries=MAX_MEMORY_ITEMS, max_memory_bytes=MAX_MEMORY_BYTES):
+    """Validate and compose a detached adapter context from trusted inputs.
+
+    local requires observation {has_target, nearby_agents}, bounds {min,max},
+    incoming_messages [{sender_id,text}], and feedback [{kind,success}].
+    observation may also contain pos. IDs in these fields are zero-based Luanti
+    IDs from the persisted mapping; message text and feedback are caller claims.
+    Optional local_actions has gather_points and build_points, plus optional
+    reach, movement and sensing fields with the action_context fixed values.
+    memory_query selects this actor's seeds; an empty query uses the private goal.
+    Omitted records are counted, and the legacy self.memories mirrors only the
+    selected seeds, so it cannot bypass the retrieval limits.
+    """
+    self_context, saved = _bound_origin(event, binding)
+    memory_context = _memory_context(self_context, binding,
+                                     self_context['goal'] if memory_query == '' else memory_query,
+                                     max_memory_entries, max_memory_bytes)
+    selected_ids = {record['seed_id'] for record in memory_context['memory']}
+    self_context['memories'] = [seed for seed in self_context['memories']
+                                if seed['seed_id'] in selected_ids]
 
     _fields(local, ('observation', 'bounds', 'incoming_messages', 'feedback'), ('local_actions',))
     observation = local['observation']
@@ -165,6 +256,7 @@ def build_context(event, binding, local):
                'self_id': binding['luanti_id'], 'self': self_context,
                'observation': obs, 'bounds': bounds,
                'incoming_messages': messages, 'feedback': feedback}
+    context.update(memory_context)
     if local_actions is not None:
         context['local_actions'] = local_actions
     try:
@@ -177,13 +269,16 @@ def build_context(event, binding, local):
     return context
 
 
-def decide(config, event, binding, local, *, transport=None):
+def decide(config, event, binding, local, *, transport=None, memory_query='',
+           max_memory_entries=MAX_MEMORY_ITEMS, max_memory_bytes=MAX_MEMORY_BYTES):
     """Validate, invoke the adapter, and restrict resource actions to candidates.
 
     Candidate membership is not an execution guarantee; the executor must
     revalidate reachability, resources, inventory, and world state at execution.
     """
-    context = build_context(event, binding, local)
+    context = build_context(event, binding, local, memory_query=memory_query,
+                            max_memory_entries=max_memory_entries,
+                            max_memory_bytes=max_memory_bytes)
     if transport is None:
         result = adapter.decide(config, context)
     else:

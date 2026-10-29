@@ -17,5 +17,6 @@
 | 产品目录迁移验证 | 根目录迁移后的引擎、恢复及预览检查 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/product-root-2026-10-29/README.md) |
 | 起源原型验证 | 起源数据原型与既有运行时回归，未验证集成 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-2026-10-29/README.md) |
 | 起源与资源集成验证 | 确认绑定、假引擎对账及既有 Luanti 回归 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-integration-2026-10-29/README.md) |
+| 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点和环境过程 | 2026-10-29 | [工作计划](PLAN.md)；Actions 运行后补充原始证据 |
 | 世界会话边界验证 | Luanti 启动器持锁、身份建立、信号转发及跨进程生命周期 | 2026-10-29 | [原始证据](../evidence/luanti/world-session-2026-10-29/README.md) |
 | 世界事件账本验证 | 行动结果、接触、幂等事件身份与 checkpoint 接入 | 2026-10-29 | [原始证据](../evidence/luanti/world-events-2026-10-29/README.md) |
