@@ -10,8 +10,6 @@ local action_context = dofile(minetest.get_modpath("society") .. "/action_contex
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
 local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
-local environment_module = dofile(minetest.get_modpath("society") .. "/environment.lua")
-local world_projection = dofile(minetest.get_modpath("society") .. "/world_projection.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -19,6 +17,12 @@ end
 
 local WORLD_PRODUCT = cfg("society_world_product", "false") == "true"
 local GENESIS_MANIFEST_PATH = cfg("society_genesis_manifest", "")
+local environment_module, world_projection
+if WORLD_PRODUCT then
+	local modpath = minetest.get_modpath("society")
+	environment_module = dofile(modpath .. "/environment.lua")
+	world_projection = dofile(modpath .. "/world_projection.lua")
+end
 local genesis_manifest
 if WORLD_PRODUCT then
 	assert(GENESIS_MANIFEST_PATH ~= "", "product world requires society_genesis_manifest")
