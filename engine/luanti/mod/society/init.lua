@@ -1484,7 +1484,7 @@ minetest.register_on_shutdown(function()
 		save_product_state()
 		ev("product-checkpoint prepare operation=%s", checkpoint_operation)
 	end
-	if WORLD_PRODUCT and environment_process then
+	if WORLD_PRODUCT and environment_process and not S.failed then
 		local encoded = minetest.write_json(environment_process:export())
 		local written = pcall(storage.set_string, storage, "environment_state", encoded)
 		if not written or storage:get_string("environment_state") ~= encoded then
@@ -1497,6 +1497,10 @@ minetest.register_on_shutdown(function()
 			-- product state, otherwise the next boot sees a false divergence.
 			set_product_clock(environment_process:export().time, os.time())
 		end
+	elseif WORLD_PRODUCT and environment_process and S.failed then
+		-- A failed product run is frozen for review. Do not advance the
+		-- environment or logical clock after the failure boundary.
+		ev("environment-checkpoint skipped reason=run-failed")
 	end
 	if resource_initial then
 		local in_world, inventory = resource_total()
