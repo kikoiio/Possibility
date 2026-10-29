@@ -35,7 +35,7 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 
   `cognition/world_events.lua` 现已接入角色行动和接触：每次实际执行结果先提交为带稳定 `world-event:N` 身份的事件，按带运行命名空间的 `operation_id` 幂等；长期记忆的 L0/L1 记录引用该事件，角色快照、记忆和事件账本在正常停服 checkpoint 中一起保存，恢复时一起加载。Lua 定向测试覆盖事件序列、重试、参数冲突、复制和损坏拒绝；[Actions 40919986392](https://github.com/kikoiio/Wispiva/actions/runs/40919986392) 已在真实 Luanti 主循环中通过首轮运行、保留记忆恢复、清空心智恢复、资源动作、长期记忆和确认起源预览。当前只读审查发现资源节点和库存仍分开修改，地图和数据库仍缺少共同事务，以及引擎时间尚未接入逻辑时间。后续先在禁止其他写入者的隔离小区域验证单类资源：以带世界身份和版本的提交为权威、冻结区域、执行并回读投影、重启先对账再开放；对未知状态或不一致应停止。这个协议尚未实现或验证，不能套用于普通玩家可改写的整个世界。
 
-  当前实现已补上第一条产品纵向切片：`genesis/world_create.py` 在确认修订和起源 SQLite 未推进时，原子发布带 `wispiva-world-id`、私有 `wispiva-origin.json`、起源副本、Luanti mod 和 `server.conf` 的新世界目录；`engine/luanti/run_product.sh` 通过同一 `WorldSession` 启动它。Luanti 启动时读取 manifest，使用 `world_projection.lua` 写入地点、室内外结构、语义连接和角色起点，再按角色向模型请求注入 role、goal 与 genesis seeds。首次运行把起源写入长期记忆 L0/L1，环境过程写入事件账本；正常停服后 `--resume` 已在 [Actions 40928557051](https://github.com/kikoiio/Wispiva/actions/runs/40928557051) 中恢复角色、长期记忆和环境快照。完整范围与限制见[原始证据](../evidence/luanti/product-world-2026-10-29/README.md)；地图／事件／库存／记忆仍不是跨存储原子提交。
+  当前实现已补上第一条产品纵向切片：`genesis/world_create.py` 在确认修订和起源 SQLite 未推进时，原子发布带 `wispiva-world-id`、私有 `wispiva-origin.json`、起源副本、Luanti mod 和 `server.conf` 的新世界目录；`engine/luanti/run_product.sh` 通过同一 `WorldSession` 启动它。Luanti 启动时读取 manifest，使用 `world_projection.lua` 写入地点、室内外结构、语义连接和角色起点，再按角色向模型请求注入 role、goal 与 genesis seeds。首次运行把起源写入长期记忆 L0/L1，环境过程写入事件账本；正常停服后 `--resume` 已在 [Actions 40928557051](https://github.com/kikoiio/Wispiva/actions/runs/40928557051) 和最新的 [Actions 40938747760](https://github.com/kikoiio/Wispiva/actions/runs/40938747760) 中恢复角色、长期记忆、环境快照和产品提交版本。完整范围与限制见[持久产品世界证据](../evidence/luanti/product-world-2026-10-29/README.md)及[产品状态与模型输入证据](../evidence/luanti/product-state-model-input-2026-10-29/README.md)；地图／事件／库存／记忆仍不是跨存储原子提交。
 - [ ] **用户意图到世界起点。** 从任意文本或用户指定素材形成可编辑草稿，包含地点、角色、关系、当前状态、可用规律、初始经历和三维布局；明确未知及假设。执行引用、空间可达、资源和知情检查，展示草稿并由用户确认；失败不覆盖现有世界。至少使用两个非固定题材，持久世界必须保留创建输入、草稿版本、确认记录和公开／私有边界。
 
   已在 [两份合成题材草稿](../evidence/luanti/genesis/2026-10-29-model/summary.md)中使用配置的真实模型生成结构有效的输出，并在 [一次性 Luanti 预览](../evidence/luanti/genesis/2026-10-29-preview/summary.md)中验证确认草稿能够进入引擎、生成角色并记录事件；这不代替用户自己的意图体验、语义隐私审查或可执行世界验收。
@@ -44,7 +44,7 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 - [ ] **空间与三维体验。** 为已确认世界构造地面、建筑、连接、物件和实体，提供合适的进入点与镜头。角色具备可辨认外观和行动反馈，对话与变化在世界内可见；行动与场景对应同一事实。先实现可验证的 Luanti 客户端进入、移动、观察和互动路径，再按题材扩展生成器；普通占位方块和日志不能作为成品验收。产品服务器已支持 `--serve`，`view_product.sh` 可用真实 Luanti 客户端从观察者出生点连接；仍需真人完成移动、观察和互动验收。
 - [ ] **记忆从起点进入主循环。** 建立 L0 已提交事件／原文、每个观察者独立的 L1 当时经历、可版本化 L2 反思；从一致前史建立私有记忆种子。事件完成后按实际感知与知情写入来源；按本人权限和情境检索，为角色组装上下文。模型输入必须显式区分事实、本人经历、私有种子、传闻、未知、当前观察和可执行动作反馈；保存恢复后消息 inbox、上次动作反馈、来源和版本稳定。先覆盖来源、未知、传闻、不同经历及保存恢复，再实测反思。
 
-  `model/origin_context.py` 提供离线输入原型，验证世界与持久角色映射，以白名单组合本人的起始记忆和调用方提供的观察；已用夹具捕获模型输入并检查角色间隔离。它尚未替代产品 Lua 的运行时 envelope；当前产品主循环已接入 `wispiva.model-input` v1，bridge 会在 provider 前校验来源和 audience。调用者仍须认证并确保信息的知情来源。
+  `model/origin_context.py` 提供离线输入原型，验证世界与持久角色映射，以白名单组合本人的起始记忆和调用方提供的观察；已用夹具捕获模型输入并检查角色间隔离。产品 Lua 主循环现已接入 `wispiva.model-input` v1，bridge 会在 provider 前校验来源和 audience；最新 Actions 运行已验证新增模块能随 disposable preview 和持久产品世界加载。调用者仍须认证并确保信息的知情来源。真实模型输入内容、token 和真人角色质量尚未验收。
 - [ ] **真实角色与环境闭环。** 模型在局部观察和授权记忆下提出意图；执行器检查当下条件并反馈实际结果。实现可组合的移动／通行、观察、对白、物品转移及少量可交互对象；建立至少一个环境自身持续过程和有后果的资源关系。行动失败、过期请求、冲突和模型不可用不伪装成成功。
 
   `cognition/environment.lua` 已提供可恢复的逻辑时间资源再生／耗减过程；产品 Luanti 主循环将过程结果提交到世界事件账本，并把资源节点投影到边界区域。模块测试已覆盖条件变化、恢复和重复推进；真实引擎事件与角色对资源的长期互动待 Actions 验证。
