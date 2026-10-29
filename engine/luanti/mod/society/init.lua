@@ -229,6 +229,39 @@ local function nearby(pos, radius)
 	end
 	return objects
 end
+
+-- Long-term retrieval is durable but bounded by its own owner index. Episodic
+-- memory is the actor's private recent fallback, especially across restore
+-- when an older experience may fall outside the long-term page. Merge only
+-- the current actor's two projections; never source memory from another id.
+local function merge_private_memory(long_term, episodic, max_entries, max_bytes)
+	local result, seen, bytes = {}, {}, 2
+	local function key(entry)
+		if entry.id ~= nil then return "id:" .. tostring(entry.id) end
+		local source = entry.source or {}
+		return "source:" .. tostring(source.kind) .. ":" .. tostring(source.id)
+			.. ":" .. tostring(entry.text)
+	end
+	local function cost(entry)
+		-- cognition_memory.serialize includes all public memory metadata except
+		-- the long-term row id; reserve a small conservative allowance for it.
+		return #cognition_memory.serialize({entry}) + (entry.id and #tostring(entry.id) + 16 or 0)
+	end
+	local function add(entry)
+		local identity = key(entry)
+		if seen[identity] then return end
+		local extra = cost(entry) + (#result > 0 and 1 or 0)
+		if #result >= max_entries or bytes + extra > max_bytes then return end
+		seen[identity] = true
+		result[#result + 1] = entry
+		bytes = bytes + extra
+	end
+	-- Recent private episodic entries get the first opportunity; durable
+	-- retrieval fills the remaining bounded context without changing access.
+	for _, entry in ipairs(episodic or {}) do add(entry) end
+	for _, entry in ipairs(long_term or {}) do add(entry) end
+	return result, {entries = #result, byte_bound = bytes, merged = true}
+end
 local function find_nodes(lo, hi, names)
 	if OPTIMIZED then return cached_nodes:find(lo, hi, names) end
 	return minetest.find_nodes_in_area(lo, hi, names)
@@ -767,9 +800,13 @@ local function decide_and_act(self)
 			if MODEL_MEMORY and LONG_TERM then
 				local latest = self._inbox[#self._inbox]
 				local query = latest and latest.text or ""
-				selected_memory, memory_info = history:retrieve(tostring(self._id),
+				local durable_memory, durable_info = history:retrieve(tostring(self._id),
 					{query=query, max_scan=256, max_entries=8, max_bytes=4096})
+				local episodic_memory = self._episodic:select(memory_query,
+					{strategy="fifo", max_entries=8, max_chars=4096})
+				selected_memory, memory_info = merge_private_memory(durable_memory, episodic_memory, 8, 4096)
 				memory_info.query = query
+				memory_info.durable = durable_info
 			elseif MODEL_MEMORY then
 				selected_memory = self._episodic:select(memory_query,
 					{strategy=MEMORY_MODE, max_entries=8, max_chars=4096})
