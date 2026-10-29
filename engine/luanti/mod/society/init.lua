@@ -672,7 +672,7 @@ local function spawn_agents()
 		local valid, restored, restored_history, restored_events = pcall(
 			persistence.unpack_checkpoint, decoded, long_term_memory, world_events)
 		if not valid or #restored ~= COUNT or (RESET_MINDS and restored_history:count() > 0) then
-			ev("fail=restore-invalid expected=%d", COUNT)
+			ev("fail=restore-invalid expected=%d detail=%s", COUNT, tostring(restored):gsub("%s+", "_"))
 			S.failed = "restore-invalid"
 			summary_and_stop()
 			return
