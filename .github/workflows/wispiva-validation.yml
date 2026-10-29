@@ -155,14 +155,36 @@ jobs:
           store = DraftStore(root / 'drafts.sqlite', create=True)
           try:
               draft = json.loads(Path('genesis/example.json').read_text(encoding='utf-8'))
-              draft['actors'] = [dict(draft['actors'][0], id='traveler', name='Traveler')]
+              draft['title'] = '室内外恢复夹具'
+              draft['description'] = '覆盖室内地板、室外地面和语义连接的产品重启夹具。'
+              draft['places'] = [
+                  {'id': 'home', 'name': '木屋', 'description': '带木地板和屋顶的室内地点。'},
+                  {'id': 'yard', 'name': '院子', 'description': '连接木屋的室外地点。'},
+              ]
+              draft['actors'] = [dict(draft['actors'][0], id='traveler', name='Traveler', placeId='home')]
               draft['memories'] = [{'actorId': 'traveler', 'text': 'A private memory from upstream.'}]
+              draft['layout'] = {
+                  'places': [
+                      {'placeId': 'home', 'space': 'indoor', 'grid': [0, 0]},
+                      {'placeId': 'yard', 'space': 'outdoor', 'grid': [2, 0]},
+                  ],
+                  'connections': [{'from': 'home', 'to': 'yard'}],
+              }
               record = store.create(draft)
               store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
               result = create_world(store, record['id'], record['revision'], root / 'world')
               Path(root / 'creation-result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
           finally:
               store.close()
+          PY
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('.ci-product/world/private/wispiva-origin.json').read_text(encoding='utf-8'))
+          places = {place['id']: place['space'] for place in manifest['public']['places']}
+          assert places == {'home': 'indoor', 'yard': 'outdoor'}
+          assert manifest['public']['semantic_connections'] == [{'from': 'home', 'to': 'yard'}]
+          print('product fixture covers indoor, outdoor and connected spaces')
           PY
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --decisions 3 --interval 1 --seconds 120
           grep -q 'SOCIETY origin projection ' .ci-product/world/private/product.log
@@ -175,6 +197,7 @@ jobs:
           grep -q 'memory_seeds' .ci-product/world/private/wispiva-origin.json
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --resume --decisions 2 --interval 1 --seconds 120
           grep -q 'SOCIETY ev=restore agent=.* reset=false' .ci-product/world/private/product.log
+          ! grep -q 'SOCIETY fail=product-reconcile' .ci-product/world/private/product.log
           grep -q 'SOCIETY environment-checkpoint time=' .ci-product/world/private/product.log
           grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
