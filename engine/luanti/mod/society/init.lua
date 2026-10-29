@@ -1280,7 +1280,6 @@ local function apply_product_projection()
 	-- so a restart cannot observe a committed projection with an old map.
 	local vm = minetest.get_voxel_manip(
 		{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND})
-	vm:read_from_map()
 	local map_data = vm:get_data()
 	vm:set_data(map_data)
 	vm:write_to_map()
@@ -1480,7 +1479,7 @@ end)
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
 	local checkpoint_operation, checkpoint_target
-	if WORLD_PRODUCT and PERSIST and not S.failed then
+	if WORLD_PRODUCT and PERSIST and not S.failed and product_state:phase() == "READY" then
 		local components = product_state:components()
 		checkpoint_operation = "checkpoint:" .. EVENT_NAMESPACE .. ":" .. tostring(product_state:version() + 1)
 		checkpoint_target = components
