@@ -15,6 +15,8 @@ status: active
 ## 按依赖推进
 
 - [x] **产品目录迁移。** Wispiva 产品模块迁至仓库根目录，Luanti 运行时与 mod 收束到 `engine/luanti/`，验证工具和证据分别归档到 `validation/` 与 `evidence/`，更新工作流和文档路径；保留既有世界、运行时及原始测量证据。验证工作流和临时分支前缀已改为 `wispiva-validation.yml` 与 `validation/luanti-*`；[GitHub Actions 40823710390](https://github.com/kikoiio/Wispiva/actions/runs/40823710390) 在快照 `d909bf58f2ae5c2fa3d66ee9d1acbb558e280891` 上通过 Lua 5.1、引擎和恢复验证，[最新结构验证 40827303033](https://github.com/kikoiio/Wispiva/actions/runs/40827303033) 在快照 `5f6641191d65588b231cb5261a8649e76a8684ae` 上通过。历史日志中的旧绝对路径只作为原始证据保留。
+
+  根目录迁移后的远端提交 `587bed2af9805025da3558dc6d79cf9e73a0e0c5` 已通过 [Actions 40890633717](https://github.com/kikoiio/Wispiva/actions/runs/40890633717) 的 Lua／Python 单测、引擎认知、复制恢复、资源动作、长期记忆重启和合成草稿预览；[原始产物及范围](../evidence/luanti/product-root-2026-10-29/README.md)已归档。真实模型、规模与产品体验不在本次验证范围。
 - [ ] **统一创建与状态契约。** 盘点 `proto/world-genesis` 的创建草稿、规则、知情和模型调用接口，与本分支引擎及观察／动作模型比较；定义稳定世界、角色、空间、事件身份和输入投影，记录源码版本。确定世界／Luanti 的权威归属、提交与恢复协议，覆盖部分失败与冲突，不提前假设跨进程原子性。
 
   [静态集成审查](design/2026-10-29-origin-integration-audit.md)记录了参考版本、创建起源与资源协调器不兼容、身份映射、知情、记忆和时钟缺口，以及假引擎到 Luanti 的验收顺序；该审查不等于契约或集成已经完成。
