@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unit tests
         run: |
+          set -o pipefail
           (
             cd cognition
             lua5.1 test.lua
@@ -46,6 +47,7 @@ jobs:
           python3 -B -m unittest discover -s validation/luanti/analysis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s genesis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s world -t . -p 'test_*.py' -v
+          ) 2>&1 | tee unit-tests.log
       - name: Prepare runtime
         run: |
           uptime
@@ -305,5 +307,6 @@ jobs:
             evidence/luanti/agent/ci-large-*
             evidence/luanti/agent/ci-repeat-*
             evidence/luanti/agent/ci-opt-*
+            unit-tests.log
           if-no-files-found: warn
           retention-days: 14
