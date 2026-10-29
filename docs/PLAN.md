@@ -31,7 +31,7 @@ status: active
 
   [Actions 40898042968](https://github.com/kikoiio/Wispiva/actions/runs/40898042968) 在提交 `ba4770a439e4f97cae8d310c253852db87884694` 上通过确认桥接、假引擎与既有 Luanti 回归；[产物及限制](../evidence/luanti/origin-integration-2026-10-29/README.md)已归档。
 
-  当前分支还补有两个面向真实接入的受控边界原型：[world_identity.py](../engine/luanti/world_identity.py) 将世界身份作为独立于 SQLite 的规范 UUID 文件持久保存，采用先写入并同步、再以不覆盖方式发布的流程；[world_lock.py](../engine/luanti/world_lock.py) 用 Unix `flock` 提供跨进程非阻塞独占。对应定向测试覆盖身份创建冲突、异常恢复、跨进程竞争、锁释放和进程异常退出。它们仍未接入 Luanti 启动器；锁只约束遵守协议的访问者，不能替代关闭玩家／mod／旁路写入，也不能证明断电持久性。
+  当前分支还补有面向真实接入的受控边界原型：[world_session.py](../engine/luanti/world_session.py) 将 [world_identity.py](../engine/luanti/world_identity.py) 与 [world_lock.py](../engine/luanti/world_lock.py) 组合成“先锁定、再核对身份、异常释放”的世界会话；身份文件独立于 SQLite，锁用 Unix `flock` 提供跨进程非阻塞独占。对应定向测试覆盖身份创建冲突、异常恢复、跨进程竞争、锁释放和进程异常退出。后续 Actions [40904034040](https://github.com/kikoiio/Wispiva/actions/runs/40904034040) 在提交 `fd86b956141a94160f64ac96466486c68c6272e7` 上通过了身份和锁测试及既有 Luanti 回归；会话原型将在下一次回归中加入。它们仍未接入 Luanti 启动器；锁只约束遵守协议的访问者，不能替代关闭玩家／mod／旁路写入，也不能证明断电持久性。
 
   当前只读审查发现资源节点和库存分开修改、角色主要在正常停服时保存、地图和数据库缺少共同世界身份与事务，以及引擎时间尚未接入逻辑时间。后续先在禁止其他写入者的隔离小区域验证单类资源：以带世界身份和版本的提交为权威、冻结区域、执行并回读投影、重启先对账再开放；对未知状态或不一致应停止。这个协议尚未实现或验证，不能套用于普通玩家可改写的整个世界。
 - [ ] **用户意图到世界起点。** 从文本或用户指定素材形成可编辑草稿，包含地点、角色、关系、当前状态、可用规律、初始经历和三维布局；明确未知及假设。执行引用、空间可达、资源和知情检查，展示草稿并由用户确认；失败不覆盖现有世界。至少使用两个题材，其中一个不得是固定夹具。
