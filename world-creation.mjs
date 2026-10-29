@@ -130,7 +130,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
   const response = (ok, message, extra = {}) => ({ ok, message, ...extra, state: state() });
   const invalidateGeneration = (generation, result) => {
-    if (result?.reason !== 'invalid-world' || !generation.completedStages.length) return;
+    if (!['invalid-world', 'invalid-world-scene', 'privacy-audit-failed', 'world-compile-failed'].includes(result?.reason) || !generation.completedStages.length) return;
     const stageFor = path => /^(world\.(actors|story\.(clues|facts))|initialMemories)(\.|\[|$)/.test(path) ? 1
       : /^world\.(resources|processes|actions)(\.|\[|$)/.test(path) ? 2 : 0;
     const firstInvalid = result.diagnostics?.length ? Math.min(...result.diagnostics.map(d => stageFor(d.path || ''))) : 0;

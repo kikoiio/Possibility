@@ -303,6 +303,17 @@ test('final reference validation invalidates the responsible checkpoint so expli
   assert.deepEqual(f.requests.slice(callsBefore).map(r=>r.step),['people','rules']);
 });
 
+test('privacy rejection also invalidates checkpoints instead of repeating an unrepairable candidate', async t => {
+  const records=structuredClone(stageRecords);
+  records.places[0].premise='守灯人打算秘密搬走整座灯塔的蓄电池。';
+  records.people[0].goal='秘密搬走整座灯塔的蓄电池';
+  const f=fixture(t,input=>recordReply([...records[input.step],{type:'complete'}]));
+  const r=await f.experience.worldStep({description:'先检查起点'});
+  assert.equal(r.reason,'privacy-audit-failed');
+  assert.deepEqual(r.state.creation.generation.completedStages,[]);
+  assert.equal(r.state.creation.draft,null);
+});
+
 test('cancelling between generated steps cannot create or resume a partial origin', async t => {
   let entered; const second = new Promise(resolve => { entered = resolve; });
   let release; const pending = new Promise(resolve => { release = resolve; });
