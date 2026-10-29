@@ -24,6 +24,23 @@ command -v timeout >/dev/null 2>&1 || { echo "view_acceptance.sh: timeout unavai
 
 server_log="$WORLD/private/view-server.log"
 client_log="$WORLD/private/view-client.log"
+product_log="$WORLD/private/product.log"
+product_log_lines=0
+if [[ -f "$product_log" ]]; then
+  product_log_lines=$(wc -l < "$product_log")
+fi
+
+new_product_log() {
+  [[ -f "$product_log" ]] || return 0
+  local current_lines
+  current_lines=$(wc -l < "$product_log")
+  if [[ "$current_lines" -lt "$product_log_lines" ]]; then
+    cat "$product_log"
+  else
+    tail -n "+$((product_log_lines + 1))" "$product_log"
+  fi
+}
+
 server_pid=""
 cleanup() {
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
@@ -33,20 +50,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$HERE/run_product.sh" --world "$WORLD" --serve --visual-fixture --port "$PORT" >"$server_log" 2>&1 &
+"$HERE/run_product.sh" --world "$WORLD" --serve --visual-fixture --resume --port "$PORT" >"$server_log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 30); do
-  grep -q 'SOCIETY view scene-ready' "$WORLD/private/product.log" 2>/dev/null && break
+  new_product_log | grep -F 'SOCIETY view scene-ready' >/dev/null && break
   sleep 1
 done
-grep -q 'SOCIETY view scene-ready' "$WORLD/private/product.log"
+new_product_log | grep -F 'SOCIETY view scene-ready' >/dev/null
 
 xvfb-run -a -s '-screen 0 1024x768x24 -nolisten tcp' \
   "$HERE/view_product.sh" --port "$PORT" --name "$NAME" --acceptance \
   --seconds "$SECONDS_MAX" --logfile "$client_log"
 
-grep -q 'SOCIETY view join player=' "$WORLD/private/product.log"
-grep -q 'SOCIETY view scene-ready ' "$WORLD/private/product.log"
-grep -q 'SOCIETY view interaction ' "$WORLD/private/product.log"
-grep -q 'SOCIETY view guide-arrival ' "$WORLD/private/product.log"
+new_product_log | grep -F 'SOCIETY view join player=' >/dev/null
+new_product_log | grep -F 'SOCIETY view scene-ready ' >/dev/null
+new_product_log | grep -F 'SOCIETY view interaction ' >/dev/null
+new_product_log | grep -F 'SOCIETY view guide-arrival ' >/dev/null
 echo "product client acceptance passed: $WORLD"

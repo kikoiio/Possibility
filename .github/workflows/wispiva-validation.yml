@@ -22,7 +22,7 @@ jobs:
       - name: Install runtime
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti-server luanti-game-minetest
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti luanti-server luanti-game-minetest xvfb
       - uses: actions/checkout@v4
       - name: Unit tests
         run: |
@@ -62,6 +62,7 @@ jobs:
           rt="$GITHUB_WORKSPACE/engine/luanti/.runtime"
           mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
           ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
+          ln -s "$(command -v luanti)" "$rt/root/usr/libexec/luanti/luanti"
           cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
           mkdir -p "$rt/home/.minetest"
           ln -s ../.luanti/games "$rt/home/.minetest/games"
@@ -169,12 +170,17 @@ jobs:
           grep -q 'SOCIETY long-term-checkpoint records=' .ci-product/world/private/product.log
           grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
+
           grep -q 'memory_seeds' .ci-product/world/private/wispiva-origin.json
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --resume --decisions 2 --interval 1 --seconds 120
           grep -q 'SOCIETY ev=restore agent=.* reset=false' .ci-product/world/private/product.log
           grep -q 'SOCIETY environment-checkpoint time=' .ci-product/world/private/product.log
           grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
+
+      - name: Verify persistent product world client acceptance
+        run: |
+          engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 20
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
         run: |
