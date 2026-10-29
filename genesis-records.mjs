@@ -32,7 +32,17 @@ export function parseGenesisOutput(content, { partial = false } = {}) {
     else if (c === '}') {
       depth--;
       if (depth === 0) {
-        const parsed = parseGeneratedJSON(input.slice(start, i + 1)); records.push(parsed.value); adjustments.push(...parsed.adjustments);
+        const parsed = parseGeneratedJSON(input.slice(start, i + 1));
+        const record = parsed.value;
+        if (['resource', 'action'].includes(record?.type) && object(record.visibility)) {
+          for (const [missing, supplied] of [['clues','actors'],['actors','clues']]) {
+            if (!Object.hasOwn(record.visibility, missing) && Array.isArray(record.visibility[supplied]) && record.visibility[supplied].length) {
+              record.visibility[missing] = [];
+              adjustments.push(`${record.type} ${record.id} 的 visibility.${missing} 未提供，按无额外可见对象整理为空数组`);
+            }
+          }
+        }
+        records.push(record); adjustments.push(...parsed.adjustments);
         if (records.length > 80) throw Error('这一片起点包含过多条目，请缩小范围。');
         start = -1;
       }

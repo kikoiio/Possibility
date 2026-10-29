@@ -249,6 +249,19 @@ const stageRecords = {
 };
 const recordReply = records => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: records.map(r => JSON.stringify(r)).join('\n') }] }] });
 
+test('omitted visibility branches mean no additional viewers and never expand access', () => {
+  const records = [...structuredClone(stageRecords.places), ...structuredClone(stageRecords.people), ...structuredClone(stageRecords.rules)];
+  records.find(r=>r.type==='resource').visibility={actors:['keeper']};
+  records.find(r=>r.type==='action').visibility={actors:['keeper']};
+  const parsed=parseGenesisOutput(records.map(r=>JSON.stringify(r)).join('\n'));
+  assert.deepEqual(parsed.value.world.resources[0].visibility,{actors:['keeper'],clues:[]});
+  assert.deepEqual(parsed.value.world.actions[0].visibility,{actors:['keeper'],clues:[]});
+  assert.equal(checkWorldCandidate(parsed.value).ok,true);
+  assert.equal(parsed.adjustments.length,2);
+  records.find(r=>r.type==='resource').visibility={};
+  assert.equal(checkWorldCandidate(parseGenesisOutput(records.map(r=>JSON.stringify(r)).join('\n')).value).ok,false);
+});
+
 test('generation assembles three small model steps using only their actual records', async t => {
   const f = fixture(t, input => recordReply([...stageRecords[input.step], { type: 'complete' }]));
   const result = await f.experience.worldStep({ description: '海边灯室，守灯人需要电量照明。' });

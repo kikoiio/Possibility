@@ -117,6 +117,7 @@ function takeProgress(next) {
 }
 function failureText(result) {
   if (result?.attemptId) return text(result.message, '这次请求未完成，输入已保留。');
+  if (result?.generationId) return `${text(result.message, '起点检查未通过。')} 可继续生成，或调整描述后重新生成。`;
   const diagnostics = list(result?.diagnostics).slice(0, 3).map((item) => {
     if (typeof item === 'string') return item;
     return `${text(item?.message, '未通过检查')}${item?.path ? `（${item.path}）` : ''}`;

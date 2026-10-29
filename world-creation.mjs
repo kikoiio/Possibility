@@ -410,22 +410,22 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         publish({ ...model.progress, phase: 'verifying' });
         if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
         else {
-        if (!definition) {
-          try { definition = compileGenesisRecords(records); }
-          catch (error) { result = { ok: false, reason: 'invalid-world', message: error.message, diagnostics: [{ path: 'world', message: error.message }] }; }
-        }
-        const checked = definition ? checkWorldCandidate(definition) : null;
-        if (checked && !checked.ok) result = { ...checked, message: '生成结果未通过世界规则或三维场景检查，请调整想法后再试。' };
-        else if (checked) {
-          const voxelSnapshot = voxel.state();
-          creation.draft = { id: randomUUID(), description: description.trim(), definition: checked.definition,
-            baseVoxelId: creation.voxelId, baseVoxelRevision: voxelSnapshot.revision,
-            ...(conversational ? { baseConversationRevision: creation.dialogue.revision } : {}),
-            voxelBindings: bindVoxelWorld({ definition: checked.definition, voxel: voxelSnapshot }),
-            adjustments: [...adjustments, ...checked.adjustments], privacyAudit: checked.privacyAudit, createdAt: new Date().toISOString() };
-          result = { ok: true, message: '这一片起点已生成。看看画面和规律，可以继续告诉我哪里要改，满意后再进入。' };
-          if (conversational) creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: result.message });
-        }
+          if (!definition) {
+            try { definition = compileGenesisRecords(records); }
+            catch (error) { result = { ok: false, reason: 'invalid-world', message: error.message, diagnostics: [{ path: 'world', message: error.message }] }; }
+          }
+          const checked = definition ? checkWorldCandidate(definition) : null;
+          if (checked && !checked.ok) result = { ...checked, message: '生成结果未通过世界规则或三维场景检查，请调整想法后再试。' };
+          else if (checked) {
+            const voxelSnapshot = voxel.state();
+            creation.draft = { id: randomUUID(), description: description.trim(), definition: checked.definition,
+              baseVoxelId: creation.voxelId, baseVoxelRevision: voxelSnapshot.revision,
+              ...(conversational ? { baseConversationRevision: creation.dialogue.revision } : {}),
+              voxelBindings: bindVoxelWorld({ definition: checked.definition, voxel: voxelSnapshot }),
+              adjustments: [...adjustments, ...checked.adjustments], privacyAudit: checked.privacyAudit, createdAt: new Date().toISOString() };
+            result = { ok: true, message: '这一片起点已生成。看看画面和规律，可以继续告诉我哪里要改，满意后再进入。' };
+            if (conversational) creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: result.message });
+          }
         }
       }
     } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '创建世界的请求或保存未完成，请检查配置与本地存储；没有自动重试。' }; }
