@@ -16,7 +16,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 `origin_context.py` 是独立的离线输入原型：校验世界、起源、持久角色映射及临时 Luanti 数字 ID，将单一角色的起始记忆与调用者提供的局部观察、消息和反馈按白名单、预算组合后调用适配器。它未接入 Luanti 运行时；身份认证、角色授权和观察真实性仍由调用方负责，允许的文本也须事先经过授权。现有 `adapter.py` 本身接受额外上下文字段，不能将它当作通用的隐私过滤器。
 
-产品 Lua 运行时生成 `wispiva.model-input` v1。`knowledge.facts`、`experiences`、`rumors`、`unknowns` 分别表达当前事实、本人经历、收到的传闻和有来源但未证实的内容；每项包含稳定 ID、来源和 `access.audience`。`current` 承载观察、库存与可行动作，`feedback` 承载上一次实际执行结果。`model/bridge.py` 在调用 provider 前验证 schema、世界/角色绑定、四类 epistemic 标签及 audience，失败时不产生模型调用。Lua envelope 和 Python bridge 的测试覆盖了隐私越权与缺来源记录。
+产品 Lua 运行时生成 `wispiva.model-input` v1。`knowledge.facts`、`experiences`、`rumors`、`unknowns` 分别表达当前事实、本人经历、收到的传闻和有来源但未证实的内容；每项包含稳定 ID、来源和 `access.audience`。`current` 承载观察、库存与可行动作，`feedback` 承载上一次实际执行结果。`model/bridge.py` 在调用 provider 前验证 schema、世界/角色绑定、四类 epistemic 标签、来源及 audience，失败时不产生模型调用；有 envelope 的请求只把 envelope 发送给 provider，legacy 字段只用于本地动作校验。Lua envelope、bridge 和 adapter 测试覆盖了隐私越权、缺来源记录及 provider 载荷隔离。
 
 持久起源的 Python 接入点为 `build_manifest_context(manifest, binding, local, ...)`，接受受信任的 `wispiva-world-creation-materials` v1 handoff：检查外层世界身份与绑定，只从其中的 `origin_event` 派生角色上下文，其他全角色材料不会进入提示。`genesis/world_create.py` 发布的 Luanti `wispiva-world-manifest` 由当前产品 Lua 运行时直接投影；后续会把两种 handoff 合并为一个版本化传输协议。文件加载、认证和完整 manifest 校验仍由调用方负责。也可独立调用 `retrieve_genesis_memories(event, binding, query='', max_entries=8, max_bytes=4096)`，从可信的持久 `genesis.created` 载荷检索。返回 `memory`、`memory_query` 和 `memory_scope`，`build_context`／`decide` 已将这份投影用于模型输入。上下文入口接受 `memory_query`、`max_memory_entries`、`max_memory_bytes` 关键字参数；默认查询使用本人私有目标，独立检索接口的空查询则按种子顺序选取。调用方可用当前角色已获授权的局部线索作为查询。
 
