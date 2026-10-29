@@ -686,9 +686,9 @@ local function apply(self, action, pos)
 				from = self._id, text = action.text, message_id = message_id}
 			if #recipient._inbox > 32 then table.remove(recipient._inbox, 1) end
 			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
-				source = {kind = "agent", id = self._id}})
+				source = {kind = "agent", id = tostring(self._id)}})
 			self._episodic:add({time = minetest.get_gametime(), text = action.text,
-				source = {kind = "self", id = self._id}})
+				source = {kind = "self", id = tostring(self._id)}})
 			if VISUAL then self.object:set_properties({nametag = self._persona .. "\n" .. action.text}) end
 			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
 				minetest.sha256(action.text))
@@ -861,7 +861,12 @@ local function decide_and_act(self)
 						local source = memory.source or {}
 						local memory_id = memory.id or string.format("episodic:%s:%s:%s",
 							tostring(source.kind), tostring(source.id), tostring(memory.time))
-						local record = {id = memory_id, text = memory.text, source = source,
+						-- Legacy episodic checkpoints may contain numeric runtime IDs.
+						-- The provider-facing envelope has a textual provenance contract;
+						-- normalize this boundary without rewriting restored history.
+						local envelope_source = {kind = source.kind, id = tostring(source.id),
+							revision = source.revision}
+						local record = {id = memory_id, text = memory.text, source = envelope_source,
 							captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
 						if kind == "rumor" then add_unique(rumors, record)
 						elseif kind == "unknown" then add_unique(unknowns, record)
