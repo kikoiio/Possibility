@@ -9,11 +9,11 @@
 | Luanti 运行时 | [runtime/bootstrap.sh](../engine/luanti/runtime/bootstrap.sh) | 从系统软件源下载并解包引擎和 Minetest Game 到项目内 `.runtime/`，记录哈希；没有锁定未来软件包版本。 |
 | 实体与规则调度 | [engine/luanti/mod/society/init.lua](../engine/luanti/mod/society/init.lua)、[policy.lua](../engine/luanti/mod/society/policy.lua) | 服务端实体、移动、标记、接触与分帧决策；规则模式并非 LLM。角色通过 `set_pos` 移动，无真实寻路、碰撞或玩家视角。当前 worktree 的可选 `society_visual` 提供临时草地、人形和英文动作标签，属于观察原型。 |
 | 观察与动作 | [cognition/](../cognition/README.md) | 球形范围观察、空间索引、节点缓存、资源采集与放置、资源回读；无视线遮挡，不是第一人称视觉。资源操作限于实验节点。 |
-| 私有记忆 | [cognition/memory.lua](../cognition/memory.lua)、[long_term_memory.lua](../cognition/long_term_memory.lua) | 旧模式每角色最多 32 条。可选长期模式在角色循环记录 L0 行动结果与参与者私有 L1，并支持有来源的 L2 结构；正常停服快照可保留和恢复。尚未完成模型反思、前史导入、长期检索质量、崩溃恢复或与地图原子提交。 |
+| 私有记忆与世界事件 | [cognition/memory.lua](../cognition/memory.lua)、[long_term_memory.lua](../cognition/long_term_memory.lua)、[world_events.lua](../cognition/world_events.lua) | 旧模式每角色最多 32 条。可选长期模式在角色循环记录 L0 行动结果与参与者私有 L1，并支持有来源的 L2 结构；实际行动先进入按操作幂等的 `world-event:N` 账本，记忆引用该来源，正常停服 checkpoint 同时保存三者。尚未完成模型反思、前史导入、长期检索质量、崩溃恢复或与地图原子提交。 |
 | 模型桥接 | [model/](../model/README.md) | Lua 将局部观察提交私有文件队列，Python 串行 worker 异步调用已配置模型，校验有限动作后由引擎执行；并非千人模型调度器。夹具和真实模型分开记录。 |
 | 持久化和快照 | [cognition/persistence.lua](../cognition/persistence.lua)、[snapshot.py](../engine/luanti/snapshot.py) | 停服保存角色快照并校验复制；`--resume-preserve` 能恢复已保存的角色与记忆，`--resume` 仍是清空心智的实验重置。异常崩溃恢复和跨存储事务未证明。 |
 | 创建与状态核心 | [genesis/](../genesis/README.md)、[world/](../world/README.md) | 创建、校验、确认草稿和 SQLite 状态事务已有独立原型；Luanti 地图接入与跨存储恢复尚未完成。 |
-| 世界身份与受控接入边界 | [launch.py](../engine/luanti/launch.py)、[world_session.py](../engine/luanti/world_session.py)、[world_identity.py](../engine/luanti/world_identity.py)、[world_lock.py](../engine/luanti/world_lock.py) | `launch.py` 在启动 Luanti 前取得 `WorldSession`，运行期间持有 Unix `flock`，转发停止信号并在引擎退出后释放；新世界先建立独立 UUID 身份，非空无身份世界拒绝自动接管。锁仍是协作式的，不能约束未使用该协议的进程、玩家或 mod。地图、事件、库存和记忆的共同提交尚未完成。 |
+| 世界身份与受控接入边界 | [launch.py](../engine/luanti/launch.py)、[world_session.py](../engine/luanti/world_session.py)、[world_identity.py](../engine/luanti/world_identity.py)、[world_lock.py](../engine/luanti/world_lock.py) | `launch.py` 在启动 Luanti 前取得 `WorldSession`，运行期间持有 Unix `flock`，转发停止信号并在引擎退出后释放；新世界先建立独立 UUID 身份，非空无身份世界拒绝自动接管。锁仍是协作式的，不能约束未使用该协议的进程、玩家或 mod。世界事件、角色 checkpoint 和记忆已共享事件身份，但地图共同提交尚未完成。 |
 | 验证运行器与 CI | [engine/luanti/run.sh](../engine/luanti/run.sh)、[Actions 工作流](../.github/workflows/wispiva-validation.yml) | 创建实验世界、启动并结束服务器、检查日志与世界；Actions 分支条件运行离线测试、引擎和按配置的模型／规模测量。 |
 | 用户意图创建原型 | `proto/world-genesis` 分支的 `prototypes/` | 独立的 Node/Three.js 原型，包含创建对话、世界草稿和有限规则；不在本 worktree 中运行，也尚未与 Luanti 接通。可通过 `git show proto/world-genesis:prototypes/README.md` 查阅。 |
 

@@ -106,6 +106,8 @@ callbacks.shutdown()
 local checkpoint = saved_text
 assert(encoded[checkpoint].format == "society-checkpoint")
 local record_count = #encoded[checkpoint].long_term.records
+assert(encoded[checkpoint].world_events and #encoded[checkpoint].world_events.events >= 6)
+local world_event_count = #encoded[checkpoint].world_events.events
 assert(record_count >= 13)
 config.society_restore="true"
 make_engine(true) -- a partial spawn failure must not erase or replace the checkpoint
@@ -122,6 +124,7 @@ assert(saved_text == checkpoint)
 minetest.write_json = json_write
 callbacks.shutdown()
 assert(saved_text ~= checkpoint and #encoded[saved_text].long_term.records == record_count)
+assert(#encoded[saved_text].world_events.events == world_event_count)
 local latest=encoded[saved_text]
 local retained=saved_text
 config.society_restore=nil
@@ -138,6 +141,7 @@ config.society_long_term_memory="false"
 make_engine(false)
 callbacks.shutdown()
 assert(#encoded[saved_text].long_term.records == record_count) -- disabling capture preserves history
+assert(#encoded[saved_text].world_events.events == world_event_count) -- event facts persist independently
 config.society_long_term_memory="true"
 local legacy_key="legacy"
 encoded[legacy_key]=latest.agents

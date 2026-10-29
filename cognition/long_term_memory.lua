@@ -135,7 +135,7 @@ local function build()
   -- Runtime bridge: one actual outcome and the participants who experienced it.
   -- The host supplies a recipient only after verified delivery. Other agents
   -- (including nearby observers) do not become witnesses implicitly.
-  function store:record_outcome(actor, kind, ok, reason, time, recipient, message, detail)
+  function store:record_outcome(actor, kind, ok, reason, time, recipient, message, detail, event_id)
     string_required(actor, "actor")
     string_required(kind, "kind")
     assert(type(ok) == "boolean" and finite(time), "invalid outcome")
@@ -145,7 +145,9 @@ local function build()
       string_required(recipient, "recipient")
       assert(kind == "say" and ok and recipient ~= actor and type(message) == "string", "invalid delivery")
     end
-    local event_id = "outcome:" .. tostring(#records + 1)
+    if event_id ~= nil then string_required(event_id, "event_id") end
+    event_id = event_id or ("outcome:" .. tostring(#records + 1))
+    assert(not by_id[event_id], "duplicate event id")
     local outcome = kind .. (ok and " succeeded: " or " failed: ") .. reason
     local event_text = "agent " .. actor .. " " .. outcome
     local actor_text = "I " .. outcome
@@ -174,11 +176,13 @@ local function build()
     return event_id
   end
 
-  function store:record_meeting(actor, other, time)
+  function store:record_meeting(actor, other, time, event_id)
     string_required(actor, "actor")
     string_required(other, "other")
     assert(actor ~= other and finite(time), "invalid meeting")
-    local id = "outcome:" .. tostring(#records + 1)
+    if event_id ~= nil then string_required(event_id, "event_id") end
+    local id = event_id or ("outcome:" .. tostring(#records + 1))
+    assert(not by_id[id], "duplicate event id")
     local batch = {
       {layer="L0", id=id, owner="world", time=time,
         text="agent " .. actor .. " met agent " .. other, source={kind="contact", id=actor}},

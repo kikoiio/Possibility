@@ -37,6 +37,7 @@ jobs:
             lua5.1 test_retrieval.lua
             lua5.1 test_long_term_memory.lua
             lua5.1 test_long_term_integration.lua
+            lua5.1 test_world_events.lua
           )
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
           python3 -B -m unittest -v engine/luanti/test_snapshot.py

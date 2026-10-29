@@ -3,6 +3,7 @@ local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
 local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
 local long_term_memory = dofile(minetest.get_modpath("society") .. "/long_term_memory.lua")
+local world_events = dofile(minetest.get_modpath("society") .. "/world_events.lua")
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
@@ -75,6 +76,7 @@ local S = {
 local summary_and_stop
 local agents = {}
 local history = long_term_memory.new()
+local event_log = world_events.new()
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
 local index = spatial.new(math.max(SENSE, 1))
@@ -392,8 +394,19 @@ local function settle_contacts(self, pos)
 			local le = obj:get_luaentity()
 			if le and le.name == "society:agent" and le._id and le._memory
 					and not self._memory.met[le._id] then
+				local operation_id = string.format("contact:%d:%d", math.min(self._id, le._id), math.max(self._id, le._id))
+				local committed, event = pcall(event_log.commit, event_log, operation_id, {
+					time = minetest.get_gametime(), kind = "meet", actor = tostring(self._id),
+					ok = true, reason = "contact", participants = {tostring(le._id)},
+				})
+				if not committed then
+					ev("fail=world-event agent=%d detail=%s", self._id, tostring(event):gsub("%s+", "_"))
+					S.failed = "world-event"
+					summary_and_stop()
+					return
+				end
 				if LONG_TERM then
-					local ok, detail = pcall(history.record_meeting, history, tostring(self._id), tostring(le._id), minetest.get_gametime())
+					local ok, detail = pcall(history.record_meeting, history, tostring(self._id), tostring(le._id), minetest.get_gametime(), event.id)
 					if not ok then
 						ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
 						S.failed = "long-term-record"
@@ -576,15 +589,27 @@ local function decide_and_act(self)
 	action.observation = obs
 	measured = PROFILE and minetest.get_us_time()
 	local ok, reason = apply(self, action, pos)
+	local point = action.point
+	if action.kind == "mark" then point = {x=fp(pos.x)+self._facing.x, y=fp(pos.y), z=fp(pos.z)+self._facing.z} end
+	if action.kind == "advance" then point = self.object:get_pos() end
+	local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
+	local delivered = action.kind == "say" and ok
+	local operation_id = string.format("agent:%d:decision:%d", self._id, self._decisions + 1)
+	local committed, event = pcall(event_log.commit, event_log, operation_id, {
+		time = minetest.get_gametime(), kind = action.kind, actor = tostring(self._id), ok = ok,
+		reason = reason or "unspecified", detail = detail, point = point,
+		participants = delivered and {tostring(action.target)} or {},
+	})
+	if not committed then
+		ev("fail=world-event agent=%d detail=%s", self._id, tostring(event):gsub("%s+", "_"))
+		S.failed = "world-event"
+		summary_and_stop()
+		return
+	end
 	if LONG_TERM then
-		local delivered = action.kind == "say" and ok
-		local point = action.point
-		if action.kind == "mark" then point = {x=fp(pos.x)+self._facing.x, y=fp(pos.y), z=fp(pos.z)+self._facing.z} end
-		if action.kind == "advance" then point = self.object:get_pos() end
-		local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
 		local recorded, detail = pcall(history.record_outcome, history, tostring(self._id),
 			action.kind, ok, reason or "unspecified", minetest.get_gametime(),
-			delivered and tostring(action.target) or nil, delivered and action.text or nil, detail)
+			delivered and tostring(action.target) or nil, delivered and action.text or nil, detail, event.id)
 		if not recorded then
 			ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
 			S.failed = "long-term-record"
@@ -644,14 +669,15 @@ local function spawn_agents()
 	end
 	if RESTORE then
 		local decoded = minetest.parse_json(initial_state)
-		local valid, restored, restored_history = pcall(persistence.unpack_checkpoint, decoded, long_term_memory)
+		local valid, restored, restored_history, restored_events = pcall(
+			persistence.unpack_checkpoint, decoded, long_term_memory, world_events)
 		if not valid or #restored ~= COUNT or (RESET_MINDS and restored_history:count() > 0) then
 			ev("fail=restore-invalid expected=%d", COUNT)
 			S.failed = "restore-invalid"
 			summary_and_stop()
 			return
 		end
-		saved, history = restored, restored_history
+		saved, history, event_log = restored, restored_history, restored_events
 		for i = 1, COUNT do
 			local ok, state = pcall(persistence.validate, saved[i])
 			if ok then ok = pcall(resources.validate_inventory, state.inventory) end
@@ -919,8 +945,8 @@ minetest.register_on_shutdown(function()
 			saved[#saved + 1] = snapshot
 		end
 		local ok, encoded = pcall(function()
-			local checkpoint = (LONG_TERM or history:count() > 0)
-				and persistence.pack_checkpoint(saved, history) or saved
+			local checkpoint = (LONG_TERM or history:count() > 0 or event_log:count() > 0)
+				and persistence.pack_checkpoint(saved, history, event_log) or saved
 			local json = minetest.write_json(checkpoint)
 			assert(type(json) == "string" and json ~= "", "checkpoint encoding failed")
 			return json
@@ -935,8 +961,8 @@ minetest.register_on_shutdown(function()
 			return
 		end
 		ev("persist agents=%d", #saved)
-		if LONG_TERM or history:count() > 0 then
-			ev("long-term-checkpoint records=%d scope=normal-shutdown no-map-transaction=true crash-recovery=false", history:count())
+		if LONG_TERM or history:count() > 0 or event_log:count() > 0 then
+			ev("long-term-checkpoint records=%d world-events=%d scope=normal-shutdown no-map-transaction=true crash-recovery=false", history:count(), event_log:count())
 		end
 	end
 	-- 计数器是 mod 自己的账，不是世界的账。这里回读地图核对一次：

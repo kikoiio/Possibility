@@ -94,30 +94,38 @@ M.validate = normalise
 
 -- A single normal-shutdown checkpoint, not a transaction with the map database
 -- and not a crash-recovery protocol. Legacy checkpoints are plain agent arrays.
-function M.pack_checkpoint(agents, long_term)
+function M.pack_checkpoint(agents, long_term, world_events)
   local saved = {}
   for i = 1, array(agents) do saved[i] = normalise(agents[i]) end
-  return {format = "society-checkpoint", version = 1, agents = saved,
+  local checkpoint = {format = "society-checkpoint", version = 1, agents = saved,
     long_term = long_term:export()}
+  if world_events then checkpoint.world_events = world_events:export() end
+  return checkpoint
 end
 
-function M.unpack_checkpoint(checkpoint, long_term_module)
+function M.unpack_checkpoint(checkpoint, long_term_module, world_events_module)
   assert(type(checkpoint) == "table", "invalid checkpoint")
-  local saved, long_term
+  local saved, long_term, world_events
   if checkpoint.format == nil then
     saved, long_term = checkpoint, long_term_module.new()
+    world_events = world_events_module and world_events_module.new() or nil
   else
     assert(checkpoint.format == "society-checkpoint" and checkpoint.version == 1,
       "unsupported checkpoint")
     for key in pairs(checkpoint) do
-      assert(key == "format" or key == "version" or key == "agents" or key == "long_term",
+      assert(key == "format" or key == "version" or key == "agents" or key == "long_term"
+        or key == "world_events",
         "unknown checkpoint field")
     end
     saved, long_term = checkpoint.agents, long_term_module.load(checkpoint.long_term)
+    if world_events_module then
+      world_events = checkpoint.world_events and world_events_module.load(checkpoint.world_events)
+        or world_events_module.new()
+    end
   end
   local result = {}
   for i = 1, array(saved) do result[i] = normalise(saved[i]) end
-  return result, long_term
+  return result, long_term, world_events
 end
 
 function M.snapshot(entity)

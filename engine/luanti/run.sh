@@ -139,7 +139,7 @@ PY
     spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
   fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
-  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/long_term_memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$EXP/cognition/spatial.lua" "$EXP/cognition/node_cache.lua" "$EXP/cognition/scheduler.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/long_term_memory.lua" "$EXP/cognition/world_events.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$EXP/cognition/spatial.lua" "$EXP/cognition/node_cache.lua" "$EXP/cognition/scheduler.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
