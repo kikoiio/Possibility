@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { createCampServer } from '../server.mjs';
 import { createGeneratedFixture } from '../world-definition.mjs';
+import { inspectVoxelSpaces } from '../geometry/voxel-inspection.js';
 
 if (!process.env.CI) throw Error('Browser observation is cloud-first. Run through the prepared GitHub Actions workflow.');
 const output = resolve('.tmp/prototype/voxel-browser');
@@ -29,28 +30,39 @@ const options = {
 };
 const visualCommands = [
   { op: 'fill', from: [-6, 0, -6], to: [6, 0, 6], material: 'grass' },
-  { op: 'fill', from: [-3, 1, -3], to: [3, 4, 3], material: 'wood' },
+  { op: 'fill', from: [-3, 1, -3], to: [3, 4, 3], material: 'wood', objectId: 'house' },
   { op: 'fill', from: [-2, 1, -2], to: [2, 4, 2], material: null },
   { op: 'fill', from: [0, 1, 3], to: [0, 2, 3], material: null },
-  { op: 'fill', from: [2, 2, 3], to: [2, 3, 3], material: 'glass' },
-  { op: 'fill', from: [3, 2, 0], to: [3, 3, 1], material: 'glass' },
-  { op: 'fill', from: [-4, 5, -4], to: [4, 5, 4], material: 'roof' },
-  { op: 'fill', from: [-3, 6, -3], to: [3, 6, 3], material: 'roof' },
-  { op: 'fill', from: [-2, 7, -2], to: [2, 7, 2], material: 'roof' },
-  { op: 'fill', from: [-1, 8, -1], to: [1, 8, 1], material: 'roof' },
+  { op: 'fill', from: [2, 2, 3], to: [2, 3, 3], material: 'glass', objectId: 'window-front' },
+  { op: 'fill', from: [3, 2, 0], to: [3, 3, 1], material: 'glass', objectId: 'window-side' },
+  { op: 'fill', from: [-4, 5, -4], to: [4, 5, 4], material: 'roof', objectId: 'house-roof' },
+  { op: 'fill', from: [-3, 6, -3], to: [3, 6, 3], material: 'roof', objectId: 'house-roof' },
+  { op: 'fill', from: [-2, 7, -2], to: [2, 7, 2], material: 'roof', objectId: 'house-roof' },
+  { op: 'fill', from: [-1, 8, -1], to: [1, 8, 1], material: 'roof', objectId: 'house-roof' },
+  { op: 'fill', from: [4, 6, 0], to: [4, 6, 0], material: 'wood' },
   { op: 'fill', from: [5, 1, -4], to: [5, 3, -4], material: 'wood' },
   { op: 'fill', from: [4, 4, -5], to: [6, 5, -3], material: 'leaves' },
+  { op: 'object', id: 'house', name: '木屋', kind: 'building', from: [-3, 0, -3], to: [3, 8, 3] },
+  { op: 'object', id: 'house-roof', name: '屋顶', kind: 'roof', from: [-4, 5, -4], to: [4, 8, 4] },
+  { op: 'object', id: 'window-front', name: '正窗', kind: 'window', from: [2, 2, 3], to: [2, 3, 3] },
+  { op: 'object', id: 'window-side', name: '侧窗', kind: 'window', from: [3, 2, 0], to: [3, 3, 1] },
 ];
 const visualOptions = {
   stateFile: join(temporary, 'visual', 'state.json'),
   configLoader: options.configLoader,
   fetchImpl: async (_url, init) => {
     visual.syntheticModelCalls++;
-    assert.equal(visual.syntheticModelCalls, 1, 'Unexpected visual fixture call');
+    assert(visual.syntheticModelCalls <= 2, 'Unexpected visual fixture call');
     const input = JSON.parse(JSON.parse(init.body).input.at(-1).content);
-    assert.equal(input.voxel.revision, 0);
-    assert.deepEqual(input.voxel.cells, []);
-    const value = { reply: '草地上的木屋建好了。', summary: '草地、带窗户和屋顶的木屋，还有一棵树。', ready: false, commands: visualCommands };
+    if (visual.syntheticModelCalls === 1) {
+      assert.equal(input.voxel.revision, 0);
+      assert.deepEqual(input.voxel.cells, []);
+    } else {
+      assert.equal(input.voxel.revision, 1);
+      assert(input.voxel.objects.find(o => o.id === 'house-roof').memberRegions.length > 0);
+    }
+    const value = { reply: '本次方案保留木屋与周围内容。', summary: '草地、带窗户和屋顶的木屋，还有一棵树。', ready: false,
+      commands: visual.syntheticModelCalls === 1 ? visualCommands : [{ op: 'paint-object', id: 'house-roof', material: 'stone' }] };
     return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] });
   },
 };
@@ -227,6 +239,21 @@ export async function createVoxelScene(host, initialWorld) {
   assert.equal(inputs.length, 2);
   assert.deepEqual(errors, []);
   checks.push('independent grass and roofed cabin fixture renders for visual review');
+  assert.deepEqual(inspectVoxelSpaces(scene).issues, []);
+  const originalRoof = scene.objects.find(o => o.id === 'house-roof');
+  await send('把屋顶换成石色，其余部分保持。');
+  const painted = await state(), roofMembers = new Set(originalRoof.members.map(p => p.join(',')));
+  assert.deepEqual(painted.objects, scene.objects);
+  assert.equal(painted.cells.length, scene.cells.length);
+  for (const cell of painted.cells) assert.equal(cell.material, roofMembers.has(cell.position.join(',')) ? 'stone' : blocks.get(cell.position.join(',')));
+  await rendered();
+  await shot('10-exact-part-paint');
+  await page.locator('#voxel-interior').click();
+  await rendered();
+  await shot('11-exact-interior');
+  assert.deepEqual(await state(), painted, 'Interior display must not mutate membership or world cells');
+  assert.equal(visual.syntheticModelCalls, 2);
+  checks.push('exact part recoloring and interior view preserve unrelated cells, object identities and saved geometry');
   await new Promise(resolve => server.close(resolve));
   mkdirSync(join(temporary, 'entry'), { recursive: true });
   ({ server } = createCampServer(entryOptions));
