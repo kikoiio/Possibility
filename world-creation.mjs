@@ -24,6 +24,7 @@ function compactModelAudit(role, audit, extra = {}) {
     id: audit?.id ?? null,
     startedAt: audit?.startedAt ?? null,
     model: audit?.model ?? null,
+    reasoningEffort: requestBody?.reasoning?.effort ?? null,
     requestSent: Boolean(audit?.requestSent),
     responseStatus: audit?.responseStatus ?? null,
     elapsedMs: audit?.elapsedMs ?? 0,
@@ -237,7 +238,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         { sourceContext, retrievalRound, mode, previousAttempt: previous, attempts: creation.attempts.filter(a => a.id !== attempt.id) }), fetchImpl, signal: controller.signal, onProgress: publish });
       const audit = compactModelAudit(retrievalRound ? 'world-discussion-retrieval' : 'world-discussion', r.audit, { attemptId: attempt.id });
       attempt.timings.calls.push({ model: audit.model, elapsedMs: audit.elapsedMs, headersReceivedMs: audit.headersReceivedMs,
-        firstEventMs: audit.firstEventMs, firstTextMs: audit.firstTextMs, requestSent: audit.requestSent, reason: audit.error?.code ?? null });
+        firstEventMs: audit.firstEventMs, firstTextMs: audit.firstTextMs, requestSent: audit.requestSent, reasoningEffort: audit.reasoningEffort, reason: audit.error?.code ?? null });
       attempt.timings.modelMs += audit.elapsedMs;
       appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(audit)+'\n', { mode: 0o600 });
       return r;

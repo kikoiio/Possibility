@@ -28,6 +28,11 @@ check('shell variables override all file settings', () => {
   } });
   assert.deepEqual(config.llm, { baseUrl: 'https://override.invalid/responses', model: 'override-model', apiKey: 'override-secret' });
 });
+check('reasoning is opt-in, validated and can be overridden without changing model or limits', () => {
+  assert.equal(load(fixture + 'WISPIVA_LLM_REASONING_EFFORT=low\n').llm.reasoningEffort, 'low');
+  assert.equal(load(fixture + 'WISPIVA_LLM_REASONING_EFFORT=low\n', { env: { WISPIVA_LLM_REASONING_EFFORT: 'high' } }).llm.reasoningEffort, 'high');
+  assert.throws(() => load(fixture + 'WISPIVA_LLM_REASONING_EFFORT=guess\n'), /WISPIVA_LLM_REASONING_EFFORT/);
+});
 check('environment-only deployment needs no local file', () => {
   assert.equal(load('', { readFile: missing, env: {
     WISPIVA_LLM_BASE_URL: 'https://fixture.invalid/v1', WISPIVA_LLM_MODEL: 'fixture-model', WISPIVA_LLM_API_KEY: 'synthetic-secret',

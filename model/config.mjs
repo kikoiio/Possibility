@@ -26,6 +26,11 @@ export function loadModelConfig({ root = repoRoot, envFile, env = process.env, r
     apiKey: values[fields.apiKey],
   };
   const problems = [];
+  const effort = values.WISPIVA_LLM_REASONING_EFFORT?.trim();
+  if (effort) {
+    if (!['none', 'low', 'medium', 'high', 'max'].includes(effort)) problems.push('WISPIVA_LLM_REASONING_EFFORT 必须为 none、low、medium、high 或 max');
+    else llm.reasoningEffort = effort;
+  }
   for (const key of ['baseUrl', 'model', 'apiKey']) {
     if (typeof llm[key] !== 'string' || !llm[key].trim()) {
       problems.push(`缺少 ${fields[key]}`);
@@ -51,6 +56,7 @@ export function configSummary(config) {
       model: config.llm.model,
       apiKeyConfigured: Boolean(config.llm.apiKey),
       streaming: true,
+      ...(config.llm.reasoningEffort ? { reasoningEffort: config.llm.reasoningEffort } : {}),
     },
   };
 }

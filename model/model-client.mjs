@@ -201,6 +201,7 @@ function isValidConfig(llm, messages, fetchImpl) {
       && typeof llm.apiKey === 'string' && llm.apiKey.length > 0
       && (llm.timeoutMs == null || (Number.isSafeInteger(llm.timeoutMs) && llm.timeoutMs > 0 && llm.timeoutMs <= MAX_TIMEOUT_MS))
       && (llm.maxOutputTokens == null || (Number.isSafeInteger(llm.maxOutputTokens) && llm.maxOutputTokens > 0))
+      && (llm.reasoningEffort == null || ['none', 'low', 'medium', 'high', 'max'].includes(llm.reasoningEffort))
       && Array.isArray(messages)
       && typeof fetchImpl === 'function',
   );
@@ -273,6 +274,7 @@ export async function callModel({ llm, messages, fetchImpl = globalThis.fetch, s
     input: messages,
     ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
     stream: true,
+    ...(llm.reasoningEffort ? { reasoning: { effort: llm.reasoningEffort } } : {}),
     ...(llm.maxOutputTokens == null ? {} : { max_output_tokens: llm.maxOutputTokens }),
     store: false,
   };

@@ -52,6 +52,16 @@ test('discussion mode cannot build even when a model returns commands', async t 
   assert.match(r.attempt.message, /讨论/);
 });
 
+test('air is deterministically empty space rather than an invented material', async t => {
+  const f = fixture(t, (_input, n) => output([{ ...fill, material: n === 1 ? 'wood' : 'air' }]));
+  await f.experience.discussStep({ message: '木墙', mode: 'build' });
+  const cleared = await f.experience.discussStep({ message: '清空这面墙', mode: 'build' });
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.attempt.changes.removed, 3);
+  assert.deepEqual(cleared.state.creation.voxel.cells, []);
+  assert.match(cleared.attempt.adjustments[0].message, /air/);
+});
+
 test('a material failure remains in the conversation and explicit retry reuses the intent against the latest scene', async t => {
   const f = fixture(t, (_input, n) => output([{ ...fill, material: n === 1 ? 'copper' : 'wood' }]));
   const failed = await f.experience.discussStep({ message: '给木屋加窗', mode: 'build' });

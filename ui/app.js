@@ -138,7 +138,7 @@ function renderStatus() {
       : verifying ? `正在核验${text(actor?.name, '人物')}的行动` : `${text(actor?.name, '人物')}正在考虑下一步`;
     setText(ui['model-phase'], cancelRequested || cancelBusy ? '正在停止这次请求' : label);
     const seconds = Math.floor(((progress?.elapsedMs || 0) + Math.max(0, performance.now() - (progress?.at ?? performance.now()))) / 1000);
-    setText(ui['model-elapsed'], `已等待 ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`}`);
+    setText(ui['model-elapsed'], `已等待 ${seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`}${seconds >= 30 ? ' · 尚无可提交结果，可取消并保留输入' : ''}`);
   }
   const last = creating() ? state?.creation?.lastResult : waiting() ? state?.model?.lastResult : null;
   const serverError = !busy && last?.ok === false ? failureText(last) : '';
