@@ -163,6 +163,8 @@ jobs:
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --decisions 3 --interval 1 --seconds 120
           grep -q 'SOCIETY origin projection ' .ci-product/world/private/product.log
           grep -q 'SOCIETY ev=environment ' .ci-product/world/private/product.log
+          grep -q 'SOCIETY ev=genesis-memory agent=' .ci-product/world/private/product.log
+          grep -q 'SOCIETY long-term-checkpoint records=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
           grep -q 'memory_seeds' .ci-product/world/private/wispiva-origin.json
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --resume --decisions 2 --interval 1 --seconds 120

@@ -818,6 +818,22 @@ local function spawn_agents()
 			S.spawned = S.spawned + 1
 		end
 	end
+	if WORLD_PRODUCT and not RESTORE and LONG_TERM then
+		local origin_id = genesis_manifest.origin_event_id
+		history:append({layer="L0", id=origin_id, owner="world", time=0,
+			text="World origin: " .. genesis_manifest.public.title,
+			source={kind="genesis", id=origin_id}})
+		for i = 0, COUNT - 1 do
+			local actor = agents[i]
+			for _, seed in ipairs(actor._genesis.memory_seeds or {}) do
+				history:append({layer="L1", id=seed.seed_id, owner=tostring(i), time=0,
+					text="I remember: " .. seed.text,
+					source={kind="event", id=origin_id}, classification="unknown"})
+			end
+			ev("ev=genesis-memory agent=%d actor_id=%s seeds=%d", i,
+				tostring(actor._genesis.actor_id), #(actor._genesis.memory_seeds or {}))
+		end
+	end
 	ev("spawn count=%d ok=%d spacing=%d bound=%d", COUNT, S.spawned, SPACING, BOUND)
 	step_count, last_us = 0, minetest.get_us_time()
 	run_started = last_us

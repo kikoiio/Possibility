@@ -61,6 +61,7 @@ society_model = true
 society_cognition = true
 society_visual = true
 society_persist = true
+society_long_term_memory = true
 society_restore = $([[ "$RESUME" -eq 1 ]] && echo true || echo false)
 society_reset_minds = false
 society_max_decisions = $DECISIONS
