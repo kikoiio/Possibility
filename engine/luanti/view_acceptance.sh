@@ -41,6 +41,15 @@ new_product_log() {
   fi
 }
 
+dump_failure_logs() {
+  echo "view acceptance failed: server log" >&2
+  [[ -f "$server_log" ]] && tail -n 120 "$server_log" >&2 || true
+  echo "view acceptance failed: product log" >&2
+  new_product_log >&2 || true
+  echo "view acceptance failed: client log" >&2
+  [[ -f "$client_log" ]] && tail -n 120 "$client_log" >&2 || true
+}
+
 server_pid=""
 cleanup() {
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
@@ -56,14 +65,27 @@ for _ in $(seq 1 30); do
   new_product_log | grep -F 'SOCIETY view scene-ready' >/dev/null && break
   sleep 1
 done
-new_product_log | grep -F 'SOCIETY view scene-ready' >/dev/null
+if ! new_product_log | grep -F 'SOCIETY view scene-ready' >/dev/null; then
+  dump_failure_logs
+  exit 1
+fi
 
+set +e
 xvfb-run -a -s '-screen 0 1024x768x24 -nolisten tcp' \
   "$HERE/view_product.sh" --port "$PORT" --name "$NAME" --acceptance \
   --seconds "$SECONDS_MAX" --logfile "$client_log"
+client_status=$?
+set -e
+if [[ "$client_status" -ne 0 ]]; then
+  dump_failure_logs
+  exit "$client_status"
+fi
 
-new_product_log | grep -F 'SOCIETY view join player=' >/dev/null
-new_product_log | grep -F 'SOCIETY view scene-ready ' >/dev/null
-new_product_log | grep -F 'SOCIETY view interaction ' >/dev/null
-new_product_log | grep -F 'SOCIETY view guide-arrival ' >/dev/null
+if ! new_product_log | grep -F 'SOCIETY view join player=' >/dev/null \
+  || ! new_product_log | grep -F 'SOCIETY view scene-ready ' >/dev/null \
+  || ! new_product_log | grep -F 'SOCIETY view interaction ' >/dev/null \
+  || ! new_product_log | grep -F 'SOCIETY view guide-arrival ' >/dev/null; then
+  dump_failure_logs
+  exit 1
+fi
 echo "product client acceptance passed: $WORLD"
