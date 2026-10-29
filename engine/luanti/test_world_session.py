@@ -1,4 +1,4 @@
-"""Controlled session tests; these do not start or integrate real Luanti.
+"""Controlled session tests for world identity and process-bound access.
 
 Identity authentication, authorization and uncooperative writers remain the
 caller's responsibility, outside this cooperative locking protocol.

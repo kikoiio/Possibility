@@ -119,6 +119,20 @@ run_once() {
       rm -rf "$world"
     fi
   fi
+  # Establish the identity before adding Luanti files. Existing worlds must
+  # already carry an identity; automatic replacement of a legacy/non-empty
+  # world is deliberately rejected by WorldSession.
+  mkdir -p "$world"
+  python3 -B - "$world" <<'PY'
+import sys
+from engine.luanti.world_session import WorldSession
+with WorldSession(sys.argv[1], create=True):
+    pass
+PY
+  if [[ "$?" -ne 0 ]]; then
+    echo "[$LABEL.$tag] FAIL: 无法取得 Wispiva 世界会话" >&2
+    return 1
+  fi
   mkdir -p "$world/worldmods/society"
   local spool=""
   if [[ "$MODEL" -eq 1 ]]; then
@@ -168,8 +182,12 @@ run_once() {
     python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 "${worker_flags[@]}" > "$world/worker.log" 2>&1 &
     worker_pid=$!
   fi
-  HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" "$ENGINE" \
-    --config "$conf" --world "$world" --gameid minetest_game \
+  # Keep the Wispiva world identity and cooperative lock for the full engine
+  # lifetime.  The launcher forwards stop signals and releases the lock only
+  # after Luanti has exited.
+  HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" python3 -B "$HERE/launch.py" \
+    --world "$world" -- \
+    "$ENGINE" --config "$conf" --world "$world" --gameid minetest_game \
     --logfile "$log" > /dev/null 2>&1 &
   local pid=$!
   trap 'kill -TERM "$pid" ${worker_pid:+"$worker_pid"} 2>/dev/null || true; wait "$pid" 2>/dev/null || true; [[ -z "$worker_pid" ]] || wait "$worker_pid" 2>/dev/null || true' EXIT

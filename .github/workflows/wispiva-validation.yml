@@ -40,7 +40,7 @@ jobs:
           )
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
           python3 -B -m unittest -v engine/luanti/test_snapshot.py
-          python3 -B -m unittest -v engine/luanti/test_world_identity.py engine/luanti/test_world_lock.py engine/luanti/test_world_session.py
+          python3 -B -m unittest -v engine/luanti/test_world_identity.py engine/luanti/test_world_lock.py engine/luanti/test_world_session.py engine/luanti/test_launch.py
           python3 -B -m unittest discover -s validation/luanti/scale -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s validation/luanti/analysis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s genesis -t . -p 'test_*.py' -v

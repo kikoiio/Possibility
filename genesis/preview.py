@@ -15,6 +15,7 @@ import uuid
 
 from .preflight import PreflightError, preflight
 from .store import DraftStore
+from engine.luanti.world_session import WorldSession
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = ROOT / 'engine' / 'luanti'
@@ -83,6 +84,10 @@ def prepare_preview(store, draft_id, revision, root):
     # Never remove a directory on failure: it could contain forensic evidence.
     world = target / 'world'
     world.mkdir(mode=0o700)
+    # A preview still has a real Luanti world directory. Give it the same
+    # durable identity boundary as a persistent world before adding manifests.
+    with WorldSession(world, create=True):
+        pass
     private = world / 'private'
     private.mkdir(mode=0o700)
     fd = os.open(private / 'genesis-preview.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -124,8 +129,10 @@ def launch(world, count, *, engine, runtime_home, libdir, port, seconds, fixture
         worker_command = ([sys.executable, '-B', str(GENESIS / 'preview_fixture.py'), str(spool)] if fixture
                           else [sys.executable, '-B', str(MODEL / 'spool_worker.py'), str(spool), '--timeout', '45'])
         worker = subprocess.Popen(worker_command, env=env)
-        server = subprocess.Popen([str(engine), '--config', str(world / 'server.conf'), '--world', str(world),
-                                   '--gameid', 'minetest_game', '--logfile', str(world / 'preview.log')], env=env)
+        server = subprocess.Popen([
+            sys.executable, '-B', str(ENGINE / 'launch.py'), '--world', str(world), '--',
+            str(engine), '--config', str(world / 'server.conf'), '--world', str(world),
+            '--gameid', 'minetest_game', '--logfile', str(world / 'preview.log')], env=env)
         try:
             deadline = time.monotonic() + seconds
             while server.poll() is None:

@@ -1,4 +1,4 @@
-"""Controlled product-world sessions; not yet connected to Luanti.
+"""Controlled product-world sessions used by the Luanti launcher.
 
 No engine is started here. Callers remain responsible for authenticating world
 identity/storage, authorization, and excluding uncooperative writers (including
@@ -27,8 +27,9 @@ class WorldSession:
     Instances can be reused sequentially, but are not reentrant or thread-safe.
     A creation error may leave a published identity: recovery follows
     world_identity's inspection/sync contract, never automatic replacement.
-    This component is not yet connected to Luanti; identity authentication,
-    authorization and exclusion of uncooperative writes remain the caller's job.
+    The launcher keeps this session open for the complete Luanti process
+    lifetime. Identity authentication, authorization and exclusion of
+    uncooperative writes remain the caller's job.
     """
 
     def __init__(self, world_dir, *, create=False, expected_world_id=None):
