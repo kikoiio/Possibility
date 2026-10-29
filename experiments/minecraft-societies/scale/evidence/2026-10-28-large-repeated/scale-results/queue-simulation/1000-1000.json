@@ -1,1 +1,0 @@
-{"agents": 1000, "completed": 12000, "dropped": 0, "duration_s": 60.0, "interval_after_completion_s": 2.0, "max_queue_wait_s": 30.0, "pending_at_end": 0, "queue_wait_p95_s": 0.0, "service_latency_s": 3.0, "throughput_per_s": 200.0, "workers": 1000}

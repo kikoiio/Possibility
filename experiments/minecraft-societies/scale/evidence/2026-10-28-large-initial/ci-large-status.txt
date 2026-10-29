@@ -1,4 +1,0 @@
-ci-large-5000-false exit=1
-ci-large-10000-false exit=1
-ci-large-5000-true exit=1
-ci-large-10000-true exit=1

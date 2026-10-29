@@ -1,6 +1,0 @@
-trial=1 memory=true exit=0
-trial=1 memory=false exit=0
-trial=2 memory=false exit=0
-trial=2 memory=true exit=0
-trial=3 memory=true exit=0
-trial=3 memory=false exit=0

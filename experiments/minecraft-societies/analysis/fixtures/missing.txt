@@ -1,9 +1,0 @@
-SOCIETY ev=model-request agent=0 request=1
-SOCIETY ev=model-attempt agent=0 request=1 attempt=1 ok=true error=none latency_ms=unknown input_tokens=unknown output_tokens=unknown
-SOCIETY ev=model-action agent=0 request=1 kind=inspect latency_ms=unknown
-SOCIETY ev=resource agent=0 action=build
-SOCIETY resource-verify initial=8 world=7 inventory=0 ok=true
-SOCIETY stats t=5 steps_per_sec=unknown
-SOCIETY stats t=10 steps_per_sec=NaN
-SOCIETY stats t=15 steps_per_sec=inf
-SOCIETY stats t=20 steps_per_sec=-1

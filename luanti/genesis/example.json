@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "title": "河谷",
+  "description": "一条河流经过的安静河谷。",
+  "places": [{"id": "bank", "name": "河岸", "description": "通往河水的岸边。"}],
+  "actors": [{"id": "traveler", "name": "旅人", "role": "访客", "goal": "找到住处", "placeId": "bank"}],
+  "memories": [{"actorId": "traveler", "text": "曾在上游遇见一位渔夫。"}],
+  "rules": [],
+  "layout": {"places": [{"placeId": "bank", "space": "outdoor", "grid": [0, 0]}], "connections": []}
+}
