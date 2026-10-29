@@ -55,7 +55,7 @@ function compactRegions(cells) {
   const regions = [];
   for (const {position,material} of sorted) {
     const previous = regions.at(-1);
-    if (previous?.material === material && previous.to[1] === position[1] && previous.to[2] === position[2] && previous.to[0]+1 === position[0]) previous.to[0] = position[0];
+    if (previous && previous.material === material && previous.to[1] === position[1] && previous.to[2] === position[2] && previous.to[0]+1 === position[0]) previous.to[0] = position[0];
     else regions.push({ from:[...position], to:[...position], ...(material === undefined ? {} : { material }) });
   }
   return regions;

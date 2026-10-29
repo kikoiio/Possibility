@@ -132,12 +132,16 @@ export function createVoxelWorldStore({ file, snapshot, onSave }) {
         if (Object.hasOwn(command, 'selection')) throw new Error('不支持直接指定内部选择范围');
         if (command.op !== 'paint-object') return command;
         const object = objects.get(command.id);
-        if (!object || object.members === undefined) throw new Error('这个部件尚无精确方块归属，请先明确重建该部件，不能按包围范围猜测换色');
+        if (!object) throw new Error('找不到要换色的对象');
         const volume = object.from.reduce((n, v, i) => n * (object.to[i] - v + 1), 1);
         scopedScan += volume;
         if (scopedScan > 32768) throw new Error('部件操作扫描范围过大');
         return { op: 'fill', from: object.from, to: object.to, material: command.material, objectId: object.id,
-          selection: memberships.get(object.id) };
+          selection() {
+            const members = memberships.get(object.id);
+            if (!members) throw new Error('这个部件尚无精确方块归属，请先明确重建该部件，不能按包围范围猜测换色');
+            return members;
+          } };
       });
       for (const command of edits) if (command.objectId !== undefined && !objects.has(command.objectId)) throw new Error('建造操作引用了未登记的对象');
       const cellChanges = edits.length ? prepareVoxelEdit(edits, p => cells.get(key(p)) ?? null, materials, {

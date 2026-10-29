@@ -55,3 +55,12 @@ test('legacy bounds never masquerade as exact membership and invalid attribution
   assert.throws(() => store.apply({ baseRevision: 1, commands: [{ op: 'fill', from: [0, 0, 0], to: [0, 0, 0], material: 'wood', objectId: 'roof' }] }), /范围/);
   assert.deepEqual(store.state(), before);
 });
+
+test('a part can be built and painted sequentially in one atomic transaction', t => {
+  const store = createVoxelWorldStore({ file: setup(t) });
+  store.apply({ baseRevision: 0, commands: [...build, { op: 'paint-object', id: 'roof', material: 'roof' }] });
+  assert.equal(store.state().cells.filter(c => c.material === 'roof').length, 15);
+  assert.equal(store.state().cells.find(c => c.position.join() === '2,4,1').material, 'wood');
+  assert.equal(store.undo({ baseRevision: 1 }).cells.length, 0);
+  assert.equal(store.redo({ baseRevision: 2 }).objects[0].members.length, 15);
+});

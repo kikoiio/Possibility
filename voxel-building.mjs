@@ -36,9 +36,10 @@ export function prepareVoxelEdit(commands, readCell, allowedMaterials, { onWrite
     if (target !== null && !allowedMaterials.has(target)) throw new Error('方块类型未注册');
     const match = command.op === 'replace' ? (command.match === null ? null : material(command.match)) : undefined;
     if (match !== undefined && match !== null && !allowedMaterials.has(match)) throw new Error('方块类型未注册');
+    const selection = typeof command.selection === 'function' ? command.selection() : command.selection;
     for (let x = from[0]; x <= to[0]; x++) for (let y = from[1]; y <= to[1]; y++) for (let z = from[2]; z <= to[2]; z++) {
       const position = [x, y, z], id = key(position), entry = staged.get(id);
-      if (command.selection && !command.selection.has(id)) continue;
+      if (selection && !selection.has(id)) continue;
       const current = entry ? entry.after : readCell(position);
       if (current !== null && (typeof current !== 'string' || !allowedMaterials.has(current))) throw new Error('无法读取已加载的方块');
       if (command.op === 'replace' && current !== match) continue;

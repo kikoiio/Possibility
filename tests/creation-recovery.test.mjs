@@ -40,6 +40,26 @@ test('large scene context is losslessly packed without hiding holes, materials o
   assert(JSON.stringify(context).length < JSON.stringify({revision:3,cells,objects}).length / 2);
 });
 
+test('large exact part membership is packed without crashing the next model request', async t => {
+  const f = fixture(t, (input, n) => {
+    if (n === 2) {
+      const object = input.voxel.objects.find(o => o.id === 'roof');
+      assert(object.memberRegions.length > 0);
+      const expanded = object.memberRegions.flatMap(r => Array.from({ length: r.to[0] - r.from[0] + 1 }, (_, i) => [r.from[0] + i, r.from[1], r.from[2]]));
+      assert.deepEqual(expanded.map(p => p.join()).sort(), f.experience.state().creation.voxel.objects[0].members.map(p => p.join()).sort());
+    }
+    return output(n === 1 ? [
+      { op: 'roof', from: [-4, 5, -4], to: [4, 8, 4], material: 'roof', objectId: 'roof' },
+      { op: 'object', id: 'roof', name: '屋顶', kind: 'roof', from: [-4, 5, -4], to: [4, 8, 4] },
+    ] : [{ op: 'paint-object', id: 'roof', material: 'stone' }]);
+  });
+  assert.equal((await f.experience.discussStep({ message: '造屋顶', mode: 'build' })).ok, true);
+  const painted = await f.experience.discussStep({ message: '换石色', mode: 'build' });
+  assert.equal(painted.ok, true, painted.message);
+  assert.equal(f.inputs.length, 2);
+  assert(painted.state.creation.voxel.cells.every(c => c.material === 'stone'));
+});
+
 test('build results distinguish text-only, committed and identical operations using real revisions', async t => {
   const f = fixture(t, (_input, n) => output(n === 1 ? [] : [fill]));
   const noCommands = await f.experience.discussStep({ message: '现在搭木墙', mode: 'build' });
