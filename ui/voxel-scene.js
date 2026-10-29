@@ -231,7 +231,7 @@ export async function createVoxelScene(host, initialWorld) {
     }
     requestRender();
   }
-  function frame() { azimuth = Math.PI / 4; polar = Math.PI / 3; frameWorld(); requestRender(); }
+  function resetView() { azimuth = Math.PI / 4; polar = Math.PI / 3; frameWorld(); requestRender(); }
   function cutaway(enabled) { cutawayEnabled = Boolean(enabled); update(latestWorld); }
   let controls;
   if (host.parentElement?.id !== 'voxel-scene') {
@@ -239,7 +239,7 @@ export async function createVoxelScene(host, initialWorld) {
     const reset = document.createElement('button'), interior = document.createElement('button');
     reset.type = interior.type = 'button'; reset.textContent = '看全景'; interior.textContent = '查看室内';
     interior.setAttribute('aria-pressed', 'false');
-    reset.addEventListener('click', frame);
+    reset.addEventListener('click', resetView);
     interior.addEventListener('click', () => { cutaway(!cutawayEnabled); interior.textContent = cutawayEnabled ? '显示屋顶' : '查看室内'; interior.setAttribute('aria-pressed', String(cutawayEnabled)); });
     controls.append(reset, interior); host.appendChild(controls);
   }
@@ -302,5 +302,5 @@ export async function createVoxelScene(host, initialWorld) {
     frameWorld(); rebuild(new Set([...cells.values()].map(cell => chunkKey(...cell.position))));
     updatePeople(initialWorld.actors || []);
   } catch (error) { dispose(); throw error; }
-  return { update, dispose, frame, cutaway };
+  return { update, dispose, frame: resetView, cutaway };
 }
