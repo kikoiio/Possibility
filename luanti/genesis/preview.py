@@ -78,7 +78,9 @@ def prepare_preview(store, draft_id, revision, root):
     except FileExistsError:
         raise PreflightError('runtime_path_exists') from None
     # Never remove a directory on failure: it could contain forensic evidence.
-    private = target / 'private'
+    world = target / 'world'
+    world.mkdir(mode=0o700)
+    private = world / 'private'
     private.mkdir(mode=0o700)
     fd = os.open(private / 'genesis-preview.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as file:
@@ -91,7 +93,8 @@ def launch(world, count, *, engine, runtime_home, libdir, port, seconds, fixture
     """Launch only a newly prepared private preview directory, synchronously."""
     container = world
     world = container / 'world'
-    world.mkdir(mode=0o700)
+    if world.is_symlink() or not world.is_dir():
+        raise PreflightError('invalid_preview_world')
     mod = world / 'worldmods' / 'society'
     mod.mkdir(parents=True, exist_ok=False, mode=0o700)
     for name in ('init.lua', 'policy.lua'):
@@ -99,14 +102,14 @@ def launch(world, count, *, engine, runtime_home, libdir, port, seconds, fixture
     for name in MODULES:
         shutil.copyfile(LUANTI / 'cognition' / name, mod / name)
     shutil.copyfile(LUANTI / 'genesis' / 'preview.lua', mod / 'genesis_preview.lua')
-    spool = container / 'private' / 'model-spool'
+    spool = world / 'private' / 'model-spool'
     spool.mkdir(mode=0o700)
     settings = ('bind_address = 127.0.0.1\nport = %d\nmg_name = singlenode\n'
                 'server_announce = false\nenable_damage = false\nmax_forceloaded_blocks = -1\n'
-                'secure.trusted_mods = society\nsociety_count = %d\nsociety_bound = 32\nsociety_persist = false\n'
+                'society_count = %d\nsociety_bound = 32\nsociety_persist = false\n'
                 'society_restore = false\nsociety_genesis_preview = true\nsociety_visual = true\n'
                 'society_genesis_private_manifest = %s\n'
-                'society_model = true\nsociety_cognition = true\nsociety_spool = %s\n') % (port, count, container / 'private' / 'genesis-preview.json', spool)
+                'society_model = true\nsociety_cognition = true\nsociety_spool = %s\n') % (port, count, world / 'private' / 'genesis-preview.json', spool)
     (world / 'server.conf').write_text(settings, encoding='utf-8')
     (world / 'world.mt').write_text('gameid = minetest_game\nbackend = sqlite3\nload_mod_society = true\n', encoding='utf-8')
     env = dict(os.environ, HOME=str(runtime_home), LD_LIBRARY_PATH=str(libdir))

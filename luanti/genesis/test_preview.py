@@ -38,9 +38,9 @@ class PreviewTests(unittest.TestCase):
         two, _ = prepare_preview(self.store, row['id'], 1, self.preview_root)
         self.assertNotEqual(one, two); self.assertEqual(count, 2)
         self.assertEqual(one.stat().st_mode & 0o777, 0o700)
-        path = one / 'private' / 'genesis-preview.json'
+        path = one / 'world' / 'private' / 'genesis-preview.json'
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertEqual((one / 'private').stat().st_mode & 0o777, 0o700)
+        self.assertEqual((one / 'world' / 'private').stat().st_mode & 0o777, 0o700)
         doc = json.loads(path.read_text())
         self.assertEqual([a['ordinal'] for a in doc['actors']], [0, 1])
         self.assertEqual(doc['actors'][0]['memory_seeds'], ['Secret0'])
@@ -72,7 +72,7 @@ class PreviewTests(unittest.TestCase):
         with self.assertRaises(PreflightError): prepare_preview(self.store, row['id'], 1, self.preview_root)
         self.store.path.chmod(0o600)
         one, _ = prepare_preview(self.store, row['id'], 1, self.preview_root)
-        self.assertTrue((one / 'private' / 'genesis-preview.json').is_file())
+        self.assertTrue((one / 'world' / 'private' / 'genesis-preview.json').is_file())
         self.assertTrue(origin.exists())
         self.assertTrue(self.store.path.exists())
 
@@ -88,17 +88,17 @@ class PreviewTests(unittest.TestCase):
             obj = Process(); calls.append(obj)
             if len(calls) == 1:
                 # Simulate an engine/worker temporary request under inherited umask.
-                (world / 'private' / 'model-spool' / '.request.tmp').write_text('Secret0')
+                (world / 'world' / 'private' / 'model-spool' / '.request.tmp').write_text('Secret0')
                 obj.returncode = 1
             return obj
         out, err = io.StringIO(), io.StringIO()
         with patch('luanti.genesis.preview.subprocess.Popen', side_effect=spawn), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             self.assertEqual(launch(world, count, engine=Path('/fake'), runtime_home=self.root, libdir=self.root, port=30077, seconds=2, fixture=True), 1)
-        temp = world / 'private' / 'model-spool' / '.request.tmp'
+        temp = world / 'world' / 'private' / 'model-spool' / '.request.tmp'
         self.assertEqual(temp.stat().st_mode & 0o777, 0o600)
         self.assertNotIn('Secret0', out.getvalue() + err.getvalue())
         self.assertEqual(temp.read_text(), 'Secret0')  # retained for owner cleanup
-        self.assertTrue((world / 'private' / 'genesis-preview.json').exists())
+        self.assertTrue((world / 'world' / 'private' / 'genesis-preview.json').exists())
 
     def test_preview_fixture_emits_real_say_and_move_with_fixture_origin(self):
         model_dir = str(Path('luanti/model').resolve())
@@ -169,12 +169,12 @@ class PreviewTests(unittest.TestCase):
             result = launch(world, count, engine=Path('/fake'), runtime_home=self.root, libdir=self.root, port=30077, seconds=2, fixture=True)
         self.assertEqual(result, 1); self.assertTrue(calls[1].terminated)
         conf = (world / 'world' / 'server.conf').read_text()
-        self.assertIn('society_persist = false', conf); self.assertIn('society_restore = false', conf); self.assertIn('secure.trusted_mods = society', conf)
+        self.assertIn('society_persist = false', conf); self.assertIn('society_restore = false', conf); self.assertNotIn('secure.trusted_mods', conf)
         self.assertNotIn('Secret0', conf)
         self.assertFalse((world / 'world' / 'genesis-preview.json').exists())
-        self.assertEqual((world / 'private' / 'model-spool').stat().st_mode & 0o777, 0o700)
+        self.assertEqual((world / 'world' / 'private' / 'model-spool').stat().st_mode & 0o777, 0o700)
         for item in (world / 'world').rglob('*'):
-            if item.is_file():
+            if item.is_file() and item.relative_to(world / 'world').parts[0] != 'private':
                 self.assertNotIn(b'Secret0', item.read_bytes())
 
     def test_success_requires_preview_marker_spawn_and_done(self):
@@ -203,9 +203,9 @@ class PreviewTests(unittest.TestCase):
         with patch('luanti.genesis.preview.uuid.uuid4') as generate:
             generate.return_value.hex = '1' * 32
             first, _ = prepare_preview(self.store, row['id'], 1, self.preview_root)
-            original = (first / 'private' / 'genesis-preview.json').read_bytes()
+            original = (first / 'world' / 'private' / 'genesis-preview.json').read_bytes()
             with self.assertRaises(PreflightError): prepare_preview(self.store, row['id'], 1, self.preview_root)
-            self.assertEqual((first / 'private' / 'genesis-preview.json').read_bytes(), original)
+            self.assertEqual((first / 'world' / 'private' / 'genesis-preview.json').read_bytes(), original)
 
 
 class LuaPreviewTests(unittest.TestCase):
