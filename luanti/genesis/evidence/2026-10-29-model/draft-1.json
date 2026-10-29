@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "title": "Rainy Harbor",
+  "description": "A rainy fishing harbor where three residents repair boats and trade fish.",
+  "places": [
+    {
+      "id": "rainy_harbor",
+      "name": "Rainy Harbor",
+      "description": "A rainy fishing harbor with wet docks, nets, and boat repair workshops."
+    },
+    {
+      "id": "boat_shed",
+      "name": "Boat Shed",
+      "description": "A sheltered workshop where residents patch hulls and store tools."
+    },
+    {
+      "id": "fish_market",
+      "name": "Fish Market",
+      "description": "An open-air stall where caught fish are traded under tarps."
+    }
+  ],
+  "actors": [
+    {
+      "id": "mara",
+      "name": "Mara",
+      "role": "Boat repairer",
+      "goal": "Keep every boat seaworthy during the rain",
+      "placeId": "boat_shed"
+    },
+    {
+      "id": "jona",
+      "name": "Jona",
+      "role": "Fish trader",
+      "goal": "Sell fresh fish at fair prices",
+      "placeId": "fish_market"
+    },
+    {
+      "id": "eel",
+      "name": "Eel",
+      "role": "Net mender",
+      "goal": "Repair nets and spare parts quickly",
+      "placeId": "rainy_harbor"
+    }
+  ],
+  "memories": [
+    {
+      "actorId": "mara",
+      "text": "The rain makes wood swell, so I check hull seams before dawn."
+    },
+    {
+      "actorId": "jona",
+      "text": "I trade fish only after checking weights and freshness."
+    },
+    {
+      "actorId": "eel",
+      "text": "I keep rope and floats sorted to mend nets faster."
+    }
+  ],
+  "rules": [],
+  "layout": {
+    "places": [
+      {
+        "placeId": "rainy_harbor",
+        "space": "outdoor",
+        "grid": [
+          0,
+          0
+        ]
+      },
+      {
+        "placeId": "boat_shed",
+        "space": "indoor",
+        "grid": [
+          -2,
+          1
+        ]
+      },
+      {
+        "placeId": "fish_market",
+        "space": "outdoor",
+        "grid": [
+          2,
+          1
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "from": "rainy_harbor",
+        "to": "boat_shed"
+      },
+      {
+        "from": "rainy_harbor",
+        "to": "fish_market"
+      },
+      {
+        "from": "boat_shed",
+        "to": "fish_market"
+      }
+    ]
+  }
+}

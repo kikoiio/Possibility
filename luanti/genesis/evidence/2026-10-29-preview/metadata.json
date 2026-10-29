@@ -1,0 +1,20 @@
+{
+  "run_id": 40825261813,
+  "source_commit": "6131f27bb1c2932ce8409b299a41e2b9110acde3",
+  "branch": "experiment/cloud-run-verify-20261029-4",
+  "workflow": "Society experiment",
+  "conclusion": "success",
+  "fixture": true,
+  "actors": 3,
+  "terrain": "flat grass plane",
+  "persistent": false,
+  "model_evidence": false,
+  "artifact": "society-results-0",
+  "checks": [
+    "Python and Lua tests",
+    "confirmed draft preflight",
+    "Luanti private manifest access with mod security enabled",
+    "three actors spawned and remained alive",
+    "fixture say and movement events recorded"
+  ]
+}

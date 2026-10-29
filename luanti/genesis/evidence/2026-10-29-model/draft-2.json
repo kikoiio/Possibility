@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "title": "Whispering Peaks Library",
+  "description": "A secluded mountain library surrounded by overgrown gardens, tended by three caretakers who preserve both books and the silence.",
+  "places": [
+    {
+      "id": "library",
+      "name": "Whispering Peaks Library",
+      "description": "A stone library nestled into the mountainside, filled with ancient tomes and warm reading corners."
+    },
+    {
+      "id": "garden",
+      "name": "Memory Garden",
+      "description": "A wild garden with carved stone paths, blooming alpine flowers, and quiet benches."
+    },
+    {
+      "id": "atrium",
+      "name": "Silent Atrium",
+      "description": "A small entrance hall with a cracked bell, coat pegs, and a visitor log."
+    }
+  ],
+  "actors": [
+    {
+      "id": "mara",
+      "name": "Mara",
+      "role": "Head Caretaker",
+      "goal": "Keep the library’s catalog intact and the garden paths clear.",
+      "placeId": "library"
+    },
+    {
+      "id": "otis",
+      "name": "Otis",
+      "role": "Garden Caretaker",
+      "goal": "Nurture the garden’s rare alpine plants and stonework.",
+      "placeId": "garden"
+    },
+    {
+      "id": "lina",
+      "name": "Lina",
+      "role": "Archive Caretaker",
+      "goal": "Restore damaged books and catalog new donations.",
+      "placeId": "atrium"
+    }
+  ],
+  "memories": [
+    {
+      "actorId": "mara",
+      "text": "The bell in the atrium used to ring when a traveler arrived; it has been silent for years."
+    },
+    {
+      "actorId": "otis",
+      "text": "The garden’s oldest rose bush blooms only when a new book is cataloged."
+    },
+    {
+      "actorId": "lina",
+      "text": "A donation arrived last spring wrapped in a map of the lower valleys."
+    }
+  ],
+  "rules": [
+    {
+      "id": "quiet",
+      "description": "Voices stay soft indoors; the mountain echoes everything."
+    },
+    {
+      "id": "logbook",
+      "description": "All visitors sign the atrium logbook before entering the stacks."
+    },
+    {
+      "id": "garden_care",
+      "description": "Tools are shared, but each caretaker returns them to the garden shed by dusk."
+    }
+  ],
+  "layout": {
+    "places": [
+      {
+        "placeId": "library",
+        "space": "indoor",
+        "grid": [
+          0,
+          0
+        ]
+      },
+      {
+        "placeId": "garden",
+        "space": "outdoor",
+        "grid": [
+          -2,
+          1
+        ]
+      },
+      {
+        "placeId": "atrium",
+        "space": "indoor",
+        "grid": [
+          1,
+          0
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "from": "atrium",
+        "to": "library"
+      },
+      {
+        "from": "garden",
+        "to": "atrium"
+      }
+    ]
+  }
+}

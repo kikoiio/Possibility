@@ -1,0 +1,310 @@
+name: Wispiva Luanti validation
+on:
+  push:
+    branches: [ 'validation/luanti-*' ]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ (startsWith(github.ref_name, 'validation/luanti-memory-') || startsWith(github.ref_name, 'validation/luanti-budget-')) && 'wispiva-model-validation' || 'wispiva-validation' }}
+  cancel-in-progress: false
+jobs:
+  validation:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        count: ${{ startsWith(github.ref_name, 'validation/luanti-opt-') && fromJSON('[1000,5000,10000]') || fromJSON('[0]') }}
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 90
+    steps:
+      - name: Install runtime
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti-server luanti-game-minetest
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: |
+          cd luanti/cognition
+          lua5.1 test.lua
+          lua5.1 test_persistence.lua
+          lua5.1 test_resource_actions.lua
+          lua5.1 test_action_context.lua
+          lua5.1 test_spatial.lua
+          lua5.1 test_runtime.lua
+          lua5.1 test_retrieval.lua
+          lua5.1 test_long_term_memory.lua
+          lua5.1 test_long_term_integration.lua
+          cd ../model
+          python3 -B -m unittest -v
+          cd ..
+          python3 -B -m unittest -v test_snapshot.py
+          cd scale
+          python3 -B -m unittest -v test_queue_sim.py test_compare.py
+          cd ../analysis
+          python3 -B -m unittest -v
+          cd ../..
+          python3 -B -m unittest discover -s luanti/genesis -p 'test_*.py' -v
+          python3 -B -m unittest discover -s luanti/world -p 'test_*.py' -v
+      - name: Prepare runtime
+        run: |
+          uptime
+          nproc
+          free -h
+          cat /proc/pressure/memory
+          rt="$GITHUB_WORKSPACE/luanti/.runtime"
+          mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
+          ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
+          cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
+          mkdir -p "$rt/home/.minetest"
+          ln -s ../.luanti/games "$rt/home/.minetest/games"
+          python3 - <<'PY'
+          import json, os, platform, subprocess
+          from pathlib import Path
+          Path('run-metadata.json').write_text(json.dumps({
+              'git_sha': os.environ['GITHUB_SHA'], 'run_id': os.environ['GITHUB_RUN_ID'],
+              'platform': platform.platform(), 'cpu_count': os.cpu_count(),
+              'engine_package': subprocess.check_output(['dpkg-query', '-W', 'luanti-server'], text=True).strip(),
+              'mem_total': next(line.strip() for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:')),
+              'cgroup_memory': {str(path): path.read_text().strip() for path in
+                  (Path('/sys/fs/cgroup/memory.max'), Path('/sys/fs/cgroup/memory.current'),
+                   Path('/sys/fs/cgroup/memory/memory.limit_in_bytes')) if path.exists()},
+          }, indent=2) + '\n')
+          PY
+      - name: Run agent loop with cognition
+        run: |
+          luanti/agent/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
+      - name: Copy and reset world
+        run: |
+          exp=luanti
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-reset.run1"
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-preserve.run1"
+          "$exp/agent/run.sh" --label ci-preserve --agents 5 --decisions 8 --interval 1 --resume-preserve --set society_cognition=true
+          count=$(grep -c 'SOCIETY ev=restore agent=.* reset=false memories=[1-9]' "$exp/agent/evidence/ci-preserve.run1.log")
+          test "$count" -eq 5
+          grep -q 'SOCIETY summary .*decisions=40 ' "$exp/agent/evidence/ci-preserve.run1.log"
+          "$exp/agent/run.sh" --label ci-reset --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
+          count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
+          test "$count" -eq 5
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-invalid-retry.run1"
+          "$exp/agent/run.sh" --label ci-invalid-retry --agents 4 --decisions 8 --interval 1 --resume --expect-fail restore-invalid
+          "$exp/agent/run.sh" --label ci-invalid-retry --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
+      - name: Verify resource actions with deterministic fixture
+        run: |
+          exp=luanti
+          "$exp/agent/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1 --set society_memory_mode=retrieval
+          grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
+          grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
+      - name: Verify long-term memory across normal restart
+        run: |
+          exp=luanti
+          "$exp/agent/run.sh" --label ci-memory-persist --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --long-term-memory
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-memory-persist.run1" "$exp/agent/worlds/ci-memory-keep.run1"
+          "$exp/agent/run.sh" --label ci-memory-keep --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --long-term-memory --resume-preserve
+          test "$(grep -c 'SOCIETY ev=restore agent=.* reset=false' "$exp/agent/evidence/ci-memory-keep.run1.log")" -eq 3
+          grep -q 'SOCIETY summary .*decisions=6 ' "$exp/agent/evidence/ci-memory-keep.run1.log"
+          grep -q 'SOCIETY long-term-checkpoint records=[1-9]' "$exp/agent/evidence/ci-memory-keep.run1.log"
+      - name: Verify a confirmed disposable Luanti world preview
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from luanti.genesis.preview import prepare_preview, launch
+          from luanti.genesis.store import DraftStore
+          root = Path('.ci-preview').absolute()
+          root.mkdir(mode=0o700)
+          draft = json.loads(Path('luanti/genesis/example.json').read_text(encoding='utf-8'))
+          draft['actors'] = [dict(draft['actors'][0], id=ident, name=ident) for ident in ('alice', 'bob', 'cora')]
+          draft['memories'] = [{'actorId': a['id'], 'text': 'A synthetic private memory.'} for a in draft['actors']]
+          store = DraftStore(root / 'drafts.sqlite', create=True)
+          try:
+              record = store.create(draft)
+              store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
+              preview, count = prepare_preview(store, record['id'], record['revision'], root)
+          finally:
+              store.close()
+          rt = Path('luanti/.runtime').absolute()
+          status = launch(preview, count, engine=rt / 'root/usr/libexec/luanti/luantiserver',
+                          runtime_home=rt / 'home', libdir=rt / 'root/usr/lib/x86_64-linux-gnu',
+                          port=30077, seconds=120, fixture=True)
+          log_path = preview / 'world/preview.log'
+          log = log_path.read_text(errors='replace') if log_path.exists() else ''
+          if status or 'SOCIETY ev=message ' not in log or 'origin=fixture' not in log:
+              print('\n'.join(log.splitlines()[-60:]))
+              raise SystemExit(status or 1)
+          print('Confirmed fixture preview spawned and recorded messages; not a persistent world or model evidence.')
+          PY
+      - name: Capacity ladder
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') }}
+        run: |
+          python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
+      - name: Agent cognition capacity ladder
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-agent-') }}
+        run: |
+          exp=luanti
+          for cognition in false true; do
+            for count in 20 100 500 1000; do
+              label="ci-agent-${count}-${cognition}"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 90 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+              echo "$label exit=$rc" >> "$exp/agent/evidence/ci-agent-status.txt"
+            done
+          done
+      - name: Large agent capacity ladder
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-large-') }}
+        run: |
+          exp=luanti
+          for cognition in false true; do
+            for count in 5000 10000; do
+              label="ci-large-${count}-${cognition}"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents "$count" --decisions 12 --interval 2 --seconds 180 --repeat 3 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+              echo "$label exit=$rc" >> "$exp/agent/evidence/ci-large-status.txt"
+            done
+          done
+          mkdir -p "$GITHUB_WORKSPACE/scale-results/queue-simulation"
+          for count in 1000 10000; do
+            for workers in 1 100 1000; do
+              python3 "$exp/scale/queue_sim.py" --agents "$count" --workers "$workers" --latency 3 --seconds 60 --interval 2 --max-wait 30 > "$GITHUB_WORKSPACE/scale-results/queue-simulation/${count}-${workers}.json"
+            done
+          done
+          python3 - <<'PY'
+          import gzip
+          from pathlib import Path
+          import shutil
+          for log in Path('luanti/agent/evidence').glob('ci-large-*.log'):
+              with log.open('rb') as source, gzip.open(str(log) + '.gz', 'wb') as target:
+                  shutil.copyfileobj(source, target, 1024 * 1024)
+              log.unlink()
+              log.with_suffix('.events').unlink(missing_ok=True)
+              report = log.with_suffix('.report.txt')
+              header = []
+              with report.open() as source:
+                  for line in source:
+                      if line.startswith('--- SOCIETY'): break
+                      header.append(line)
+              report.write_text(''.join(header))
+          PY
+      - name: Alternating full workload comparison
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-opt-') }}
+        run: |
+          long=0
+          if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
+          python3 -B luanti/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
+      - name: Controlled memory tasks and bounded concurrency probes
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p memory-results
+          python3 -B luanti/model/memory_eval.py --output memory-results/tasks.json
+          python3 -B luanti/model/memory_eval.py --probe --output memory-results/concurrency.json
+      - name: Soft callback budget tradeoff
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') || startsWith(github.ref_name, 'validation/luanti-budget-') }}
+        run: |
+          python3 -B luanti/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
+      - name: Model-driven agent loop
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          luanti/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+      - name: Generate two synthetic world drafts with the configured model
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-genesis-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p genesis-results
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from luanti.genesis.compiler import compile_plan
+          from luanti.genesis.genesis import generate
+          from luanti.genesis.model_adapter import responses_model
+          from luanti.model.adapter import Config
+          model = responses_model(Config.from_env())
+          results = []
+          for index, intent in enumerate((
+              'A rainy fishing harbor with three residents who repair boats and trade fish.',
+              'A quiet mountain library with three caretakers and a garden.'), 1):
+              try:
+                  draft = generate(intent, model)
+                  Path(f'genesis-results/draft-{index}.json').write_text(
+                      json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')
+                  plan = compile_plan(draft)
+                  result = {'index': index, 'ok': True, 'actors': len(draft['actors']),
+                            'places': len(draft['places']), 'unsupported': plan['unsupported'],
+                            'token_usage': None}
+              except Exception as exc:
+                  result = {'index': index, 'ok': False,
+                            'error': getattr(exc, 'code', type(exc).__name__), 'token_usage': None}
+              results.append(result)
+              print(json.dumps(result, ensure_ascii=False))
+          Path('genesis-results/results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          if not all(result['ok'] for result in results): raise SystemExit(1)
+          PY
+      - name: Repeated 1000-agent capacity measurement
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-model-') }}
+        run: |
+          exp=luanti
+          for cognition in false true; do
+            rc=0
+            "$exp/agent/run.sh" --label "ci-repeat-${cognition}" --agents 1000 --decisions 12 --interval 2 --seconds 90 --repeat 3 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
+            echo "cognition=$cognition exit=$rc" >> "$exp/agent/evidence/ci-repeat-status.txt"
+          done
+      - name: Explore interactions with and without memory
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          exp=luanti
+          "$exp/agent/run.sh" --label ci-base --agents 3 --decisions 8 --interval 1 --set society_spacing=2 --set society_seed_resources=true --set society_cognition=true
+          for trial in 1 2 3; do
+            order="true false"
+            if [ "$trial" = 2 ]; then order="false true"; fi
+            for memory in $order; do
+              label="ci-memory-${memory}-${trial}"
+              python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-base.run1" "$exp/agent/worlds/${label}.run1"
+              rc=0
+              "$exp/agent/run.sh" --label "$label" --agents 3 --decisions 8 --interval 1 --seconds 600 --resume --model --set society_spacing=2 --set society_model_memory="$memory" --set society_log_messages=true --set 'society_goal=Work with nearby agents to gather resources and build a shared structure. Tell a neighbor your plan or progress. Choose actions yourself; evaluate feedback and adjust.' || rc=$?
+              echo "trial=$trial memory=$memory exit=$rc" >> "$exp/agent/evidence/ci-memory-status.txt"
+            done
+          done
+          ! grep -qv 'exit=0' "$exp/agent/evidence/ci-memory-status.txt"
+      - name: Summarize observed results
+        if: always()
+        run: |
+          python3 -B luanti/analysis/summarize.py --compact --input luanti/agent/evidence --output observed-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wispiva-results-${{ matrix.count }}
+          path: |
+            memory-results/
+            observed-results.json
+            run-metadata.json
+            scale-results/
+            luanti/agent/evidence/ci-cognition.*
+            luanti/agent/evidence/ci-model.*
+            luanti/agent/evidence/ci-reset.*
+            luanti/agent/evidence/ci-preserve.*
+            luanti/agent/evidence/ci-invalid-retry.*
+            luanti/agent/evidence/ci-agent-*
+            luanti/agent/evidence/ci-resource.*
+            luanti/agent/evidence/ci-memory-*
+            genesis-results/
+            luanti/agent/evidence/ci-large-*
+            luanti/agent/evidence/ci-repeat-*
+            luanti/agent/evidence/ci-opt-*
+          if-no-files-found: warn
+          retention-days: 14
