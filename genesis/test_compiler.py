@@ -15,8 +15,8 @@ def with_actors(count):
 
 
 class CompilerTests(unittest.TestCase):
-    def test_one_to_five_and_private_projection(self):
-        for count in range(1, 6):
+    def test_product_population_and_private_projection(self):
+        for count in (1, 5, 6, 25):
             with self.subTest(count=count):
                 d = with_actors(count)
                 plan = compile_plan(d)
@@ -33,6 +33,19 @@ class CompilerTests(unittest.TestCase):
                 public_plan(plan)['actors'][0]['name'] = 'changed'
                 self.assertNotEqual(plan['public']['actors'][0]['name'], 'changed')
                 self.assertEqual(d, with_actors(count))
+        d = with_actors(64)
+        d['places'].extend([
+            {'id': 'hill', 'name': 'Hill', 'description': 'Hill'},
+            {'id': 'camp', 'name': 'Camp', 'description': 'Camp'},
+        ])
+        d['layout']['places'].extend([
+            {'placeId': 'hill', 'space': 'outdoor', 'grid': [1, 0]},
+            {'placeId': 'camp', 'space': 'outdoor', 'grid': [-1, 0]},
+        ])
+        for i, actor in enumerate(d['actors']):
+            actor['placeId'] = ('bank', 'hill', 'camp')[i % 3]
+        plan = compile_plan(d)
+        self.assertEqual(len(plan['public']['actors']), 64)
 
     def test_reordering_and_canonical_semantic_edges(self):
         d = with_actors(3)
@@ -46,9 +59,11 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(before['public']['semantic_connections'], [{'from': 'bank', 'to': 'hill'}])
 
     def test_bad_count_invalid_ids_and_conflicts(self):
-        for count in (0, 6):
+        for count in (0,):
             with self.subTest(count=count), self.assertRaises(CompileError) as e: compile_plan(with_actors(count))
             self.assertEqual(e.exception.code, 'actor_count')
+        with self.assertRaises(CompileError) as e: compile_plan(with_actors(65))
+        self.assertEqual(e.exception.code, 'invalid_draft')
         d = with_actors(2); d['actors'][1]['id'] = d['actors'][0]['id']
         with self.assertRaises(CompileError): compile_plan(d)
         d = with_actors(1); d['actors'][0]['id'] = '../escape'
@@ -61,11 +76,14 @@ class CompilerTests(unittest.TestCase):
         d = with_actors(1); d['layout']['places'][0]['grid'] = [5, 0]
         with self.assertRaises(CompileError) as e: compile_plan(d)
         self.assertEqual(e.exception.code, 'out_of_bounds')
-        d = with_actors(2); d['layout']['places'][0]['grid'] = [4, 0]
+        d = with_actors(25); d['layout']['places'][0]['grid'] = [4, 0]
         with self.assertRaises(CompileError) as e: compile_plan(d)
         self.assertEqual(e.exception.diagnostics[0]['code'], 'spawn_out_of_bounds')
-        d = with_actors(1); d['layout']['places'][0]['grid'] = [-4, 4]
-        self.assertEqual(compile_plan(d)['public']['actors'][0]['position'], {'x': -32, 'y': 1, 'z': 32})
+        d = with_actors(26)
+        with self.assertRaises(CompileError) as e: compile_plan(d)
+        self.assertEqual(e.exception.code, 'place_actor_capacity')
+        d = with_actors(1); d['layout']['places'][0]['grid'] = [-3, 3]
+        self.assertEqual(compile_plan(d)['public']['actors'][0]['position'], {'x': -26, 'y': 1, 'z': 22})
 
     def test_rules_are_reported_not_executed(self):
         d = with_actors(1); d['rules'] = [{'id': 'rule', 'description': 'Never reveal this secret'}]

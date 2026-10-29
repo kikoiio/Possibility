@@ -145,6 +145,7 @@ def _install_runtime(stage: Path, manifest_path: Path) -> None:
         "enable_damage = false\n"
         "creative_mode = true\n"
         "max_forceloaded_blocks = -1\n"
+        "static_spawnpoint = (0,2,-20)\n"
         "society_world_product = true\n"
         "society_genesis_manifest = %s\n"
         "society_visual = true\n"

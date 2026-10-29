@@ -11,7 +11,7 @@ from .genesis import validate
 BOUND = 32
 GRID_SPACING = 8
 SPAWN_Y = 1
-OFFSETS = ((0, 0), (2, 0), (-2, 0), (0, 2), (0, -2))
+SLOT_OFFSETS = tuple((x, z) for z in (-2, -1, 0, 1, 2) for x in (-2, -1, 0, 1, 2))
 
 
 class CompileError(ValueError):
@@ -31,7 +31,7 @@ def compile_plan(draft):
         raise CompileError('invalid_draft') from None
     if errors:
         raise CompileError('invalid_draft', errors)
-    if not 1 <= len(source['actors']) <= 5:
+    if not 1 <= len(source['actors']) <= 64:
         raise CompileError('actor_count')
 
     # IDs are already validated as restricted ASCII identifiers, never paths.
@@ -53,7 +53,9 @@ def compile_plan(draft):
         place = by_place[actor['placeId']]
         slot = occupants.get(place['id'], 0)
         occupants[place['id']] = slot + 1
-        dx, dz = OFFSETS[slot]
+        if slot >= len(SLOT_OFFSETS):
+            raise CompileError('place_actor_capacity', [{'path': '$.actors', 'code': 'too_many_actors_at_place'}])
+        dx, dz = SLOT_OFFSETS[slot]
         position = {'x': place['anchor']['x'] + dx, 'y': SPAWN_Y, 'z': place['anchor']['z'] + dz}
         if abs(position['x']) > BOUND or abs(position['z']) > BOUND:
             raise CompileError('out_of_bounds', [{'path': '$.actors', 'code': 'spawn_out_of_bounds'}])

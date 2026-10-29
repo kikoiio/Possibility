@@ -7,6 +7,7 @@ local world_events = dofile(minetest.get_modpath("society") .. "/world_events.lu
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
+local model_envelope = dofile(minetest.get_modpath("society") .. "/model_envelope.lua")
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
 local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
@@ -17,6 +18,10 @@ end
 
 local WORLD_PRODUCT = cfg("society_world_product", "false") == "true"
 local GENESIS_MANIFEST_PATH = cfg("society_genesis_manifest", "")
+local product_state_module
+if WORLD_PRODUCT then
+	product_state_module = dofile(minetest.get_modpath("society") .. "/product_state.lua")
+end
 local environment_module, world_projection
 if WORLD_PRODUCT then
 	local modpath = minetest.get_modpath("society")
@@ -66,6 +71,41 @@ local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
+local product_state
+local product_active_run = false
+local function save_product_state()
+	assert(WORLD_PRODUCT and product_state, "product state unavailable")
+	local encoded = minetest.write_json(product_state:export())
+	assert(type(encoded) == "string" and encoded ~= "", "product state encoding failed")
+	storage:set_string("product_state", encoded)
+	assert(storage:get_string("product_state") == encoded, "product state write/readback failed")
+end
+local function freeze_product_state(reason)
+	if not WORLD_PRODUCT or not product_state then return end
+	local ok, frozen = pcall(product_state.freeze, product_state, reason)
+	if ok then
+		local encoded = minetest.write_json(frozen)
+		storage:set_string("product_state", encoded)
+		minetest.log("error", "SOCIETY product-world frozen reason=" .. tostring(reason):gsub("%s+", "_"))
+	end
+end
+if WORLD_PRODUCT then
+	local raw_state = storage:get_string("product_state")
+	if raw_state == "" then
+		product_state = product_state_module.new(genesis_manifest.world_id, genesis_manifest.origin_event_id)
+		save_product_state()
+	else
+		local decoded = minetest.parse_json(raw_state)
+		local ok, loaded = pcall(product_state_module.load, decoded)
+		assert(ok, "invalid persisted product state")
+		product_state = loaded
+	end
+	assert(product_state:phase() == "READY", "product world is frozen or has an unfinished commit")
+	assert(storage:get_string("product_active_run") == "", "previous product run ended without a committed checkpoint")
+	product_active_run = true
+	storage:set_string("product_active_run", EVENT_NAMESPACE)
+	assert(storage:get_string("product_active_run") == EVENT_NAMESPACE, "product active marker write failed")
+end
 local GENESIS_PREVIEW = cfg("society_genesis_preview", "false") == "true"
 assert(not (WORLD_PRODUCT and GENESIS_PREVIEW), "product world cannot be disposable preview")
 local preview_module, preview_actors
@@ -113,6 +153,13 @@ if WORLD_PRODUCT then
 	else
 		environment_process = environment_module.new({id="world-resource", resource="society:resource",
 			capacity=16, amount=2, rate=1, time=0})
+	end
+	local components = product_state:components()
+	if components.actors > 0 or components.inventory > 0 or components.events > 0 or components.memory > 0 then
+		assert(initial_state ~= "", "product checkpoint is missing while committed state is present")
+	end
+	if components.environment > 0 then
+		assert(raw ~= "", "product environment checkpoint is missing while committed state is present")
 	end
 end
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
@@ -402,9 +449,10 @@ local function apply(self, action, pos)
 			return ok, reason
 		end
 		if recipient and recipient.object and recipient.object:get_pos() then
+			local message_id = string.format("%s:message:%d:%d", EVENT_NAMESPACE, self._id, self._decisions + 1)
 			recipient._inbox[#recipient._inbox + 1] = {time = minetest.get_gametime(),
-				from = self._id, text = action.text}
-			if not LONG_TERM and #recipient._inbox > 8 then table.remove(recipient._inbox, 1) end
+				from = self._id, text = action.text, message_id = message_id}
+			if #recipient._inbox > 32 then table.remove(recipient._inbox, 1) end
 			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
 				source = {kind = "agent", id = self._id}})
 			self._episodic:add({time = minetest.get_gametime(), text = action.text,
@@ -553,6 +601,57 @@ local function decide_and_act(self)
 			end
 			context.local_actions = action_context.describe(minetest, pos,
 				context.visible_nodes, context.inventory, context.bounds)
+			if WORLD_PRODUCT then
+				local facts, experiences, rumors, unknowns = {}, {}, {}, {}
+				for _, node in ipairs(context.visible_nodes or {}) do
+					facts[#facts + 1] = {id = string.format("observation:%s:%d:%d:%d", self._id,
+						fp(node.pos.x), fp(node.pos.y), fp(node.pos.z)),
+						text = "I can currently observe " .. node.name .. " nearby.",
+						source = {kind = "engine.sensor", id = "observation:" .. tostring(self._id)},
+						scope = "public", audience = {self._genesis.actor_id}, captured_at = minetest.get_gametime()}
+				end
+				for _, memory in ipairs(selected_memory or {}) do
+					local kind = memory.classification == "rumor" and "rumor"
+						or (memory.classification == "unknown" and "unknown" or "experience")
+					local record = {id = memory.id, text = memory.text, source = memory.source,
+						captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
+					if kind == "rumor" then rumors[#rumors + 1] = record
+					elseif kind == "unknown" then unknowns[#unknowns + 1] = record
+					else experiences[#experiences + 1] = record end
+				end
+				for index, seed in ipairs(self._genesis.memory_seeds or {}) do
+					unknowns[#unknowns + 1] = {id = seed.seed_id, text = seed.text,
+						source = {kind = "genesis_seed", id = genesis_manifest.origin_event_id},
+						scope = "private", audience = {self._genesis.actor_id}, captured_at = nil}
+				end
+				for index, message in ipairs(self._inbox or {}) do
+					rumors[#rumors + 1] = {id = message.message_id or string.format("message:%s:%d", tostring(message.from), index),
+						text = message.text, source = {kind = "agent_message", id = message.message_id or tostring(message.from)},
+						scope = "private", audience = {self._genesis.actor_id}, captured_at = message.time}
+				end
+				local feedback = {available = false}
+				if self._last_action then
+					feedback = {available = true, attempt_id = self._last_action.attempt_id,
+						requested = {kind = self._last_action.kind, point = self._last_action.point},
+						status = self._last_action.ok and "succeeded" or "failed", reason = self._last_action.reason,
+						event_id = self._last_action.event_id, observed_at = minetest.get_gametime(),
+						world_revision = self._last_action.world_revision}
+				end
+				local envelope = model_envelope.build({world_id = genesis_manifest.world_id,
+					origin_event_id = genesis_manifest.origin_event_id, actor_id = self._genesis.actor_id,
+					runtime_id = self._id, decision_id = EVENT_NAMESPACE .. ":agent:" .. tostring(self._id) .. ":decision:" .. tostring(self._decisions + 1),
+					world_revision = product_state:version(), observed_at = minetest.get_gametime(),
+					actor = {name = self._genesis.name, role = self._genesis.role, goal = self._genesis.goal,
+						role_source = {kind = "genesis.actor", id = genesis_manifest.origin_event_id .. ":" .. self._genesis.actor_id},
+						goal_source = {kind = "genesis.goal", id = genesis_manifest.origin_event_id .. ":" .. self._genesis.actor_id}},
+					permissions = {read_scopes = {"world.public", "self.experience", "self.memory", "direct.messages"},
+						allowed_actions = {"inspect", "wander", "advance", "approach", "say", "gather", "build"}},
+					facts = facts, experiences = experiences, rumors = rumors, unknowns = unknowns,
+					observation = context.observation, inventory = context.inventory,
+					affordances = context.local_actions, feedback = feedback})
+				model_envelope.validate(envelope)
+				context.model_input = envelope
+			end
 			if GENESIS_PREVIEW then context.preview_unsupported_actions = {"mark", "gather", "build"} end
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
 			local encoded = string.format('{"id":%d,"context":%s}', request_id, minetest.write_json(context))
@@ -676,6 +775,12 @@ local function decide_and_act(self)
 	end
 	if measured then profile.action = profile.action + minetest.get_us_time() - measured end
 	self._last_action = {kind = action.kind, point = action.point, ok = ok, reason = reason}
+	self._last_action.attempt_id = operation_id
+	self._last_action.event_id = event.id
+	-- Product worlds expose the durable product commit revision. The event
+	-- count remains an audit detail and must not masquerade as a cross-store
+	-- revision for model decisions.
+	self._last_action.world_revision = WORLD_PRODUCT and product_state:version() or event_log:count()
 
 	local decided_at = minetest.get_us_time()
 	if self._decided_at then
@@ -875,6 +980,28 @@ end
 local function apply_product_projection()
 	if not WORLD_PRODUCT then return end
 	local plan = world_projection.plan(genesis_manifest)
+	local components = product_state:components()
+	if components.map > 0 then
+		for _, operation in ipairs(plan.operations) do
+			if operation.kind == "node" then
+				local expected = operation.value and operation.value.name or "air"
+				local actual = minetest.get_node_or_nil(operation.position)
+				if not actual or actual.name ~= expected then
+					freeze_product_state("origin projection differs from committed map")
+					fail("product-reconcile", "map=%s expected=%s actual=%s", operation.key, expected,
+						actual and actual.name or "unknown")
+					return false
+				end
+			end
+		end
+		ev("origin projection verified world_id=%s origin_event=%s operations=%d", plan.world_id,
+			plan.origin_event_id, #plan.operations)
+		return true
+	end
+	local target = components
+	target.map = 1
+	product_state:prepare("origin-projection:" .. genesis_manifest.origin_event_id, target)
+	save_product_state()
 	for _, operation in ipairs(plan.operations) do
 		if operation.kind == "node" then
 			local desired = operation.value
@@ -889,6 +1016,10 @@ local function apply_product_projection()
 			end
 		end
 	end
+	local committed = product_state:commit("origin-projection:" .. genesis_manifest.origin_event_id, target)
+	local encoded = minetest.write_json(committed)
+	storage:set_string("product_state", encoded)
+	assert(storage:get_string("product_state") == encoded, "origin projection state write/readback failed")
 	ev("origin projection world_id=%s origin_event=%s operations=%d", plan.world_id,
 		plan.origin_event_id, #plan.operations)
 	return true
@@ -1074,11 +1205,26 @@ end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
+	local checkpoint_operation, checkpoint_target
+	if WORLD_PRODUCT and PERSIST and not S.failed then
+		local components = product_state:components()
+		checkpoint_operation = "checkpoint:" .. EVENT_NAMESPACE .. ":" .. tostring(product_state:version() + 1)
+		checkpoint_target = components
+		checkpoint_target.actors = 1
+		checkpoint_target.inventory = 1
+		checkpoint_target.events = event_log:count()
+		checkpoint_target.memory = history:count()
+		checkpoint_target.environment = 1
+		product_state:prepare(checkpoint_operation, checkpoint_target)
+		save_product_state()
+		ev("product-checkpoint prepare operation=%s", checkpoint_operation)
+	end
 	if WORLD_PRODUCT and environment_process then
 		local encoded = minetest.write_json(environment_process:export())
 		local written = pcall(storage.set_string, storage, "environment_state", encoded)
 		if not written or storage:get_string("environment_state") ~= encoded then
 			ev("fail=persist-environment reason=write-or-readback")
+			return
 		else
 			ev("environment-checkpoint time=%d", environment_process:export().time)
 		end
@@ -1118,6 +1264,17 @@ minetest.register_on_shutdown(function()
 		if LONG_TERM or history:count() > 0 or event_log:count() > 0 then
 			ev("long-term-checkpoint records=%d world-events=%d scope=normal-shutdown no-map-transaction=true crash-recovery=false", history:count(), event_log:count())
 		end
+	end
+	if WORLD_PRODUCT and checkpoint_operation then
+		local committed = product_state:commit(checkpoint_operation, checkpoint_target)
+		local encoded = minetest.write_json(committed)
+		storage:set_string("product_state", encoded)
+		assert(storage:get_string("product_state") == encoded, "product checkpoint state write/readback failed")
+		storage:set_string("product_active_run", "")
+		assert(storage:get_string("product_active_run") == "", "product active marker clear failed")
+		product_active_run = false
+		ev("product-checkpoint commit version=%d events=%d memory=%d", product_state:version(),
+			event_log:count(), history:count())
 	end
 	-- 计数器是 mod 自己的账，不是世界的账。这里回读地图核对一次：
 	-- 「世界真的变了」必须由世界本身证明，而不是由我们的变量证明。

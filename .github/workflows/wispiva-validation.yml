@@ -41,6 +41,8 @@ jobs:
               lua5.1 test_long_term_integration.lua
               lua5.1 test_world_events.lua
               lua5.1 test_environment.lua
+              lua5.1 test_product_state.lua
+              lua5.1 test_model_envelope.lua
             )
           lua5.1 engine/luanti/mod/society/test_world_projection.lua
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
@@ -165,11 +167,13 @@ jobs:
           grep -q 'SOCIETY ev=environment ' .ci-product/world/private/product.log
           grep -q 'SOCIETY ev=genesis-memory agent=' .ci-product/world/private/product.log
           grep -q 'SOCIETY long-term-checkpoint records=' .ci-product/world/private/product.log
+          grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
           grep -q 'memory_seeds' .ci-product/world/private/wispiva-origin.json
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --fake-model --resume --decisions 2 --interval 1 --seconds 120
           grep -q 'SOCIETY ev=restore agent=.* reset=false' .ci-product/world/private/product.log
           grep -q 'SOCIETY environment-checkpoint time=' .ci-product/world/private/product.log
+          grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}

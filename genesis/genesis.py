@@ -61,7 +61,7 @@ def validate(draft):
     text(draft['title'], '$.title', 120); text(draft['description'], '$.description')
     ids = {}
     places = array(draft['places'], '$.places', 1, 16)
-    actors = array(draft['actors'], '$.actors', 0, 16)
+    actors = array(draft['actors'], '$.actors', 0, 64)
     for kind, records, fields in (('places', places, ('id', 'name', 'description')),
                                   ('actors', actors, ('id', 'name', 'role', 'goal', 'placeId'))):
         seen = set(); ids[kind] = seen
@@ -76,7 +76,7 @@ def validate(draft):
                 if field != 'placeId': text(item[field], p+'.'+field)
     for i, actor in enumerate(actors):
         if isinstance(actor, dict) and (not isinstance(actor.get('placeId'), str) or actor['placeId'] not in ids['places']): error(f'$.actors[{i}].placeId', 'reference')
-    for i, memory in enumerate(array(draft['memories'], '$.memories', 0, 64)):
+    for i, memory in enumerate(array(draft['memories'], '$.memories', 0, 256)):
         p = f'$.memories[{i}]'
         if obj(memory, ('actorId', 'text'), p):
             if not isinstance(memory['actorId'], str) or memory['actorId'] not in ids['actors']: error(p+'.actorId', 'reference')

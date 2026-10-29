@@ -1,0 +1,21 @@
+local directory = arg[1] or "."
+local product_state = dofile(directory .. "/product_state.lua")
+local function fails(fn, text)
+  local ok, err = pcall(fn)
+  assert(not ok and tostring(err):find(text, 1, true), tostring(err))
+end
+local target = {map=1, actors=1, inventory=1, events=2, memory=2, environment=1}
+local state = product_state.new("11111111-1111-1111-1111-111111111111", "genesis:created")
+state:prepare("checkpoint:1", target)
+fails(function() state:assert_ready() end, "not ready")
+fails(function() state:commit("wrong", target) end, "pending")
+state:commit("checkpoint:1", target)
+assert(state:phase() == "READY" and state:version() == 1)
+local recovered = product_state.load(state:export())
+assert(recovered:components().events == 2)
+recovered:prepare("checkpoint:2", target)
+local interrupted = product_state.load(recovered:export())
+fails(function() interrupted:assert_ready() end, "not ready")
+interrupted:freeze("recovery required")
+fails(function() interrupted:assert_ready() end, "not ready")
+print("product state tests passed")

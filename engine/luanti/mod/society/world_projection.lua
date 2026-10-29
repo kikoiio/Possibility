@@ -1,4 +1,5 @@
--- Pure bounded spatial projection, not wired into init.lua or real Luanti.
+-- Pure bounded spatial projection used by the product init.lua and its
+-- read-before-write origin projection. It is still not a general map adapter.
 -- Input is the caller-authenticated genesis.world_create persistent manifest:
 -- {format='wispiva-world-manifest', version=1, world_id, origin_event_id,
 -- public={places, semantic_connections, actors, objects?}}. Places/actors use genesis.compiler's
@@ -75,7 +76,7 @@ function M.plan(manifest)
   if objects == nil then objects = {} end -- Current compiler has no objects yet.
   local places, ordered, nodes, actors, occupied = {}, {}, {}, {}, {}
   check(array(view.places, 16) > 0, 'no places')
-  array(view.semantic_connections, 64); array(view.actors, 16); array(objects, 64)
+  array(view.semantic_connections, 64); array(view.actors, 64); array(objects, 64)
   local function node(p, name)
     nodes[key(p)] = {kind='node', key='node:' .. key(p), position=p,
       value=name and {name=name, param2=0} or false}

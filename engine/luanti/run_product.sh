@@ -15,6 +15,7 @@ INTERVAL=2
 PORT=30078
 FIXTURE=0
 RESUME=0
+SERVE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,10 +26,16 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="$2"; shift 2 ;;
     --fake-model) FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
+    --serve) SERVE=1; shift ;;
     -h|--help) sed -n '1,26p' "$0"; exit 0 ;;
     *) echo "run_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ "$SERVE" -eq 1 ]]; then
+  SECONDS_MAX=0
+  DECISIONS=0
+fi
 
 [[ -n "$WORLD" && -d "$WORLD" ]] || { echo "run_product.sh: --world must name an existing product world" >&2; exit 2; }
 [[ -x "$ENGINE" ]] || { echo "run_product.sh: engine unavailable: $ENGINE" >&2; exit 2; }
@@ -54,6 +61,7 @@ enable_damage = false
 creative_mode = true
 max_forceloaded_blocks = -1
 dedicated_server_step = 0.09
+static_spawnpoint = (0,2,-20)
 society_world_product = true
 society_genesis_manifest = $WORLD/private/wispiva-origin.json
 society_spool = $WORLD/private/model-spool
@@ -88,6 +96,13 @@ HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" python3 -B "$HERE/launch.py" \
 server_pid=$!
 
 elapsed=0
+if [[ "$SERVE" -eq 1 ]]; then
+  wait "$server_pid"
+  status=$?
+  [[ "$status" -eq 0 ]] || exit "$status"
+  echo "product world server stopped cleanly: $WORLD"
+  exit 0
+fi
 while kill -0 "$server_pid" 2>/dev/null && [[ "$elapsed" -lt "$SECONDS_MAX" ]]; do
   sleep 1
   elapsed=$((elapsed + 1))

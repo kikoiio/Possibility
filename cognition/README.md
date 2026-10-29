@@ -12,24 +12,29 @@
 
 `memory.lua` 为每人独立、容量 32 条的 FIFO 事件存储，可选择近期记录或词项检索。每条记录有 `time`、`text`、`source.kind/id`；输入、输出复制，角色间不共享私有记录。内容包括观察摘要、资源动作结果、发出和收到的消息。记录数有上限，消息字节另有限制。规则策略另有接触集合 `memory.met`，它不等同于情节记忆。
 
-`society_model_memory=false` 只从模型请求中去掉历史情节；当前消息和上次动作结果仍提供，两组都能接收即时反馈。消息 inbox 最多 8 条，提交请求后清空；处理请求期间新到消息在下次请求提供。历史来源只是“谁报告了什么”，不是对陈述真实性的证明。
+`society_model_memory=false` 只从模型请求中去掉历史情节；当前消息和上次动作结果仍提供，两组都能接收即时反馈。消息 inbox 最多 32 条，提交请求后清空；处理请求期间新到消息在下次请求提供。产品 checkpoint 会保存 inbox 和上次动作反馈，恢复后来源与 `event_id` 保留。历史来源只是“谁报告了什么”，不是对陈述真实性的证明。
 
 模型默认 `society_memory_mode=fifo`，可切换为 `retrieval`。两者从同一存储选择最多 8 条、规范紧凑 JSON 最多 4096 UTF-8 字节的完整记录，计入来源、时间与数组标点；不截断单条。这个上限约束记忆投影，不等于整个请求或实际 token 相同。检索查询来自目标、自己上次动作反馈、当前邻居 ID 和观察到的节点名。词项重合、精确数字 ID 与时间影响排序；当前分词面向空格分隔文本，未做中文分词、同义词或跨语言匹配。选中记录仍按原始顺序提供，供模型判断来源和新旧。
 
 当前没有向量检索、长期语义记忆、关系推理、reflection 或持久计划。检索仅从尚未被 FIFO 存储淘汰的事件中选择，不能恢复已遗忘事件；时间只用于相关性相同时排序，不保证解决矛盾陈述。受控评估使用相同 Lua 代码，明确比较“已有事件库如何选入有限上下文”，不代表长期记忆问题已解决。
 
 `world_events.lua` 是独立的世界事实账本。每次角色行动和接触先按
-`operation_id` 提交实际执行结果，生成单调的 `world-event:N` 身份；相同操作重试返回原事件，参数变化会失败。长期记忆的 L0/L1 记录引用这个事件身份，因此模型上下文中的经历有稳定来源。账本与角色快照、长期记忆一起写入 checkpoint；这仍是正常停服 checkpoint，尚未与 Luanti 地图数据库形成跨存储事务，也尚未覆盖进程崩溃窗口。
+`operation_id` 提交实际执行结果，生成单调的 `world-event:N` 身份；相同操作重试返回原事件，参数变化会失败。长期记忆的 L0/L1 记录引用这个事件身份，因此模型上下文中的经历有稳定来源。账本与角色快照、长期记忆、消息 inbox 一起写入 checkpoint；这仍是正常停服 checkpoint，尚未与 Luanti 地图数据库形成跨存储事务，也尚未覆盖进程崩溃窗口。
+
+产品世界额外使用 `product_state.lua` 记录 `READY`、`PREPARING` 和 `FROZEN`。模型请求由
+`model_envelope.lua` 生成 `wispiva.model-input` v1：`facts` 是当前可验证事实，`experiences` 是该角色自己的经历，`rumors` 是消息或转述，`unknowns` 是有来源但未证实的起源种子。
+每条记录都带 `source` 与 `access.audience`；当前观察、库存、可行动作和反馈另放在
+`current`/`feedback`，避免把动作意图写成世界事实。
 
 ## 持久化与资源
 
-`persistence.lua` 保存实体位置、稳定 body ID、库存、RNG、计数和记忆。恢复前验证完整批次；`--resume` 保留身体与世界，清除记忆、关系和移动目标，并重设 persona 与本轮决策数。body ID 不变，故不是全新人口。停服写入；异常退出后的世界不保证可恢复，快照必须在停服后创建。
+`persistence.lua` 保存实体位置、稳定 body ID、库存、RNG、计数、关系、短期记忆、消息 inbox 和上次动作反馈。恢复前验证完整批次；实验运行器的 `--resume` 保留身体与世界，清除记忆、关系和移动目标，并重设 persona 与本轮决策数；产品世界的 `--resume` 保留角色心智。body ID 不变，故不是全新人口。停服写入；异常退出后的世界由产品状态账本冻结，不能自动猜测缺失投影。
 
 `resource_actions.lua` 检查整数目标、1.5 格欧氏距离、已加载节点、库存及实际写入回读。仅操作 `society:resource`，采集增加库存、放置消耗库存；集成停服核对“世界资源＋库存”守恒。`mark` 是独立的调试标记，不消耗资源。模块不提供一般游戏的保护、视线与回调语义。
 
 ## 定向验证
 
-在本目录运行 `lua5.1 test.lua`、`test_persistence.lua`、`test_resource_actions.lua` 、`test_action_context.lua`、`test_spatial.lua`、`test_runtime.lua` 和 `test_retrieval.lua`。这些是轻量模拟引擎测试；实际启动、恢复、资源夹具与模型闭环由独立 Actions 工作流验证，结果见 [执行计划](../docs/PLAN.md)。
+在本目录运行 `lua5.1 test.lua`、`test_persistence.lua`、`test_resource_actions.lua` 、`test_action_context.lua`、`test_spatial.lua`、`test_runtime.lua`、`test_retrieval.lua`、`test_product_state.lua` 和 `test_model_envelope.lua`。这些是轻量模拟引擎测试；实际启动、恢复、资源夹具与模型闭环由独立 Actions 工作流验证，结果见 [执行计划](../docs/PLAN.md)。
 
 
 ## 规模运行

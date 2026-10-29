@@ -1,8 +1,9 @@
 -- Lua 5.1; no storage or engine globals. Snapshots contain only JSON values.
 -- snapshot(entity) reads object:get_pos(), _id, _persona, _home, _facing,
--- _target, _rng, _decisions, _marks_placed, _memory, _episodic:list() and
--- optionally _resources:inventory(). Restore exposes inventory through
--- _restored_inventory; applying it to a resource instance is the caller's job.
+-- _target, _rng, _decisions, _marks_placed, _memory, _episodic:list(),
+-- _inbox, _last_action and optionally _resources:inventory(). Restore exposes
+-- inventory through _restored_inventory; applying it to a resource instance is
+-- the caller's job.
 -- restore(entity, snapshot, {reset_minds = true}) restores the physical and
 -- identity fields, RNG and counters, but clears persona, target and memories.
 -- Otherwise it restores all fields. The caller creates the object and episodic
@@ -65,6 +66,46 @@ local function episodes(entries)
   return out
 end
 
+local function message(value)
+  assert(type(value) == "table", "invalid inbox message")
+  assert(finite(value.time), "invalid message time")
+  assert(type(value.from) == "number" and value.from == math.floor(value.from) and value.from >= 0,
+    "invalid message sender")
+  assert(type(value.text) == "string" and value.text ~= "" and #value.text <= 240
+    and not value.text:find("[%c]"), "invalid message text")
+  assert(type(value.message_id) == "string" and value.message_id ~= "", "invalid message id")
+  return {time = value.time, from = value.from, text = value.text, message_id = value.message_id}
+end
+
+local function inbox(entries)
+  entries = entries or {}
+  local out = {}
+  for i = 1, array(entries) do
+    assert(i <= 32, "inbox exceeds checkpoint budget")
+    out[i] = message(entries[i])
+  end
+  return out
+end
+
+local function last_action(value)
+  if value == nil then return nil end
+  assert(type(value) == "table", "invalid last action")
+  assert(type(value.kind) == "string" and value.kind ~= "", "invalid last action kind")
+  assert(value.point == nil or type(value.point) == "table", "invalid last action point")
+  if value.point ~= nil then value = {kind=value.kind, point=point(value.point), ok=value.ok,
+    reason=value.reason, attempt_id=value.attempt_id, event_id=value.event_id,
+    world_revision=value.world_revision}
+  else value = {kind=value.kind, ok=value.ok, reason=value.reason, attempt_id=value.attempt_id,
+    event_id=value.event_id, world_revision=value.world_revision} end
+  assert(type(value.ok) == "boolean", "invalid last action status")
+  assert(type(value.reason) == "string" and value.reason ~= "", "invalid last action reason")
+  assert(type(value.attempt_id) == "string" and value.attempt_id ~= "", "invalid attempt id")
+  assert(type(value.event_id) == "string" and value.event_id ~= "", "invalid event id")
+  assert(type(value.world_revision) == "number" and value.world_revision >= 0
+    and value.world_revision == math.floor(value.world_revision), "invalid world revision")
+  return value
+end
+
 local function normalise(s)
   assert(type(s) == "table" and s.version == 1, "unsupported snapshot version")
   assert(id_ok(s.id), "invalid id")
@@ -86,6 +127,7 @@ local function normalise(s)
     decisions = counter(s.decisions), marks_placed = counter(s.marks_placed),
     memory = {met = met, idle_streak = counter(s.memory.idle_streak)},
     episodic = episodes(s.episodic),
+    inbox = inbox(s.inbox), last_action = last_action(s.last_action),
     inventory = inventory(s.inventory == nil and {} or s.inventory)}
 end
 
@@ -157,7 +199,8 @@ function M.snapshot(entity)
     target = entity._target, rng = entity._rng, decisions = entity._decisions,
     marks_placed = entity._marks_placed,
     memory = {met = met, idle_streak = entity._memory.idle_streak},
-    episodic = entity._episodic:list(), inventory = resources})
+    episodic = entity._episodic:list(), inbox = entity._inbox or {},
+    last_action = entity._last_action, inventory = resources})
 end
 
 function M.restore(entity, snapshot, options)
@@ -179,6 +222,8 @@ function M.restore(entity, snapshot, options)
   entity._persona = not options.reset_minds and s.persona or nil
   entity._target = not options.reset_minds and s.target or nil
   entity._memory = {met = met, idle_streak = options.reset_minds and 0 or s.memory.idle_streak}
+  entity._inbox = not options.reset_minds and s.inbox or {}
+  entity._last_action = not options.reset_minds and s.last_action or nil
   entity._episodic:clear()
   if not options.reset_minds then
     for _, entry in ipairs(s.episodic) do entity._episodic:add(entry) end

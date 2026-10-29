@@ -11,6 +11,9 @@ local function agent(capacity)
     _rng = 123, _decisions = 2, _marks_placed = 3,
     _memory = {met = {[0] = true, [17] = true, ["17"] = true}, idle_streak = 4},
     _episodic = memory.new(capacity or 3),
+    _inbox = {{time = 6, from = 1, text = "hello", message_id = "message:1"}},
+    _last_action = {kind = "inspect", ok = true, reason = "observed",
+      attempt_id = "run:0", event_id = "world-event:1", world_revision = 1},
   }
 end
 
@@ -25,6 +28,7 @@ validated.pos.x = 900
 assert(s.pos.x == 1 and a.object:get_pos().x == 1)
 assert(s.version == 1 and s.id == 0 and s.pos.y == 2 and s.rng == 123)
 assert(s.inventory.wood == 7 and s.inventory.stone == 0)
+assert(s.inbox[1].text == "hello" and s.last_action.event_id == "world-event:1")
 assert(#s.memory.met == 3 and s.memory.met[1] == 0 and s.memory.met[2] == 17 and s.memory.met[3] == "17")
 -- Every table is either a dense array or an object with string keys; all values
 -- are JSON-safe and there are no cycles or aliases to the original entity.
@@ -57,6 +61,7 @@ assert(b._decisions == 2 and b._marks_placed == 3 and b._memory.idle_streak == 4
 assert(b._memory.met[0] and b._memory.met[17] and b._memory.met["17"])
 assert(#b._episodic:list() == 2 and b._episodic:list()[1].text == "one")
 assert(b._restored_inventory.wood == 7 and b._restored_inventory.stone == 0)
+assert(b._inbox[1].message_id == "message:1" and b._last_action.kind == "inspect")
 s.inventory.wood = 42
 assert(b._restored_inventory.wood == 7)
 b._restored_inventory.stone = 3
@@ -70,6 +75,7 @@ assert(b._id == 0 and b.object:get_pos().x == 1 and b._rng == 123 and b._home.x 
 assert(b._persona == nil and b._target == nil and b._memory.idle_streak == 0
   and next(b._memory.met) == nil and b._episodic:size() == 0)
 assert(b._restored_inventory.wood == 7 and b._restored_inventory.stone == 0)
+assert(next(b._inbox) == nil and b._last_action == nil)
 local cleared = persistence.snapshot(b)
 assert(cleared.persona == nil and cleared.target == nil and #cleared.memory.met == 0)
 assert(next(cleared.inventory) == nil) -- No resource instance on b.
