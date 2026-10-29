@@ -57,13 +57,13 @@
 
 #### 2026-10-27 本机实测补充（Luanti 路线）
 
-上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见实测证据（`wispiva/luanti-world` 分支：`luanti/bench/luanti-entity-scale-2026-10-27.txt`）。
+上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见实测证据（本分支：`validation/luanti/bench/luanti-entity-scale-2026-10-27.txt`）。
 
 - 纯服务端实体（无客户端连接）可以承载远超原先担心的规模：每步 O(1) 工作时 **2 万实体仍保持实时**（11.02–11.04 step/s），峰值 RSS 167 MiB。内存与实体数不是瓶颈。
 - 崩塌来自每实体的计算量，而不是实体数量：朴素的 O(N²) 邻域感知在 **1000→5000 之间跌破实时**（4.4 step/s），10000 时降到 0.92 step/s。这给“距离 LOD 是关键设计”一条补上了本项目自己的数字。
 - 无玩家时实体不会被 step，必须 `forceload`；且只在区块 emerge 完成后再生成实体，否则实体会被活跃区块管理周期**静默删除**（`add_entity` 不报错）。这是服务端 NPC 路线的硬性工程前提，原先未记录。
 - 以上只覆盖 tick 与内存容量，**没有**覆盖 LLM 调用成本、延迟与 agent 行为。Minecraft/Paper 路线（玩家 bot）仍无本项目实测数据。
-- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见实验说明（`wispiva/luanti-world` 分支：`luanti/README.md`）与 `luanti/agent/evidence/`。
+- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见 Luanti 适配层验证说明（本分支：`validation/luanti/README.md`）与 `evidence/luanti/agent/`。
 
 ### LLM 调用量
 
@@ -148,6 +148,6 @@
 ## 证据边界
 
 - 2026-10-27 通过 GitHub API、README 与仓库目录读取信息；没有克隆、构建、运行**上表列出的第三方项目**，也没有复现论文结果。
-- 与本项目自己的实验区分：Luanti 路线的服务端实体容量与 M0 agent 闭环已有本项目实测（见上文“本机实测补充”与 `luanti/`）；**token 用量与费用仍全是估算**，A 路线（Paper/Minecraft）仍无任何本项目实测数据。
+- 与本项目自己的实验区分：Luanti 路线的服务端实体容量与 M0 agent 闭环已有本项目实测（见上文“本机实测补充”与 `engine/luanti/`）；**token 用量与费用仍全是估算**，A 路线（Paper/Minecraft）仍无任何本项目实测数据。
 - 许可证信息可能变化；实际采用前必须重新核对仓库 LICENSE、素材许可和依赖许可。
 - 本文不构成法律意见。

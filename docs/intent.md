@@ -2,7 +2,7 @@
 
 当前工作进度与交接入口见[工作计划](PLAN.md)。
 
-**本分支定位（2026-10-29）**：本 worktree 同样以实现下述 Wispiva 产品为目标，采用 Minecraft-like 的 Luanti 基底推进；不是将项目目标缩减为社会实验。现状见[当前架构](architecture.md)，本分支目标与阶段见[Luanti 设计](design/2026-10-27-target-architecture.md)和[实施计划](PLAN.md)。本分支独立发展，不合并到 `main`；其他分支的技术路线不因此自动改变。
+**本分支定位（2026-10-29）**：本 worktree 以实现下述 Wispiva 独立产品为目标，采用 Minecraft-like 的 Luanti 基底推进；不是将项目目标缩减为社会实验。Wispiva 的产品模块直接位于仓库根目录，Luanti 只负责引擎接入和三维世界适配。现状见[当前架构](architecture.md)，本分支目标与阶段见[目标设计](design/2026-10-27-target-architecture.md)和[实施计划](PLAN.md)。本分支独立发展，不合并到 `main`；其他分支的技术路线不因此自动改变。
 
 ## 1. 核心概念：wisps of ideas
 

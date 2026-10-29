@@ -1,9 +1,9 @@
 # 本分支工作约定
 
-本 worktree 的 `wispiva/luanti-world` 分支是 Wispiva 的独立产品实现，使用 Luanti 作为 Minecraft-like 世界基底。产品目标与 Wispiva 一致；本分支并非仅用于社会实验。
+本 worktree 的独立产品分支是 Wispiva 的独立产品实现，使用 Luanti 作为 Minecraft-like 世界基底。产品目标与 Wispiva 一致；本分支并非仅用于社会实验。
 
 - 本分支独立发展，**不要合并到 `main`，也不要为合并到 `main` 创建或准备 PR**。本约定不禁止参考其他分支的实现或研究。
 - 按本分支的 [项目意图](docs/intent.md)、[当前架构](docs/architecture.md)、[目标设计](docs/design/2026-10-27-target-architecture.md)和[实施计划](docs/PLAN.md)工作；变更目标、架构或进度时直接更新相应文档和[索引](docs/README.md)，避免维护互相矛盾的分支副本。
-- 产品世界运行时代码位于 `luanti/`；实验夹具、基准和原始证据保留在其中，不能将运行时重新定位为独立实验。
+- Wispiva 产品代码位于根目录的 `genesis/`、`world/`、`cognition/` 和 `model/`；Luanti 适配层位于 `engine/luanti/`，验证夹具和基准位于 `validation/`，原始证据位于 `evidence/`。不能把整个产品重新命名为 Luanti，也不能将运行时重新定位为独立实验。
 - 区分当前实现、验证证据与目标；角色记忆、世界持续性和三维体验属于产品核心，不以规则实体规模冒充真实模型角色能力。
 - 历史实验结果与原始数据可以继续作为证据，但不能用旧的实验定位覆盖本分支产品目标。

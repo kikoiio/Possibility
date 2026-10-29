@@ -2,9 +2,9 @@
 status: draft
 ---
 
-# Wispiva 的 Luanti 世界实现路线
+# Wispiva 产品目标实现路线
 
-更新：2026-10-29。本文描述本分支的**目标设计**，不是当前实现。用户明确本 worktree 与 Wispiva 主项目具有同一个产品目标，本分支采用 Minecraft-like 的 Luanti 基底探索并实现这一目标，本分支独立发展，不合并到 `main`。共同产品目标以[项目意图](../intent.md)为准；现状见[当前架构](../architecture.md)，阶段与验收见[分支计划](../PLAN.md)。
+更新：2026-10-29。本文描述本分支的**目标设计**，不是当前实现。本 worktree 以 Wispiva 独立产品为目标，采用 Minecraft-like 的 Luanti 基底实现这一目标；产品模块位于仓库根目录，Luanti 只承担引擎适配。本分支独立发展，不合并到 `main`。共同产品目标以[项目意图](../intent.md)为准；现状见[当前架构](../architecture.md)，阶段与验收见[实施计划](../PLAN.md)。
 
 ## 范围与路线
 

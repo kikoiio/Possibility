@@ -14,15 +14,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check shell scripts
         run: |
-          bash -n luanti/runtime/bootstrap.sh
-          bash -n luanti/agent/run.sh
-          bash -n luanti/bench/run.sh
+          bash -n engine/luanti/runtime/bootstrap.sh
+          bash -n engine/luanti/run.sh
+          bash -n validation/luanti/bench/run.sh
       - name: Install Lua syntax checker
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1
       - name: Check Lua syntax
         run: |
-          luac5.1 -p luanti/agent/mod/society/init.lua
-          luac5.1 -p luanti/agent/mod/society/policy.lua
-          luac5.1 -p luanti/bench/init.lua
+          luac5.1 -p engine/luanti/mod/society/init.lua
+          luac5.1 -p engine/luanti/mod/society/policy.lua
+          luac5.1 -p validation/luanti/bench/init.lua

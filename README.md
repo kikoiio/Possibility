@@ -2,6 +2,6 @@
 
 A wisp is a spark of an idea. Wispiva gives ideas a world where they can take shape, live, and evolve.
 
-This branch pursues Wispiva's shared product goal using Luanti as a Minecraft-like world foundation. It develops independently and will not be merged into `main`. It currently contains an early server-side agent and world simulation prototype; user-directed world creation, persistent evolving worlds, and long-term character memory are still being built. See the [documentation index](docs/README.md) for the current state and plans.
+This branch develops Wispiva as an independent product. The product modules for world creation, world state, cognition, memory, and model access live directly at the repository root. Luanti supplies one Minecraft-like world implementation behind `engine/luanti/`; it is an adapter that can be replaced without moving the product modules. This branch will not be merged into `main`. See the [documentation index](docs/README.md) for the current state and plans.
 
-The Luanti runtime and current world implementation live in [`luanti/`](luanti/README.md), together with its benchmarks and evidence.
+The product flow is `genesis → world → cognition/model → engine/luanti`. Capacity tools live in `validation/luanti/`, and historical Luanti runs live in `evidence/luanti/`.
