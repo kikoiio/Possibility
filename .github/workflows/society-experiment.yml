@@ -106,7 +106,7 @@ jobs:
           grep -q 'SOCIETY summary .*decisions=6 ' "$exp/agent/evidence/ci-memory-keep.run1.log"
           grep -q 'SOCIETY long-term-checkpoint records=[1-9]' "$exp/agent/evidence/ci-memory-keep.run1.log"
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-verify-') && !startsWith(github.ref_name, 'experiment/cloud-run-budget-') && !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
+        if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-verify-') && !startsWith(github.ref_name, 'experiment/cloud-run-genesis-') && !startsWith(github.ref_name, 'experiment/cloud-run-budget-') && !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
           python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
@@ -184,6 +184,29 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           luanti/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+      - name: Generate two synthetic world drafts with the configured model
+        if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-genesis-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p genesis-results
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from luanti.genesis.genesis import generate
+          from luanti.genesis.model_adapter import responses_model
+          from luanti.model.adapter import Config
+          model = responses_model(Config.from_env())
+          for index, intent in enumerate((
+              'A rainy fishing harbor with three residents who repair boats and trade fish.',
+              'A quiet mountain library with three caretakers and a garden.'), 1):
+              draft = generate(intent, model)
+              Path(f'genesis-results/draft-{index}.json').write_text(
+                  json.dumps(draft, ensure_ascii=False, indent=2), encoding='utf-8')
+              print(f'draft {index}: {len(draft["places"])} places, {len(draft["actors"])} actors, {len(draft["rules"])} descriptive rules')
+          PY
       - name: Repeated 1000-agent capacity measurement
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         run: |
@@ -235,6 +258,7 @@ jobs:
             luanti/agent/evidence/ci-agent-*
             luanti/agent/evidence/ci-resource.*
             luanti/agent/evidence/ci-memory-*
+            genesis-results/
             luanti/agent/evidence/ci-large-*
             luanti/agent/evidence/ci-repeat-*
             luanti/agent/evidence/ci-opt-*
