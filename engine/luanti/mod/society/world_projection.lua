@@ -30,7 +30,7 @@ local function integer(v, low, high)
   return type(v) == 'number' and v == math.floor(v) and v >= low and v <= high
 end
 local function id(v)
-  return type(v) == 'string' and #v <= 80 and v:match('^[%w_-]+$') ~= nil
+  return type(v) == 'string' and #v <= 80 and v:match('^[%w_:%-]+$') ~= nil
 end
 local function uuid(v)
   return type(v) == 'string' and #v == 36
