@@ -88,10 +88,11 @@ if [[ "$VISUAL_FIXTURE" -eq 1 ]]; then
   :
 elif [[ "$FIXTURE" -eq 1 ]]; then
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 --fixture > "$WORLD/private/worker.log" 2>&1 &
+  worker_pid=$!
 else
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 > "$WORLD/private/worker.log" 2>&1 &
+  worker_pid=$!
 fi
-worker_pid=$!
 
 cleanup() {
   if [[ -n "$worker_pid" ]]; then kill -TERM "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi
