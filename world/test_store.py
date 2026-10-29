@@ -89,6 +89,91 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(CorruptStore):
             self.store.recover()
 
+    def test_persisted_json_ambiguities_fail_closed(self):
+        self.commit('one', 0, {'v': 1})
+        locations = (('checkpoint', 'snapshot'), ('events', 'request'), ('events', 'result'))
+        prefixes = ('"duplicate":0,"duplicate":1,',
+                    '"probe":{"duplicate":0,"duplicate":1},',
+                    '"probe":NaN,', '"probe":Infinity,', '"probe":-Infinity,',
+                    '"probe":1e999,')
+        for table, column in locations:
+            original = self.store.db.execute(f'SELECT {column} FROM {table}').fetchone()[0]
+            for prefix in prefixes:
+                with self.subTest(table=table, column=column, prefix=prefix):
+                    damaged = '{' + prefix + original[1:]
+                    self.store.db.execute(f'UPDATE {table} SET {column}=?', (damaged,))
+                    with self.assertRaises(CorruptStore):
+                        self.store.recover()
+                    self.assertFalse(self.store.db.in_transaction)
+                    with self.assertRaises(CorruptStore):
+                        WorldStore(self.path)
+                    self.assertEqual(self.store.db.execute(
+                        f'SELECT {column} FROM {table}').fetchone()[0], damaged)
+                    self.store.db.execute(f'UPDATE {table} SET {column}=?', (original,))
+
+    def test_commit_rejects_corrupt_persisted_json(self):
+        self.commit('one', 0, {'v': 1})
+        for table, column, operation in (
+                ('events', 'request', lambda: self.commit('one', 0, {'v': 1})),
+                ('events', 'result', lambda: self.commit('one', 0, {'v': 1})),
+                ('checkpoint', 'snapshot', lambda: self.commit('two', 1))):
+            original = self.store.db.execute(f'SELECT {column} FROM {table}').fetchone()[0]
+            for prefix in ('"nested":{"x":1,"x":2},', '"bad":NaN,'):
+                with self.subTest(column=column, prefix=prefix):
+                    damaged = '{' + prefix + original[1:]
+                    self.store.db.execute(f'UPDATE {table} SET {column}=?', (damaged,))
+                    with self.assertRaises(CorruptStore):
+                        operation()
+                    self.assertFalse(self.store.db.in_transaction)
+                    self.assertEqual(self.store.db.execute('SELECT count(*) FROM events').fetchone()[0], 1)
+                    self.assertEqual(self.store.db.execute(
+                        f'SELECT {column} FROM {table}').fetchone()[0], damaged)
+                    self.store.db.execute(f'UPDATE {table} SET {column}=?', (original,))
+
+    def test_valid_legacy_json_formatting_is_accepted(self):
+        result = self.commit('one', 0, {'v': 1})
+        for table, column in (('checkpoint', 'snapshot'), ('events', 'result')):
+            original = self.store.db.execute(f'SELECT {column} FROM {table}').fetchone()[0]
+            self.store.db.execute(f'UPDATE {table} SET {column}=?',
+                                  (json.dumps(json.loads(original), indent=2),))
+        self.store.close()
+        self.store = WorldStore(self.path)
+        self.assertEqual(self.store.recover()['version'], 1)
+        self.assertEqual(self.commit('one', 0, {'v': 1}), result)
+
+    def test_invalid_event_result_rejected_on_replay_and_retry(self):
+        self.commit('one', 0, {'v': 1})
+        self.commit('two', 1, {'v': 2})
+        original = self.store.db.execute(
+            "SELECT result FROM events WHERE event_id='one'").fetchone()[0]
+        invalid_results = (
+            {'version': True, 'event_id': 'one'},
+            {'version': 1.0, 'event_id': 'one'},
+            {'version': 2, 'event_id': 'one'},
+            {'version': 1, 'event_id': 'one', 'extra': 0},
+            {'version': 1},
+            {'version': 1, 'event_id': 'two'},
+            {'version': 1, 'event_id': 1},
+        )
+        for invalid in invalid_results:
+            with self.subTest(result=invalid):
+                damaged = json.dumps(invalid)
+                self.store.db.execute("UPDATE events SET result=? WHERE event_id='one'", (damaged,))
+                with self.assertRaises(CorruptStore):
+                    self.commit('one', 0, {'v': 1})
+                self.assertFalse(self.store.db.in_transaction)
+                with self.assertRaises(CorruptStore):
+                    self.store.recover()
+                self.assertFalse(self.store.db.in_transaction)
+                with self.assertRaises(CorruptStore):
+                    WorldStore(self.path)
+                self.assertEqual(self.store.db.execute(
+                    "SELECT result FROM events WHERE event_id='one'").fetchone()[0], damaged)
+                self.assertEqual(self.store.db.execute('SELECT count(*) FROM events').fetchone()[0], 2)
+                self.store.db.execute("UPDATE events SET result=? WHERE event_id='one'", (original,))
+        self.assertEqual(self.commit('one', 0, {'v': 1}), {'version': 1, 'event_id': 'one'})
+        self.assertEqual(self.store.recover()['version'], 2)
+
     def test_validation_and_schema(self):
         with self.assertRaises(ValueError):
             self.commit('x', 0, {'bad': float('nan')})

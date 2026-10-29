@@ -127,6 +127,17 @@ class DraftStore:
         row = self._row(draft_id)
         return {k: v for k, v in row.items() if k != 'token'}
 
+    def _check_v1_unbound(self, draft_id):
+        # Called under BEGIN IMMEDIATE, the same lock used by v1 confirmation.
+        # Older draft databases do not have the optional bridge table.
+        table = self.db.execute("SELECT type FROM sqlite_master WHERE name='origin_confirmations_v1'").fetchone()
+        if table is None:
+            return
+        if table[0] != 'table':
+            raise DraftCorrupt('invalid v1 confirmation schema')
+        if self.db.execute('SELECT 1 FROM origin_confirmations_v1 WHERE draft_id=? LIMIT 1', (draft_id,)).fetchone():
+            raise DraftConflict('draft frozen by v1 confirmation')
+
     def update(self, draft_id, expected_revision, draft):
         payload = _check_draft(draft)
         if type(expected_revision) is not int or not 1 <= expected_revision < 9223372036854775807:
@@ -134,6 +145,7 @@ class DraftStore:
         self.db.execute('BEGIN IMMEDIATE')
         try:
             row = self._row(draft_id)
+            self._check_v1_unbound(draft_id)
             if row['status'] != 'draft' or row['revision'] != expected_revision:
                 raise DraftConflict('draft changed or confirmation started')
             self.db.execute('UPDATE drafts SET revision=revision+1, payload=? WHERE id=?', (payload, draft_id))
@@ -152,6 +164,7 @@ class DraftStore:
         self.db.execute('BEGIN IMMEDIATE')
         try:
             row = self._row(draft_id)
+            self._check_v1_unbound(draft_id)
             if row['revision'] != expected_revision:
                 raise DraftConflict('stale revision')
             if row['status'] == 'draft':
@@ -170,6 +183,7 @@ class DraftStore:
         self.db.execute('BEGIN IMMEDIATE')
         try:
             row = self._row(draft_id)
+            self._check_v1_unbound(draft_id)
             if row['status'] == 'draft': raise DraftConflict('explicit confirmation required')
             world, characters, event = _projection(row['draft'], row['id'], row['revision'], row['token'])
             target = Path(row['target'])

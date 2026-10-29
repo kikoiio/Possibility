@@ -17,6 +17,31 @@ class CorruptStore(StoreError):
     pass
 
 
+def _read_json(raw):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('duplicate JSON key')
+            result[key] = value
+        return result
+
+    def constant(_value):
+        raise ValueError('non-finite JSON number')
+
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('non-finite JSON number')
+        return number
+
+    try:
+        return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant,
+                          parse_float=finite_float)
+    except (ValueError, TypeError, RecursionError) as exc:
+        raise CorruptStore('invalid persisted JSON') from exc
+
+
 def _json(value):
     def check(v):
         if v is None or type(v) in (str, bool, int):
@@ -64,6 +89,13 @@ def _snapshot(world, characters, clock):
     return {'world': world, 'characters': characters, 'clock': clock}
 
 
+def _validate_result(result, version, event_id):
+    if (type(result) is not dict or set(result) != {'version', 'event_id'}
+            or type(result['version']) is not int or result['version'] != version
+            or type(result['event_id']) is not str or result['event_id'] != event_id):
+        raise CorruptStore('invalid event result')
+
+
 class WorldStore:
     """Single-world SQLite store. Call close() when finished."""
     def __init__(self, path, *, create=False):
@@ -107,7 +139,7 @@ class WorldStore:
             _, version, raw = rows[0]
             if type(version) is not int or version < 0:
                 raise ValueError('invalid version')
-            state = json.loads(raw)
+            state = _read_json(raw)
             if type(state) is not dict or set(state) != {'world', 'characters', 'clock'}:
                 raise ValueError('invalid snapshot fields')
             _snapshot(state['world'], state['characters'], state['clock'])
@@ -116,12 +148,11 @@ class WorldStore:
             for seq, event_id, request_raw, result_raw in self.db.execute('SELECT version, event_id, request, result FROM events ORDER BY version'):
                 if seq != len(events) + 1:
                     raise ValueError('event sequence gap')
-                request, result = json.loads(request_raw), json.loads(result_raw)
+                request, result = _read_json(request_raw), _read_json(result_raw)
                 _validate_request(request)
                 if request['event']['id'] != event_id or request['expected_version'] != seq - 1:
                     raise ValueError('event identity or version mismatch')
-                if result != {'version': seq, 'event_id': event_id}:
-                    raise ValueError('invalid event result')
+                _validate_result(result, seq, event_id)
                 clock = replay['clock']
                 if clock['paused'] and request['elapsed'] != 0:
                     raise ValueError('time advanced while paused')
@@ -132,7 +163,7 @@ class WorldStore:
                 raise ValueError('checkpoint and events disagree')
             self.db.execute('COMMIT')
             return {'version': version, **state, 'events': events}
-        except (sqlite3.Error, ValueError, TypeError, KeyError, OverflowError) as exc:
+        except (sqlite3.Error, ValueError, TypeError, KeyError, OverflowError, CorruptStore) as exc:
             if self.db.in_transaction:
                 self.db.execute('ROLLBACK')
             raise CorruptStore('recovery refused: ' + str(exc)) from exc
@@ -145,19 +176,23 @@ class WorldStore:
         encoded = _json(request)
         try:
             self.db.execute('BEGIN IMMEDIATE')
-            row = self.db.execute('SELECT request, result FROM events WHERE event_id=?', (event['id'],)).fetchone()
+            row = self.db.execute('SELECT version, request, result FROM events WHERE event_id=?', (event['id'],)).fetchone()
             if row:
-                if row[0] != encoded:
+                version, request_raw, result_raw = row
+                _read_json(request_raw)
+                result = _read_json(result_raw)
+                _validate_result(result, version, event['id'])
+                if request_raw != encoded:
                     raise Conflict('event id already used for a different request')
                 self.db.execute('COMMIT')
-                return json.loads(row[1])
+                return result
             row = self.db.execute('SELECT version, snapshot FROM checkpoint WHERE singleton=1').fetchone()
             if row is None:
                 raise CorruptStore('missing checkpoint')
             version, raw = row
             if version != expected_version:
                 raise Conflict('stale version')
-            state = json.loads(raw)
+            state = _read_json(raw)
             clock = state['clock']
             if clock['paused'] and elapsed != 0:
                 raise Conflict('cannot advance while paused')
