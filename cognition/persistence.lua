@@ -60,8 +60,37 @@ local function episodes(entries)
     assert(type(e) == "table" and finite(e.time) and type(e.text) == "string"
       and type(e.source) == "table" and type(e.source.kind) == "string"
       and e.source.kind ~= "" and id_ok(e.source.id), "invalid episode")
-    out[i] = {time = e.time, text = e.text,
-      source = {kind = e.source.kind, id = e.source.id}}
+    local source = {kind = e.source.kind, id = e.source.id}
+    if e.source.revision ~= nil then
+      assert(type(e.source.revision) == "number" and e.source.revision >= 0
+        and e.source.revision == math.floor(e.source.revision), "invalid episode source revision")
+      source.revision = e.source.revision
+    end
+    local record = {time = e.time, text = e.text, source = source}
+    for _, key in ipairs({"epistemic", "classification"}) do
+      if e[key] ~= nil then
+        assert(type(e[key]) == "string" and ({fact=true, experience=true, rumor=true, belief=true, unknown=true})[e[key]],
+          "invalid episode " .. key)
+        record[key] = e[key]
+      end
+    end
+    if e.layer ~= nil then
+      assert(e.layer == "L0" or e.layer == "L1" or e.layer == "L2", "invalid episode layer")
+      record.layer = e.layer
+    end
+    if e.owner ~= nil then assert(type(e.owner) == "string" and e.owner ~= "", "invalid episode owner"); record.owner = e.owner end
+    if e.captured_at ~= nil then assert(finite(e.captured_at), "invalid episode captured_at"); record.captured_at = e.captured_at end
+    if e.audience ~= nil then
+      assert(type(e.audience) == "table" and #e.audience > 0, "invalid episode audience")
+      local seen = {}
+      for _, recipient in ipairs(e.audience) do
+        assert(type(recipient) == "string" and recipient ~= "" and not seen[recipient], "invalid episode audience")
+        seen[recipient] = true
+      end
+      record.audience = {}
+      for j, recipient in ipairs(e.audience) do record.audience[j] = recipient end
+    end
+    out[i] = record
   end
   return out
 end

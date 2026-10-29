@@ -13,6 +13,25 @@ CTX = {'observation': {'has_target': False, 'nearby_agents': [2, 3]},
        'bounds': {'min': {'x': -5, 'y': 1, 'z': -5}, 'max': {'x': 5, 'y': 1, 'z': 5}}}
 
 
+def product_envelope():
+    return {
+        'schema': 'wispiva.model-input', 'version': 1,
+        'request': {'decision_id': 'decision-1', 'world_id': 'world-1',
+                    'actor_id': 'alice', 'origin_event_id': 'event-1',
+                    'world_revision': 1, 'observed_at': 100.0},
+        'actor': {
+            'id': 'alice', 'runtime_id': 1, 'name': 'Alice',
+            'role': {'text': 'scout', 'source': {'kind': 'genesis.role', 'id': 'role-1'}},
+            'goal': {'text': 'learn', 'source': {'kind': 'genesis.goal', 'id': 'goal-1'}},
+            'permissions': {'read_scopes': ['public', 'private'],
+                            'allowed_actions': ['inspect']},
+        },
+        'knowledge': {'facts': [], 'experiences': [], 'rumors': [], 'unknowns': []},
+        'current': {'observation': {}, 'inventory': {}, 'affordances': {}},
+        'feedback': {'available': False},
+    }
+
+
 def stream(action, status='completed', *, usage=None):
     events = [{'type': 'response.output_text.delta', 'delta': json.dumps(action)},
               {'type': 'response.completed', 'response': {'status': status,
@@ -53,13 +72,7 @@ class AdapterTests(unittest.TestCase):
         self.assertNotIn('secret-key', repr(CONFIG))
 
     def test_product_envelope_is_the_only_provider_context(self):
-        envelope = {
-            'schema': 'wispiva.model-input', 'version': 1,
-            'request': {'world_id': 'world-1', 'actor_id': 'alice'},
-            'actor': {'id': 'alice'},
-            'knowledge': {'facts': [], 'experiences': [], 'rumors': [], 'unknowns': []},
-            'current': {}, 'feedback': {'available': False},
-        }
+        envelope = product_envelope()
         context = {**CTX, 'model_input': envelope, 'genesis_profile': {'memory_seeds': ['private']},
                    'incoming_messages': [{'text': 'private'}]}
         def transport(_config, body):
@@ -68,6 +81,12 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(payload, {'model_input': envelope})
             return stream({'kind': 'inspect'})
         self.assertEqual(adapter.decide(CONFIG, context, transport=transport)['action']['kind'], 'inspect')
+
+    def test_invalid_product_envelope_is_rejected_before_provider(self):
+        context = {**CTX, 'model_input': product_envelope()}
+        context['model_input']['actor']['permissions']['read_scopes'] = []
+        with self.assertRaisesRegex(adapter.ModelError, '^invalid_context$'):
+            adapter.decide(CONFIG, context, transport=lambda *_: self.fail('provider called'))
 
     def test_invalid_present_token_fields_are_marked_while_valid_counts_survive(self):
         valid = {'input_tokens': 12, 'output_tokens': 4, 'total_tokens': 16}

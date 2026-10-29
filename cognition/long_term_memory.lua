@@ -53,9 +53,27 @@ local function byte_bound(value)
 end
 
 local record_fields = {id=true, owner=true, time=true, text=true, source=true, layer=true,
+  audience=true,
   topic=true, version=true, experiences=true, classification=true, importance=true}
-local source_fields = {kind=true, id=true}
-local classifications = {fact=true, rumor=true, belief=true, unknown=true}
+local source_fields = {kind=true, id=true, revision=true}
+local classifications = {fact=true, experience=true, rumor=true, belief=true, unknown=true}
+
+local function audience(value, owner, layer)
+  if value == nil then
+    return {layer == "L0" and "public" or owner}
+  end
+  assert(array(value) > 0, "audience must be nonempty")
+  local seen, owns = {}, false
+  for _, recipient in ipairs(value) do
+    string_required(recipient, "audience member")
+    assert(not seen[recipient], "duplicate audience member")
+    seen[recipient] = true
+    owns = owns or recipient == owner
+  end
+  assert(layer == "L0" and seen.public or layer ~= "L0" and owns,
+    "record audience does not include its owner")
+  return copy(value)
+end
 
 local function validate_record(r)
   fields(r, record_fields)
@@ -66,7 +84,9 @@ local function validate_record(r)
   fields(r.source, source_fields)
   string_required(r.source.kind, "source.kind")
   string_required(r.source.id, "source.id")
+  if r.source.revision ~= nil then integer(r.source.revision, 0, 9007199254740991, "source.revision") end
   assert(r.layer == "L0" or r.layer == "L1" or r.layer == "L2", "invalid layer")
+  audience(r.audience, r.owner, r.layer)
   if r.importance ~= nil then assert(finite(r.importance), "invalid importance") end
   if r.layer == "L0" then
     assert(r.topic == nil and r.version == nil and r.experiences == nil and r.classification == nil,
@@ -93,21 +113,23 @@ local function build()
   local store = {}
 
   local function append(record)
-    validate_record(record)
-    assert(not by_id[record.id], "duplicate record id")
-    if record.layer == "L1" and record.source.kind == "event" then
-      local event = by_id[record.source.id]
+    local normalized = copy(record)
+    normalized.audience = audience(normalized.audience, normalized.owner, normalized.layer)
+    validate_record(normalized)
+    assert(not by_id[normalized.id], "duplicate record id")
+    if normalized.layer == "L1" and normalized.source.kind == "event" then
+      local event = by_id[normalized.source.id]
       assert(event and event.layer == "L0", "unknown L0 event source")
-    elseif record.layer == "L2" then
-      for _, id in ipairs(record.experiences) do
+    elseif normalized.layer == "L2" then
+      for _, id in ipairs(normalized.experiences) do
         local source = by_id[id]
-        assert(source and source.layer == "L1" and source.owner == record.owner,
+        assert(source and source.layer == "L1" and source.owner == normalized.owner,
           "L2 sources must be owner's L1 records")
       end
-      local topics = versions[record.owner] or {}
-      assert(record.version == (topics[record.topic] or 0) + 1, "nonconsecutive L2 version")
+      local topics = versions[normalized.owner] or {}
+      assert(normalized.version == (topics[normalized.topic] or 0) + 1, "nonconsecutive L2 version")
     end
-    local saved = copy(record)
+    local saved = copy(normalized)
     records[#records + 1], by_id[saved.id] = saved, saved
     if saved.layer ~= "L0" then
       local own = by_owner[saved.owner] or {}
@@ -162,11 +184,11 @@ local function build()
       {layer="L0", id=event_id, owner="world", time=time, text=event_text,
         source={kind="action", id=actor}},
       {layer="L1", id=event_id .. ":actor", owner=actor, time=time, text=actor_text,
-        classification="fact", source={kind="event", id=event_id}},
+        classification="experience", source={kind="event", id=event_id}},
     }
     if recipient_text then
       batch[3] = {layer="L1", id=event_id .. ":recipient", owner=recipient, time=time,
-        text=recipient_text, classification="fact", source={kind="event", id=event_id}}
+        text=recipient_text, classification="experience", source={kind="event", id=event_id}}
     end
     for _, record in ipairs(batch) do
       validate_record(record)
@@ -187,9 +209,9 @@ local function build()
       {layer="L0", id=id, owner="world", time=time,
         text="agent " .. actor .. " met agent " .. other, source={kind="contact", id=actor}},
       {layer="L1", id=id .. ":actor", owner=actor, time=time,
-        text="I met agent " .. other, source={kind="event", id=id}, classification="fact"},
+        text="I met agent " .. other, source={kind="event", id=id}, classification="experience"},
       {layer="L1", id=id .. ":recipient", owner=other, time=time,
-        text="I met agent " .. actor, source={kind="event", id=id}, classification="fact"},
+        text="I met agent " .. actor, source={kind="event", id=id}, classification="experience"},
     }
     for _, record in ipairs(batch) do
       validate_record(record)

@@ -14,6 +14,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
+try:
+    from .product_envelope import EnvelopeError, validate as validate_product_envelope
+except ImportError:  # direct worker script execution
+    from product_envelope import EnvelopeError, validate as validate_product_envelope
+
 MAX_REQUEST = 32768
 MAX_STREAM = 1048576
 MAX_TEXT = 8192
@@ -246,6 +251,8 @@ def decide(config: Config, context: Mapping[str, Any], *, transport: Callable[[C
     config.endpoint()
     try:
         context = _normalize_context(context)
+        if 'model_input' in context:
+            validate_product_envelope(context['model_input'])
         data = json.dumps(_provider_context(context), ensure_ascii=True, sort_keys=True,
                           separators=(',', ':'), allow_nan=False)
         body = json.dumps({'model': config.model, 'stream': True,
@@ -254,6 +261,8 @@ def decide(config: Config, context: Mapping[str, Any], *, transport: Callable[[C
                            'input': [{'role': 'system', 'content': PROMPT},
                                      {'role': 'user', 'content': data}]},
                           ensure_ascii=True, separators=(',', ':')).encode()
+    except EnvelopeError:
+        raise ModelError('invalid_context') from None
     except (ValueError, TypeError, OverflowError):
         raise ModelError('invalid_context') from None
     if len(body) > MAX_REQUEST:

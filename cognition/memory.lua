@@ -6,8 +6,17 @@ local function finite(n)
 end
 
 local function copy(entry)
-  return {time = entry.time, text = entry.text,
-    source = {kind = entry.source.kind, id = entry.source.id}}
+  local source = {kind = entry.source.kind, id = entry.source.id}
+  if entry.source.revision ~= nil then source.revision = entry.source.revision end
+  local result = {time = entry.time, text = entry.text, source = source}
+  for _, key in ipairs({"epistemic", "classification", "layer", "owner", "captured_at"}) do
+    if entry[key] ~= nil then result[key] = entry[key] end
+  end
+  if entry.audience ~= nil then
+    result.audience = {}
+    for i, recipient in ipairs(entry.audience) do result.audience[i] = recipient end
+  end
+  return result
 end
 
 local function integer(n, minimum)
@@ -30,9 +39,24 @@ end
 -- counted conservatively as characters; no entry is truncated to fit a budget.
 local function serialize_entry(entry)
   local id = entry.source.id
-  return '{"time":' .. number(entry.time) .. ',"text":' .. quote(entry.text)
-    .. ',"source":{"kind":' .. quote(entry.source.kind) .. ',"id":'
-    .. (type(id) == "number" and number(id) or quote(id)) .. '}}'
+  local source = '{"kind":' .. quote(entry.source.kind) .. ',"id":'
+    .. (type(id) == "number" and number(id) or quote(id))
+  if entry.source.revision ~= nil then source = source .. ',"revision":' .. number(entry.source.revision) end
+  source = source .. '}'
+  local result = '{"time":' .. number(entry.time) .. ',"text":' .. quote(entry.text)
+    .. ',"source":' .. source
+  for _, key in ipairs({"epistemic", "classification", "layer", "owner", "captured_at"}) do
+    if entry[key] ~= nil then
+      local value = entry[key]
+      result = result .. ',"' .. key .. '":' .. (type(value) == "number" and number(value) or quote(value))
+    end
+  end
+  if entry.audience ~= nil then
+    local recipients = {}
+    for i, recipient in ipairs(entry.audience) do recipients[i] = quote(recipient) end
+    result = result .. ',"audience":[' .. table.concat(recipients, ',') .. ']'
+  end
+  return result .. '}'
 end
 
 function M.serialize(entries)
@@ -65,6 +89,21 @@ function M.new(capacity)
     assert(type(entry.source) == "table" and type(entry.source.kind) == "string" and entry.source.kind ~= "", "source kind required")
     local id = entry.source.id
     assert((type(id) == "string" and id ~= "") or finite(id), "source id required")
+    if entry.source.revision ~= nil then assert(integer(entry.source.revision, 0), "source revision must be a nonnegative integer") end
+    for _, key in ipairs({"epistemic", "classification"}) do
+      if entry[key] ~= nil then assert(type(entry[key]) == "string" and ({fact=true, experience=true, rumor=true, belief=true, unknown=true})[entry[key]], "invalid " .. key) end
+    end
+    if entry.layer ~= nil then assert(entry.layer == "L0" or entry.layer == "L1" or entry.layer == "L2", "invalid memory layer") end
+    if entry.owner ~= nil then assert(type(entry.owner) == "string" and entry.owner ~= "", "invalid memory owner") end
+    if entry.captured_at ~= nil then assert(finite(entry.captured_at), "invalid captured_at") end
+    if entry.audience ~= nil then
+      assert(type(entry.audience) == "table" and #entry.audience > 0, "invalid memory audience")
+      local seen = {}
+      for _, recipient in ipairs(entry.audience) do
+        assert(type(recipient) == "string" and recipient ~= "" and not seen[recipient], "invalid memory audience")
+        seen[recipient] = true
+      end
+    end
     if capacity == 0 then return false end
     local index
     if count < capacity then

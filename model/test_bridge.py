@@ -9,10 +9,19 @@ class BridgeEnvelopeTests(unittest.TestCase):
     def envelope(self):
         return {
             'schema': 'wispiva.model-input', 'version': 1,
-            'request': {'world_id': 'world-1', 'actor_id': 'alice'},
-            'actor': {'id': 'alice'},
+            'request': {'decision_id': 'decision-1', 'world_id': 'world-1',
+                        'actor_id': 'alice', 'origin_event_id': 'event-1',
+                        'world_revision': 1, 'observed_at': 100.0},
+            'actor': {
+                'id': 'alice', 'runtime_id': 1, 'name': 'Alice',
+                'role': {'text': 'scout', 'source': {'kind': 'genesis.role', 'id': 'role-1'}},
+                'goal': {'text': 'learn', 'source': {'kind': 'genesis.goal', 'id': 'goal-1'}},
+                'permissions': {'read_scopes': ['public', 'private'],
+                                'allowed_actions': ['inspect']},
+            },
             'knowledge': {'facts': [], 'experiences': [], 'rumors': [], 'unknowns': []},
-            'current': {}, 'feedback': {'available': False},
+            'current': {'observation': {}, 'inventory': {}, 'affordances': {}},
+            'feedback': {'available': False},
         }
 
     def test_product_envelope_is_validated_before_decision(self):
