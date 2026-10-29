@@ -430,18 +430,22 @@ local function update_view_players()
 	end
 end
 
-minetest.register_on_joinplayer(function(player)
-	if not VIEW_GUIDE then return end
-	if VIEW_SPAWN then player:set_pos({x = 0, y = 2, z = -20}) end
-	local name = player:get_player_name()
-	view_players[name] = nil
-	view_send(player, "Welcome. Move with WASD, look around, and right-click a named landmark for feedback.")
-	ev("view join player=%s", name)
-end)
+if minetest.register_on_joinplayer then
+	minetest.register_on_joinplayer(function(player)
+		if not VIEW_GUIDE then return end
+		if VIEW_SPAWN then player:set_pos({x = 0, y = 2, z = -20}) end
+		local name = player:get_player_name()
+		view_players[name] = nil
+		view_send(player, "Welcome. Move with WASD, look around, and right-click a named landmark for feedback.")
+		ev("view join player=%s", name)
+	end)
+end
 
-minetest.register_on_leaveplayer(function(player)
-	view_players[player:get_player_name()] = nil
-end)
+if minetest.register_on_leaveplayer then
+	minetest.register_on_leaveplayer(function(player)
+		view_players[player:get_player_name()] = nil
+	end)
+end
 
 -- 确定性 PRNG：每个 agent 一份状态，种子固定。
 -- 不用 math.random，因为它受引擎与调用顺序影响，两次运行不一定给出同一序列。

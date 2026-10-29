@@ -16,6 +16,7 @@ PORT=30078
 FIXTURE=0
 RESUME=0
 SERVE=0
+VISUAL_FIXTURE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --fake-model) FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
     --serve) SERVE=1; shift ;;
+    --visual-fixture) VISUAL_FIXTURE=1; shift ;;
     -h|--help) sed -n '1,26p' "$0"; exit 0 ;;
     *) echo "run_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -65,9 +67,12 @@ static_spawnpoint = (0,2,-20)
 society_world_product = true
 society_genesis_manifest = $WORLD/private/wispiva-origin.json
 society_spool = $WORLD/private/model-spool
-society_model = true
-society_cognition = true
+society_model = $([[ "$VISUAL_FIXTURE" -eq 1 ]] && echo false || echo true)
+society_cognition = $([[ "$VISUAL_FIXTURE" -eq 1 ]] && echo false || echo true)
 society_visual = true
+society_view_guide = true
+society_view_spawn = true
+society_view_acceptance = $([[ "$VISUAL_FIXTURE" -eq 1 ]] && echo true || echo false)
 society_persist = true
 society_long_term_memory = true
 society_restore = $([[ "$RESUME" -eq 1 ]] && echo true || echo false)
@@ -78,7 +83,9 @@ society_event_namespace = $namespace
 EOF
 chmod 600 "$conf"
 
-if [[ "$FIXTURE" -eq 1 ]]; then
+if [[ "$VISUAL_FIXTURE" -eq 1 ]]; then
+  :
+elif [[ "$FIXTURE" -eq 1 ]]; then
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 --fixture > "$WORLD/private/worker.log" 2>&1 &
 else
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 > "$WORLD/private/worker.log" 2>&1 &
