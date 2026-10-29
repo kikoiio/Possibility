@@ -23,7 +23,8 @@ COGNITION = ROOT / 'cognition'
 GENESIS = ROOT / 'genesis'
 MODEL = ROOT / 'model'
 MODULES = ('observation.lua', 'memory.lua', 'long_term_memory.lua', 'world_events.lua', 'persistence.lua',
-           'resource_actions.lua', 'action_context.lua', 'spatial.lua', 'node_cache.lua', 'scheduler.lua')
+           'resource_actions.lua', 'action_context.lua', 'spatial.lua', 'node_cache.lua', 'scheduler.lua',
+           'model_envelope.lua')
 
 
 def _private_root(path):

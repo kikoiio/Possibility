@@ -1,4 +1,4 @@
--- Luanti experiment: central stable-order decisions, private cognition, verified actions.
+-- Wispiva product runtime: stable-order decisions, private cognition, verified actions.
 local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
 local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
