@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 幂等地把 Luanti 运行时物化到 experiments/minecraft-societies/.runtime/。
+# 幂等地把 Luanti 运行时物化到 luanti/.runtime/。
 #
 # 为什么是这样：本项目要求「只用免费资源」并且不希望为了实验装系统包，
 # 所以不打 apt install、不用 sudo、不装 Java，而是把需要的 deb 下载下来

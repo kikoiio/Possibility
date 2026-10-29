@@ -4,7 +4,7 @@
 
 ## 当前实验入口
 
-实际使用的工作流是 [society-experiment.yml](../../../.github/workflows/society-experiment.yml)。在 `experiment/cloud-run-*` 分支 push 触发，`model-*` 跑真实模型与配对实验，`agent-*` 跑小阶梯，`large-*` 跑 5,000／10,000 规则 agent 和队列模拟。全工作流共享 concurrency group，同一时间只运行一组，失败数据仍上传。Actions 为绿色仅表示工作流执行完毕；性能阶梯逐项状态必须看 `ci-*-status.txt` 与报告。
+实际使用的工作流是 [society-experiment.yml](../../.github/workflows/society-experiment.yml)。在 `experiment/cloud-run-*` 分支 push 触发，`model-*` 跑真实模型与配对实验，`agent-*` 跑小阶梯，`large-*` 跑 5,000／10,000 规则 agent 和队列模拟。全工作流共享 concurrency group，同一时间只运行一组，失败数据仍上传。Actions 为绿色仅表示工作流执行完毕；性能阶梯逐项状态必须看 `ci-*-status.txt` 与报告。
 
 `run.py` 是合成实体基准。真正 agent 的负载含规则决策、邻域查询、接触事件、日志和可选观察／记忆，调用 `agent/run.sh`；“cognition=false”仍有规则策略必需的感知和接触集合，不等于完全无感知。`stepped_delta` 仅证明区间内至少 step 一次，不能证明每个 tick 每人都推进。修正后的集成会在结束时补一条统计，按墙钟采样，并记录每轮 `wall_ms`；新旧采样口径不可直接比较。
 
@@ -27,7 +27,7 @@ gh run download <运行ID> -n luanti-capacity-results -D ./scale-results-downloa
 默认三种模式、1/5/10/20/100/1000 实体、每档 30 秒、各一次，单进程串行；约需 9 分钟加安装时间。要改变阶梯可修改模板中的命令，例如：
 
 ```bash
-python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 1,5,10,20 --modes move,perceive --seconds 40 --repeats 3
+python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 1,5,10,20 --modes move,perceive --seconds 40 --repeats 3
 ```
 
 输出目录必须不存在，防止覆盖旧结果。可用 `--help` 查看参数；`--binary` 也可指向已有运行时的 server，相关库和游戏发现环境须由调用方配置。本机运行是重型任务，遵循项目云端优先及授权规则。

@@ -20,7 +20,7 @@ jobs:
           dpkg-query -W luanti-server luanti-game-minetest
       - uses: actions/checkout@v4
       - name: Run sequential ladder
-        run: python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results"
+        run: python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results"
       - name: Publish summary
         if: always()
         run: |

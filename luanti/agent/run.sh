@@ -14,6 +14,8 @@
 #   agent/run.sh --label m0-n12 --agents 12 --decisions 6
 #   agent/run.sh --label m0-stop --decisions 0 --seconds 20   # 不自动关服，测 SIGTERM 停止路径
 #   agent/run.sh --label m0-run --repeat 2           # 跑两次并比对事件序列
+#   agent/run.sh --label saved --resume-preserve      # 从已有世界恢复角色记忆
+#   agent/run.sh --label saved --long-term-memory    # 启用长期记忆及正常停服快照
 #   agent/run.sh --label m0-negative --set society_spacing=64 \
 #     --expect-fail agents-lost-after-spawn          # 反向用例：失败必须被自己发现
 #   agent/run.sh --set society_step=4                # 追加任意 Luanti setting
@@ -43,6 +45,9 @@ EXPECT_FAIL=""
 MODEL=0
 FIXTURE=0
 RESUME=0
+RESET_MINDS=1
+OVERWRITE=0
+LONG_TERM_MEMORY=0
 EXTRA_SETTINGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -58,6 +63,9 @@ while [[ $# -gt 0 ]]; do
     --model) MODEL=1; shift ;;
     --fake-model) MODEL=1; FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
+    --resume-preserve) RESUME=1; RESET_MINDS=0; shift ;;
+    --long-term-memory) LONG_TERM_MEMORY=1; shift ;;
+    --overwrite) OVERWRITE=1; shift ;;
     --set) EXTRA_SETTINGS+=("$2"); shift 2 ;;
     -h|--help) command sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "run.sh: 未知参数 $1" >&2; exit 2 ;;
@@ -103,7 +111,13 @@ run_once() {
   if [[ "$RESUME" -eq 1 ]]; then
     [[ -d "$world" ]] || { echo "找不到要恢复的世界: $world" >&2; return 1; }
   else
-    rm -rf "$world"
+    if [[ -e "$world" ]]; then
+      if [[ "$OVERWRITE" -ne 1 ]]; then
+        echo "世界已存在: $world；使用 --resume-preserve 恢复，或显式使用 --overwrite 替换" >&2
+        return 1
+      fi
+      rm -rf "$world"
+    fi
   fi
   mkdir -p "$world/worldmods/society"
   local spool=""
@@ -111,7 +125,7 @@ run_once() {
     spool=$(mktemp -d "$world/model-spool.XXXXXXXX") || return 1
   fi
   cp "$MOD_SRC/init.lua" "$MOD_SRC/policy.lua" "$world/worldmods/society/"
-  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$EXP/cognition/spatial.lua" "$EXP/cognition/node_cache.lua" "$EXP/cognition/scheduler.lua" "$world/worldmods/society/"
+  cp "$EXP/cognition/observation.lua" "$EXP/cognition/memory.lua" "$EXP/cognition/long_term_memory.lua" "$EXP/cognition/persistence.lua" "$EXP/cognition/resource_actions.lua" "$EXP/cognition/action_context.lua" "$EXP/cognition/spatial.lua" "$EXP/cognition/node_cache.lua" "$EXP/cognition/scheduler.lua" "$world/worldmods/society/"
 
   {
     echo "bind_address = 127.0.0.1"
@@ -127,9 +141,12 @@ run_once() {
     echo "society_decide_interval = $INTERVAL"
     echo "society_max_decisions = $DECISIONS"
     echo "society_persist = true"
+    if [[ "$LONG_TERM_MEMORY" -eq 1 ]]; then
+      echo "society_long_term_memory = true"
+    fi
     if [[ "$RESUME" -eq 1 ]]; then
       echo "society_restore = true"
-      echo "society_reset_minds = true"
+      echo "society_reset_minds = $([[ "$RESET_MINDS" -eq 1 ]] && echo true || echo false)"
     fi
     if [[ "$MODEL" -eq 1 ]]; then
       echo "society_model = true"

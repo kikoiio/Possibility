@@ -2,16 +2,13 @@
 
 状态：**第一轮和第二轮已完成**。第二轮实现、真实模型记忆评估、预算调优、1000／5000／10000 容量对照和最终云端验证均已完成。规则策略、异步模型、局部观察、私有记忆、资源采集／放置和快照重置均已接通。服务端 agent 的原始证据见 [agent/evidence/m0-2026-10-27.md](agent/evidence/m0-2026-10-27.md)，当前执行计划见 [PLAN.md](PLAN.md)。
 
-研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../../docs/research/2026-10-28-minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../../docs/architecture.md)，近期进度和待决事项见[工作计划](../../docs/PLAN.md)。
+研究背景、候选项目调查与规模估算见 [Minecraft 社会研究](../docs/research/2026-10-28-minecraft-agent-societies.md)。本目录是该方向在 Wispiva 仓库内的落地位置，项目整体边界见[当前架构](../docs/architecture.md)，近期进度和待决事项见[工作计划](../docs/PLAN.md)。
 
 ## 定位与边界
 
-- 这是 **Wispiva 的延伸研究**，不是产品主线，也不是第二套体验入口。
-- 与唯一原型的边界（2026-10-27 决定）：
-  - 不共用 `prototypes/package.json`；Luanti 依赖由本目录的 `runtime/bootstrap.sh` 从系统软件源获取并解包，当前没有依赖锁文件。`.runtime/manifest.sha256` 记录本机产物哈希，并不固定将来下载的版本。
-  - 不共用原型的 CI job 与运行时；[实验 CI](../../.github/workflows/society-experiment.yml) 顺序验证 Lua/Python、引擎闭环、快照、资源动作和按分支选择的容量或真实模型实验。服务端 jar／原生二进制、bot 连接、EULA 与账号问题都不进入 Wispiva 的 `verify.mjs` 和原型依赖。
-  - 不改变 [Mineflayer / Voyager 研究](../../docs/research/2026-10-28-mineflayer-voyager.md) 得出的“Wispiva 主项目不引入 Minecraft 运行时”结论。
-- 为什么不是 `scratch/`：`scratch/` 是 2026-10-27 整理时作为迁移残留被移除的目录；`prototypes/` 是 AGENTS.md 规定的唯一原型入口。实验需要的是**独立运行时**，不是多一层目录。
+本目录包含 Wispiva Luanti 分支的现有实现、实验工具和证据。产品目标是根据用户意图创建持续演化的世界；社会实验和容量测量用于验证这一目标。现状见[当前架构](../docs/architecture.md)，目标与实施见[目标设计](../docs/design/2026-10-27-target-architecture.md)和[工作计划](../docs/PLAN.md)。本分支独立发展，不合并到 `main`。
+
+Luanti 运行时由本目录的 `runtime/bootstrap.sh` 从系统软件源获取并解包，目前没有依赖锁文件；`.runtime/manifest.sha256` 记录本机产物哈希，不固定将来下载的版本。[实验 CI](../.github/workflows/society-experiment.yml) 验证现有 Lua/Python、引擎闭环、快照、资源动作及按配置选择的容量或真实模型任务。其他分支的代码和依赖可供参考，尚未接入本工作树。
 
 ## 硬约束（用户 2026-10-27 决定）
 
@@ -128,7 +125,7 @@ agent/
 已经脚本化，不需要照着手抄命令：
 
 ```bash
-cd experiments/minecraft-societies  # 从仓库根目录出发
+cd luanti  # 从仓库根目录出发
 runtime/bootstrap.sh    # 下载 11 个 deb -> 解包到 .runtime/root -> 修软链 -> 记录哈希 -> 自检
 ```
 
@@ -166,14 +163,27 @@ runtime/bootstrap.sh    # 下载 11 个 deb -> 解包到 .runtime/root -> 修软
 
 每个角色只能接收局部半径内的公开对象和节点、自己的有界记忆与库存；采集和建造会检查距离、库存与世界回读。范围感知没有遮挡或视野方向；采集／建造不模拟玩家物理，也没有通用保护权限。`snapshot.py` 在停服后复制世界并核对文件哈希；`--resume` 在指定副本上恢复角色并清空记忆和目标，因此应先复制原世界再恢复。
 
-手动触发实验请参阅 [执行计划](PLAN.md) 和 [GitHub Actions 工作流](../../.github/workflows/society-experiment.yml)。模型模式只发送合成实验观察；GitHub 运行所需密钥通过 Actions secret 注入，不写入事件文件。当前免费额度及其计费状态需以供应商账户为准。
+手动触发实验请参阅 [执行计划](PLAN.md) 和 [GitHub Actions 工作流](../.github/workflows/society-experiment.yml)。模型模式只发送合成实验观察；GitHub 运行所需密钥通过 Actions secret 注入，不写入事件文件。当前免费额度及其计费状态需以供应商账户为准。
 
 本轮研究问题、指标与对照已写入 [PLAN.md](PLAN.md)：分层容量、局部信息如何支持行动、FIFO 记忆与即时反馈的配对探测。
 
 ## 目录现状
 
+### 在三维世界中观察
+
+可选的观察模式提供草地、人形角色和头顶的动作标签，便于用 Luanti 客户端在世界中观察。先执行 `runtime/bootstrap.sh`，再从本实验目录启动服务端：
+
+```bash
+agent/run.sh --label local-3d --agents 5 --decisions 0 --seconds 1800 \
+  --set society_cognition=true --set society_visual=true --set 'static_spawnpoint=(0,2,-20)'
+```
+
+使用 Luanti 客户端连接 `127.0.0.1:30077`。标签显示的是正在执行的动作；默认仍是规则策略，并不表示角色由模型驱动。观察模式添加草地并改变实体外观，不应与标准容量实验直接比较。
+
+运行器默认不会覆盖同名世界；对已停服并正常保存的世界，使用相同 label 和 `--resume-preserve` 恢复已有角色与当前保存的有界记忆。`--resume` 保留实验中的清空心智行为；只有显式指定 `--overwrite` 才替换同名世界。此恢复路径还不提供崩溃恢复或完整长期记忆。
+
 ```text
-experiments/minecraft-societies/
+luanti/
   README.md                      # 本文件
   .gitignore                     # 忽略 .runtime/、agent/worlds/、bench/run/
   runtime/bootstrap.sh           # 无 sudo 物化 Luanti 运行时（幂等）

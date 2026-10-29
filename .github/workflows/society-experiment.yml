@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unit tests
         run: |
-          cd experiments/minecraft-societies/cognition
+          cd luanti/cognition
           lua5.1 test.lua
           lua5.1 test_persistence.lua
           lua5.1 test_resource_actions.lua
@@ -34,6 +34,8 @@ jobs:
           lua5.1 test_spatial.lua
           lua5.1 test_runtime.lua
           lua5.1 test_retrieval.lua
+          lua5.1 test_long_term_memory.lua
+          lua5.1 test_long_term_integration.lua
           cd ../model
           python3 -B -m unittest -v
           cd ..
@@ -42,13 +44,16 @@ jobs:
           python3 -B -m unittest -v test_queue_sim.py test_compare.py
           cd ../analysis
           python3 -B -m unittest -v
+          cd ../..
+          python3 -B -m unittest discover -s luanti/genesis -p 'test_*.py' -v
+          python3 -B -m unittest discover -s luanti/world -p 'test_*.py' -v
       - name: Prepare runtime
         run: |
           uptime
           nproc
           free -h
           cat /proc/pressure/memory
-          rt="$GITHUB_WORKSPACE/experiments/minecraft-societies/.runtime"
+          rt="$GITHUB_WORKSPACE/luanti/.runtime"
           mkdir -p "$rt/root/usr/libexec/luanti" "$rt/root/usr/lib/x86_64-linux-gnu" "$rt/home/.luanti/games"
           ln -s /usr/libexec/luanti/luantiserver "$rt/root/usr/libexec/luanti/luantiserver"
           cp -a /usr/share/luanti/games/minetest_game "$rt/home/.luanti/games/"
@@ -69,11 +74,16 @@ jobs:
           PY
       - name: Run agent loop with cognition
         run: |
-          experiments/minecraft-societies/agent/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
+          luanti/agent/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
       - name: Copy and reset world
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-reset.run1"
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-cognition.run1" "$exp/agent/worlds/ci-preserve.run1"
+          "$exp/agent/run.sh" --label ci-preserve --agents 5 --decisions 8 --interval 1 --resume-preserve --set society_cognition=true
+          count=$(grep -c 'SOCIETY ev=restore agent=.* reset=false memories=[1-9]' "$exp/agent/evidence/ci-preserve.run1.log")
+          test "$count" -eq 5
+          grep -q 'SOCIETY summary .*decisions=40 ' "$exp/agent/evidence/ci-preserve.run1.log"
           "$exp/agent/run.sh" --label ci-reset --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
           count=$(grep -c 'SOCIETY ev=restore agent=.* reset=true memories=0' "$exp/agent/evidence/ci-reset.run1.log")
           test "$count" -eq 5
@@ -82,18 +92,27 @@ jobs:
           "$exp/agent/run.sh" --label ci-invalid-retry --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
       - name: Verify resource actions with deterministic fixture
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           "$exp/agent/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1 --set society_memory_mode=retrieval
           grep -q 'SOCIETY ev=resource .* action=gather ok=true' "$exp/agent/evidence/ci-resource.run1.log"
           grep -q 'SOCIETY ev=resource .* action=build ok=true' "$exp/agent/evidence/ci-resource.run1.log"
+      - name: Verify long-term memory across normal restart
+        run: |
+          exp=luanti
+          "$exp/agent/run.sh" --label ci-memory-persist --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --long-term-memory
+          python3 "$exp/snapshot.py" "$exp/agent/worlds/ci-memory-persist.run1" "$exp/agent/worlds/ci-memory-keep.run1"
+          "$exp/agent/run.sh" --label ci-memory-keep --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --long-term-memory --resume-preserve
+          test "$(grep -c 'SOCIETY ev=restore agent=.* reset=false' "$exp/agent/evidence/ci-memory-keep.run1.log")" -eq 3
+          grep -q 'SOCIETY summary .*decisions=6 ' "$exp/agent/evidence/ci-memory-keep.run1.log"
+          grep -q 'SOCIETY long-term-checkpoint records=[1-9]' "$exp/agent/evidence/ci-memory-keep.run1.log"
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'experiment/cloud-run-verify-') && !startsWith(github.ref_name, 'experiment/cloud-run-budget-') && !startsWith(github.ref_name, 'experiment/cloud-run-opt-') && !startsWith(github.ref_name, 'experiment/cloud-run-memory-') && !startsWith(github.ref_name, 'experiment/cloud-run-model-') && !startsWith(github.ref_name, 'experiment/cloud-run-agent-') && !startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
-          python3 experiments/minecraft-societies/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
+          python3 luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-agent-') }}
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           for cognition in false true; do
             for count in 20 100 500 1000; do
               label="ci-agent-${count}-${cognition}"
@@ -105,7 +124,7 @@ jobs:
       - name: Large agent capacity ladder
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-large-') }}
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           for cognition in false true; do
             for count in 5000 10000; do
               label="ci-large-${count}-${cognition}"
@@ -124,7 +143,7 @@ jobs:
           import gzip
           from pathlib import Path
           import shutil
-          for log in Path('experiments/minecraft-societies/agent/evidence').glob('ci-large-*.log'):
+          for log in Path('luanti/agent/evidence').glob('ci-large-*.log'):
               with log.open('rb') as source, gzip.open(str(log) + '.gz', 'wb') as target:
                   shutil.copyfileobj(source, target, 1024 * 1024)
               log.unlink()
@@ -142,7 +161,7 @@ jobs:
         run: |
           long=0
           if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
-          python3 -B experiments/minecraft-societies/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
+          python3 -B luanti/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
       - name: Controlled memory tasks and bounded concurrency probes
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-memory-') }}
         env:
@@ -151,12 +170,12 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           mkdir -p memory-results
-          python3 -B experiments/minecraft-societies/model/memory_eval.py --output memory-results/tasks.json
-          python3 -B experiments/minecraft-societies/model/memory_eval.py --probe --output memory-results/concurrency.json
+          python3 -B luanti/model/memory_eval.py --output memory-results/tasks.json
+          python3 -B luanti/model/memory_eval.py --probe --output memory-results/concurrency.json
       - name: Soft callback budget tradeoff
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-memory-') || startsWith(github.ref_name, 'experiment/cloud-run-budget-') }}
         run: |
-          python3 -B experiments/minecraft-societies/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
+          python3 -B luanti/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
       - name: Model-driven agent loop
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         env:
@@ -164,11 +183,11 @@ jobs:
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
-          experiments/minecraft-societies/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
+          luanti/agent/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
       - name: Repeated 1000-agent capacity measurement
         if: ${{ startsWith(github.ref_name, 'experiment/cloud-run-model-') }}
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           for cognition in false true; do
             rc=0
             "$exp/agent/run.sh" --label "ci-repeat-${cognition}" --agents 1000 --decisions 12 --interval 2 --seconds 90 --repeat 3 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
@@ -181,7 +200,7 @@ jobs:
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
-          exp=experiments/minecraft-societies
+          exp=luanti
           "$exp/agent/run.sh" --label ci-base --agents 3 --decisions 8 --interval 1 --set society_spacing=2 --set society_seed_resources=true --set society_cognition=true
           for trial in 1 2 3; do
             order="true false"
@@ -198,7 +217,7 @@ jobs:
       - name: Summarize observed results
         if: always()
         run: |
-          python3 -B experiments/minecraft-societies/analysis/summarize.py --compact --input experiments/minecraft-societies/agent/evidence --output observed-results.json
+          python3 -B luanti/analysis/summarize.py --compact --input luanti/agent/evidence --output observed-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -208,15 +227,16 @@ jobs:
             observed-results.json
             run-metadata.json
             scale-results/
-            experiments/minecraft-societies/agent/evidence/ci-cognition.*
-            experiments/minecraft-societies/agent/evidence/ci-model.*
-            experiments/minecraft-societies/agent/evidence/ci-reset.*
-            experiments/minecraft-societies/agent/evidence/ci-invalid-retry.*
-            experiments/minecraft-societies/agent/evidence/ci-agent-*
-            experiments/minecraft-societies/agent/evidence/ci-resource.*
-            experiments/minecraft-societies/agent/evidence/ci-memory-*
-            experiments/minecraft-societies/agent/evidence/ci-large-*
-            experiments/minecraft-societies/agent/evidence/ci-repeat-*
-            experiments/minecraft-societies/agent/evidence/ci-opt-*
+            luanti/agent/evidence/ci-cognition.*
+            luanti/agent/evidence/ci-model.*
+            luanti/agent/evidence/ci-reset.*
+            luanti/agent/evidence/ci-preserve.*
+            luanti/agent/evidence/ci-invalid-retry.*
+            luanti/agent/evidence/ci-agent-*
+            luanti/agent/evidence/ci-resource.*
+            luanti/agent/evidence/ci-memory-*
+            luanti/agent/evidence/ci-large-*
+            luanti/agent/evidence/ci-repeat-*
+            luanti/agent/evidence/ci-opt-*
           if-no-files-found: warn
           retention-days: 14

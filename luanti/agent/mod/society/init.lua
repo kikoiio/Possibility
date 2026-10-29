@@ -2,6 +2,7 @@
 local policy = dofile(minetest.get_modpath("society") .. "/policy.lua")
 local cognition_observe = dofile(minetest.get_modpath("society") .. "/observation.lua")
 local cognition_memory = dofile(minetest.get_modpath("society") .. "/memory.lua")
+local long_term_memory = dofile(minetest.get_modpath("society") .. "/long_term_memory.lua")
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
@@ -30,9 +31,11 @@ local MEMORY_MODE = cfg("society_memory_mode", "fifo")
 local ORIGIN = {x = 0, y = 1, z = 0}
 local MARK_NODE = cfg("society_mark_node", "society:mark")
 local COGNITION = cfg("society_cognition", "false") == "true"
+local VISUAL = cfg("society_visual", "false") == "true"
 local MODEL = cfg("society_model", "false") == "true"
 local SEED_RESOURCES = cfg("society_seed_resources", "false") == "true"
 local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
+local LONG_TERM = cfg("society_long_term_memory", "false") == "true"
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local GOAL = cfg("society_goal", "Explore, gather resources, build, and interact with nearby agents.")
 local PERSIST = cfg("society_persist", "false") == "true"
@@ -40,7 +43,6 @@ local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
-if PERSIST and not RESTORE then storage:set_string("agent_state", "") end
 local SPOOL = cfg("society_spool", "")
 local request_id = 0
 local step_count, last_us = 0, minetest.get_us_time()
@@ -62,6 +64,7 @@ local S = {
 
 local summary_and_stop
 local agents = {}
+local history = long_term_memory.new()
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
 local index = spatial.new(math.max(SENSE, 1))
@@ -218,6 +221,12 @@ end
 
 local function apply(self, action, pos)
 	local kind = action.kind or "unknown"
+	if VISUAL then
+		local labels = {advance="Walking", approach="Approaching another agent", inspect="Looking around",
+			mark="Placing a marker", wander="Choosing a destination", say="Sending a message",
+			gather="Gathering", build="Building"}
+		self.object:set_properties({nametag = self._persona .. "\n" .. (labels[kind] or kind)})
+	end
 	S.actions[kind] = (S.actions[kind] or 0) + 1
 
 	if kind == "advance" then
@@ -315,27 +324,29 @@ local function apply(self, action, pos)
 
 	if kind == "gather" or kind == "build" then
 		local ok, reason = self._resources[kind](self._resources, action.point, "society:resource")
+		reason = reason or (ok and "world-verified" or "action-failed")
 		cached_nodes:invalidate(action.point)
-		self._last_action = {kind = kind, point = action.point, ok = ok, reason = reason or "verified"}
+		self._last_action = {kind = kind, point = action.point, ok = ok, reason = reason}
 		self._episodic:add({time = minetest.get_gametime(),
 			text = string.format("%s at %d,%d,%d %s: %s; inventory=%d", kind,
 				action.point.x, action.point.y, action.point.z, ok and "succeeded" or "failed",
-				reason or "verified", self._resources:count("society:resource")),
+				reason, self._resources:count("society:resource")),
 			source = {kind = "action", id = self._id}})
 		ev("ev=resource agent=%d action=%s ok=%s reason=%s inventory=%d", self._id, kind,
 			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
-		return ok, reason or "world-verified"
+		return ok, reason
 	end
 	if kind == "say" then
 		local recipient = agents[action.target]
-		if recipient then
+		if recipient and recipient.object and recipient.object:get_pos() then
 			recipient._inbox[#recipient._inbox + 1] = {time = minetest.get_gametime(),
 				from = self._id, text = action.text}
-			if #recipient._inbox > 8 then table.remove(recipient._inbox, 1) end
+			if not LONG_TERM and #recipient._inbox > 8 then table.remove(recipient._inbox, 1) end
 			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
 				source = {kind = "agent", id = self._id}})
 			self._episodic:add({time = minetest.get_gametime(), text = action.text,
 				source = {kind = "self", id = self._id}})
+			if VISUAL then self.object:set_properties({nametag = self._persona .. "\n" .. action.text}) end
 			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
 				minetest.sha256(action.text))
 			if LOG_MESSAGES then
@@ -358,6 +369,15 @@ local function settle_contacts(self, pos)
 			local le = obj:get_luaentity()
 			if le and le.name == "society:agent" and le._id and le._memory
 					and not self._memory.met[le._id] then
+				if LONG_TERM then
+					local ok, detail = pcall(history.record_meeting, history, tostring(self._id), tostring(le._id), minetest.get_gametime())
+					if not ok then
+						ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
+						S.failed = "long-term-record"
+						summary_and_stop()
+						return
+					end
+				end
 				self._memory.met[le._id] = true
 				le._memory.met[self._id] = true
 				S.meets = S.meets + 1
@@ -415,6 +435,17 @@ local function decide_and_act(self)
 				query_parts[#query_parts+1] = node.name
 			end
 			local memory_query = table.concat(query_parts, " ")
+			local selected_memory, memory_info
+			if MODEL_MEMORY and LONG_TERM then
+				local latest = self._inbox[#self._inbox]
+				local query = latest and latest.text or ""
+				selected_memory, memory_info = history:retrieve(tostring(self._id),
+					{query=query, max_scan=256, max_entries=8, max_bytes=4096})
+				memory_info.query = query
+			elseif MODEL_MEMORY then
+				selected_memory = self._episodic:select(memory_query,
+					{strategy=MEMORY_MODE, max_entries=8, max_chars=4096})
+			else selected_memory = {} end
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
 				self_id = self._id, time = minetest.get_gametime(), persona = self._persona, goal = GOAL,
@@ -424,7 +455,7 @@ local function decide_and_act(self)
 				visible_nodes = obs.local_view and obs.local_view.nodes or {},
 				inventory = self._resources:inventory(),
 				memory_query = memory_query,
-				memory = MODEL_MEMORY and self._episodic:select(memory_query, {strategy=MEMORY_MODE, max_entries=8, max_chars=4096}) or {},
+				memory = selected_memory, memory_scope = memory_info,
 				bounds = {min = {x = -BOUND, y = pos.y, z = -BOUND},
 					max = {x = BOUND, y = pos.y, z = BOUND}}}
 			context.local_actions = action_context.describe(minetest, pos,
@@ -520,6 +551,22 @@ local function decide_and_act(self)
 	action.observation = obs
 	measured = PROFILE and minetest.get_us_time()
 	local ok, reason = apply(self, action, pos)
+	if LONG_TERM then
+		local delivered = action.kind == "say" and ok
+		local point = action.point
+		if action.kind == "mark" then point = {x=fp(pos.x)+self._facing.x, y=fp(pos.y), z=fp(pos.z)+self._facing.z} end
+		if action.kind == "advance" then point = self.object:get_pos() end
+		local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
+		local recorded, detail = pcall(history.record_outcome, history, tostring(self._id),
+			action.kind, ok, reason or "unspecified", minetest.get_gametime(),
+			delivered and tostring(action.target) or nil, delivered and action.text or nil, detail)
+		if not recorded then
+			ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
+			S.failed = "long-term-record"
+			summary_and_stop()
+			return
+		end
+	end
 	if measured then profile.action = profile.action + minetest.get_us_time() - measured end
 	self._last_action = {kind = action.kind, point = action.point, ok = ok, reason = reason}
 
@@ -564,14 +611,22 @@ minetest.register_entity("society:agent", {
 
 local function spawn_agents()
 	local saved
+	if PERSIST and not RESTORE and initial_state ~= "" then
+		ev("fail=checkpoint-exists reason=restore-or-explicit-new-world-required")
+		S.failed = "checkpoint-exists"
+		summary_and_stop()
+		return
+	end
 	if RESTORE then
-		saved = minetest.parse_json(initial_state)
-		if type(saved) ~= "table" or #saved ~= COUNT then
+		local decoded = minetest.parse_json(initial_state)
+		local valid, restored, restored_history = pcall(persistence.unpack_checkpoint, decoded, long_term_memory)
+		if not valid or #restored ~= COUNT or (RESET_MINDS and restored_history:count() > 0) then
 			ev("fail=restore-invalid expected=%d", COUNT)
 			S.failed = "restore-invalid"
 			summary_and_stop()
 			return
 		end
+		saved, history = restored, restored_history
 		for i = 1, COUNT do
 			local ok, state = pcall(persistence.validate, saved[i])
 			if ok then ok = pcall(resources.validate_inventory, state.inventory) end
@@ -582,7 +637,6 @@ local function spawn_agents()
 				return
 			end
 		end
-		if PERSIST then storage:set_string("agent_state", "") end
 		S.marks = #minetest.find_nodes_in_area(
 			{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND}, {MARK_NODE})
 	end
@@ -600,6 +654,12 @@ local function spawn_agents()
 			local le = obj:get_luaentity()
 			le._id = i
 			le._persona = PERSONAS[(i % #PERSONAS) + 1]
+			if VISUAL then
+				local colors = {"#65a8dd", "#e5a768", "#b790d3", "#77bb8c", "#e487a0"}
+				obj:set_properties({visual="mesh", mesh="character.b3d", visual_size={x=1, y=1},
+					textures={"player.png^[colorize:" .. colors[(i % #colors) + 1] .. ":100"},
+					nametag=le._persona .. "\nWaiting", nametag_color="#ffffff"})
+			end
 			le._home = at
 			le._facing = FACINGS[(i % #FACINGS) + 1]
 			le._target = nil
@@ -626,6 +686,9 @@ local function spawn_agents()
 				end
 				ev("ev=restore agent=%d reset=%s memories=%d", i, tostring(RESET_MINDS), le._episodic:size())
 			end
+			-- A resumed run gets a fresh decision quota without erasing the
+			-- character's persisted lifetime counter.
+			le._run_start_decisions = le._decisions
 			le._resources = resources.new(minetest, obj, le._restored_inventory)
 			if (MODEL or SEED_RESOURCES) and not RESTORE then
 				local resource_pos = {x = at.x + 1, y = at.y, z = at.z}
@@ -695,6 +758,13 @@ minetest.after(1, function()
 	minetest.emerge_area({x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 16, z = BOUND},
 		function(blockpos, action, calls_remaining)
 			if calls_remaining == 0 then
+				if VISUAL then
+					for x = -BOUND, BOUND do
+						for z = -BOUND, BOUND do
+							minetest.set_node({x=x, y=0, z=z}, {name="default:dirt_with_grass"})
+						end
+					end
+				end
 				spawn_agents()
 				minetest.after(1, verify_spawn)
 			end
@@ -732,14 +802,14 @@ end
 
 local function visit(i)
 	local le = agents[i]
-	if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < MAX_DECISIONS) then
+	if le and le.object and le.object:get_pos() and (MAX_DECISIONS <= 0 or le._decisions < le._run_start_decisions + MAX_DECISIONS) then
 		decide_and_act(le)
 	end
 end
 local function round_done()
 	if MAX_DECISIONS <= 0 then return false end
 	for i = 0, COUNT - 1 do
-		if not agents[i] or agents[i]._decisions < MAX_DECISIONS then return false end
+		if not agents[i] or agents[i]._decisions < agents[i]._run_start_decisions + MAX_DECISIONS then return false end
 	end
 	return true
 end
@@ -808,8 +878,26 @@ minetest.register_on_shutdown(function()
 			end
 			saved[#saved + 1] = snapshot
 		end
-		storage:set_string("agent_state", minetest.write_json(saved))
+		local ok, encoded = pcall(function()
+			local checkpoint = (LONG_TERM or history:count() > 0)
+				and persistence.pack_checkpoint(saved, history) or saved
+			local json = minetest.write_json(checkpoint)
+			assert(type(json) == "string" and json ~= "", "checkpoint encoding failed")
+			return json
+		end)
+		if not ok then
+			ev("fail=persist reason=encode")
+			return
+		end
+		local written = pcall(storage.set_string, storage, "agent_state", encoded)
+		if not written or storage:get_string("agent_state") ~= encoded then
+			ev("fail=persist reason=write-or-readback")
+			return
+		end
 		ev("persist agents=%d", #saved)
+		if LONG_TERM or history:count() > 0 then
+			ev("long-term-checkpoint records=%d scope=normal-shutdown no-map-transaction=true crash-recovery=false", history:count())
+		end
 	end
 	-- 计数器是 mod 自己的账，不是世界的账。这里回读地图核对一次：
 	-- 「世界真的变了」必须由世界本身证明，而不是由我们的变量证明。

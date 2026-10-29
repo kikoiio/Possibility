@@ -92,6 +92,34 @@ end
 -- Validate a whole restore batch before invalidating its saved checkpoint.
 M.validate = normalise
 
+-- A single normal-shutdown checkpoint, not a transaction with the map database
+-- and not a crash-recovery protocol. Legacy checkpoints are plain agent arrays.
+function M.pack_checkpoint(agents, long_term)
+  local saved = {}
+  for i = 1, array(agents) do saved[i] = normalise(agents[i]) end
+  return {format = "society-checkpoint", version = 1, agents = saved,
+    long_term = long_term:export()}
+end
+
+function M.unpack_checkpoint(checkpoint, long_term_module)
+  assert(type(checkpoint) == "table", "invalid checkpoint")
+  local saved, long_term
+  if checkpoint.format == nil then
+    saved, long_term = checkpoint, long_term_module.new()
+  else
+    assert(checkpoint.format == "society-checkpoint" and checkpoint.version == 1,
+      "unsupported checkpoint")
+    for key in pairs(checkpoint) do
+      assert(key == "format" or key == "version" or key == "agents" or key == "long_term",
+        "unknown checkpoint field")
+    end
+    saved, long_term = checkpoint.agents, long_term_module.load(checkpoint.long_term)
+  end
+  local result = {}
+  for i = 1, array(saved) do result[i] = normalise(saved[i]) end
+  return result, long_term
+end
+
 function M.snapshot(entity)
   assert(type(entity) == "table" and entity.object and entity._episodic
     and type(entity._memory) == "table" and type(entity._memory.met) == "table",

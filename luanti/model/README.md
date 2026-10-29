@@ -7,10 +7,10 @@
 Actions 使用 repository variables `XUNFEI_OPENAI_RESPONSE_URL`、`XUNFEI_MODEL` 和 secret `XUNFEI_LLM_API_KEY`，后者映射为进程变量 `XUNFEI_API_KEY`。本轮使用 `spark-x2.6`。不读取 `.env`，不把凭据写入请求或日志。也支持项目的 `WISPIVA_LLM_BASE_URL/MODEL/API_KEY`；同一配置项优先 XUNFEI。
 
 ```sh
-experiments/minecraft-societies/agent/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 --seconds 600 --model
+luanti/agent/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 --seconds 600 --model
 ```
 
-重型运行应通过 [Actions 工作流](../../../.github/workflows/society-experiment.yml) 执行。`--fake-model` 使用确定性采集／放置夹具，不调用模型，报告明确标记 `deterministic-fixture`，事件 `origin=fixture`。只有 `--model` 的 provider 调用才算真实模型证据。
+重型运行应通过 [Actions 工作流](../../.github/workflows/society-experiment.yml) 执行。`--fake-model` 使用确定性采集／放置夹具，不调用模型，报告明确标记 `deterministic-fixture`，事件 `origin=fixture`。只有 `--model` 的 provider 调用才算真实模型证据。
 
 ## 接口与边界
 
@@ -26,7 +26,7 @@ experiments/minecraft-societies/agent/run.sh --label model-trial --agents 3 --de
 
 ## 验证与结论范围
 
-轻量离线测试：`python3 -B -m unittest discover -s experiments/minecraft-societies/model -v`。实际调用记录在 [evidence](evidence/) 和 [执行计划](../PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。
+轻量离线测试：`python3 -B -m unittest discover -s luanti/model -v`。实际调用记录在 [evidence](evidence/) 和 [执行计划](../PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。
 
 
 ## 受控记忆任务与并发探针

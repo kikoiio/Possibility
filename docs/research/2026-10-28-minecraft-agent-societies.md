@@ -2,7 +2,7 @@
 
 更新时间：2026-10-27。
 
-状态：**已立项为 Wispiva 的延伸研究；C 路线（Luanti）已跑通 M0 小规模闭环，环境选型待定**，落地位置与计划见 experiments/minecraft-societies（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）。本文不改变 Wispiva 当前“不引入 Minecraft 运行时”的结论；两者关系见[与 Wispiva 的关系](#与-wispiva-的关系)。
+本研究记录社会模拟的候选项目、规模问题与既有 Luanti 测量；本分支已选 Luanti 作为 Wispiva 的 Minecraft-like 基底，产品计划见[工作计划](../PLAN.md)。本研究的旧项目比较和测量不代表真实模型的万级容量。
 
 ## 问题与范围
 
@@ -57,13 +57,13 @@
 
 #### 2026-10-27 本机实测补充（Luanti 路线）
 
-上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见实测证据（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/bench/luanti-entity-scale-2026-10-27.txt`）。
+上面各条是估算。本轮为 Luanti（原 Minetest）路线补了唯一一组本项目实测，机器为 14 GiB 内存的 Ubuntu 笔记本，实时基准 11.1 step/s，细节与原始日志见实测证据（`wispiva/luanti-world` 分支：`luanti/bench/luanti-entity-scale-2026-10-27.txt`）。
 
 - 纯服务端实体（无客户端连接）可以承载远超原先担心的规模：每步 O(1) 工作时 **2 万实体仍保持实时**（11.02–11.04 step/s），峰值 RSS 167 MiB。内存与实体数不是瓶颈。
 - 崩塌来自每实体的计算量，而不是实体数量：朴素的 O(N²) 邻域感知在 **1000→5000 之间跌破实时**（4.4 step/s），10000 时降到 0.92 step/s。这给“距离 LOD 是关键设计”一条补上了本项目自己的数字。
 - 无玩家时实体不会被 step，必须 `forceload`；且只在区块 emerge 完成后再生成实体，否则实体会被活跃区块管理周期**静默删除**（`add_entity` 不报错）。这是服务端 NPC 路线的硬性工程前提，原先未记录。
 - 以上只覆盖 tick 与内存容量，**没有**覆盖 LLM 调用成本、延迟与 agent 行为。Minecraft/Paper 路线（玩家 bot）仍无本项目实测数据。
-- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见实验说明（`experiment/minecraft-societies` 分支：`experiments/minecraft-societies/README.md`）与 `experiments/minecraft-societies/agent/evidence/`。
+- 后续已把这条路线推到“有可运行的 agent 闭环”：服务端 agent 能重复启停、每个 server step 被引擎推进、动作在世界里留下真实方块、失败能被程序自己检出并说明原因（5 agent 23 s／45 MiB，20 agent 19 s／46 MiB，step 率 11.08–11.12）。决策仍是 6 条规则的确定性桩，**没有 LLM**。证据见实验说明（`wispiva/luanti-world` 分支：`luanti/README.md`）与 `luanti/agent/evidence/`。
 
 ### LLM 调用量
 
@@ -104,9 +104,7 @@
 
 ### 与 Wispiva 的关系
 
-- 本文是独立方向，不改变 [Mineflayer / Voyager 对 Wispiva 的启发](mineflayer-voyager.md) 中“不引入 Minecraft 运行时”的当前结论。
-- 可以参考 Wispiva 的 `observe / propose / execute / verify / event` 边界以及 revision/fork 思路，但不要在现阶段把代码耦合在一起。
-- 若以后启动，建议独立仓库/服务，避免把 Minecraft 服务器、tick、账号和渲染依赖带进 Wispiva 主项目。
+本分支以实现 Wispiva 为目标，使用 Luanti 作为世界基底。社会实验、规模测量与信息隔离研究为产品开发提供证据；`observe / propose / execute / verify / event` 与 revision、记忆和恢复边界应在产品实现中共同考虑。下方阶段与决策问题保留原研究设计，当前实施顺序以[工作计划](../PLAN.md)为准。
 
 ## 分阶段计划与决策点
 
@@ -150,6 +148,6 @@
 ## 证据边界
 
 - 2026-10-27 通过 GitHub API、README 与仓库目录读取信息；没有克隆、构建、运行**上表列出的第三方项目**，也没有复现论文结果。
-- 与本项目自己的实验区分：Luanti 路线的服务端实体容量与 M0 agent 闭环已有本项目实测（见上文“本机实测补充”与 `experiments/minecraft-societies/`）；**token 用量与费用仍全是估算**，A 路线（Paper/Minecraft）仍无任何本项目实测数据。
+- 与本项目自己的实验区分：Luanti 路线的服务端实体容量与 M0 agent 闭环已有本项目实测（见上文“本机实测补充”与 `luanti/`）；**token 用量与费用仍全是估算**，A 路线（Paper/Minecraft）仍无任何本项目实测数据。
 - 许可证信息可能变化；实际采用前必须重新核对仓库 LICENSE、素材许可和依赖许可。
 - 本文不构成法律意见。
