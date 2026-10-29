@@ -75,6 +75,21 @@ export function parseGeneratedJSON(text, { allowEmbeddedObject = false, required
     }
     output+=ch;
   }
-  let value;try{value=JSON.parse(output);}catch{throw new Error('模型返回的 JSON 仍有无法安全解析的格式错误，世界未创建。');}
+  let value;
+  try { value = JSON.parse(output); }
+  catch {
+    // A complete root followed by extra root properties has one redundant
+    // closing brace. Both halves must independently parse, with disjoint keys;
+    // never discard trailing properties or let them overwrite earlier values.
+    const root = output.startsWith('{') && objectCandidates(output).find(c => c.start === 0);
+    const suffix = root && output.slice(root.end).trim();
+    try {
+      if (!suffix?.startsWith(',')) throw new Error();
+      const first = JSON.parse(root.text), trailing = JSON.parse(`{${suffix.slice(1)}`);
+      if (Object.keys(trailing).some(key => Object.hasOwn(first, key))) throw new Error();
+      value = JSON.parse(root.text.slice(0, -1) + suffix);
+      adjustments.push('移除提前关闭根对象的冗余右括号，保留其后全部字段');
+    } catch { throw new Error('模型返回的 JSON 仍有无法安全解析的格式错误，世界未创建。'); }
+  }
   return { value, adjustments };
 }

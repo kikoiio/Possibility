@@ -9,6 +9,18 @@ import { createGeneratedFixture } from '../world-definition.mjs';
 import { CampSimulation } from '../core.mjs';
 import { projectActivity } from '../activity.mjs';
 import { parseGeneratedJSON } from '../model/generated-json.mjs';
+
+test('one prematurely closed root can retain trailing fields without dropping or overwriting commands', () => {
+  const broken = '{"reply":"方案","summary":"起点","ready":true,"commands":[{"op":"fill","material":"wood"}]},"retrievalQueries":[]}';
+  const parsed = parseGeneratedJSON(broken);
+  assert.equal(parsed.value.commands[0].material, 'wood');
+  assert.deepEqual(parsed.value.retrievalQueries, []);
+  assert.equal(parsed.adjustments.length, 1);
+  assert.throws(() => parseGeneratedJSON('{"commands":[]},"commands":[1]}'));
+  assert.throws(() => parseGeneratedJSON('{"commands":[{"op":"fill"}],"ready":true},"retrievalQueries":['));
+  assert.throws(() => parseGeneratedJSON('{"reply":"text"} unrelated {"ready":true}'));
+  assert.equal(parseGeneratedJSON('{"reply":"},\\\"x\\\":1}"}').value.reply, '},"x":1}');
+});
 import { parseGenesisOutput } from '../genesis-records.mjs';
 import { checkWorldCandidate } from '../world-genesis.mjs';
 

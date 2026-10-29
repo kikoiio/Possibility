@@ -6,6 +6,7 @@ import { CampSimulation } from './core.mjs';
 import { validateWorldBindings } from './geometry/world-bindings.js';
 import { normalizeWorldScene } from './geometry/normalize-world-scene.js';
 import { sourceContextText } from './model/source-retrieval.mjs';
+import { voxelContext } from './creation-dialogue.mjs';
 
 const normalizePrivacyText = value => typeof value === 'string'
   ? value.normalize('NFKC').replace(/\s+/g, '').replace(/[，。！？、；：,.!?;:"'“”‘’（）()\[\]{}<>《》【】…—\-_/\\]/g, '')
@@ -201,11 +202,11 @@ export function buildGenesisMessages(description, { dialogue = null, source = nu
       ...(sourceContext?.hits?.length ? { sourceContext: { name: sourceContext.name, characters: sourceContext.characters, text: sourceContextText(sourceContext), queries: sourceContext.queries } } : {}),
       ...(dialogue ? { confirmedBrief: dialogue.summary, conversation: dialogue.messages.map(({ role, text }) => ({ role, text })) } : {}),
       ...(previousDraft ? { previousDraft } : {}),
-      ...(voxel?.cells?.length ? { voxelDraft: { cells: voxel.cells, objects: voxel.objects } } : {}),
+      ...(voxel?.cells?.length ? { voxelDraft: voxelContext(voxel) } : {}),
       ...(stage ? { step: stage.id, existingRecords: previousRecords } : {}),
       ...(diagnostics.length ? { previousGenerationDiagnostics: diagnostics, instruction: '作者选择重新生成。请逐项消除这些已知错误，保持已确认的设定与范围。' } : {}) }) }
   ];
-  if (voxel?.cells?.length) messages[0].content += '\n已有 voxelDraft 是作者正在确认的起点场景。保留其空间语义；如对象 id 与地点含义相符，优先让地点沿用这些 id。不要在 scene 中另造一套会取代体素场景的建筑几何。';
+  if (voxel?.cells?.length) messages[0].content += '\n已有 voxelDraft 是作者正在确认的起点场景。cells 是实际方块，regions 是同材料方块的无损闭区间合并，未列出的格子为空气。保留其空间语义；如对象 id 与地点含义相符，优先让地点沿用这些 id。不要在 scene 中另造一套会取代体素场景的建筑几何。';
   if (stage) {
     const specifications = messages[0].content.split('\n');
     const groups = {

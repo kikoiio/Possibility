@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { createPrototypeExperience } from '../server.mjs';
 import { projectVoxelActors } from '../voxel-bindings.mjs';
 import { createGeneratedFixture } from '../world-definition.mjs';
+import { buildDiscussionMessages } from '../creation-dialogue.mjs';
 
 const base = resolve('.tmp/prototype');
 const fill = { op: 'fill', from: [0, 0, 0], to: [2, 0, 0], material: 'wood' };
@@ -20,6 +21,24 @@ function fixture(t, handler) {
   t.after(() => { experience.close(); rmSync(directory, { recursive: true, force: true }); });
   return { directory, inputs, get experience() { return experience; }, reload() { experience.close(); experience = createPrototypeExperience(options); return experience; } };
 }
+
+test('large scene context is losslessly packed without hiding holes, materials or object identities', () => {
+  const cells = [];
+  for (let x = -10; x <= 10; x++) for (let z = -5; z <= 5; z++) {
+    if (x === 0 && z === 0) continue;
+    cells.push({ position: [x, 0, z], material: x < 0 ? 'wood' : 'grass' });
+  }
+  const objects = [{ id: 'room', name: '房间', kind: 'building', from: [-10, 0, -5], to: [10, 3, 5] }];
+  const messages = buildDiscussionMessages({messages:[],summary:'',ready:false,revision:0}, null, null, {revision:3,cells,objects});
+  const context = JSON.parse(messages.at(-1).content).voxel;
+  assert(context.regions?.length < cells.length / 5, 'large scene should use exact compact regions');
+  const expanded = context.regions.flatMap(r => Array.from({length:r.to[0]-r.from[0]+1}, (_,i) => ({position:[r.from[0]+i,r.from[1],r.from[2]],material:r.material})));
+  const sorted = v => v.map(c=>JSON.stringify(c)).sort();
+  assert.deepEqual(sorted(expanded), sorted(cells));
+  assert.deepEqual(context.objects,objects);
+  assert.equal(context.cellCount,cells.length);
+  assert(JSON.stringify(context).length < JSON.stringify({revision:3,cells,objects}).length / 2);
+});
 
 test('build results distinguish text-only, committed and identical operations using real revisions', async t => {
   const f = fixture(t, (_input, n) => output(n === 1 ? [] : [fill]));

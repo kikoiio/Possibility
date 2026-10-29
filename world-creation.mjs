@@ -249,7 +249,11 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       persist();
       const { llm } = configLoader();
       let r = await request(llm, retrieveSource(creation.source, [message, creation.dialogue.summary]));
-      const parse = content => { try { return normalizeDiscussion(parseGeneratedJSON(content, { allowEmbeddedObject: true, requiredKeys: ['reply'] }).value, creation.dialogue.summary); } catch { return null; } };
+      const parse = content => { try {
+        const parsed = parseGeneratedJSON(content, { allowEmbeddedObject: true, requiredKeys: ['reply'] });
+        attempt.adjustments = parsed.adjustments.map(message => ({ path: 'response', message }));
+        return normalizeDiscussion(parsed.value, creation.dialogue.summary);
+      } catch { return null; } };
       if (r.ok) value = parse(r.content);
       if (!controller.signal.aborted && basisCurrent() && checkDiscussion(value) && value.retrievalQueries?.length && creation.source) {
         r = await request(llm, retrieveSource(creation.source, value.retrievalQueries), true);
@@ -269,7 +273,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
           else {
             try {
               const normalized = normalizeBuildingCommands(value.commands);
-              attempt.adjustments = normalized.adjustments;
+              attempt.adjustments.push(...normalized.adjustments);
               prepared = voxel.prepare({ baseRevision: voxelBasis.revision, commands: normalized.commands });
               attempt.changes = describeChanges(prepared.changes);
               attempt.toRevision = prepared.state.revision;
