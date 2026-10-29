@@ -43,6 +43,19 @@ function fixture(t, handler) {
   return { options, requests, get experience() { return experience; }, reload() { experience.close(); experience = createPrototypeExperience(options); return experience; } };
 }
 
+test('the author can inspect an origin despite a false model readiness flag, with current revision and saved brief', async t => {
+  const f = fixture(t); const e = f.experience;
+  assert.equal((await e.worldStep({ authorRequested: true, conversationRevision: 0 })).reason, 'discussion-required');
+  assert.equal(f.requests.length, 0);
+  await e.discussStep({message:'一间观测室，一位记录员，用电量记录星图。',mode:'discuss'});
+  assert.equal(e.state().creation.dialogue.ready, false);
+  assert.equal((await e.worldStep({authorRequested:true,conversationRevision:0})).reason, 'discussion-required');
+  const result = await e.worldStep({authorRequested:true,conversationRevision:1});
+  assert.equal(result.ok,true);
+  assert(result.state.creation.draft);
+  assert.equal(result.state.world,null, 'inspection does not confirm or run a world');
+});
+
 test('creation is a persisted discussion: clarification, scoped draft, revision, explicit origin', async t => {
   const f = fixture(t); let e = f.experience;
   const first = await e.discussStep({ message: '我想创造一个海岛观测站。' });
@@ -257,6 +270,24 @@ test('an incomplete stage stops subsequent calls and publishes no partial world'
   assert.equal(f.requests.length, 2); assert.equal(result.state.creation.draft, null);
   assert.equal(result.state.world, null); assert.equal(result.state.model.pending, false);
   assert.equal(f.reload().state().creation.draft, null);
+});
+
+test('final reference validation invalidates the responsible checkpoint so explicit recovery can repair it', async t => {
+  let bad = true;
+  const f = fixture(t, input => recordReply([...stageRecords[input.step],
+    ...(input.step === 'people' && bad ? [{type:'clue',id:'parts',name:'零件',location:'workbench-object',detail:'桌上的零件',discoveredBy:[]}] : []),
+    {type:'complete'}]));
+  const description = '海边灯室。';
+  const failed = await f.experience.worldStep({description});
+  assert.equal(failed.ok,false);
+  assert.equal(failed.reason,'invalid-world');
+  assert.deepEqual(failed.state.creation.generation.completedStages,['places']);
+  assert.equal(failed.state.creation.draft,null);
+  const callsBefore=f.requests.length;
+  bad=false;
+  const recovered = await f.reload().worldStep({description,retryGenerationId:failed.generationId});
+  assert.equal(recovered.ok,true);
+  assert.deepEqual(f.requests.slice(callsBefore).map(r=>r.step),['people','rules']);
 });
 
 test('cancelling between generated steps cannot create or resume a partial origin', async t => {

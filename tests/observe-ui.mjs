@@ -278,7 +278,7 @@ await check('IME and empty submissions never send; submit locks while streaming 
   ] };
   stream.finish(result(next, { message: '先从灯室开始好吗？谁在这里？' })); await submitted;
   assert.equal(p.$('dialogue-log').children.length, 2);
-  assert.equal(p.$('creation-input').value, ''); assert.equal(p.$('generate-actions').hidden, true);
+  assert.equal(p.$('creation-input').value, ''); assert.equal(p.$('generate-actions').hidden, false);
   assert.equal(p.$('model-progress').hidden, true); assert.equal(p.$('operation-error').hidden, true);
   assert.equal(p.document.body.textContent.split('先从灯室开始好吗？谁在这里？').length, 2);
   assert.equal(p.document.activeElement, p.$('creation-input'));

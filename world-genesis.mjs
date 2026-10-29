@@ -216,7 +216,7 @@ export function buildGenesisMessages(description, { dialogue = null, source = nu
     };
     const allPrefixes = Object.values(groups).flat();
     messages[0].content = specifications.filter(line => !allPrefixes.some(prefix => line.startsWith(prefix)) || groups[stage.id].some(prefix => line.startsWith(prefix))).join('\n');
-    messages[0].content += `\n本次只做第${{ places: 1, people: 2, rules: 3 }[stage.id]}步：只允许输出${stage.types.join('、')}条目。existingRecords是前面已完成的条目，必须沿用其id，不重复输出也不修改。严格依据作者约定，不丢失已明确的人物、初值、每个阈值和启停条件。每一步最后单独一行输出{"type":"complete"}，表示本步完整结束。若作者不需要数值规律，第三步可以只有complete。`;
+    messages[0].content += `\n本次只做第${{ places: 1, people: 2, rules: 3 }[stage.id]}步：只允许输出${stage.types.join('、')}条目。existingRecords是前面已完成的条目，必须沿用其id，不重复输出也不修改。所有 location 只能引用已有 place 的 id，不能把家具、窗户、屋顶等体素对象当地点；工作台上的物品仍位于其所在房间。严格依据作者约定，不丢失已明确的人物、初值、每个阈值和启停条件。每一步最后单独一行输出{"type":"complete"}，表示本步完整结束。若作者不需要数值规律，第三步可以只有complete。`;
   }
   return messages;
 }

@@ -55,7 +55,12 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     finally { rmSync(temp, { force: true }); }
   };
   let saved = null;
-  if (existsSync(stagingFile)) { try { saved = JSON.parse(readFileSync(stagingFile, 'utf8')); } catch { /* current world remains untouched */ } }
+  if (existsSync(stagingFile)) {
+    try {
+      saved = JSON.parse(readFileSync(stagingFile, 'utf8'));
+      if (saved?.schemaVersion !== 1) throw new Error('不支持的创建存档版本');
+    } catch (cause) { throw new Error('创建存档无法读取或格式损坏，原文件已保留；请恢复 creation.json 后重启。', { cause }); }
+  }
   let creation = { mode: 'create', draft: null, lastResult: null, worlds: [], dialogue: emptyDialogue(), source: null, attempts: [], generation: null };
   if (saved?.schemaVersion === 1) {
     creation.mode = saved.mode === 'world' ? 'world' : 'create';
@@ -124,6 +129,17 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     creation: { ...clone({ ...creation, source: creation.source ? { name: creation.source.name, characters: creation.source.text.length } : null }), voxel: voxel.state(), hasWorld: Boolean(inner) },
     ...(active || creation.mode === 'create' ? { model: { ...clone(model), progress: model.progress && active ? { ...model.progress, elapsedMs: performance.now()-active.startedAt } : null } } : {}) });
   const response = (ok, message, extra = {}) => ({ ok, message, ...extra, state: state() });
+  const invalidateGeneration = (generation, result) => {
+    if (result?.reason !== 'invalid-world' || !generation.completedStages.length) return;
+    const stageFor = path => /^(world\.(actors|story\.(clues|facts))|initialMemories)(\.|\[|$)/.test(path) ? 1
+      : /^world\.(resources|processes|actions)(\.|\[|$)/.test(path) ? 2 : 0;
+    const firstInvalid = result.diagnostics?.length ? Math.min(...result.diagnostics.map(d => stageFor(d.path || ''))) : 0;
+    const retained = GENESIS_STAGES.slice(0, firstInvalid), types = new Set(retained.flatMap(s => s.types));
+    generation.completedStages = generation.completedStages.filter(id => retained.some(s => s.id === id));
+    generation.records = generation.records.filter(r => types.has(r.type));
+    generation.adjustments = [];
+  };
+  if (creation.generation?.outcome === 'failed') invalidateGeneration(creation.generation, creation.lastResult);
   const blocked = () => Boolean(active || inner?.state().model.pending);
   function archiveCurrent() {
     if (!inner) return;
@@ -200,7 +216,11 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
   };
   const cancelModel = () => {
     if (!active) { const result = inner?.cancelModel(); return result ? { ...result, state: state() } : response(false, '没有进行中的模型调用。'); }
-    active.controller.abort(); persist(); return response(true, '已请求取消创建世界。');
+    active.controller.abort();
+    // Finalization may have prepared a successful outcome whose voxel snapshot
+    // is not committed yet. Only its atomic commit/failure path can save it.
+    if (!active.finalizing) persist();
+    return response(true, '已请求取消创建世界。');
   };
   const discussStep = async ({ message, mode = 'auto', retryAttemptId, baseVoxelRevision, voxelId: clientVoxelId, conversationRevision } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '先结束当前请求，再继续讨论。', { reason: 'busy' });
@@ -326,17 +346,18 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
     }
     return { ...result, reply: explanation, attempt: clone(attempt), state: state() };
   };
-  const worldStep = async ({ description, conversationRevision, retryGenerationId } = {}, { onProgress, signal } = {}) => {
+  const worldStep = async ({ description, conversationRevision, retryGenerationId, authorRequested = false } = {}, { onProgress, signal } = {}) => {
     if (blocked() || creation.mode !== 'create') return response(false, '请先进入创建页并结束当前调用。', { reason: 'busy' });
     if (voxel.state().error) return response(false, voxel.state().error, { reason: 'voxel-recovery' });
     const conversational = creation.dialogue.messages.length > 0 || conversationRevision !== undefined;
     if (conversational) {
-      if (!creation.dialogue.ready || conversationRevision !== creation.dialogue.revision) return response(false, '先把这一小片起点讨论清楚，再按当前设定生成。', { reason: 'discussion-required' });
+      if (conversationRevision !== creation.dialogue.revision || !creation.dialogue.summary.trim() || !creation.dialogue.messages.some(m => m.role === 'user') || !creation.dialogue.ready && authorRequested !== true) return response(false, '先保存起点想法，再选择查看当前设定的草稿。', { reason: 'discussion-required' });
       description = creation.dialogue.summary;
     }
     if (typeof description !== 'string' || !description.trim() || description.length > 8000) return response(false, '写下一段想要的世界，再开始创建。', { reason: 'invalid-description' });
     const oldGeneration = creation.generation;
     if (retryGenerationId && (!oldGeneration || oldGeneration.id !== retryGenerationId || !['failed', 'cancelled'].includes(oldGeneration.outcome) || oldGeneration.description !== description.trim() || oldGeneration.conversationRevision !== creation.dialogue.revision || oldGeneration.voxelId !== creation.voxelId || oldGeneration.voxelRevision !== voxel.state().revision)) return response(false, '起点基准已经变化，请根据当前设定重新生成。', { reason: 'stale-basis' });
+    if (retryGenerationId) invalidateGeneration(oldGeneration, creation.lastResult);
     const controller = new AbortController(), startEpoch = epoch;
     const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     // A new request must never leave an older draft looking like the failed result.
@@ -355,8 +376,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       const records = clone(generation.records), adjustments = [...generation.adjustments];
       let definition = null, failed = false;
       for (const stage of GENESIS_STAGES) {
-        if (generation.completedStages.includes(stage.id)) continue;
         if (controller.signal.aborted) { result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' }; failed = true; break; }
+        if (generation.completedStages.includes(stage.id)) continue;
         const stageProgress = p => publish({ ...p, stageLabel: stage.label, elapsedMs: performance.now() - active.startedAt });
         stageProgress({ phase: 'connecting', outputCharacters: 0 });
         const sourceContext = retrieveSource(creation.source, [description, creation.dialogue.summary, stage.label]);
@@ -387,6 +408,8 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       }
       if (!failed) {
         publish({ ...model.progress, phase: 'verifying' });
+        if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
+        else {
         if (!definition) {
           try { definition = compileGenesisRecords(records); }
           catch (error) { result = { ok: false, reason: 'invalid-world', message: error.message, diagnostics: [{ path: 'world', message: error.message }] }; }
@@ -403,11 +426,13 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
           result = { ok: true, message: '这一片起点已生成。看看画面和规律，可以继续告诉我哪里要改，满意后再进入。' };
           if (conversational) creation.dialogue.messages.push({ id: randomUUID(), role: 'assistant', text: result.message });
         }
+        }
       }
     } catch { result = { ok: false, reason: 'configuration-or-save-error', message: '创建世界的请求或保存未完成，请检查配置与本地存储；没有自动重试。' }; }
     finally {
       signal?.removeEventListener('abort', abort);
       generation.outcome = result.ok ? 'ready' : result.reason === 'cancelled' ? 'cancelled' : 'failed';
+      invalidateGeneration(generation, result);
       generation.timings.totalMs += performance.now() - active.startedAt;
       result.generationId = generation.id;
       active.finalizing = true; model.lastResult = result; creation.lastResult = result;

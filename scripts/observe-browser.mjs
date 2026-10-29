@@ -52,7 +52,7 @@ try {
   await shot('01-entry-mobile');
   await page.setViewportSize({ width: 1440, height: 960 });
   await send('我想从一座靠海风蓄能的海岛观测站开始。');
-  assert.equal(await page.locator('#world-generate').isVisible(), false);
+  assert.equal(await page.locator('#world-generate').isVisible(), true);
   assert.equal(experience.state().world, null); checks.push('first message clarifies instead of fabricating a world');
   await send('先做三处地点和两位居民，记录星图消耗电量，海风每分钟补充电量。');
   await page.locator('#world-generate').click(); await page.locator('#world-accept').waitFor({ state: 'visible' });

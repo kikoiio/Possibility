@@ -66,6 +66,7 @@ const currentDraft = () => {
   return activeKind() === 'creation' && pending() || draft?.id === suppressedDraft ? null : draft;
 };
 const latestRetry = () => { const a = list(state?.creation?.attempts).at(-1); return a && ['failed', 'cancelled', 'not-built'].includes(a.outcome) ? a : null; };
+const canInspectOrigin = () => Boolean(state?.creation?.dialogue?.summary?.trim() && list(state?.creation?.dialogue?.messages).some(m => m.role === 'user'));
 const resumableGeneration = () => {
   const g = state?.creation?.generation;
   return g && ['failed', 'cancelled'].includes(g.outcome) && g.conversationRevision === state.creation.dialogue.revision && g.voxelId === state.creation.voxelId && g.voxelRevision === state.creation.voxel?.revision ? g : null;
@@ -92,7 +93,7 @@ function updateControls() {
   ui['source-remove'].disabled = locked || !creating() || !state?.creation?.source;
   ui['voxel-undo'].disabled = locked || !creating() || !state?.creation?.voxel?.canUndo;
   ui['voxel-redo'].disabled = locked || !creating() || !state?.creation?.voxel?.canRedo;
-  ui['world-generate'].disabled = locked || !creating() || !state?.creation?.dialogue?.ready;
+  ui['world-generate'].disabled = locked || !creating() || !canInspectOrigin();
   ui['world-accept'].disabled = locked || !creating() || !currentDraft() || staleDraft();
   ui['play-pause'].disabled = busy || creating() || (!canPause() && (pending() || Boolean(waiting())));
   setText(ui['play-pause'], canPause() ? '暂停' : '播放');
@@ -229,7 +230,7 @@ function renderDialogue() {
   }
   ui['creation-summary'].hidden = !text(dialogue.summary);
   setText(ui['creation-summary-text'], text(dialogue.summary));
-  ui['generate-actions'].hidden = !dialogue.ready;
+  ui['generate-actions'].hidden = !canInspectOrigin();
   setText(ui['world-generate'], resumableGeneration() ? '继续生成起点草稿' : state?.creation?.draft ? '重新生成起点草稿' : '查看起点草稿');
   setText(ui['generate-hint'], resumableGeneration() ? `已完成 ${resumableGeneration().completedStages.length} / 3 个步骤。继续时会沿用这些结果。` : staleDraft() ? '新的想法需要一份新草稿。' : '可以先检查起点，也可以继续聊。');
 }
@@ -764,7 +765,7 @@ for (const type of ['undo', 'redo']) {
   });
 }
 ui['world-generate'].addEventListener('click', () => {
-  if (!ui['world-generate'].disabled) return runStep('creation', '/api/world-generate', { conversationRevision: state.creation.dialogue.revision, ...(resumableGeneration() ? { retryGenerationId: resumableGeneration().id } : {}) });
+  if (!ui['world-generate'].disabled) return runStep('creation', '/api/world-generate', { conversationRevision: state.creation.dialogue.revision, ...(!state.creation.dialogue.ready ? { authorRequested: true } : {}), ...(resumableGeneration() ? { retryGenerationId: resumableGeneration().id } : {}) });
 });
 ui['world-accept'].addEventListener('click', () => {
   if (!ui['world-accept'].disabled) return control({ type: 'world-accept', draftId: currentDraft().id });
