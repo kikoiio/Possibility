@@ -946,7 +946,7 @@ minetest.register_on_shutdown(function()
 		end
 		local ok, encoded = pcall(function()
 			local checkpoint = (LONG_TERM or history:count() > 0 or event_log:count() > 0)
-				and persistence.pack_checkpoint(saved, history, event_log) or saved
+				and persistence.pack_checkpoint(saved, history, event_log, LONG_TERM) or saved
 			local json = minetest.write_json(checkpoint)
 			assert(type(json) == "string" and json ~= "", "checkpoint encoding failed")
 			return json

@@ -94,11 +94,13 @@ M.validate = normalise
 
 -- A single normal-shutdown checkpoint, not a transaction with the map database
 -- and not a crash-recovery protocol. Legacy checkpoints are plain agent arrays.
-function M.pack_checkpoint(agents, long_term, world_events)
+function M.pack_checkpoint(agents, long_term, world_events, force_long_term)
   local saved = {}
   for i = 1, array(agents) do saved[i] = normalise(agents[i]) end
-  local checkpoint = {format = "society-checkpoint", version = 1, agents = saved,
-    long_term = long_term:export()}
+  local checkpoint = {format = "society-checkpoint", version = 1, agents = saved}
+  -- Luanti JSON cannot preserve the distinction between an empty array and
+  -- an empty object. Omit an empty memory store; restore treats it as new.
+  if force_long_term or long_term:count() > 0 then checkpoint.long_term = long_term:export() end
   if world_events then checkpoint.world_events = world_events:export() end
   return checkpoint
 end
@@ -117,7 +119,9 @@ function M.unpack_checkpoint(checkpoint, long_term_module, world_events_module)
         or key == "world_events",
         "unknown checkpoint field")
     end
-    saved, long_term = checkpoint.agents, long_term_module.load(checkpoint.long_term)
+    saved = checkpoint.agents
+    long_term = checkpoint.long_term and long_term_module.load(checkpoint.long_term)
+      or long_term_module.new()
     if world_events_module then
       world_events = checkpoint.world_events and world_events_module.load(checkpoint.world_events)
         or world_events_module.new()
