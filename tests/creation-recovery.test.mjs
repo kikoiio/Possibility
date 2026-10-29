@@ -62,6 +62,20 @@ test('air is deterministically empty space rather than an invented material', as
   assert.match(cleared.attempt.adjustments[0].message, /air/);
 });
 
+test('the literal null string clears cells and replace matches without guessing materials', async t => {
+  const f = fixture(t, (_input, n) => output(n === 1 ? [fill] : n === 2
+    ? [{ ...fill, material: ' null ' }]
+    : [{ ...fill, op: 'replace', match: 'null', material: 'glass' }]));
+  await f.experience.discussStep({ message: '木墙', mode: 'build' });
+  const cleared = await f.experience.discussStep({ message: '清空木墙', mode: 'build' });
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.attempt.changes.removed, 3);
+  assert.match(cleared.attempt.adjustments[0].message, /null/);
+  const replaced = await f.experience.discussStep({ message: '空格放玻璃', mode: 'build' });
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.state.creation.voxel.cells.length, 3);
+});
+
 test('a material failure remains in the conversation and explicit retry reuses the intent against the latest scene', async t => {
   const f = fixture(t, (_input, n) => output([{ ...fill, material: n === 1 ? 'copper' : 'wood' }]));
   const failed = await f.experience.discussStep({ message: '给木屋加窗', mode: 'build' });

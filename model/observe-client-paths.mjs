@@ -332,6 +332,17 @@ await observe('1 MiB body limit cancels oversized response with one fetch', asyn
   assert.equal(result.audit.rawResponse, null);
 });
 
+await observe('reasoning is sent only when explicitly configured; NDJSON is not forced into JSON mode', async () => {
+  const result = await callModel({ llm: { ...llm, reasoningEffort: 'none' }, messages, jsonMode: false,
+    fetchImpl: injected(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.reasoning, { effort: 'none' });
+      assert.equal(body.text, undefined);
+      return new Response(successBody);
+    }) });
+  assert.equal(result.ok, true);
+});
+
 const summary = {
   passed: observations.filter((item) => item.passed).length,
   failed: observations.filter((item) => !item.passed).length,

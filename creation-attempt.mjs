@@ -21,9 +21,9 @@ export function normalizeBuildingCommands(commands) {
       const value = command[field];
       if (value === null) continue;
       const material = typeof value === 'string' ? value.trim().toLowerCase() : value;
-      if (material === 'air') {
+      if (material === 'air' || material === 'null') {
         command[field] = null;
-        adjustments.push({ path: `${path}.${field}`, message: '已将 air（空气）明确转换为空格 null。' });
+        adjustments.push({ path: `${path}.${field}`, message: `已将 ${material} 明确转换为空格 null。` });
         continue;
       }
       if (!VOXEL_MATERIALS.includes(material)) throw new BuildingError('模型选用了当前不支持的材料。可以按原意图重试，让它使用现有材料；也可以说明替代材料。', `${path}.${field}`,
