@@ -223,7 +223,7 @@ export function buildResponsesEndpoint(baseUrl) {
   return endpoint.endsWith('/responses') ? endpoint : `${endpoint}/responses`;
 }
 
-export async function callModel({ llm, messages, fetchImpl = globalThis.fetch, signal, onProgress } = {}) {
+export async function callModel({ llm, messages, fetchImpl = globalThis.fetch, signal, onProgress, jsonMode = true } = {}) {
   const startedClock = globalThis.performance?.now?.() ?? Date.now();
   const startedAt = new Date().toISOString();
   const secret = typeof llm?.apiKey === 'string' ? llm.apiKey : null;
@@ -271,7 +271,7 @@ export async function callModel({ llm, messages, fetchImpl = globalThis.fetch, s
   const body = {
     model: llm.model,
     input: messages,
-    text: { format: { type: 'json_object' } },
+    ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
     stream: true,
     ...(llm.maxOutputTokens == null ? {} : { max_output_tokens: llm.maxOutputTokens }),
     store: false,

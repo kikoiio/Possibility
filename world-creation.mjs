@@ -221,12 +221,13 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       timings: { totalMs: 0, modelMs: 0, validationMs: 0, commitMs: 0, calls: [] } };
     creation.attempts.push(attempt); creation.attempts = creation.attempts.slice(-80);
     active = { controller, startedAt }; model.pending = true; model.kind = 'discussion'; model.lastResult = null;
-    const publish = progress => { model.progress = { ...progress, elapsedMs: performance.now() - startedAt, callCount: attempt.timings.calls.length + (progress.phase === 'connecting' ? 1 : 0) }; try { onProgress?.(model.progress); } catch {} };
+    const publish = progress => { model.progress = { ...progress, elapsedMs: performance.now() - startedAt, callCount: active?.callIndex || 1 }; try { onProgress?.(model.progress); } catch {} };
     const fail = (reason, message, diagnostics = []) => ({ ok: false, reason, message, diagnostics });
     let result = fail('request-failed', '请求没有完成，输入已保留。可以重试这次请求，或调整后发送。');
     let explanation = '', value, prepared, commitStarted, durable = false;
     const dialogueBeforeReply = clone(creation.dialogue);
     const request = async (llm, sourceContext, retrievalRound = false) => {
+      active.callIndex = attempt.timings.calls.length + 1;
       const r = await callModel({ llm, messages: buildDiscussionMessages(creation.dialogue, creation.draft, creation.source, voxelBasis,
         { sourceContext, retrievalRound, mode, previousAttempt: previous, attempts: creation.attempts.filter(a => a.id !== attempt.id) }), fetchImpl, signal: controller.signal, onProgress: publish });
       const audit = compactModelAudit(retrievalRound ? 'world-discussion-retrieval' : 'world-discussion', r.audit, { attemptId: attempt.id });
@@ -256,6 +257,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
       else if (!checkDiscussion(value)) result = fail('invalid-discussion', '模型回复格式不完整，场景没有变化。可以按原意图重试，无需重新描述。', [{ path: 'discussion', message: '需要非空 reply、summary 和布尔 ready；commands 若提供必须是数组。' }]);
       else {
         explanation = value.reply.trim();
+        if (/commands\s*[:：]|```|["']op["']\s*:/.test(explanation)) explanation = explanation.split(/\n\s*(?:commands\s*[:：]|```|\[?\s*\{)/i)[0].trim() || '模型提供了建造方案，实际执行结果见下方。';
         if (mode !== 'discuss' && value.commands?.length) {
           if (voxelBasis.cells.length > 5000) result = fail('scene-too-large', '当前场景超过单次编辑范围，这次没有修改。请缩小场景后再试。');
           else {
@@ -344,7 +346,7 @@ export function createWorldCreation({ stateFile, createExperience, configLoader 
         const r = await callModel({ llm, messages: buildGenesisMessages(description.trim(), {
           dialogue: conversational ? creation.dialogue : null, source: creation.source, sourceContext, previousDraft,
           diagnostics: creation.lastResult?.diagnostics ?? [], stage, previousRecords: records, voxel: voxel.state(),
-        }), fetchImpl, signal: controller.signal, onProgress: stageProgress });
+        }), fetchImpl, jsonMode: false, signal: controller.signal, onProgress: stageProgress });
         appendFileSync(join(directory, 'model-calls.jsonl'), JSON.stringify(compactModelAudit('world-genesis', r.audit, { stage: stage.id }))+'\n', { mode: 0o600 });
         if (controller.signal.aborted) result = { ok: false, reason: 'cancelled', message: '创建世界已取消，现有世界保持原样。' };
         else if (!r.ok) result = { ok: false, reason: r.audit.error?.code ?? 'request-failed', message: `${stage.label.replace('正在', '')}未完成，请继续讨论或重新生成。` };

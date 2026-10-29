@@ -359,3 +359,8 @@ body { background: var(--studio-bg); color: var(--studio-text); }
   #world-create .creation-visual { height: 62svh; min-height: 340px; }
   #world-create > .conversation { height: 590px; }
 }
+
+#world-create .message-assistant { display: flex; flex-direction: column; }
+#world-create .message-assistant .message-author { order: 0; }
+#world-create .message-assistant .attempt-result { order: 1; margin-top: 3px; margin-bottom: 7px; }
+#world-create .message-assistant .message-text { order: 2; }

@@ -39,7 +39,7 @@ try {
   await send('现在搭一个木屋起点');
   await page.locator('#creation-retry').waitFor({ state: 'visible' });
   assert.equal((await state()).creation.voxel.revision, 0);
-  assert.match(await page.locator('.attempt-result').innerText(), /尚未建造/);
+  assert.match(await page.locator('.attempt-result').last().innerText(), /尚未建造/);
   await shot('01-not-built');
   await page.locator('#creation-retry').click(); await idle();
   await page.waitForFunction(() => document.querySelector('#voxel-scene').dataset.revision === '1');
