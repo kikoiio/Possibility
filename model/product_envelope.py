@@ -161,4 +161,3 @@ def validate(value: Mapping[str, Any], *, max_bytes: int = MAX_ENVELOPE_BYTES) -
     if len(encoded) > max_bytes:
         raise EnvelopeError('invalid_model_input')
     return True
-
