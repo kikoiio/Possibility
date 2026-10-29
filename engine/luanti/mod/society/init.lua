@@ -1280,7 +1280,18 @@ local function apply_product_projection()
 	-- so a restart cannot observe a committed projection with an old map.
 	local vm = minetest.get_voxel_manip(
 		{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND})
+	local minp, maxp = vm:get_emerged_area()
+	local sx, sy = maxp.x - minp.x + 1, maxp.y - minp.y + 1
 	local map_data = vm:get_data()
+	for _, operation in ipairs(plan.operations) do
+		if operation.kind == "node" then
+			local p = operation.position
+			local name = operation.value and operation.value.name or "air"
+			local index = (p.z - minp.z) * sy * sx + (p.y - minp.y) * sx + (p.x - minp.x) + 1
+			assert(index >= 1 and index <= #map_data, "origin projection outside emerged map")
+			map_data[index] = minetest.get_content_id(name)
+		end
+	end
 	vm:set_data(map_data)
 	vm:write_to_map()
 	local committed = product_state:commit("origin-projection:" .. genesis_manifest.origin_event_id, target)
