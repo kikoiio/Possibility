@@ -63,6 +63,7 @@ enable_damage = false
 creative_mode = true
 max_forceloaded_blocks = -1
 dedicated_server_step = 0.09
+server_map_save_interval = 1
 static_spawnpoint = (0,2,-20)
 society_world_product = true
 society_genesis_manifest = $WORLD/private/wispiva-origin.json
