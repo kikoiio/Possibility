@@ -154,6 +154,7 @@ PY
     echo "society_count = $AGENTS"
     echo "society_decide_interval = $INTERVAL"
     echo "society_max_decisions = $DECISIONS"
+    echo "society_event_namespace = $LABEL.$tag"
     echo "society_persist = true"
     if [[ "$LONG_TERM_MEMORY" -eq 1 ]]; then
       echo "society_long_term_memory = true"

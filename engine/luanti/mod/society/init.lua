@@ -39,6 +39,9 @@ local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
 local LONG_TERM = cfg("society_long_term_memory", "false") == "true"
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local GOAL = cfg("society_goal", "Explore, gather resources, build, and interact with nearby agents.")
+local EVENT_NAMESPACE = cfg("society_event_namespace", "default")
+assert(type(EVENT_NAMESPACE) == "string" and EVENT_NAMESPACE ~= "" and #EVENT_NAMESPACE <= 128,
+	"invalid society_event_namespace")
 local PERSIST = cfg("society_persist", "false") == "true"
 local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
@@ -394,7 +397,8 @@ local function settle_contacts(self, pos)
 			local le = obj:get_luaentity()
 			if le and le.name == "society:agent" and le._id and le._memory
 					and not self._memory.met[le._id] then
-				local operation_id = string.format("contact:%d:%d", math.min(self._id, le._id), math.max(self._id, le._id))
+				local operation_id = string.format("%s:contact:%d:%d", EVENT_NAMESPACE,
+					math.min(self._id, le._id), math.max(self._id, le._id))
 				local committed, event = pcall(event_log.commit, event_log, operation_id, {
 					time = minetest.get_gametime(), kind = "meet", actor = tostring(self._id),
 					ok = true, reason = "contact", participants = {tostring(le._id)},
@@ -594,7 +598,8 @@ local function decide_and_act(self)
 	if action.kind == "advance" then point = self.object:get_pos() end
 	local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
 	local delivered = action.kind == "say" and ok
-	local operation_id = string.format("agent:%d:decision:%d", self._id, self._decisions + 1)
+	local operation_id = string.format("%s:agent:%d:decision:%d", EVENT_NAMESPACE,
+		self._id, self._decisions + 1)
 	local committed, event = pcall(event_log.commit, event_log, operation_id, {
 		time = minetest.get_gametime(), kind = action.kind, actor = tostring(self._id), ok = ok,
 		reason = reason or "unspecified", detail = detail, point = point,
