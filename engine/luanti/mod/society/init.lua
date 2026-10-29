@@ -1492,6 +1492,10 @@ minetest.register_on_shutdown(function()
 			return
 		else
 			ev("environment-checkpoint time=%d", environment_process:export().time)
+			-- The environment checkpoint and product clock are one recovery
+			-- boundary. Update the in-memory clock before committing the
+			-- product state, otherwise the next boot sees a false divergence.
+			set_product_clock(environment_process:export().time, os.time())
 		end
 	end
 	if resource_initial then
