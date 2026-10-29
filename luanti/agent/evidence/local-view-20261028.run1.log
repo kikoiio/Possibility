@@ -774,7 +774,7 @@
 2026-10-28 19:13:51: ACTION[Server]: SOCIETY ev=move agent=3 persona=delta to=-8,1,-8 remaining=8 why=en-route
 2026-10-28 19:13:51: ACTION[Server]: SOCIETY ev=wander agent=4 persona=ember why=stalled target=4,1,-9
 2026-10-28 19:13:51: ACTION[Server]: SOCIETY round number=107 wall_ms=0.67 cpu_ms=0.67
-2026-10-28 19:13:52: ACTION[Server]: observer leaves game. List of players: 
+2026-10-28 19:13:52: ACTION[Server]: observer leaves game. List of players:
 2026-10-28 19:13:53: ACTION[Server]: SOCIETY ev=wander agent=0 persona=atlas why=stalled target=-3,1,-14
 2026-10-28 19:13:53: ACTION[Server]: SOCIETY ev=move agent=1 persona=birch to=-4,1,-8 remaining=7 why=en-route
 2026-10-28 19:13:53: ACTION[Server]: SOCIETY ev=move agent=2 persona=cinder to=16,1,-4 remaining=3 why=en-route
