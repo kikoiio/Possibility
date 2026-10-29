@@ -39,8 +39,15 @@ def _validate_model_input(value):
                     or not isinstance(record.get('id'), str) or not isinstance(record.get('text'), str)
                     or not isinstance(record.get('source'), dict)):
                 raise ValueError('invalid_model_input')
+            source = record['source']
+            if (not isinstance(source.get('kind'), str) or not source['kind']
+                    or not isinstance(source.get('id'), str) or not source['id']):
+                raise ValueError('invalid_model_input')
             access = record.get('access')
-            if not isinstance(access, dict) or actor_id not in access.get('audience', []):
+            if (not isinstance(access, dict) or not isinstance(access.get('scope'), str)
+                    or not isinstance(access.get('audience'), list)
+                    or any(not isinstance(item, str) or not item for item in access['audience'])
+                    or actor_id not in access['audience']):
                 raise ValueError('invalid_model_input')
     if not isinstance(value.get('current'), dict) or not isinstance(value.get('feedback'), dict):
         raise ValueError('invalid_model_input')

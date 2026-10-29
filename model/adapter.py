@@ -230,12 +230,24 @@ def _normalize_context(context: Mapping[str, Any]) -> dict:
         raise ModelError('invalid_context') from None
 
 
+def _provider_context(context: Mapping[str, Any]) -> dict:
+    """Expose only the product envelope when one is present.
+
+    Legacy fields remain local for action validation but are excluded from the
+    provider request because they may contain unreviewed private projections.
+    """
+    if 'model_input' in context:
+        return {'model_input': context['model_input']}
+    return dict(context)
+
+
 def decide(config: Config, context: Mapping[str, Any], *, transport: Callable[[Config, bytes], bytes] = _transport) -> dict:
     """Blocking bridge. Return action and safe audit metadata, or raise ModelError."""
     config.endpoint()
     try:
         context = _normalize_context(context)
-        data = json.dumps(context, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        data = json.dumps(_provider_context(context), ensure_ascii=True, sort_keys=True,
+                          separators=(',', ':'), allow_nan=False)
         body = json.dumps({'model': config.model, 'stream': True,
                            'text': {'format': {'type': 'json_object'}},
                            'reasoning': {'effort': 'none'}, 'max_output_tokens': 256,

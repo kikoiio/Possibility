@@ -69,6 +69,9 @@ assert(type(EVENT_NAMESPACE) == "string" and EVENT_NAMESPACE ~= "" and #EVENT_NA
 local PERSIST = cfg("society_persist", "false") == "true"
 local RESTORE = cfg("society_restore", "false") == "true"
 local RESET_MINDS = cfg("society_reset_minds", "false") == "true"
+if WORLD_PRODUCT then
+	assert(LONG_TERM, "product world requires society_long_term_memory")
+end
 local storage = minetest.get_mod_storage()
 local initial_state = storage:get_string("agent_state")
 local product_state
@@ -87,6 +90,9 @@ local function freeze_product_state(reason)
 		local encoded = minetest.write_json(frozen)
 		storage:set_string("product_state", encoded)
 		minetest.log("error", "SOCIETY product-world frozen reason=" .. tostring(reason):gsub("%s+", "_"))
+	else
+		minetest.log("error", "SOCIETY product-world freeze-failed reason=" .. tostring(reason):gsub("%s+", "_")
+			.. " error=" .. tostring(frozen):gsub("%s+", "_"))
 	end
 end
 if WORLD_PRODUCT then
@@ -603,31 +609,41 @@ local function decide_and_act(self)
 				context.visible_nodes, context.inventory, context.bounds)
 			if WORLD_PRODUCT then
 				local facts, experiences, rumors, unknowns = {}, {}, {}, {}
+				local seed_ids, knowledge_ids = {}, {}
+				for _, seed in ipairs(self._genesis.memory_seeds or {}) do seed_ids[seed.seed_id] = true end
+				local function add_unique(list, record)
+					if not knowledge_ids[record.id] then
+						knowledge_ids[record.id] = true
+						list[#list + 1] = record
+					end
+				end
 				for _, node in ipairs(context.visible_nodes or {}) do
-					facts[#facts + 1] = {id = string.format("observation:%s:%d:%d:%d", self._id,
+					add_unique(facts, {id = string.format("observation:%s:%d:%d:%d", self._id,
 						fp(node.pos.x), fp(node.pos.y), fp(node.pos.z)),
 						text = "I can currently observe " .. node.name .. " nearby.",
 						source = {kind = "engine.sensor", id = "observation:" .. tostring(self._id)},
-						scope = "public", audience = {self._genesis.actor_id}, captured_at = minetest.get_gametime()}
+						scope = "public", audience = {self._genesis.actor_id}, captured_at = minetest.get_gametime()})
 				end
 				for _, memory in ipairs(selected_memory or {}) do
-					local kind = memory.classification == "rumor" and "rumor"
-						or (memory.classification == "unknown" and "unknown" or "experience")
-					local record = {id = memory.id, text = memory.text, source = memory.source,
-						captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
-					if kind == "rumor" then rumors[#rumors + 1] = record
-					elseif kind == "unknown" then unknowns[#unknowns + 1] = record
-					else experiences[#experiences + 1] = record end
+					if not seed_ids[memory.id] then
+						local kind = memory.classification == "rumor" and "rumor"
+							or (memory.classification == "unknown" and "unknown" or "experience")
+						local record = {id = memory.id, text = memory.text, source = memory.source,
+							captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
+						if kind == "rumor" then add_unique(rumors, record)
+						elseif kind == "unknown" then add_unique(unknowns, record)
+						else add_unique(experiences, record) end
+					end
 				end
-				for index, seed in ipairs(self._genesis.memory_seeds or {}) do
-					unknowns[#unknowns + 1] = {id = seed.seed_id, text = seed.text,
+				for _, seed in ipairs(self._genesis.memory_seeds or {}) do
+					add_unique(unknowns, {id = seed.seed_id, text = seed.text,
 						source = {kind = "genesis_seed", id = genesis_manifest.origin_event_id},
-						scope = "private", audience = {self._genesis.actor_id}, captured_at = nil}
+						scope = "private", audience = {self._genesis.actor_id}, captured_at = nil})
 				end
 				for index, message in ipairs(self._inbox or {}) do
-					rumors[#rumors + 1] = {id = message.message_id or string.format("message:%s:%d", tostring(message.from), index),
+					add_unique(rumors, {id = message.message_id or string.format("message:%s:%d", tostring(message.from), index),
 						text = message.text, source = {kind = "agent_message", id = message.message_id or tostring(message.from)},
-						scope = "private", audience = {self._genesis.actor_id}, captured_at = message.time}
+						scope = "private", audience = {self._genesis.actor_id}, captured_at = message.time})
 				end
 				local feedback = {available = false}
 				if self._last_action then
@@ -985,12 +1001,17 @@ local function apply_product_projection()
 		for _, operation in ipairs(plan.operations) do
 			if operation.kind == "node" then
 				local expected = operation.value and operation.value.name or "air"
-				local actual = minetest.get_node_or_nil(operation.position)
-				if not actual or actual.name ~= expected then
-					freeze_product_state("origin projection differs from committed map")
-					fail("product-reconcile", "map=%s expected=%s actual=%s", operation.key, expected,
-						actual and actual.name or "unknown")
-					return false
+				-- Non-air origin nodes are immutable projection facts. Air
+				-- clearances are the dynamic surface for resources, marks and
+				-- later interactions, so they must not freeze a valid world.
+				if expected ~= "air" then
+					local actual = minetest.get_node_or_nil(operation.position)
+					if not actual or actual.name ~= expected then
+						freeze_product_state("origin projection differs from committed map")
+						fail("product-reconcile", "map=%s expected=%s actual=%s", operation.key, expected,
+							actual and actual.name or "unknown")
+						return false
+					end
 				end
 			end
 		end

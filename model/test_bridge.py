@@ -42,6 +42,20 @@ class BridgeEnvelopeTests(unittest.TestCase):
         self.assertEqual(result['error'], 'invalid_request')
         self.assertEqual(calls, [])
 
+    def test_audience_container_and_source_are_strict(self):
+        for audience, source in (('alice', {'kind': 'genesis_seed', 'id': 'origin'}),
+                                 (['alice'], {'kind': '', 'id': 'origin'}),
+                                 (['alice'], {'kind': 'genesis_seed', 'id': ''})):
+            value = self.envelope()
+            value['knowledge']['unknowns'].append({
+                'id': 'seed', 'text': 'private', 'epistemic': 'unknown',
+                'source': source, 'access': {'scope': 'private', 'audience': audience},
+            })
+            output = io.StringIO()
+            bridge.serve(io.StringIO(json.dumps({'id': 1, 'context': {'model_input': value}}) + '\n'),
+                         output, object(), decision=lambda *_: {'action': {'kind': 'inspect'}})
+            self.assertEqual(json.loads(output.getvalue())['error'], 'invalid_request')
+
 
 if __name__ == '__main__':
     unittest.main()

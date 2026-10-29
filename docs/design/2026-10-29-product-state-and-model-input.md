@@ -10,11 +10,13 @@ Luanti 地图数据库、mod storage、实体和模型队列是不同存储，�
 
 产品世界启动时先读取状态和 `product_active_run`。存在未完成提交、上一次运行没有清除活动标记、状态不是 `READY` 或已提交组件缺少对应 checkpoint 时，启动拒绝继续。首次起源投影先写 `PREPARING`，完成节点写入并逐项回读后才确认地图组件。正常停服先写 checkpoint 准备标记，再保存环境与角色／事件／记忆，最后确认共同提交并清除活动标记。
 
+起源地图的重启对账只检查已提交的非空气投影节点；起源写入的空气清除区是角色资源、标记和后续交互的动态表面，不能在每次重启时当作只读地图重新覆盖或冻结。未知的非空气起源节点仍会冻结世界。
+
 这个协议已经覆盖了“进程在写入窗口退出”的检测路径，但当前仍是 Luanti 进程内的协调标记，不是 SQLite、地图和实体的真正原子事务。动态资源动作还需要逐步迁移到同一个提交协调器；未知地图、库存或实体值必须继续冻结，不得自动当作空值修复。
 
 ## 模型输入边界
 
-`cognition/model_envelope.lua` 把产品模型输入整理为 `wispiva.model-input` v1。输入显式分成 `fact`、`experience`、`rumor`、`unknown` 四类，每条记录带来源、访问范围和接收者。产品主循环把起源角色、目标、私有种子、当前观察、选择后的记忆、消息、库存、可行动作和上一次执行反馈放入 `context.model_input`；旧 `context` 字段暂时保留给兼容的 fixture worker。`model/bridge.py` 在调用 provider 前校验 schema、角色绑定、四类知识和 audience，越权记录不会到达模型。
+`cognition/model_envelope.lua` 把产品模型输入整理为 `wispiva.model-input` v1。输入显式分成 `fact`、`experience`、`rumor`、`unknown` 四类，每条记录带来源、访问范围和接收者。产品主循环把起源角色、目标、私有种子、当前观察、选择后的记忆、消息、库存、可行动作和上一次执行反馈放入 `context.model_input`；旧 `context` 字段暂时保留给兼容的 fixture worker。`model/bridge.py` 在调用 provider 前校验 schema、角色绑定、四类知识、来源和 audience，并只把 envelope 发送给 provider；legacy 字段仍在本地用于动作结果校验，不进入模型请求。
 
 消息 inbox 和上次动作反馈现在进入角色 checkpoint，恢复后保留 `message_id`、`event_id` 和来源；产品输入的 `world_revision` 使用持久产品提交版本。动态动作仍未把地图、库存、事件和角色快照变成每次动作的跨存储原子提交，因此进程异常仍会冻结而不会自动恢复。真实模型的 prompt、token、延迟和长期反思仍需单独证据，fixture 不代表真实角色能力。
 

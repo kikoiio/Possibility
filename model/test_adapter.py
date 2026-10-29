@@ -52,6 +52,23 @@ class AdapterTests(unittest.TestCase):
         self.assertNotIn('secret-key', repr(result))
         self.assertNotIn('secret-key', repr(CONFIG))
 
+    def test_product_envelope_is_the_only_provider_context(self):
+        envelope = {
+            'schema': 'wispiva.model-input', 'version': 1,
+            'request': {'world_id': 'world-1', 'actor_id': 'alice'},
+            'actor': {'id': 'alice'},
+            'knowledge': {'facts': [], 'experiences': [], 'rumors': [], 'unknowns': []},
+            'current': {}, 'feedback': {'available': False},
+        }
+        context = {**CTX, 'model_input': envelope, 'genesis_profile': {'memory_seeds': ['private']},
+                   'incoming_messages': [{'text': 'private'}]}
+        def transport(_config, body):
+            request = json.loads(body)
+            payload = json.loads(request['input'][1]['content'])
+            self.assertEqual(payload, {'model_input': envelope})
+            return stream({'kind': 'inspect'})
+        self.assertEqual(adapter.decide(CONFIG, context, transport=transport)['action']['kind'], 'inspect')
+
     def test_invalid_present_token_fields_are_marked_while_valid_counts_survive(self):
         valid = {'input_tokens': 12, 'output_tokens': 4, 'total_tokens': 16}
         for field in valid:
