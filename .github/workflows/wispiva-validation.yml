@@ -1,7 +1,7 @@
 name: Wispiva Luanti validation
 on:
   push:
-    branches: [ 'validation/luanti-*' ]
+    branches: [ 'wispiva/world-product', 'validation/luanti-*' ]
   workflow_dispatch:
 permissions:
   contents: read
@@ -40,6 +40,7 @@ jobs:
           )
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
           python3 -B -m unittest -v engine/luanti/test_snapshot.py
+          python3 -B -m unittest -v engine/luanti/test_world_identity.py engine/luanti/test_world_lock.py
           python3 -B -m unittest discover -s validation/luanti/scale -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s validation/luanti/analysis -t . -p 'test_*.py' -v
           python3 -B -m unittest discover -s genesis -t . -p 'test_*.py' -v
@@ -134,7 +135,7 @@ jobs:
           print('Confirmed fixture preview spawned and recorded messages; not a persistent world or model evidence.')
           PY
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') }}
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
         run: |
           python3 validation/luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder

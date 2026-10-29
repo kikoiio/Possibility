@@ -7,6 +7,7 @@ import unittest
 
 from genesis.origin_confirmation import OriginConfirmation
 from genesis.store import DraftStore
+from model import adapter, origin_context
 from world.origin import draft_sha256
 from world.origin_resources import Coordinator
 from world.origin_store import create_origin
@@ -64,6 +65,23 @@ class OriginEndToEndTests(unittest.TestCase):
                 self.assertEqual(initial_self_context(event, WORLD, 'alice')['memories'][0]['text'],
                                  'Alice remembers a key')
                 self.assertEqual(engine.inventories['alice'], {'ore': 1})
+                calls = []
+                def transport(config, body):
+                    calls.append(json.loads(body))
+                    return (b'data: {"type":"response.output_text.delta","delta":"{\\"kind\\":\\"inspect\\"}"}\n\n'
+                            b'data: {"type":"response.completed","response":{"status":"completed"}}\n\n')
+                saved = event['data']['origin']['runtime_ids']
+                binding = {'contract_version': 1, 'world_id': WORLD, 'origin_event_id': event['id'],
+                           'draft_sha256': event['data']['draft_sha256'], 'actor_id': 'alice',
+                           'runtime_ids': saved, 'luanti_id': saved['alice'] - 1}
+                local = {'observation': {'has_target': False, 'nearby_agents': [saved['traveler'] - 1]},
+                         'bounds': {'min': {'x': -2, 'y': 0, 'z': -2}, 'max': {'x': 2, 'y': 2, 'z': 2}},
+                         'incoming_messages': [], 'feedback': []}
+                config = adapter.Config('https://example.invalid/v1', 'fixture', 'key')
+                origin_context.decide(config, event, binding, local, transport=transport)
+                sent = json.loads(calls[0]['input'][1]['content'])
+                self.assertEqual(sent['self']['memories'][0]['text'], 'Alice remembers a key')
+                self.assertNotIn(draft['memories'][0]['text'], json.dumps(sent, ensure_ascii=False))
             finally:
                 world.close(); drafts.close()
 

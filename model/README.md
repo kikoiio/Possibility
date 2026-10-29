@@ -14,6 +14,8 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 ## 接口与边界
 
+`origin_context.py` 是独立的离线输入原型：校验世界、起源、持久角色映射及临时 Luanti 数字 ID，将单一角色的起始记忆与调用者提供的局部观察、消息和反馈按白名单、预算组合后调用适配器。它未接入 Luanti 运行时；身份认证、角色授权和观察真实性仍由调用方负责，允许的文本也须事先经过授权。现有 `adapter.py` 本身接受额外上下文字段，不能将它当作通用的隐私过滤器。
+
 `adapter.py` 仅使用标准库；HTTPS 地址由受信任配置固定，拒绝 URL 凭据、查询参数和重定向。兼容流式 Responses SSE，请求／响应／文本均有限长。`text.format=json_object`，单次输出最多 256 token，关闭 reasoning。完成事件、错误、拒绝、无效 JSON 与不合法动作均有明确失败码；不自动改成规则策略。
 
 模型输出投影到白名单字段：`inspect/mark/advance`、带 `target` 的 `approach`、带 `point` 的 `wander/gather/build`、带 `target/text` 的 `say`。忽略多余字段，坐标和 ID 允许数学上为整数的 JSON 数字，拒绝布尔、非有限和小数值。未知字段不能改变端点、节点名或审计来源。邻居目标必须来自观察，坐标必须在边界内；执行前再次按当前世界验证。`why` 由代码固定为 `model`。
