@@ -858,7 +858,10 @@ local function decide_and_act(self)
 					if not seed_ids[memory.id] then
 						local kind = memory.classification == "rumor" and "rumor"
 							or (memory.classification == "unknown" and "unknown" or "experience")
-						local record = {id = memory.id, text = memory.text, source = memory.source,
+						local source = memory.source or {}
+						local memory_id = memory.id or string.format("episodic:%s:%s:%s",
+							tostring(source.kind), tostring(source.id), tostring(memory.time))
+						local record = {id = memory_id, text = memory.text, source = source,
 							captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
 						if kind == "rumor" then add_unique(rumors, record)
 						elseif kind == "unknown" then add_unique(unknowns, record)
