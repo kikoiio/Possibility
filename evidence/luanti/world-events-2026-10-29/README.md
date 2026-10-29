@@ -19,3 +19,9 @@ The Lua test `cognition/test_world_events.lua` covers sequence allocation,
 idempotent retries, conflicting retries, defensive copies and corrupted
 snapshot rejection. GitHub Actions runs it together with the Luanti restart,
 resource, memory and preview checks.
+
+Run [40919986392](https://github.com/kikoiio/Wispiva/actions/runs/40919986392)
+passed the full branch workflow. It also exercised a preserved restart and a
+reset-minds restart; each receives its own operation namespace so a new run
+cannot collide with an earlier action while retries within one run remain
+idempotent.
