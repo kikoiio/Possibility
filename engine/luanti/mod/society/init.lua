@@ -94,7 +94,14 @@ local simulation_clock
 local time_wait_seconds, time_active_seconds, time_paused_seconds = 0, 0, 0
 local function world_time()
 	if WORLD_PRODUCT and simulation_clock then return simulation_clock:export().logical_time end
-	return minetest.get_gametime()
+	if type(minetest.get_gametime) == "function" then
+		local ok, result = pcall(minetest.get_gametime)
+		if ok and type(result) == "number" and result == result
+				and result ~= math.huge and result ~= -math.huge then
+			return result
+		end
+	end
+	return math.floor(minetest.get_us_time() / 1000000)
 end
 local function save_product_state()
 	assert(WORLD_PRODUCT and product_state, "product state unavailable")
@@ -119,11 +126,24 @@ local function freeze_product_state(reason)
 			.. " error=" .. tostring(frozen):gsub("%s+", "_"))
 	end
 end
+local function safe_engine_time(value)
+	if type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge then
+		return value
+	end
+	if type(minetest.get_gametime) == "function" then
+		local ok, result = pcall(minetest.get_gametime)
+		if ok and type(result) == "number" and result == result
+				and result ~= math.huge and result ~= -math.huge then
+			return result
+		end
+	end
+	return minetest.get_us_time() / 1000000
+end
 local function set_product_clock(engine_time, wall_time)
 	if not WORLD_PRODUCT or not product_state then return end
 	local clock = simulation_clock and simulation_clock:export() or {fraction=0, rate=24, paused=false}
 	product_state:set_clock({version=1, logical_time=environment_last_time,
-		engine_time=math.max(0, math.floor(engine_time or minetest.get_gametime())),
+		engine_time=math.max(0, math.floor(safe_engine_time(engine_time))),
 		saved_wall_time=math.max(0, math.floor(wall_time or os.time())),
 		fraction=clock.fraction, rate=clock.rate, paused=clock.paused})
 end
@@ -233,7 +253,7 @@ if WORLD_PRODUCT then
 			freeze_product_state("committed product state is missing logical clock")
 			error("committed product state is missing logical clock")
 		end
-		set_product_clock(minetest.get_gametime(), os.time())
+		set_product_clock(nil, os.time())
 		product_clock_bootstrap = true
 		save_product_state()
 	else
@@ -1714,7 +1734,7 @@ minetest.register_on_shutdown(function()
 			-- The environment checkpoint and product clock are one recovery
 			-- boundary. Update the in-memory clock before committing the
 			-- product state, otherwise the next boot sees a false divergence.
-			set_product_clock(minetest.get_gametime(), os.time())
+			set_product_clock(nil, os.time())
 			injected_fault("after_environment")
 		end
 	elseif WORLD_PRODUCT and environment_process and S.failed then
