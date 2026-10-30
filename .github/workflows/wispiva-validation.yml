@@ -39,6 +39,7 @@ jobs:
               lua5.1 test_retrieval.lua
               lua5.1 test_long_term_memory.lua
               lua5.1 test_long_term_integration.lua
+              lua5.1 test_reflection_apply.lua
               lua5.1 test_world_events.lua
               lua5.1 test_environment.lua
               lua5.1 test_product_state.lua
