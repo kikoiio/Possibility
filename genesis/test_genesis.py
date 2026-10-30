@@ -37,6 +37,36 @@ class GenesisTests(unittest.TestCase):
             self.assertNotIn('secret', str(e.exception))
         with self.assertRaises(GenesisError): generate(' ', lambda *_: '{}')
 
+    def test_invalid_model_draft_is_retried_with_bounded_schema_diagnostics(self):
+        invalid = draft()
+        invalid['actors'][0]['placeId'] = 'missing'
+        seen = []
+
+        def model(system, user):
+            seen.append((system, json.loads(user)))
+            return json.dumps(invalid if len(seen) == 1 else draft(), ensure_ascii=False)
+
+        self.assertEqual(generate('河谷', model), draft())
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(seen[0][1], {'intent': '河谷'})
+        self.assertEqual(seen[1][1], {
+            'intent': '河谷',
+            'previous_validation_errors': [{'path': '$.actors[0].placeId', 'code': 'reference'}],
+        })
+        self.assertIn('Correct the previous output', seen[1][0])
+
+    def test_invalid_model_output_stops_after_three_attempts(self):
+        calls = []
+
+        def model(*_):
+            calls.append(1)
+            return '{}'
+
+        with self.assertRaises(GenesisError) as error:
+            generate('idea', model)
+        self.assertEqual(error.exception.code, 'invalid_draft')
+        self.assertEqual(len(calls), 3)
+
     def test_references_layout_and_unknown_fields(self):
         d = draft(); d['actors'][0]['placeId'] = 'missing'; d['layout']['places'][0]['grid'] = [True, 0]; d['extra'] = 1
         self.assertTrue(validate(d))

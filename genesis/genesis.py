@@ -118,18 +118,35 @@ def validate(draft):
 
 
 def generate(intent: str, model: Callable[[str, str], str]):
-    """Call model(system_prompt, user_json), validate and return a draft; never writes state."""
+    """Call model, retry invalid output with bounded schema diagnostics, and never write state."""
     if not isinstance(intent, str) or not intent.strip() or len(intent) > 4000:
         raise GenesisError('invalid_intent')
     schema = (Path(__file__).with_name('schema.json')).read_text(encoding='utf-8')
-    try:
-        output = model(PROMPT + schema, json.dumps({'intent': intent}, ensure_ascii=False))
-    except Exception:
-        raise GenesisError('model_failed') from None
-    draft = parse_json(output)
-    errors = validate(draft)
-    if errors: raise GenesisError('invalid_draft', errors)
-    return draft
+    diagnostics = []
+    last_error = None
+    for attempt in range(3):
+        correction = (' Correct the previous output to satisfy these validation diagnostics; '
+                      'return a complete JSON object only.' if diagnostics else '')
+        payload = {'intent': intent}
+        if diagnostics:
+            payload['previous_validation_errors'] = diagnostics
+        try:
+            output = model(PROMPT + schema + correction,
+                           json.dumps(payload, ensure_ascii=False))
+        except Exception:
+            raise GenesisError('model_failed') from None
+        try:
+            draft = parse_json(output)
+        except GenesisError as exc:
+            last_error = exc
+            diagnostics = [{'path': '$', 'code': exc.code}]
+        else:
+            errors = validate(draft)
+            if not errors:
+                return draft
+            last_error = GenesisError('invalid_draft', errors)
+            diagnostics = errors
+    raise last_error
 
 
 def public_view(draft):
