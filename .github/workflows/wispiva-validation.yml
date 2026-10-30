@@ -657,7 +657,6 @@ jobs:
           from pathlib import Path
           from genesis.store import DraftStore
           from genesis.world_create import create_world
-          from model.product_envelope import validate
 
           root = Path('.ci-cjk-world').absolute()
           root.mkdir(mode=0o700)
@@ -691,6 +690,7 @@ jobs:
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-cjk-world/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model --model-workers 3
           python3 -B - <<'PY'
           import json
+          from collections import Counter
           from pathlib import Path
           from model.product_envelope import validate
 
@@ -703,6 +703,12 @@ jobs:
           requests = sorted((world / 'private/model-audit').rglob('request-*.json'))
           responses = sorted((world / 'private/model-audit').rglob('response-*.json'))
           assert len(requests) >= 6 and len(responses) >= 6, (len(requests), len(responses))
+          action_counts = Counter()
+          for path in responses:
+              action = json.loads(path.read_text(encoding='utf-8')).get('action', {})
+              if isinstance(action, dict) and isinstance(action.get('kind'), str):
+                  action_counts[action['kind']] += 1
+          assert sum(action_counts.values()) >= 6, action_counts
           seeds = {actor['actor_id']: [seed['text'] for seed in actor['memory_seeds']]
                    for actor in manifest['actors']}
           seen_actors = set()
@@ -732,6 +738,11 @@ jobs:
               'actors_observed_by_model': len(seen_actors),
               'actors_with_own_seed_in_model_input': len(own_seed_seen),
               'private_seed_cross_actor_leaks': 0,
+              'model_action_counts': dict(sorted(action_counts.items())),
+              'world_message_events': log.count('SOCIETY ev=message '),
+              'world_resource_events': log.count('SOCIETY ev=resource '),
+              'unsupported_genesis_feature_count': len(
+                  json.loads(Path('genesis-results/results.json').read_text())[2]['unsupported']),
               'checkpoint_committed': 'SOCIETY product-checkpoint commit ' in log,
               'world_loop_completed': 'SOCIETY done result=ok' in log,
               'genesis_token_usage': json.loads(Path('genesis-results/results.json').read_text())[2]['token_usage'],

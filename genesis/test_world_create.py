@@ -42,6 +42,31 @@ class WorldCreateTests(unittest.TestCase):
         self.assertTrue((target / "private" / "origin.sqlite").is_file())
         self.assertEqual((target / "private" / "wispiva-origin.json").stat().st_mode & 0o777, 0o600)
 
+    def test_exact_published_world_retry_returns_same_result_without_writes(self):
+        row = self.confirmed()
+        target = self.root / "world"
+        target.parent.mkdir(exist_ok=True)
+        first = create_world(self.store, row["id"], row["revision"], target)
+        manifest = target / "private" / "wispiva-origin.json"
+        before = manifest.read_bytes()
+        retried = create_world(self.store, row["id"], row["revision"], target)
+        self.assertTrue(retried.pop("idempotent"))
+        self.assertEqual(retried, first)
+        self.assertEqual(manifest.read_bytes(), before)
+
+    def test_existing_world_with_different_confirmation_is_never_replaced(self):
+        original = self.confirmed()
+        other = self.confirmed()
+        target = self.root / "world"
+        target.parent.mkdir(exist_ok=True)
+        create_world(self.store, original["id"], original["revision"], target)
+        manifest = target / "private" / "wispiva-origin.json"
+        before = manifest.read_bytes()
+        with self.assertRaises(WorldCreationError) as error:
+            create_world(self.store, other["id"], other["revision"], target)
+        self.assertEqual(error.exception.code, "existing_world_conflict")
+        self.assertEqual(manifest.read_bytes(), before)
+
     def test_existing_target_is_never_replaced(self):
         row = self.confirmed()
         target = self.root / "world"
@@ -50,7 +75,7 @@ class WorldCreateTests(unittest.TestCase):
         marker.write_text("keep")
         with self.assertRaises(WorldCreationError) as error:
             create_world(self.store, row["id"], row["revision"], target)
-        self.assertEqual(error.exception.code, "runtime_path_exists")
+        self.assertEqual(error.exception.code, "existing_world_conflict")
         self.assertEqual(marker.read_text(), "keep")
 
     def test_stale_confirmation_and_advanced_origin_fail_closed(self):

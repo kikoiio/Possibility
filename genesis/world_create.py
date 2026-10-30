@@ -18,6 +18,7 @@ import tempfile
 
 from genesis.compiler import CompileError, compile_plan
 from genesis.store import DraftCorrupt, DraftStore
+from engine.luanti.world_identity import read_world_identity
 from engine.luanti.world_session import WorldSession
 from world.product_contract import build_contract
 from world.store import CorruptStore, WorldStore
@@ -80,6 +81,49 @@ def _origin_state(path: Path):
     if event.get("type") != "genesis.created":
         raise WorldCreationError("origin_event_invalid")
     return state, event
+
+
+def _existing_world_result(target: Path, row, plan, event) -> dict:
+    """Accept a retry only when every immutable creation binding still matches."""
+    try:
+        if target.is_symlink() or not target.is_dir():
+            raise ValueError
+        world_id = read_world_identity(target)
+        manifest_path = target / "private" / "wispiva-origin.json"
+        contract_path = target / "private" / "wispiva-contract.json"
+        creation_path = target / "private" / "creation.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        creation = json.loads(creation_path.read_text(encoding="utf-8"))
+        expected = build_manifest(row, plan, event, world_id)
+        expected_creation = {
+            "format": "wispiva-world-creation", "version": 1,
+            "world_id": world_id, "draft_id": row["id"],
+            "revision": row["revision"], "origin_event_id": event["id"],
+            "manifest": "private/wispiva-origin.json",
+            "contract": "private/wispiva-contract.json",
+            "intent_sha256": expected.get("intent_sha256"),
+        }
+        if manifest != expected or contract != expected["contract"] or creation != expected_creation:
+            raise ValueError
+        _, copied_event = _origin_state(target / "private" / "origin.sqlite")
+        if copied_event != event:
+            raise ValueError
+        required = (
+            target / "world.mt",
+            target / "server.conf",
+            target / "worldmods" / "society" / "init.lua",
+        )
+        if any(not path.is_file() or path.is_symlink() for path in required):
+            raise ValueError
+    except Exception:
+        raise WorldCreationError("existing_world_conflict") from None
+    return {
+        "status": "created", "idempotent": True, "world_path": str(target),
+        "world_id": world_id, "draft_id": row["id"],
+        "revision": row["revision"], "origin_event_id": event["id"],
+        "actor_count": len(expected["actors"]),
+    }
 
 
 def _runtime_actors(plan):
@@ -169,14 +213,14 @@ def _install_runtime(stage: Path, manifest_path: Path) -> None:
 def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dict:
     """Publish a confirmed draft to a new Luanti world directory.
 
-    Retries are idempotent only when the target already contains the same
-    manifest.  Existing unrelated directories are rejected before any write.
+    Retries return the existing result only when the target's identity,
+    manifest, contract, creation record, origin copy and runtime entrypoints
+    all match this exact confirmed revision. Existing unrelated or damaged
+    directories are rejected before any write.
     """
     target = Path(target)
     if not target.is_absolute() or target.name in ("", ".", ".."):
         raise WorldCreationError("invalid_world_path")
-    if target.exists() or target.is_symlink():
-        raise WorldCreationError("runtime_path_exists")
     try:
         row = store._row(draft_id)
     except (KeyError, DraftCorrupt):
@@ -190,6 +234,8 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
     _, event = _origin_state(Path(row["target"]))
     if event["data"].get("draft_id") != row["id"] or event["data"].get("revision") != row["revision"]:
         raise WorldCreationError("origin_binding_mismatch")
+    if target.exists() or target.is_symlink():
+        return _existing_world_result(target, row, plan, event)
     parent = target.parent
     if not parent.is_dir():
         raise WorldCreationError("invalid_world_parent")
