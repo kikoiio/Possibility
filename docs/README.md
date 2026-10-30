@@ -35,5 +35,5 @@
 | 产品状态与模型输入验证 | `wispiva-product-state`、`wispiva.model-input` v1、preview 复制及持久产品世界恢复 | 2026-10-29 | [原始证据](../evidence/luanti/product-state-model-input-2026-10-29/README.md) |
 | 世界会话边界验证 | Luanti 启动器持锁、身份建立、信号转发及跨进程生命周期 | 2026-10-29 | [原始证据](../evidence/luanti/world-session-2026-10-29/README.md) |
 | 世界事件账本验证 | 行动结果、接触、幂等事件身份与 checkpoint 接入 | 2026-10-29 | [原始证据](../evidence/luanti/world-events-2026-10-29/README.md) |
-| 启动器断电恢复标记 | 启动会话 marker 的原子发布、异常残留、跨世界拒绝与显式确认 | 2026-10-30 | [实现与测试](../engine/luanti/recovery_journal.py) |
+| 启动器断电恢复标记 | 启动会话 marker 的原子发布；完整已提交 checkpoint 才能恢复遗留 marker，不完整世界保持冻结 | 2026-10-30 | [恢复入口与测试](../engine/luanti/launch.py)、[恢复 journal](../engine/luanti/recovery_journal.py) |
 | Actions 工作流审查 | 真模型、Luanti、GUI、容量验证的资源和失败诊断边界 | 2026-10-30 | [工作流审查](../.github/workflows/WORKFLOW-AUDIT.md) |

@@ -118,3 +118,12 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 在当前产品树 `7ccd1ff` 上执行四角色自由社会场景，每角色预算 24 次。真实模型完成 91/96 次决策：`advance=5`、`approach=7`、`build=11`、`gather=14`、`give=2`、`inspect=13`、`say=32`、`wander=7`；产生 32 条消息事件（29 种内容指纹）和 2 次资源转移，未产生正式 meeting。模型错误计数为 8 次 `invalid_response`、2 次 `provider_failed`、3 次 `invalid_action`；最后一项在三次有界重试后失败。此前同一 Actions 的三角色产品循环及恢复阶段通过，单元回归通过；失败发生在这次长场景。
 
 失败时没有提交 checkpoint，世界未完成；启动器保留 recovery marker，资源审计因未提交而不匹配。这证明对模型故障的拒绝和隔离有效，但暴露了部分运行后的恢复产品缺口。不得清除 marker 后直接续跑。下一步应设计并验证可审计的恢复协议：明确可恢复的最后提交、检查地图／库存／事件／记忆／逻辑时钟的一致性，对未提交动作采取回滚或幂等重放，并在验证通过前保持世界冻结。该轮不构成完成世界或稳定社会互动的证据；安全聚合 artifact 为 [ID 13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)，包含更完整验证信息的产物为 [ID 13006260146](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13006260146)。
+
+
+提交后恢复命令现已实现：
+
+```sh
+python3 -B engine/luanti/launch.py --world <世界目录> --recover-committed-checkpoint
+```
+
+它先拒绝运行中的 Luanti server，再在世界锁和产品契约校验下验证完整 READY checkpoint、活动 run 已清除、逻辑时钟／环境、长期记忆／事件计数一致；只有已提交状态才清除 launcher marker。未完成长场景仍冻结。本命令与不完整状态拒绝逻辑的云端验证为 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669)，该运行待完成。

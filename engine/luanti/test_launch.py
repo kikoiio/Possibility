@@ -104,11 +104,13 @@ class LauncherTests(unittest.TestCase):
                 (world / 'mod_storage/society').write_text(json.dumps(fields))
                 SessionJournal(session.world_dir, session.world_id).begin()
             with mock.patch('engine.luanti.launch.validate_world_contract'):
-                session_id = recover_committed_checkpoint(world, expected_world_id=world_id)
+                with mock.patch('engine.luanti.launch.subprocess.run', return_value=mock.Mock(returncode=1)):
+                    session_id = recover_committed_checkpoint(world, expected_world_id=world_id)
             self.assertTrue(session_id)
             self.assertFalse((world / MARKER_FILE).exists())
             with mock.patch('engine.luanti.launch.validate_world_contract'):
-                self.assertIsNone(recover_committed_checkpoint(world, expected_world_id=world_id))
+                with mock.patch('engine.luanti.launch.subprocess.run', return_value=mock.Mock(returncode=1)):
+                    self.assertIsNone(recover_committed_checkpoint(world, expected_world_id=world_id))
 
     def test_recovery_keeps_marker_when_checkpoint_is_active_or_incomplete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,9 +128,16 @@ class LauncherTests(unittest.TestCase):
                 (world / 'mod_storage/society').write_text(json.dumps(fields))
                 SessionJournal(session.world_dir, session.world_id).begin()
             with mock.patch('engine.luanti.launch.validate_world_contract'):
-                with self.assertRaises(RecoveryRequired):
-                    recover_committed_checkpoint(world, expected_world_id=world_id)
+                with mock.patch('engine.luanti.launch.subprocess.run', return_value=mock.Mock(returncode=1)):
+                    with self.assertRaises(RecoveryRequired):
+                        recover_committed_checkpoint(world, expected_world_id=world_id)
             self.assertTrue((world / MARKER_FILE).is_file())
+
+    def test_recovery_refuses_while_a_luanti_server_is_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch('engine.luanti.launch.subprocess.run', return_value=mock.Mock(returncode=0)):
+                with self.assertRaisesRegex(RecoveryRequired, 'stop Luanti'):
+                    recover_committed_checkpoint(tmp)
 
 
 if __name__ == '__main__':

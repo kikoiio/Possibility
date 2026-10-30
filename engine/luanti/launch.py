@@ -77,6 +77,15 @@ def recover_committed_checkpoint(world_dir, *, expected_world_id=None):
     but before the launcher removed its session marker. It never repairs or
     resumes a PREPARING, active, or otherwise incomplete world.
     """
+    try:
+        running = subprocess.run(['pgrep', '-f', '[l]uantiserver'],
+                                 capture_output=True, text=True, check=False)
+    except OSError:
+        raise RecoveryRequired('cannot verify that Luanti is stopped') from None
+    if running.returncode == 0:
+        raise RecoveryRequired('stop Luanti servers before checkpoint recovery')
+    if running.returncode != 1:
+        raise RecoveryRequired('cannot verify that Luanti is stopped')
     with WorldSession(world_dir, expected_world_id=expected_world_id) as session:
         validate_world_contract(world_dir, expected_world_id=session.world_id)
         marker = Path(world_dir) / MARKER_FILE
