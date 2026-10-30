@@ -77,4 +77,12 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 
 真实模型记忆对照 [Actions 41105494227](https://github.com/kikoiio/Wispiva/actions/runs/41105494227) 使用 6 类固定合成任务、3 个 seeds、FIFO 与 retrieval 两种策略，36/36 次调用完成，provider errors 为 0，token 审计完整。FIFO 正确 0/18；retrieval 正确 15/18（83.3%），并且 18/18 次都选择了含目标证据的记忆。四种英文基础任务与中文明确逐字提取各 3/3；中文短线索任务 0/3，尽管对应证据已选入上下文。配对场景固定问题、答案和事件流，只改提问目标的明确程度：结果将错误定位到模型使用含蓄中文线索，而不是记忆检索遗漏。FIFO/retrieval 输入输出合计 tokens 为 13,935/14,305；安全摘要 artifact [ID 13001097625](https://github.com/kikoiio/Wispiva/actions/runs/41105494227/artifacts/13001097625) 只保留任务聚合分数、选择布尔计数和 token 总量。
 
-该实验只有每任务三个 seeds，答案是固定合成事实，短线索不代表自然中文理解的全面测量；它没有验证长时间世界中的事实更新、矛盾反思、人物关系记忆、恢复窗口或用户主观质量。下一步是增加语义改写与真实世界事件序列，并保持提示与记忆文本不公开；在更多 seeds 和真人评估前，不应把 83.3% 当作产品记忆可靠性指标。
+该实验只有每任务三个 seeds，答案是固定合成事实，短线索不代表自然中文理解的全面测量；它没有验证长时间世界中的事实更新、矛盾反思、人物关系记忆、恢复窗口或用户主观质量。下一步是增加语义改写与真实世界事件序列，并保持提示与记忆文本不公开；在更多 seeds 和真人评估前，不应把这类小样本准确率当作产品记忆可靠性指标。
+
+### 信息投影提示改进复验
+
+为明确角色收到的 JSON 输入及记忆证据如何使用，模型系统提示现在解释 `actor`、`knowledge`、`current` 和 `feedback` 各字段，并要求将短 query 当作检索线索；有直接个人证据时逐字提取，无证据不猜；来源／访问标签只描述证据边界，运行时 validator 才是授权边界。回归 [Actions 41107576079](https://github.com/kikoiio/Wispiva/actions/runs/41107576079) 通过 393 项（1 项跳过）。真实模型复验 [Actions 41107598621](https://github.com/kikoiio/Wispiva/actions/runs/41107598621) 再跑 36 次，无 provider error：retrieval 16/18、FIFO 0/18，目标证据选择仍为 18/18；中文短线索从上一批的 0/3 变为 1/3，明确逐字提取仍为 3/3。每种提示只有一轮三 seeds，模型输出存在抽样不确定性；这不是提示改进的因果证明。
+
+## Luanti 客户端画面验收（Actions 41110698741）
+
+[Actions 41110698741](https://github.com/kikoiio/Wispiva/actions/runs/41110698741) 在 CI 的 Xvfb 中启动真实 Luanti 客户端，连接合成产品世界，验证 scene-ready、玩家加入、互动和引导到达，并在到达后捕获 1280×720 客户端画面。安全产品 artifact [ID 13002868352](https://github.com/kikoiio/Wispiva/actions/runs/41110698741/artifacts/13002868352) 包含 `view-acceptance.png`；上传 allowlist 只加入这张合成场景画面。它为人查看 Minecraft-like 世界提供实际客户端截图，但不能替代真人进入游戏的交互评价；本机没有 Luanti 客户端，因此没有声称完成本地视觉验收。
