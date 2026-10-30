@@ -12,4 +12,6 @@
 
 提交 `f9e473701b102220573ff1bd81961fdf53439dfe` 加入了真实 provider usage 汇总、实时 pause／speed／resume 检查和可修订的 Genesis CLI。Actions [41079793257](https://github.com/kikoiio/Wispiva/actions/runs/41079793257) 已通过暂停、暂停中改速、恢复后逻辑时间继续推进，以及中文意图世界创建。后续 [41080849574](https://github.com/kikoiio/Wispiva/actions/runs/41080849574) 的两个英文草稿生成通过，但中文草稿虽结构有效，Luanti 编译报 `out_of_bounds`，因此该轮没有创建并运行中文世界，也没有生成中文产品摘要。新提交让 `generate` 在最多三次模型响应内同时校验编译器边界，并用安全路径／错误码反馈重试；修复后的真实模型复验待 Actions 给出结果。该题材仍是自动验收样本，不表示用户已审阅草稿或替代真人 Luanti 体验。
 
-另加入针对历史记忆任务 artifact 的无模型评分路径：汇总 FIFO／retrieval 的每任务正确率、配对胜负、错误类别与供应商 token，不输出原始回答。它将在独立 `validation/luanti-memory-audit-*` 分支运行，以避免重复付费／消耗模型调用。
+另加入针对历史记忆任务 artifact 的无模型评分路径：汇总 FIFO／retrieval 的每任务正确率、配对胜负、错误类别与供应商 token，不输出原始回答。它已在独立 `validation/luanti-memory-audit-*` 分支执行，没有重复模型调用。
+
+该无模型审计已由 [Actions 41082448598](https://github.com/kikoiio/Wispiva/actions/runs/41082448598) 完成，摘要 artifact [ID 12989508878](https://github.com/kikoiio/Wispiva/actions/runs/41082448598/artifacts/12989508878)。Retrieval 在 15 次任务中答对 13 次（86.7%），FIFO 为 0/15；配对结果 retrieval 胜 13、平 2、FIFO 胜 0。delayed recall、source attribution、stale fact 和 avoiding known failure 均为 3/3；中文短线索 retrieval 为 1/3。两个策略的 30 次 provider 调用全部有完整 token 审计且无调用错误，token 分别为 retrieval 10,746、FIFO 10,665。该评分按精确合法消息比较；三 seeds、固定合成题和一组配置模型不能说明长期记忆或真实社会角色的普遍质量。

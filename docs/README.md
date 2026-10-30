@@ -19,7 +19,7 @@
 | 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
 | 工作计划 | 产品与真实模型 Actions 通过；真实 provider 并发测至 16，真人体验、真实意图确认和千级 LLM 服务能力仍待验 | 2026-10-30 | [工作计划](PLAN.md) |
 | 规则／认知实体容量证据 | 20–10k 阶梯全员存活；10k 引擎 RSS 1.22–1.49 GiB；LLM 队列只做模拟，不代表真实模型容量 | 2026-10-30 | [容量阶梯证据](../evidence/luanti/agent/capacity-2026-10-30.md) |
-| 研究 | 方法、容量与记忆研究；逐任务真实模型评分汇总接入 Actions，结论以实际评分范围为准 | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
+| 研究 | 方法、容量与记忆研究；15 对真实模型记忆任务的 artifact-only 评分已完成，结论限于小样本 | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
 | 创建世界原型 | 另一分支快照；可供参考，本 worktree 尚未接入 | 2026-10-28 | `proto/world-genesis`，`prototypes/README.md` |
 | 运行时验证与历史证据 | Luanti 适配层的验证工具、历史计划和量测 | 2026-10-29 | [运行时说明](../validation/luanti/README.md)、[验证记录](../validation/luanti/PLAN.md) |
