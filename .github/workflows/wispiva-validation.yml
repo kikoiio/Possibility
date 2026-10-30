@@ -313,7 +313,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Capacity ladder
-        if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-product-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
         run: |
           python3 validation/luanti/scale/run.py --binary /usr/libexec/luanti/luantiserver --output "$GITHUB_WORKSPACE/scale-results" --counts 100,1000,5000,10000 --modes idle,move,perceive --seconds 20
       - name: Agent cognition capacity ladder
