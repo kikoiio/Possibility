@@ -605,12 +605,14 @@ jobs:
           from genesis.genesis import generate
           from genesis.model_adapter import responses_model
           from model.adapter import Config
-          model = responses_model(Config.from_env())
+          usages = []
+          model = responses_model(Config.from_env(), usage_callback=usages.append)
           results = []
           for index, intent in enumerate((
               'A rainy fishing harbor with three residents who repair boats and trade fish.',
               'A quiet mountain library with three caretakers and a garden.',
               '在一处河谷建立自由聚落。三位居民没有指定职业，让他们根据经历自行决定如何分工、交流和应对环境；只描述当前世界和局部目标，不安排剧情结局。地点包括河边空地、旧磨坊和山路入口，每个人有一段只属于本人的私人记忆。'), 1):
+              usage_start = len(usages)
               try:
                   draft = generate(intent, model)
                   Path(f'genesis-results/draft-{index}.json').write_text(
@@ -622,6 +624,20 @@ jobs:
               except Exception as exc:
                   result = {'index': index, 'ok': False,
                             'error': getattr(exc, 'code', type(exc).__name__), 'token_usage': None}
+              attempts = usages[usage_start:]
+              required = ('input_tokens', 'output_tokens')
+              if attempts and any(item.get('invalid') for item in attempts):
+                  token_usage = {'status': 'invalid', 'calls': len(attempts), 'tokens': None}
+              elif attempts and all(all(key in item for key in required) for item in attempts):
+                  input_tokens = sum(item['input_tokens'] for item in attempts)
+                  output_tokens = sum(item['output_tokens'] for item in attempts)
+                  token_usage = {'status': 'complete', 'calls': len(attempts),
+                                 'tokens': {'input_tokens': input_tokens,
+                                            'output_tokens': output_tokens,
+                                            'total_tokens': input_tokens + output_tokens}}
+              else:
+                  token_usage = {'status': 'missing', 'calls': len(attempts), 'tokens': None}
+              result['token_usage'] = token_usage
               results.append(result)
               print(json.dumps(result, ensure_ascii=False))
           Path('genesis-results/results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')

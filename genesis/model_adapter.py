@@ -3,8 +3,8 @@ import json
 from model import adapter
 
 
-def responses_model(config, *, transport=None):
-    """Return a genesis model callable. Caller supplies Config and optionally transport."""
+def responses_model(config, *, transport=None, usage_callback=None):
+    """Return a genesis model callable with optional sanitized usage reporting."""
     def call(system, user):
         config.endpoint()
         body = json.dumps({'model': config.model, 'stream': True,
@@ -16,5 +16,8 @@ def responses_model(config, *, transport=None):
         if len(body) > adapter.MAX_REQUEST:
             raise adapter.ModelError('request_too_large')
         data = (transport or adapter._transport)(config, body)
-        return adapter._parse_stream(data)[0]
+        text, usage = adapter._parse_stream(data)
+        if usage_callback is not None:
+            usage_callback(dict(usage))
+        return text
     return call

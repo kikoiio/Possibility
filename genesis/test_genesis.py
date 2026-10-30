@@ -108,13 +108,17 @@ class GenesisTests(unittest.TestCase):
 
     def test_existing_transport_without_network(self):
         calls = []
+        usages = []
         def transport(config, body):
             calls.append(json.loads(body))
-            event = {'type': 'response.completed', 'response': {'status': 'completed', 'output': [{'type':'message','content':[{'type':'output_text','text':json.dumps(draft(), ensure_ascii=False)}]}]}}
+            event = {'type': 'response.completed', 'response': {'status': 'completed', 'output': [{'type':'message','content':[{'type':'output_text','text':json.dumps(draft(), ensure_ascii=False)}]}],
+                     'usage': {'input_tokens': 12, 'output_tokens': 3, 'total_tokens': 15}}}
             return ('data: ' + json.dumps(event, ensure_ascii=False) + '\n\n').encode()
-        model = responses_model(Config('https://example.test/v1', 'test', 'dummy'), transport=transport)
+        model = responses_model(Config('https://example.test/v1', 'test', 'dummy'), transport=transport,
+                                usage_callback=usages.append)
         self.assertEqual(generate('河谷', model), draft())
         self.assertEqual(calls[0]['input'][1]['role'], 'user')
         self.assertTrue(calls[0]['stream'])
+        self.assertEqual(usages, [{'input_tokens': 12, 'output_tokens': 3, 'total_tokens': 15}])
 
 if __name__ == '__main__': unittest.main()
