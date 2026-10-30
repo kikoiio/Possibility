@@ -69,11 +69,64 @@ local stop_words = {}
 for word in ("a an and are as at be by for from has have i in is it of on or "
   .. "the this to was were what which with"):gmatch("%S+") do stop_words[word] = true end
 
+local function next_character(text, index)
+  local first = text:byte(index)
+  if first < 0x80 then return first, text:sub(index, index), index + 1 end
+  local length
+  if first >= 0xC2 and first <= 0xDF then length = 2
+  elseif first >= 0xE0 and first <= 0xEF then length = 3
+  elseif first >= 0xF0 and first <= 0xF4 then length = 4
+  else return -1, text:sub(index, index), index + 1 end
+  if index + length - 1 > #text then return -1, text:sub(index, index), index + 1 end
+  local bytes = {text:byte(index + 1, index + length - 1)}
+  for _, byte in ipairs(bytes) do
+    if byte < 0x80 or byte > 0xBF then return -1, text:sub(index, index), index + 1 end
+  end
+  if length == 3 and ((first == 0xE0 and bytes[1] < 0xA0)
+      or (first == 0xED and bytes[1] > 0x9F)) then
+    return -1, text:sub(index, index), index + 1
+  end
+  if length == 4 and ((first == 0xF0 and bytes[1] < 0x90)
+      or (first == 0xF4 and bytes[1] > 0x8F)) then
+    return -1, text:sub(index, index), index + 1
+  end
+  local codepoint
+  if length == 2 then
+    codepoint = (first - 0xC0) * 0x40 + bytes[1] - 0x80
+  elseif length == 3 then
+    codepoint = (first - 0xE0) * 0x1000 + (bytes[1] - 0x80) * 0x40 + bytes[2] - 0x80
+  else
+    codepoint = (first - 0xF0) * 0x40000 + (bytes[1] - 0x80) * 0x1000
+      + (bytes[2] - 0x80) * 0x40 + bytes[3] - 0x80
+  end
+  return codepoint, text:sub(index, index + length - 1), index + length
+end
+
+local function cjk(codepoint)
+  return codepoint >= 0x3400 and codepoint <= 0x4DBF
+    or codepoint >= 0x4E00 and codepoint <= 0x9FFF
+    or codepoint >= 0xF900 and codepoint <= 0xFAFF
+    or codepoint >= 0x20000 and codepoint <= 0x3134F
+end
+
 local function tokens(text)
   local result = {}
   -- Keep entity IDs and UTF-8 words intact; never substring-match ID 2 to 20.
   for token in text:lower():gmatch("[%w_\128-\255]+") do
     if not stop_words[token] then result[token] = true end
+    -- Whole Han runs are too coarse for short Chinese queries. Add adjacent
+    -- Han bigrams while keeping whole-token matches for existing behavior.
+    local previous, index = nil, 1
+    while index <= #token do
+      local codepoint, character, next_index = next_character(token, index)
+      if cjk(codepoint) then
+        if previous then result["CJK2:" .. previous .. character] = true end
+        previous = character
+      else
+        previous = nil
+      end
+      index = next_index
+    end
   end
   return result
 end

@@ -202,6 +202,11 @@ def cases(seed):
                     'action', recipient)] + distractors,
              nearby, {'kind': 'say', 'target': recipient, 'text': safe},
              {'abstention_text': 'unknown', 'failed_answer': failed}),
+        Case('chinese_fragment_recall', seed, '北边井',
+             f'请告诉角色{recipient}北边井旁仓库的口令，只输出口令；没有记录时输出 unknown。',
+             [event(1, f'北边井旁仓库的口令是 {old_code}。')] + distractors,
+             nearby, {'kind': 'say', 'target': recipient, 'text': old_code},
+             {'abstention_text': 'unknown'}),
     ]
 
 
@@ -278,10 +283,11 @@ def audit_usage(audit):
 
 
 def _goal_recipient(goal):
-    match = re.search(r'\b(?:tell|to) agent (\d+)\b', goal, flags=re.IGNORECASE)
+    match = re.search(r'\b(?:tell|to) agent (\d+)\b|告诉角色(\d+)',
+                      goal, flags=re.IGNORECASE)
     if not match:
         raise ValueError('fixture_missing_recipient')
-    return int(match[1])
+    return int(match[1] or match[2])
 
 
 def _fixture_transport(config, body):
@@ -295,6 +301,12 @@ def _fixture_transport(config, body):
         for event in facts:
             if 'amber cache location is' in event['text'] and event['source']['kind'] == 'agent':
                 target, text = event['source']['id'], 'ack'
+                break
+    elif '北边井旁仓库' in goal:
+        for event in facts:
+            match = re.search(r'北边井旁仓库的口令是 ([a-z0-9_]+)', event['text'])
+            if match:
+                text = match[1]
                 break
     else:
         pattern = (r'safe alternative is ([a-z]+)' if 'safe alternative bridge' in goal
@@ -431,7 +443,8 @@ def summarize(records):
 
 def task_suite(lua, seeds, *, capacity=16, max_entries=2, max_chars=512,
                fixture=False, deadline=30, max_calls=48):
-    if len(seeds) * 8 > min(max_calls, HARD_CALL_LIMIT):
+    planned = len(seeds) * len(cases(seeds[0])) * 2
+    if planned > min(max_calls, HARD_CALL_LIMIT):
         raise EvaluationError('call_budget_exceeded')
     records = []
     # Preselect both arms before any provider call; a missing Lua runtime cannot
@@ -533,7 +546,8 @@ def main(argv=None):
             or not 1 <= args.capacity <= 128 or not 0 <= args.max_entries <= 128
             or not 2 <= args.max_chars <= 16384):
         parser.error('invalid bounded evaluation configuration')
-    calls = len(levels) * PROBE_REQUESTS if levels else len(args.seeds) * 8
+    calls = (len(levels) * PROBE_REQUESTS if levels
+             else len(args.seeds) * len(cases(args.seeds[0])) * 2)
     if calls > args.max_calls:
         parser.error('call budget exceeded; no requests started')
     try:

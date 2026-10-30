@@ -83,12 +83,12 @@ class MemoryEvaluationTests(unittest.TestCase):
 
         with mock.patch.object(evaluation, 'invoke', side_effect=offline):
             report = evaluation.task_suite(lua, [1, 2, 3], fixture=True)
-        self.assertEqual(len(seen), 24)
+        self.assertEqual(len(seen), 30)
         self.assertEqual(report['by_strategy']['fifo']['correct'], 0)
-        self.assertEqual(report['by_strategy']['retrieval']['correct'], 12)
-        self.assertEqual(report['summary']['exact_token_totals']['total_tokens'], 384)
-        self.assertEqual(len({r['task'] for r in report['records']}), 4)
-        for i in range(0, 24, 2):
+        self.assertEqual(report['by_strategy']['retrieval']['correct'], 15)
+        self.assertEqual(report['summary']['exact_token_totals']['total_tokens'], 480)
+        self.assertEqual(len({r['task'] for r in report['records']}), 5)
+        for i in range(0, 30, 2):
             left, right = report['records'][i:i + 2]
             self.assertNotEqual(left['strategy'], right['strategy'])
             for key in ('task', 'seed', 'event_stream_sha256', 'query_sha256', 'goal_sha256'):
@@ -114,6 +114,14 @@ class MemoryEvaluationTests(unittest.TestCase):
                 self.assertLessEqual(len(case.events), 16)
         source = evaluation.cases(1)[1]
         self.assertEqual(source.expected['target'], source.events[0]['source']['id'])
+        chinese = evaluation.cases(1)[4]
+        self.assertEqual(chinese.query, '北边井')
+        self.assertTrue(chinese.events[0]['text'].startswith('北边井'))
+        self.assertEqual(evaluation._goal_recipient(chinese.goal), chinese.expected['target'])
+        context = evaluation.context_for(chinese, chinese.events)
+        result = evaluation.evaluate_decision(CONFIG, context, chinese.expected,
+                                              evaluation._fixture_transport)
+        self.assertTrue(result['correct'])
 
     def test_exact_scorer_rejects_guessing_wrong_source_and_wrong_actions(self):
         case = evaluation.cases(1)[1]
@@ -538,10 +546,10 @@ class ScoreDetailTests(unittest.TestCase):
         with mock.patch.object(evaluation, 'invoke', side_effect=mocked_decision):
             report = evaluation.task_suite(lua, [1, 2, 3])
         summary = report['summary']
-        self.assertEqual(summary['correct'], 24)
-        self.assertEqual(summary['score_categories']['correct'], 24)
-        self.assertEqual(sum(summary['score_categories'].values()), 24)
-        self.assertEqual(summary['score_flags']['abstained'], {'count': 0, 'measured': 24})
+        self.assertEqual(summary['correct'], 30)
+        self.assertEqual(summary['score_categories']['correct'], 30)
+        self.assertEqual(sum(summary['score_categories'].values()), 30)
+        self.assertEqual(summary['score_flags']['abstained'], {'count': 0, 'measured': 30})
         for flag in ('wrong_source_target', 'stale_fact_used', 'known_failure_repeated'):
             self.assertEqual(summary['score_flags'][flag], {'count': 0, 'measured': 6})
             self.assertEqual(report['by_strategy']['retrieval']['score_flags'][flag],
@@ -554,7 +562,7 @@ class ScoreDetailTests(unittest.TestCase):
             record['score_details'] = self.score(case, {**case.expected, 'text': 'unrelated_answer'})
             records.append(record)
         summary = evaluation.summarize(records)
-        self.assertEqual(summary['score_categories']['wrong_answer'], 4)
+        self.assertEqual(summary['score_categories']['wrong_answer'], 5)
         self.assertEqual(summary['score_categories']['stale_fact_used'], 0)
         self.assertEqual(summary['score_categories']['known_failure_repeated'], 0)
         self.assertEqual(summary['score_flags']['stale_fact_used'], {'count': 0, 'measured': 1})

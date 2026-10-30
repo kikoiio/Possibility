@@ -84,6 +84,16 @@ local utf, utf_info = select(unicode, "你好", "retrieval")
 assert(utf[1].text == "你好" and utf_info.chars == #memory.serialize(utf))
 assert(#select(unicode, "", "fifo", 1, utf_info.chars - 1) == 0)
 
+local chinese = memory.new(2)
+chinese:add(entry(1, "甲今天在北边井旁取了水", "north-well"))
+chinese:add(entry(2, "甲今天在南边井旁修好了木桶", "south-well"))
+assert(select(chinese, "北边井", "retrieval")[1].source.id == "north-well",
+  "Chinese query fragments should retrieve the matching event despite surrounding prose")
+chinese:add(entry(3, "safe malformed UTF-8: " .. string.char(0xE0, 0x80, 0x80, 0xED, 0xA0, 0x80,
+  0xF0, 0x80, 0x80, 0x80, 0xF4, 0x90, 0x80, 0x80, 0xE4, 0xB8), "malformed"))
+assert(select(chinese, "safe", "retrieval")[1].source.id == "malformed",
+  "malformed UTF-8 must be traversed without stalling or raising")
+
 local bounded = memory.new(2)
 local original = entry(1, "needle")
 bounded:add(original); original.text = "overwritten"; original.source.id = 88
