@@ -21,3 +21,14 @@
 第一次重跑发现原有验收脚本按消息文本比较，误把同一句话分别发送给两个角色判为越权；运行时的 rumor `source.id` 和 `audience` 已显示为不同消息实例。提交 `3563083e` 改为按稳定消息来源 ID 验收，Actions `41008153510` 和 `41010708756` 均已成功通过。
 
 这项证据证明小规模真实模型闭环、当前输入隐私边界和一次真实 source-grounded L2 provider 调用。它不证明 L2 结果已自动写回主循环、反思质量、断电级跨存储原子提交、长期崩溃恢复、真实用户意图链路、真人三维体验、供应商吞吐或千至万级真实 LLM 角色容量。
+
+## 后续产品验收（提交 `6d160dd`）
+
+- [产品分支 Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018) 全部通过：Lua/Python 单测、Luanti 持久世界重启、资源动作、一次性预览、产品世界客户端连接和确定性交互。`wispiva-results-0` artifact ID `12968859202`。
+- [真实模型分支 Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 全部通过。三角色主场景完成 24 次模型决策（9 say、6 gather、5 inspect、2 advance、2 wander），正常 checkpoint 到 version 2；重启后的反思场景再完成 12 次决策并写入 version 3 checkpoint。
+- 同一模型 Actions 使用自然语言“frontier settlement”意图生成并创建四角色世界，完成 24 次真实决策（12 gather、7 build、1 give、2 advance、1 approach、1 inspect），保存 version 2 checkpoint 和 61 条记忆。该回合 0 次 say、0 次 meetings，记录为一次角色资源分工与转移，不视为自发对话或社会涌现证据。
+- 模型负载回放对已审计请求做 24 次、并发 4 的受控探测；这不是 24 个具身角色，也不代表 provider 的最大吞吐或万级真实模型容量。
+- 五类 checkpoint 故障注入（after_map、after_environment、after_agents、before_commit、after_commit）均验证保留恢复标记、可执行恢复重试且源世界不变。测试针对隔离副本，不证明跨存储原子事务或断电级持久性。
+- `wispiva-product-model-evidence` artifact ID `12968784289`（1.27 MB，保留至 2026-11-13）包含真实模型输入/输出审计、用户意图世界、负载回放和故障探测结果。请求中的角色与记忆均为合成场景；不包含用户自己的世界意图。
+
+这些结果验证了当前产品纵向切片可以生成、启动、运行真实模型角色、记录资源交互并恢复；真人进入桌面 Luanti 评价画面、真实用户确认创建草稿、长时运行、更多题材与千级以上角色容量仍待验收。

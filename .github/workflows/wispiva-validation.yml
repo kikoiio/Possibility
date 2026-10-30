@@ -428,24 +428,29 @@ jobs:
         if: ${{ startsWith(github.ref_name, 'validation/luanti-agent-') }}
         run: |
           exp=engine/luanti
+          failed=0
           for cognition in false true; do
             for count in 20 100 500 1000; do
               label="ci-agent-${count}-${cognition}"
               rc=0
               "$exp/run.sh" --label "$label" --agents "$count" --decisions 4 --interval 2 --seconds 90 --set society_bound=64 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
               echo "$label exit=$rc" >> "evidence/luanti/agent/ci-agent-status.txt"
+              if [ "$rc" -ne 0 ]; then failed=1; fi
             done
           done
+          exit "$failed"
       - name: Large agent capacity ladder
         if: ${{ startsWith(github.ref_name, 'validation/luanti-large-') }}
         run: |
           exp=engine/luanti
+          failed=0
           for cognition in false true; do
             for count in 5000 10000; do
               label="ci-large-${count}-${cognition}"
               rc=0
               "$exp/run.sh" --label "$label" --agents "$count" --decisions 12 --interval 2 --seconds 180 --repeat 3 --set society_bound=128 --set society_spacing=2 --set society_cognition="$cognition" || rc=$?
               echo "$label exit=$rc" >> "evidence/luanti/agent/ci-large-status.txt"
+              if [ "$rc" -ne 0 ]; then failed=1; fi
             done
           done
           mkdir -p "$GITHUB_WORKSPACE/scale-results/queue-simulation"
@@ -471,6 +476,7 @@ jobs:
                       header.append(line)
               report.write_text(''.join(header))
           PY
+          exit "$failed"
       - name: Alternating full workload comparison
         if: ${{ startsWith(github.ref_name, 'validation/luanti-opt-') }}
         run: |

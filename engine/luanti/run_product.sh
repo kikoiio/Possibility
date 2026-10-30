@@ -76,6 +76,7 @@ fi
 conf="$WORLD/private/.runtime.conf"
 log="$WORLD/private/product.log"
 worker_pid=""
+server_pid=""
 cat > "$conf" <<EOF
 bind_address = 127.0.0.1
 port = $PORT
@@ -123,9 +124,15 @@ else
 fi
 
 cleanup() {
+  if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+    kill -TERM "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
   if [[ -n "$worker_pid" ]]; then kill -TERM "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" python3 -B "$HERE/launch.py" \
   --require-product-contract --world "$WORLD" -- \
