@@ -452,38 +452,57 @@ jobs:
             social_decisions=24
           fi
           printf '%s\n' "$social_decisions" > .ci-free-social/decision-budget.txt
+          set +e
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-free-social/world" --decisions "$social_decisions" --interval 1 --seconds 1200 --reflection-every 2 --audit-model --model-workers 4
-          python3 -B - <<'PY'
+          social_exit=$?
+          set -e
+          python3 -B - "$social_exit" <<'PY'
           import json
           import re
           from collections import Counter
           from pathlib import Path
+          import sys
           root = Path('.ci-free-social')
-          creation = json.loads((root / 'creation-result.json').read_text())
-          assert creation['world_id']
-          log = (root / 'world/private/product.log').read_text(errors='replace')
-          assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log
-          assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
-          requests = list((root / 'world/private/model-audit').rglob('request-*.json'))
-          assert len(requests) >= 12, len(requests)
-          worker_log = (root / 'world/private/worker.log').read_text(errors='replace')
+          social_exit = int(sys.argv[1])
+          creation_path = root / 'creation-result.json'
+          creation = json.loads(creation_path.read_text()) if creation_path.exists() else {}
+          log_path = root / 'world/private/product.log'
+          log = log_path.read_text(errors='replace') if log_path.exists() else ''
+          audit_root = root / 'world/private/model-audit'
+          requests = list(audit_root.rglob('request-*.json')) if audit_root.exists() else []
+          worker_path = root / 'world/private/worker.log'
+          worker_log = worker_path.read_text(errors='replace') if worker_path.exists() else ''
           peak = re.search(r'spool workers finished peak_active=(\d+)', worker_log)
-          assert 'spool worker concurrency=4 fixture=false' in worker_log and peak, worker_log
-          assert 2 <= int(peak.group(1)) <= 4, worker_log
           action_counts = Counter(re.findall(r'SOCIETY ev=model-action .*?\bkind=([a-z_]+)\b', log))
-          actor_count = len({json.loads(path.read_text())['context']['model_input']['actor']['id']
-                             for path in requests})
-          summary = {'world_id': creation['world_id'], 'requests': len(requests),
-                     'actor_count': actor_count, 'decision_budget_per_actor': int(
-                         (root / 'decision-budget.txt').read_text()),
+          actors = set()
+          for path in requests:
+              try:
+                  actors.add(json.loads(path.read_text())['context']['model_input']['actor']['id'])
+              except (OSError, ValueError, KeyError, TypeError):
+                  continue
+          model_errors = Counter(re.findall(r'SOCIETY ev=model-attempt .*?\berror=([a-z_]+)', log))
+          summary = {'world_id': creation.get('world_id'), 'run_exit_code': social_exit,
+                     'requests': len(requests), 'actor_count': len(actors),
+                     'decision_budget_per_actor': int((root / 'decision-budget.txt').read_text()),
                      'action_counts': dict(sorted(action_counts.items())),
                      'message_events': log.count('SOCIETY ev=message '),
                      'resource_transfer_events': log.count('SOCIETY ev=resource-transfer '),
                      'meeting_events': log.count('SOCIETY ev=meeting '),
-                     'worker_peak': int(peak.group(1))}
+                     'worker_peak': int(peak.group(1)) if peak else None,
+                     'model_error_counts': dict(sorted(model_errors.items())),
+                     'checkpoint_committed': 'SOCIETY product-checkpoint commit ' in log,
+                     'world_completed': 'SOCIETY done result=ok' in log}
+          if social_exit == 0:
+              assert creation.get('world_id')
+              assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log
+              assert summary['checkpoint_committed'] and summary['world_completed']
+              assert len(requests) >= 12, len(requests)
+              assert 'spool worker concurrency=4 fixture=false' in worker_log and peak, worker_log
+              assert 2 <= int(peak.group(1)) <= 4, worker_log
           (root / 'evidence-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
           print(json.dumps(summary))
           PY
+          if [ "$social_exit" -ne 0 ]; then exit "$social_exit"; fi
       - name: Replay bounded real-model load
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         env:
