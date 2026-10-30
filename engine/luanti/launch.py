@@ -21,7 +21,7 @@ if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from engine.luanti.world_session import WorldSession
-from engine.luanti.recovery_journal import RecoveryRequired, SessionJournal
+from engine.luanti.recovery_journal import MARKER_FILE, RecoveryRequired, SessionJournal
 from world.product_contract import ProductContractError, validate_world_contract
 
 
@@ -68,6 +68,31 @@ def _verify_product_checkpoint(world_dir, world_id):
                 os.close(fd)
     except (OSError, ValueError, KeyError, TypeError):
         raise RecoveryRequired('product checkpoint is incomplete; recovery marker retained') from None
+
+
+def recover_committed_checkpoint(world_dir, *, expected_world_id=None):
+    """Clear a stale session marker only when a complete product commit is durable.
+
+    This repairs the narrow crash window after the product checkpoint committed
+    but before the launcher removed its session marker. It never repairs or
+    resumes a PREPARING, active, or otherwise incomplete world.
+    """
+    try:
+        running = subprocess.run(['pgrep', '-f', '[l]uantiserver'],
+                                 capture_output=True, text=True, check=False)
+    except OSError:
+        raise RecoveryRequired('cannot verify that Luanti is stopped') from None
+    if running.returncode == 0:
+        raise RecoveryRequired('stop Luanti servers before checkpoint recovery')
+    if running.returncode != 1:
+        raise RecoveryRequired('cannot verify that Luanti is stopped')
+    with WorldSession(world_dir, expected_world_id=expected_world_id) as session:
+        validate_world_contract(world_dir, expected_world_id=session.world_id)
+        marker = Path(world_dir) / MARKER_FILE
+        if not os.path.lexists(marker):
+            return None
+        _verify_product_checkpoint(world_dir, session.world_id)
+        return SessionJournal.acknowledge(world_dir, session.world_id)
 
 
 def run(command, world_dir, *, create=False, expected_world_id=None, env=None,
@@ -120,12 +145,26 @@ def main(argv=None):
     parser.add_argument('--create-if-missing', action='store_true')
     parser.add_argument('--expected-world-id')
     parser.add_argument('--require-product-contract', action='store_true')
+    parser.add_argument('--recover-committed-checkpoint', action='store_true',
+                        help='clear a stale marker only if the committed product checkpoint is complete')
     parser.add_argument('--cwd', type=Path)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     command = list(args.command)
     if command[:1] == ['--']:
         command.pop(0)
+    if args.recover_committed_checkpoint:
+        if command:
+            parser.error('--recover-committed-checkpoint does not accept a child command')
+        try:
+            session_id = recover_committed_checkpoint(
+                args.world, expected_world_id=args.expected_world_id)
+            print('wispiva launcher: ' + ('no recovery marker' if session_id is None
+                                           else 'committed checkpoint verified; recovery marker cleared'))
+            return 0
+        except (BlockingIOError, OSError, ValueError, RecoveryRequired, ProductContractError) as error:
+            print('wispiva launcher: ' + str(error), file=sys.stderr)
+            return 1
     if not command:
         parser.error('a child command is required after --')
     try:

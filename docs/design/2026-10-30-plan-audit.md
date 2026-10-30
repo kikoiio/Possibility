@@ -40,3 +40,18 @@
 4. 分阶段验证真实模型角色服务能力，包括决策频率、队列等待、供应商限流和费用，不以规则实体容量代替。
 
 本审计同步到产品提交 `b8cf457`、真实模型验证提交 `281d00e`、20–10k 规则／认知实体阶梯和真实 provider 并发 1–16 阶梯。并发回放共 120 次、110 次可执行动作；其余均为 `invalid_action`，并发 16 的 24 次样本全部可执行。现有模型阶梯只重放四个角色上下文，不能外推到千级 LLM 角色。仍未完成的计划项保持部分完成：长时及多世界运行、跨存储一致性、真实用户意图审阅、真人三维验收、记忆质量和社会行为评估均需要新的产品证据或用户体验。
+
+
+## 长自由社会场景后的更新（Actions 41113101332）
+
+在产品树 `7ccd1ff` 上，三角色回归／恢复前置阶段通过；四角色每人 24 次预算的真实模型场景完成 91/96 次决策，发生 32 条消息事件与 2 次物品转移，没有 meeting。末次模型响应在三次有界重试后仍无效，导致 Actions 失败；该长场景未写 checkpoint，世界未完成，launcher 保留 recovery marker。安全汇总 artifact [13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)。
+
+这次运行把两个未完成问题分开：互动行为已出现但稳定性未知；模型故障后的部分世界不能安全自动恢复。恢复标记的 fail-closed 行为符合现有安全边界，但还没有面向用户的 reconcile/resume 协议。推进顺序：先定义 checkpoint 与未提交操作的权威关系和对账规则，再以故障注入验证无重复结算、状态一致和恢复后可继续；在这之前不得通过手动删除 marker 让世界继续运行。
+
+
+### 已提交 checkpoint 的受限恢复入口
+
+`launch.py --recover-committed-checkpoint` 已加入：它在检查 Luanti server 已停止、取得世界独占锁、验证产品契约和完整 checkpoint 后，才清除 launcher marker。该命令只处理 commit 已完成但 marker 清理未完成的崩溃窗口；模型调用失败产生的 active run、PREPARING 状态或组件不匹配均继续冻结。回归由 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 执行，尚待结果；长场景部分推进的回滚／续跑仍无实现。
+
+
+恢复入口首次云端回归 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 的两项新用例因 fixture 初始化顺序失败：测试目录先有数据文件，世界身份创建因此按预期被拒绝。已修正为先创建身份再填充测试 checkpoint；下一次 Actions 验证该修改。恢复协议实现本身仍需通过新的云端结果。

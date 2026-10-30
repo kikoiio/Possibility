@@ -29,10 +29,11 @@
 | 起源与资源集成验证 | 确认绑定、假引擎对账及既有 Luanti 回归 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-integration-2026-10-29/README.md) |
 | 用户意图创建案例 | 两个非固定题材草稿与确认边界；中文自由聚落两轮真实模型持久世界和记忆隔离验收通过，usage artifact 与记忆评测汇总由 Actions 验证 | 2026-10-30 | [创建案例](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md)、[中文运行记录](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md) |
 | 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程、重启恢复和自动客户端验收 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
+| 四角色长自由社会失败与恢复证据 | 91/96 决策、交互已出现；未 checkpoint，marker 保留，恢复协议待设计 | 2026-10-30 | [Actions 聚合证据](../evidence/luanti/product-model-2026-10-30/README.md#四角色长自由社会与恢复边界-actions-41113101332) |
 | 真实模型产品世界验证 | 三角色对话／资源行动与反思恢复、四角色自由社会、provider 并发 1–16 回放；明确不代表千级 LLM 容量 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-model-2026-10-30/README.md) |
 | 产品长期记忆主循环证据 | 主循环 L2 写回、belief 检索、正常重启后的版本和动作反馈保留 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-memory-runtime-2026-10-30/README.md) |
 | 产品状态与模型输入验证 | `wispiva-product-state`、`wispiva.model-input` v1、preview 复制及持久产品世界恢复 | 2026-10-29 | [原始证据](../evidence/luanti/product-state-model-input-2026-10-29/README.md) |
 | 世界会话边界验证 | Luanti 启动器持锁、身份建立、信号转发及跨进程生命周期 | 2026-10-29 | [原始证据](../evidence/luanti/world-session-2026-10-29/README.md) |
 | 世界事件账本验证 | 行动结果、接触、幂等事件身份与 checkpoint 接入 | 2026-10-29 | [原始证据](../evidence/luanti/world-events-2026-10-29/README.md) |
-| 启动器断电恢复标记 | 启动会话 marker 的原子发布、异常残留、跨世界拒绝与显式确认 | 2026-10-30 | [实现与测试](../engine/luanti/recovery_journal.py) |
+| 启动器断电恢复标记 | 启动会话 marker 的原子发布；完整已提交 checkpoint 才能恢复遗留 marker，不完整世界保持冻结 | 2026-10-30 | [恢复入口与测试](../engine/luanti/launch.py)、[恢复 journal](../engine/luanti/recovery_journal.py) |
 | Actions 工作流审查 | 真模型、Luanti、GUI、容量验证的资源和失败诊断边界 | 2026-10-30 | [工作流审查](../.github/workflows/WORKFLOW-AUDIT.md) |
