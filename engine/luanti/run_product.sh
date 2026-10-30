@@ -17,6 +17,7 @@ FIXTURE=0
 RESUME=0
 SERVE=0
 VISUAL_FIXTURE=0
+AUDIT_MODEL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --resume) RESUME=1; shift ;;
     --serve) SERVE=1; shift ;;
     --visual-fixture) VISUAL_FIXTURE=1; shift ;;
+    --audit-model) AUDIT_MODEL=1; shift ;;
     -h|--help) sed -n '1,26p' "$0"; exit 0 ;;
     *) echo "run_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -43,6 +45,10 @@ fi
 [[ -x "$ENGINE" ]] || { echo "run_product.sh: engine unavailable: $ENGINE" >&2; exit 2; }
 [[ -f "$WORLD/wispiva-world-id" ]] || { echo "run_product.sh: missing world identity" >&2; exit 2; }
 mkdir -p "$WORLD/private/model-spool"
+if [[ "$AUDIT_MODEL" -eq 1 ]]; then
+  mkdir -p "$WORLD/private/model-audit"
+  chmod 700 "$WORLD/private/model-audit"
+fi
 chmod 700 "$WORLD/private" "$WORLD/private/model-spool"
 
 if pgrep -f 'luantiserver' >/dev/null 2>&1; then
@@ -81,6 +87,8 @@ society_reset_minds = false
 society_max_decisions = $DECISIONS
 society_decide_interval = $INTERVAL
 society_event_namespace = $namespace
+society_model_audit = $([[ "$AUDIT_MODEL" -eq 1 ]] && echo true || echo false)
+society_model_audit_dir = $WORLD/private/model-audit
 EOF
 chmod 600 "$conf"
 
