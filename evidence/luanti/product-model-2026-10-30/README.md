@@ -98,3 +98,8 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 ### 已提交 checkpoint 的 marker 恢复命令
 
 产品 launcher 增加 `--recover-committed-checkpoint`。它先检查 Luanti server 停止，并在世界锁、产品契约和完整 checkpoint 校验后清除遗留 marker。验证条件包括 `READY`、无 pending commit、无 `product_active_run`、时钟一致以及记忆／事件计数一致。若 marker 指向活动或不完整运行，命令失败并保留 marker。它只恢复 commit 成功后 marker 未清理的崩溃窗口，不修复 41113101332 的部分推进世界，也不代表跨存储原子事务；对应 Actions [41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 仍在队列中。
+
+
+### 恢复测试夹具修正
+
+[Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 在新增恢复用例处失败，原因是测试夹具先写 map/mod-storage、再初始化 world identity；产品的身份协议会拒绝在非空目录创建新身份。夹具已调整为先创建身份，再填入模拟的 `READY` checkpoint。此结果不是恢复入口的通过证据；修正版仍待云端 Actions 重跑。

@@ -91,10 +91,11 @@ class LauncherTests(unittest.TestCase):
     def test_recovery_clears_marker_only_for_verified_committed_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             world = Path(tmp)
-            (world / 'mod_storage').mkdir()
-            (world / 'map.sqlite').write_bytes(b'fixture-map')
             with WorldSession(world, create=True) as session:
                 world_id = session.world_id
+            (world / 'mod_storage').mkdir()
+            (world / 'map.sqlite').write_bytes(b'fixture-map')
+            with WorldSession(world) as session:
                 state = {'world_id': world_id, 'phase': 'READY', 'clock': {'logical_time': 7},
                          'components': {'memory': 1, 'events': 1}}
                 fields = {'product_state': json.dumps(state),
@@ -115,10 +116,11 @@ class LauncherTests(unittest.TestCase):
     def test_recovery_keeps_marker_when_checkpoint_is_active_or_incomplete(self):
         with tempfile.TemporaryDirectory() as tmp:
             world = Path(tmp)
-            (world / 'mod_storage').mkdir()
-            (world / 'map.sqlite').write_bytes(b'fixture-map')
             with WorldSession(world, create=True) as session:
                 world_id = session.world_id
+            (world / 'mod_storage').mkdir()
+            (world / 'map.sqlite').write_bytes(b'fixture-map')
+            with WorldSession(world) as session:
                 state = {'world_id': world_id, 'phase': 'READY', 'clock': {'logical_time': 7},
                          'components': {'memory': 1, 'events': 1}}
                 fields = {'product_state': json.dumps(state),

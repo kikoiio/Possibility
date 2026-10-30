@@ -52,3 +52,6 @@
 ### 已提交 checkpoint 的受限恢复入口
 
 `launch.py --recover-committed-checkpoint` 已加入：它在检查 Luanti server 已停止、取得世界独占锁、验证产品契约和完整 checkpoint 后，才清除 launcher marker。该命令只处理 commit 已完成但 marker 清理未完成的崩溃窗口；模型调用失败产生的 active run、PREPARING 状态或组件不匹配均继续冻结。回归由 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 执行，尚待结果；长场景部分推进的回滚／续跑仍无实现。
+
+
+恢复入口首次云端回归 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 的两项新用例因 fixture 初始化顺序失败：测试目录先有数据文件，世界身份创建因此按预期被拒绝。已修正为先创建身份再填充测试 checkpoint；下一次 Actions 验证该修改。恢复协议实现本身仍需通过新的云端结果。

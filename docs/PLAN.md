@@ -127,3 +127,6 @@ python3 -B engine/luanti/launch.py --world <世界目录> --recover-committed-ch
 ```
 
 它先拒绝运行中的 Luanti server，再在世界锁和产品契约校验下验证完整 READY checkpoint、活动 run 已清除、逻辑时钟／环境、长期记忆／事件计数一致；只有已提交状态才清除 launcher marker。未完成长场景仍冻结。本命令与不完整状态拒绝逻辑的云端验证为 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669)，该运行待完成。
+
+
+恢复入口测试首次运行 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 失败于测试夹具：夹具先创建 map/mod-storage 文件，之后才创建世界身份；WorldSession 正确拒绝在非空目录内初始化身份。夹具现改为先发布世界身份，再写入模拟 checkpoint；恢复代码将在后续 Actions 重跑。该失败没有执行到实际产品集成步骤。
