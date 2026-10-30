@@ -83,12 +83,12 @@ class MemoryEvaluationTests(unittest.TestCase):
 
         with mock.patch.object(evaluation, 'invoke', side_effect=offline):
             report = evaluation.task_suite(lua, [1, 2, 3], fixture=True)
-        self.assertEqual(len(seen), 30)
+        self.assertEqual(len(seen), 36)
         self.assertEqual(report['by_strategy']['fifo']['correct'], 0)
-        self.assertEqual(report['by_strategy']['retrieval']['correct'], 15)
-        self.assertEqual(report['summary']['exact_token_totals']['total_tokens'], 480)
-        self.assertEqual(len({r['task'] for r in report['records']}), 5)
-        for i in range(0, 30, 2):
+        self.assertEqual(report['by_strategy']['retrieval']['correct'], 18)
+        self.assertEqual(report['summary']['exact_token_totals']['total_tokens'], 576)
+        self.assertEqual(len({r['task'] for r in report['records']}), 6)
+        for i in range(0, 36, 2):
             left, right = report['records'][i:i + 2]
             self.assertNotEqual(left['strategy'], right['strategy'])
             for key in ('task', 'seed', 'event_stream_sha256', 'query_sha256', 'goal_sha256'):
@@ -118,6 +118,12 @@ class MemoryEvaluationTests(unittest.TestCase):
         self.assertEqual(chinese.query, '北边井')
         self.assertTrue(chinese.events[0]['text'].startswith('北边井'))
         self.assertEqual(evaluation._goal_recipient(chinese.goal), chinese.expected['target'])
+        explicit = evaluation.cases(1)[5]
+        self.assertEqual(explicit.query, chinese.query)
+        self.assertEqual(explicit.events, chinese.events)
+        self.assertEqual(explicit.expected, chinese.expected)
+        self.assertNotEqual(explicit.goal, chinese.goal)
+        self.assertIn('逐字提取', explicit.goal)
         context = evaluation.context_for(chinese, chinese.events)
         result = evaluation.evaluate_decision(CONFIG, context, chinese.expected,
                                               evaluation._fixture_transport)
@@ -222,6 +228,8 @@ class MemoryEvaluationTests(unittest.TestCase):
                 evaluation.task_suite(lua, list(range(7)))
             with self.assertRaisesRegex(evaluation.EvaluationError, 'call_budget_exceeded'):
                 evaluation.task_suite(lua, [1, 2, 3], max_calls=23)
+            with self.assertRaisesRegex(evaluation.EvaluationError, 'call_budget_exceeded'):
+                evaluation.task_suite(lua, [1, 2, 3], max_calls=35)
             with self.assertRaisesRegex(evaluation.EvaluationError, 'call_budget_exceeded'):
                 evaluation.concurrency_probe([1, 2, 4], max_calls=23)
             lua.select.assert_not_called()
@@ -558,10 +566,10 @@ class ScoreDetailTests(unittest.TestCase):
         with mock.patch.object(evaluation, 'invoke', side_effect=mocked_decision):
             report = evaluation.task_suite(lua, [1, 2, 3])
         summary = report['summary']
-        self.assertEqual(summary['correct'], 30)
-        self.assertEqual(summary['score_categories']['correct'], 30)
-        self.assertEqual(sum(summary['score_categories'].values()), 30)
-        self.assertEqual(summary['score_flags']['abstained'], {'count': 0, 'measured': 30})
+        self.assertEqual(summary['correct'], 36)
+        self.assertEqual(summary['score_categories']['correct'], 36)
+        self.assertEqual(sum(summary['score_categories'].values()), 36)
+        self.assertEqual(summary['score_flags']['abstained'], {'count': 0, 'measured': 36})
         for flag in ('wrong_source_target', 'stale_fact_used', 'known_failure_repeated'):
             self.assertEqual(summary['score_flags'][flag], {'count': 0, 'measured': 6})
             self.assertEqual(report['by_strategy']['retrieval']['score_flags'][flag],

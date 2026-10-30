@@ -8,7 +8,7 @@ from pathlib import Path
 
 TASKS = {
     'delayed_recall', 'source_attribution', 'stale_fact',
-    'avoiding_known_failure', 'chinese_fragment_recall',
+    'avoiding_known_failure', 'chinese_fragment_recall', 'chinese_explicit_recall',
 }
 STRATEGIES = ('fifo', 'retrieval')
 SCORE_CATEGORIES = (
@@ -18,22 +18,28 @@ SCORE_CATEGORIES = (
 
 
 def summarize(source: dict) -> dict:
+    seeds = source.get('seeds')
+    if (not isinstance(seeds, list) or not 3 <= len(seeds) <= 6
+            or any(type(seed) is not int for seed in seeds) or len(set(seeds)) != len(seeds)):
+        raise ValueError('invalid seed coverage')
+    expected_pairs = len(TASKS) * len(seeds)
+    expected_calls = expected_pairs * len(STRATEGIES)
     if (source.get('kind') != 'memory_tasks' or source.get('fixture') is not False
             or source.get('evidence_kind') != 'actual_configured_model'
-            or source.get('planned_calls') != 30 or source.get('retries') != 0):
+            or source.get('planned_calls') != expected_calls or source.get('retries') != 0):
         raise ValueError('unexpected or synthetic memory artifact')
     records = source.get('records')
     pairs = source.get('pairs')
-    if not isinstance(records, list) or len(records) != 30:
+    if not isinstance(records, list) or len(records) != expected_calls:
         raise ValueError('incomplete task records')
-    if not isinstance(pairs, list) or len(pairs) != 15:
+    if not isinstance(pairs, list) or len(pairs) != expected_pairs:
         raise ValueError('incomplete paired results')
 
     strategy_summary = {}
     by_task = {}
     for strategy in STRATEGIES:
         rows = [row for row in records if row.get('strategy') == strategy]
-        if len(rows) != 15 or any(row.get('task') not in TASKS for row in rows):
+        if len(rows) != expected_pairs or any(row.get('task') not in TASKS for row in rows):
             raise ValueError('invalid strategy records')
         if any(type(row.get('correct')) is not bool or type(row.get('valid_action')) is not bool
                for row in rows):
@@ -66,7 +72,7 @@ def summarize(source: dict) -> dict:
         task_rows = {strategy: [row for row in records
                                 if row.get('task') == task and row.get('strategy') == strategy]
                      for strategy in STRATEGIES}
-        if any(len(rows) != 3 for rows in task_rows.values()):
+        if any(len(rows) != len(seeds) for rows in task_rows.values()):
             raise ValueError('task/strategy coverage is incomplete')
         by_task[task] = {
             strategy: {'correct': sum(row['correct'] for row in rows), 'requests': len(rows),
@@ -94,7 +100,7 @@ def summarize(source: dict) -> dict:
             outcomes['fifo_wins'] += 1
         else:
             outcomes['ties'] += 1
-    if len(paired_tasks) != 15:
+    if len(paired_tasks) != expected_pairs:
         raise ValueError('paired coverage is incomplete')
 
     return {
@@ -109,7 +115,7 @@ def summarize(source: dict) -> dict:
         'per_task': by_task,
         'paired_outcomes': {'pairs': len(pairs), **outcomes},
         'interpretation_limit': (
-            'Three paired seeds per synthetic task are exploratory; exact-message scoring '
+            'The small paired seed set per synthetic task is exploratory; exact-message scoring '
             'does not establish long-term memory quality in a live world.'
         ),
     }

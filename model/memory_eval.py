@@ -1,6 +1,6 @@
 """Paired Lua-memory tasks through adapter.decide; sanitized, bounded evidence.
 
-Default: 5 tasks x 3 seeds x 2 arms = 30 model calls, without retries.
+Default: 6 tasks x 3 seeds x 2 arms = 36 model calls, without retries.
 --fixture is a synthetic protocol/scorer check, never model-quality evidence.
 --probe (alias --concurrency-probe 1 2 4) uses 8 fixed calls per level.
 All model calls run in disposable children with a hard deadline. Real execution
@@ -204,6 +204,12 @@ def cases(seed):
              {'abstention_text': 'unknown', 'failed_answer': failed}),
         Case('chinese_fragment_recall', seed, '北边井',
              f'请告诉角色{recipient}北边井旁仓库的口令，只输出口令；没有记录时输出 unknown。',
+             [event(1, f'北边井旁仓库的口令是 {old_code}。')] + distractors,
+             nearby, {'kind': 'say', 'target': recipient, 'text': old_code},
+             {'abstention_text': 'unknown'}),
+        Case('chinese_explicit_recall', seed, '北边井',
+             f'请只依据你收到的个人记忆，找到提到“北边井旁仓库”的记录。逐字提取“口令是”后面的 ASCII 字符串，'
+             f'并告诉角色{recipient}；消息内容只能是该字符串，不要翻译、解释或猜测。找不到准确记录时输出 unknown。',
              [event(1, f'北边井旁仓库的口令是 {old_code}。')] + distractors,
              nearby, {'kind': 'say', 'target': recipient, 'text': old_code},
              {'abstention_text': 'unknown'}),
