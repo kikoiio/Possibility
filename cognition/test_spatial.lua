@@ -93,6 +93,8 @@ assert(#bounded.agents == 1 and bounded.agents[1].id == 2,
   "visible agents are bounded and nearest first")
 peer_pos = pos(20)
 observed_index:upsert(2, peer, peer:get_pos())
+farther_pos = pos(30)
+observed_index:upsert(3, farther, farther:get_pos())
 assert(#observation.observe(engine, observer, {radius = 2, node_names = {}}).agents == 0)
 
 -- Invalid updates must leave the previous mapping intact.
