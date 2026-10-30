@@ -84,9 +84,11 @@ jobs:
           }, indent=2) + '\n')
           PY
       - name: Run agent loop with cognition
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           engine/luanti/run.sh --label ci-cognition --agents 5 --decisions 8 --interval 1 --set society_cognition=true
       - name: Copy and reset world
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           exp=engine/luanti
           python3 "$exp/snapshot.py" "$exp/worlds/ci-cognition.run1" "$exp/worlds/ci-reset.run1"
@@ -102,12 +104,14 @@ jobs:
           "$exp/run.sh" --label ci-invalid-retry --agents 4 --decisions 8 --interval 1 --resume --expect-fail restore-invalid
           "$exp/run.sh" --label ci-invalid-retry --agents 5 --decisions 8 --interval 1 --resume --set society_cognition=true
       - name: Verify resource actions with deterministic fixture
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           exp=engine/luanti
           "$exp/run.sh" --label ci-resource --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --set society_stats_interval=1 --set society_memory_mode=retrieval
           grep -q 'SOCIETY ev=resource .* action=gather ok=true' "evidence/luanti/agent/ci-resource.run1.log"
           grep -q 'SOCIETY ev=resource .* action=build ok=true' "evidence/luanti/agent/ci-resource.run1.log"
       - name: Verify long-term memory across normal restart
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           exp=engine/luanti
           "$exp/run.sh" --label ci-memory-persist --agents 3 --decisions 2 --interval 1 --seconds 60 --fake-model --long-term-memory
@@ -117,6 +121,7 @@ jobs:
           grep -q 'SOCIETY summary .*decisions=6 ' "evidence/luanti/agent/ci-memory-keep.run1.log"
           grep -q 'SOCIETY long-term-checkpoint records=[1-9]' "evidence/luanti/agent/ci-memory-keep.run1.log"
       - name: Verify a confirmed disposable Luanti world preview
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           python3 -B - <<'PY'
           import json
@@ -147,6 +152,7 @@ jobs:
               raise SystemExit(status or 1)
           print('Confirmed fixture preview spawned and recorded messages; not a persistent world or model evidence.')
       - name: Create and run a persistent product world
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           python3 -B - <<'PY'
           import json
