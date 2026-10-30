@@ -18,6 +18,8 @@
 
 后续记忆评测新增 `memory_evidence_selected` 布尔计数和按任务覆盖率，用来区分“相关证据没有进入提示”与“模型看到证据后仍未答对”。该诊断不保存记忆文本；历史 artifact 未记录此字段，因此覆盖率明确为未测量，不能从 13/15 答题分数倒推出检索覆盖。
 
+独立验证 [Actions 41093281007](https://github.com/kikoiio/Wispiva/actions/runs/41093281007) 在 30 次配置模型调用中为每条记录新增了布尔证据命中审计，安全摘要 artifact 为 [12994903837](https://github.com/kikoiio/Wispiva/actions/runs/41093281007/artifacts/12994903837)。Retrieval 证据覆盖 15/15、作答 12/15；FIFO 覆盖 0/15、作答 0/15。中文短线索任务中 retrieval 三次都选入了含目标证据的记忆，但正确回答仍为 0/3，说明这轮的失败发生在模型读取／表达阶段，而不是检索遗漏；其余四类 retrieval 任务各 3/3。配对结果 retrieval 胜 12、平 3、FIFO 胜 0；retrieval 和 FIFO 分别使用 10,735 与 10,552 provider tokens，无调用错误。该结果只定位问题，不证明中文语义理解的一般能力。
+
 隐私边界复核发现历史 CJK `wispiva-results-0` 会公开原始角色记忆草稿；产品模型验证 artifact 会公开完整 request／response 审计。Actions 清理已删除这些 CJK 原始 artifact 及五个真实产品模型 run 的原始 artifacts 和日志。安全的 CJK 行为摘要仍保留。提交 `bd71910` 将未来上传限制为汇总结果、记忆审计计数和故障结果；CJK 草稿 artifact 现在只上传 `results.json`，其中不含角色文本。通用 SOCIETY 摘要也使用 `--public`，不再包括原始行、消息文本或自由文本配置；原始 agent 日志不再上传。独立记忆基准 artifact [ID 12983479330](https://github.com/kikoiio/Wispiva/actions/runs/41063917433/artifacts/12983479330) 仍包含固定合成题目和模型回答，用于复现已发布的评分；它不是用户记忆。公开仓库中不得放入真人记忆。
 
 隐私收紧后的中文完整验证 [Actions 41090595388](https://github.com/kikoiio/Wispiva/actions/runs/41090595388) 在 `d393cabc` 上通过全量单测、Luanti 客户端检查、三人持久世界创建与真实模型循环。18 次决策涉及 3 个角色；每个角色模型输入都包含自己的种子记忆，跨角色泄漏为 0。动作计数为 gather 7、inspect 7、build 2、mark 2。该次 provider usage 未返回完整审计，20 次尝试的 token 记为缺失，不能报告 token 成本。artifact 只保留 540 字节的安全汇总；`wispiva-results-0` 不再包含中文草稿。
