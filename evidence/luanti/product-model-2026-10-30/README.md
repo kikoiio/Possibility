@@ -70,3 +70,11 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 自由社会场景完成四角色各 24 次真实决策，共 96 次请求。安全摘要记录 `gather=36`、`build=28`、`say=15`、`give=3`、`approach=4`、`advance=5`、`inspect=2`、`wander=3`；有 15 个 message 事件、3 个资源转移事件、0 个正式 meeting 事件，worker 峰值为 4。整个场景的 `run_exit_code=0`。尝试过程中计数到 4 次 `invalid_action`、2 次 `invalid_response` 和 3 次 `provider_failed`，均在有界重试下未阻止 96 次决策完成。
 
 同一 run 后续的独立并发 4 负载回放为 23/24 可执行，1 次 `invalid_action`；吞吐 1.108 次/秒，模型延迟 p50/p95 为 3.20/3.77 秒，队列等待 p50/p95 为 7.05/17.26 秒。由于该 gate 要求 24/24 可执行，Actions 总体失败；不要把它写成模型服务负载验证通过。它只说明这一短场景中出现了对白和物品转移，单轮结果不证明稳定的社会演化。安全聚合 artifact 为 [ID 12999250945](https://github.com/kikoiio/Wispiva/actions/runs/41099553897/artifacts/12999250945)。
+
+## 中文记忆线索对照与回归（2026-10-30）
+
+产品分支回归 [Actions 41105474566](https://github.com/kikoiio/Wispiva/actions/runs/41105474566) 在提交 `1a7af3c` 上通过：8 组 Python/Lua 套件共运行 392 项，1 项跳过，其余通过；上传的产品 artifact 为 [ID 13001795429](https://github.com/kikoiio/Wispiva/actions/runs/41105474566/artifacts/13001795429)。
+
+真实模型记忆对照 [Actions 41105494227](https://github.com/kikoiio/Wispiva/actions/runs/41105494227) 使用 6 类固定合成任务、3 个 seeds、FIFO 与 retrieval 两种策略，36/36 次调用完成，provider errors 为 0，token 审计完整。FIFO 正确 0/18；retrieval 正确 15/18（83.3%），并且 18/18 次都选择了含目标证据的记忆。四种英文基础任务与中文明确逐字提取各 3/3；中文短线索任务 0/3，尽管对应证据已选入上下文。配对场景固定问题、答案和事件流，只改提问目标的明确程度：结果将错误定位到模型使用含蓄中文线索，而不是记忆检索遗漏。FIFO/retrieval 输入输出合计 tokens 为 13,935/14,305；安全摘要 artifact [ID 13001097625](https://github.com/kikoiio/Wispiva/actions/runs/41105494227/artifacts/13001097625) 只保留任务聚合分数、选择布尔计数和 token 总量。
+
+该实验只有每任务三个 seeds，答案是固定合成事实，短线索不代表自然中文理解的全面测量；它没有验证长时间世界中的事实更新、矛盾反思、人物关系记忆、恢复窗口或用户主观质量。下一步是增加语义改写与真实世界事件序列，并保持提示与记忆文本不公开；在更多 seeds 和真人评估前，不应把 83.3% 当作产品记忆可靠性指标。
