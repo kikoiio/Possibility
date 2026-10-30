@@ -187,7 +187,7 @@ class SummaryTests(unittest.TestCase):
 
     def test_environment_regeneration_is_included_in_resource_conservation(self):
         self.write("run.events", "SOCIETY resource-verify initial=3 environment_delta=14 expected=17 world=16 inventory=1 ok=true\n")
-        totals = summarize.load(self.root)["totals"]
+        totals = summarize.summarize(self.root)["totals"]
         check = totals["resource_conservation"]["checks"][0]
         self.assertEqual(check["environment_delta"], 14)
         self.assertEqual(check["expected"], 17)

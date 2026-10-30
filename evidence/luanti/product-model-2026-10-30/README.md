@@ -108,3 +108,8 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 ## Product resume failure and ground reconciliation fix
 
 [Actions 41117324797](https://github.com/kikoiio/Wispiva/actions/runs/41117324797) passed the real-model three-character product loop with 24 completed decisions (12 say, 11 inspect, 1 gather), checkpoint version 2, 33 world events and 79 memory records. Its follow-up resume failed closed because committed outdoor ground at `0,0,-2` was `default:dirt` while origin expected `default:dirt_with_grass`; the free-society stage was consequently skipped. The run also exposed an accounting gap: environment regeneration raised the expected total by 14, but the audit compared against the initial 3 alone (actual 16 in world plus 1 in inventory). The fix allows only grass-to-dirt for outdoor ground during reconciliation and includes environment delta in expected resource conservation; all structure nodes remain exact. This is a regression diagnosis, not a recovery pass.
+
+
+### 修复验证期间的两次 CI 失败
+
+[Actions 41118712614](https://github.com/kikoiio/Wispiva/actions/runs/41118712614) 首次因提交中的 `init.lua` 内容被工具输出上限截断而发生 Lua 解析错误；随后从完整父版本恢复 81 KB 文件并重新应用补丁。[Actions 41119361344](https://github.com/kikoiio/Wispiva/actions/runs/41119361344) 中 Lua 与其他 Python 回归通过，唯一失败来自新增测试误用不存在的摘要 API `load()`；测试已修正为 `summarize()`。这两轮均未验证草地→泥土兼容后的真实恢复。
