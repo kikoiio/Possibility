@@ -10,6 +10,7 @@ NAME="observer"
 SECONDS_MAX=0
 RANDOM_INPUT=0
 LOGFILE=""
+CONFIG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,8 +18,9 @@ while [[ $# -gt 0 ]]; do
     --name) NAME="$2"; shift 2 ;;
     --seconds) SECONDS_MAX="$2"; shift 2 ;;
     --random-input) RANDOM_INPUT=1; shift ;;
-    --acceptance) RANDOM_INPUT=1; SECONDS_MAX=20; shift ;;
+    --acceptance) RANDOM_INPUT=1; shift ;;
     --logfile) LOGFILE="$2"; shift 2 ;;
+    --config) CONFIG="$2"; shift 2 ;;
     -h|--help) sed -n '1,34p' "$0"; exit 0 ;;
     *) echo "view_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -37,6 +39,7 @@ fi
 args=(--address 127.0.0.1 --port "$PORT" --name "$NAME" --go)
 if [[ "$RANDOM_INPUT" -eq 1 ]]; then args+=(--random-input); fi
 if [[ -n "$LOGFILE" ]]; then args+=(--logfile "$LOGFILE"); fi
+if [[ -n "$CONFIG" ]]; then args+=(--config "$CONFIG"); fi
 
 if [[ "$SECONDS_MAX" -eq 0 ]]; then
   HOME="$LUA_HOME" LD_LIBRARY_PATH="$RT/root/usr/lib/x86_64-linux-gnu" \

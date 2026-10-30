@@ -100,14 +100,16 @@ def process_one(directory, path, timeout, runner=run_bridge):
         else:
             try:
                 attempts = []
-                for _ in range(3):
+                retryable = ('invalid_action', 'transport_error', 'provider_failed', 'rate_limited')
+                for attempt in range(3):
                     result = runner(request, directory / 'STOP', timeout)
                     attempts.append({'ok': result.get('ok') is True,
                                      'error': result.get('error'),
                                      'audit': result.get('audit'),
                                      'reflection_audit': result.get('reflection_audit')})
-                    if result.get('ok') is True or result.get('error') not in ('invalid_action', 'transport_error'):
+                    if result.get('ok') is True or result.get('error') not in retryable or attempt == 2:
                         break
+                    time.sleep(min(attempt + 1, 2))
                 result['attempts'] = attempts
             except Exception:
                 result = {'id': request_id, 'ok': False, 'error': 'bridge_error'}

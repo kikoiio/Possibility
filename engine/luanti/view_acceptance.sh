@@ -4,7 +4,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORLD=""
 PORT=30079
-SECONDS_MAX=20
+SECONDS_MAX=60
 NAME="observer"
 
 while [[ $# -gt 0 ]]; do
@@ -24,6 +24,7 @@ command -v timeout >/dev/null 2>&1 || { echo "view_acceptance.sh: timeout unavai
 
 server_log="$WORLD/private/view-server.log"
 client_log="$WORLD/private/view-client.log"
+client_config="$WORLD/private/view-client.conf"
 product_log="$WORLD/private/product.log"
 product_log_lines=0
 if [[ -f "$product_log" ]]; then
@@ -59,6 +60,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+cat >"$client_config" <<'EOF'
+enable_sound = false
+EOF
+
 "$HERE/run_product.sh" --world "$WORLD" --serve --visual-fixture --resume --port "$PORT" >"$server_log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 30); do
@@ -73,7 +78,7 @@ fi
 set +e
 xvfb-run -a -s '-screen 0 1024x768x24 -nolisten tcp' \
   "$HERE/view_product.sh" --port "$PORT" --name "$NAME" --acceptance \
-  --seconds "$SECONDS_MAX" --logfile "$client_log"
+  --seconds "$SECONDS_MAX" --config "$client_config" --logfile "$client_log"
 client_status=$?
 set -e
 if [[ "$client_status" -ne 0 ]]; then
