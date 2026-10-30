@@ -4,7 +4,7 @@
 
 - 验证运行：[Actions 41010708756](https://github.com/kikoiio/Wispiva/actions/runs/41010708756)
 - 提交：[55a5ffa8](https://github.com/kikoiio/Wispiva/commit/55a5ffa8b3dc22e27d3afdb3a7c26f1423168178)
-- 原始 artifact：`wispiva-product-model-evidence`，ID `12957746448`
+- 原始模型请求／响应 artifact 已于 2026-10-30 隐私复核后撤下；此文仅保留聚合结果。
 
 场景创建一个确认后的 Luanti 产品世界，包含 Alice、Bob、Cora 三个角色、一个共享水井和绿色资源。每个角色收到自己的起始私有种子；模型输入还包含角色局部观察、当前库存、可行动作和上次执行反馈。世界运行完成 18 个真实决策，记录 `say=6`、`gather=6`、`inspect=4`、`approach=1`、`build=1`，并写入产品 checkpoint、世界事件和长期记忆。
 
@@ -29,14 +29,18 @@
 - 同一模型 Actions 使用自然语言“frontier settlement”意图生成并创建四角色世界，完成 24 次真实决策（12 gather、7 build、1 give、2 advance、1 approach、1 inspect），保存 version 2 checkpoint 和 61 条记忆。该回合 0 次 say、0 次 meetings，记录为一次角色资源分工与转移，不视为自发对话或社会涌现证据。
 - 模型负载回放对已审计请求做 24 次、并发 4 的受控探测；这不是 24 个具身角色，也不代表 provider 的最大吞吐或万级真实模型容量。
 - 五类 checkpoint 故障注入（after_map、after_environment、after_agents、before_commit、after_commit）均验证保留恢复标记、可执行恢复重试且源世界不变。测试针对隔离副本，不证明跨存储原子事务或断电级持久性。
-- `wispiva-product-model-evidence` artifact ID `12968784289`（1.27 MB，保留至 2026-11-13）包含真实模型输入/输出审计、用户意图世界、负载回放和故障探测结果。请求中的角色与记忆均为合成场景；不包含用户自己的世界意图。
+- 历史 `wispiva-product-model-evidence` 原始 artifact 与对应产品模型 run 日志已在隐私复核中撤下，因为原始审计文件可能包含角色私有记忆和对话。本文保留经过汇总的决策、token、恢复和容量结果，不保留可读模型输入／输出。
 
 这些结果验证了当前产品纵向切片可以生成、启动、运行真实模型角色、记录资源交互并恢复；真人进入桌面 Luanti 评价画面、真实用户确认创建草稿、长时运行、更多题材与千级以上角色容量仍待验收。
 
 ## 真实模型 worker 阶梯与创建重试（2026-10-30）
 
 - 产品分支 [`b8cf457`](https://github.com/kikoiio/Wispiva/commit/b8cf457) 的 [Actions 41058024437](https://github.com/kikoiio/Wispiva/actions/runs/41058024437) 通过产品 Lua/Python 回归、创建预览、持久世界和 Luanti 客户端连接验收。该产品工作流未加载仓库模型密钥，真实模型步骤按配置跳过。
-- 在独立验证分支提交 [`281d00e`](https://github.com/kikoiio/Wispiva/commit/281d00ebd1269cbb85a77a244462acde1027a2fb) 上，[真实模型 Actions 41058674691](https://github.com/kikoiio/Wispiva/actions/runs/41058674691) 全部通过；`wispiva-product-model-worker-evidence` artifact ID 为 `12977543443`。同一修复增加了世界创建对明确瞬时 provider 错误的最多三次调用和 1/2 秒退避；动作无效、配置错误等不在此重试范围。该运行通过真实模型生成自由社会草稿并完成四角色、24 次决策；结果 `advance=6, approach=3, inspect=3, wander=1, gather=8, build=3, say=0, give=0`。这次观察到采集与建造，没有观察到交谈、转移或会议。
+- 在独立验证分支提交 [`281d00e`](https://github.com/kikoiio/Wispiva/commit/281d00ebd1269cbb85a77a244462acde1027a2fb) 上，[真实模型 Actions 41058674691](https://github.com/kikoiio/Wispiva/actions/runs/41058674691) 全部通过；其含原始私有请求证据的 artifact 和 Actions 日志已撤下。该运行通过真实模型生成自由社会草稿并完成四角色、24 次决策；结果 `advance=6, approach=3, inspect=3, wander=1, gather=8, build=3, say=0, give=0`。这次观察到采集与建造，没有观察到交谈、转移或会议。提交 `281d00e` 同时增加了世界创建对明确瞬时 provider 错误的最多三次调用和 1/2 秒退避；动作无效、配置错误等不在此重试范围。
+
+## 隐私复核与 CI 工件
+
+公开 CI 只保留不含原始提示、回复、角色私有记忆或世界私有目录的汇总文件。历史 CJK 草稿 artifact 已删除，安全的 `wispiva-cjk-product-summary` 保留。四个旧真实模型验证 run 的公开日志已撤下；原始证据链接因此失效。当前工作流的 allowlist 上传只包含数字摘要、记忆审计计数、负载统计及故障结果。所有公开模型测试都应使用合成私有记忆。
 - 使用同一批 24 个隔离角色输入分别按并发 1、2、4、8、16 回放，共 120 次 provider 调用，110 次返回可执行动作（91.7%）；其余 10 次均为安全拒绝的 `invalid_action`，没有限流或传输类错误。各级实测吞吐为 0.252、0.598、0.975、1.491、1.957 次/秒；实际峰值并发与设置一致。并发 16 档 24/24 可执行，p50/p95 模型延迟 4.41/9.21 秒；并发 8 档可执行 22/24。
 - 按并发 16 的单批观测速率换算约为 117 次模型决策/分钟。若 1,000 个角色平均每分钟各需要一次模型决策，需求是 16.7 次/秒；10,000 个角色则是 166.7 次/秒，分别约为该观测速率的 8.5 倍和 85 倍。这是调度容量的简单算术对比，批次并非持续负载或服务商容量保证；降低每个角色的模型决策频率、让规则/本地策略承担常规行动、按重要事件调用模型，仍是万级世界需要验证的产品策略。
 - 阶梯仅在有限时间内重放四个已审计角色上下文，不是 120 个具身 agent、同时生活的 16 个 LLM 角色、持续生产服务或 1,000/10,000 个 LLM 角色能力。结果受 provider、场景提示和动作 schema 影响；`invalid_action` 仍需要模型输出适配或更强的提示／校验后再重测。并发增加让该批次速度提高，但长队列 p95 和有效动作率仍须纳入产品调度。

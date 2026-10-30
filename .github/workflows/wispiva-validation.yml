@@ -396,7 +396,7 @@ jobs:
                      'delivered_messages': len(delivered_messages),
                      'pending_messages': len(pending_messages)}
           Path('.ci-product-model/evidence-summary.json').write_text(
-              json.dumps(summary, indent=2) + '\\n', encoding='utf-8')
+              json.dumps(summary, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(summary, indent=2))
           PY
       - name: Verify live reflection writeback and resume
@@ -467,7 +467,7 @@ jobs:
                              for path in requests})
           summary = {'world_id': creation['world_id'], 'requests': len(requests),
                      'actor_count': actor_count, 'worker_peak': int(peak.group(1))}
-          (root / 'evidence-summary.json').write_text(json.dumps(summary, indent=2) + '\\n')
+          (root / 'evidence-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
           print(json.dumps(summary))
           PY
       - name: Replay bounded real-model load
