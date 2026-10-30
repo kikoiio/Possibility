@@ -2,7 +2,7 @@
 
 本文审计当前工作区的 [`docs/PLAN.md`](../PLAN.md)。本文不改变计划勾选状态，也不把夹具验证写成产品完成。产品提交 `6d160ddff916be78ef8f7c10c8edf64c84e4b343` 的回归 [Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018) 和真实模型运行 [Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 均通过。首次容量专项 [Actions 41040386531](https://github.com/kikoiio/Wispiva/actions/runs/41040386531) 与 [41040395398](https://github.com/kikoiio/Wispiva/actions/runs/41040395398) 显示 success，但逐项状态均以 exit 2 在启动前退出：客户端验收遗留 Luanti 服务端。进程清理和退出状态已在 `d6cdbe4` 修复。
 
-随后 [Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 完成 5,000／10,000 个规则策略实体（认知开关 false／true，各重复 3 次）：每轮均校验全部实体存活并完成 12 次决策，日志步频最低 10.88–11.03 steps/s。该 run 报告的 17 MiB RSS 和 CPU 值来自 `launch.py` 包装进程，不是 Luanti 引擎，必须作废。容量 runner 现已改为采样引擎 PID；修正版的千级和万级测量尚待执行。此前 20–1,000 阶梯因同一指标问题取消。
+随后 [Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 完成 5,000／10,000 个规则策略实体（认知开关 false／true，各重复 3 次）：每轮均校验全部实体存活并完成 12 次决策，日志步频最低 10.88–11.03 steps/s。该 run 报告的 17 MiB RSS 和 CPU 值来自 `launch.py` 包装进程，不是 Luanti 引擎，必须作废。`49cb1b0` 首次改为采样引擎 PID；[Actions 41044694644](https://github.com/kikoiio/Wispiva/actions/runs/41044694644) 实测到小场景引擎 RSS 47 MiB，但引擎退出后脚本清空 PID，导致基线失败；[41044701821](https://github.com/kikoiio/Wispiva/actions/runs/41044701821) 因此前置基线失败而未进入规模阶梯。`30d26a1` 修正为保留已捕获 PID；千级和万级阶梯需在该提交上重跑。
 
 历史运行号仍保留在各自证据页面中；当前产品和模型结论以 `6d160dd` 对应的上述 Actions 为准。专项容量 Actions 完成后，将更新该审计的容量状态与 artifact 链接。
 
@@ -28,7 +28,7 @@
 
 4. **长期记忆文档已同步当前边界。** `cognition/README.md`、`model/README.md` 和产品证据 README 描述周期反思、受控写回及质量评估缺口。最新模型 Actions 已通过运行级写回、版本检索与正常重启保留；长程质量仍待评估。
 
-5. **自动运行不等于真人验收。** 当前产品及真实模型 Actions 通过；初次 5k／10k 运行给出了实体完整性和步频证据，但 RSS／CPU 采样对象错误，修正采样后仍需重跑。这些结果不能替代真人视觉验收、真实用户确认、长时运行或大规模真实 LLM 容量证据。
+5. **自动运行不等于真人验收。** 当前产品与真实模型基线通过；5k／10k 初测有实体完整性和步频证据，但 RSS／CPU 采样对象错误。引擎采样改动由 Actions 抓出 PID 生命周期问题，已修正并待重跑。这些结果不能替代真人视觉验收、真实用户确认、长时运行或大规模真实 LLM 容量证据。
 
 ## 审计后的推进顺序
 
@@ -37,4 +37,4 @@
 3. 完成真人 Luanti 客户端验收和真实用户意图确认流程。
 4. 分阶段验证真实模型角色服务能力，包括决策频率、队列等待、供应商限流和费用，不以规则实体容量代替。
 
-本审计同步到 `6d160dd` 产品与模型 Actions、`d6cdbe4` 服务端清理修复，以及后续发现的资源采样器问题。引擎 PID 采样修复提交和容量阶梯 Actions 完成后，应继续更新本审计、计划和架构表；Lua／Luanti 执行环境通过云端 Actions 验证。
+本审计同步到 `6d160dd` 产品与模型 Actions、`d6cdbe4` 服务端清理修复，以及 `49cb1b0`／`30d26a1` 的引擎资源采样修正。新的容量 Actions 完成后，应继续更新本审计、计划和架构表；Lua／Luanti 执行环境通过云端 Actions 验证。

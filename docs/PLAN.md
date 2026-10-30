@@ -8,7 +8,7 @@ status: active
 
 最新云端证据：Lua/Python 回归、真实产品世界客户端连接、三角色 24 次真实模型决策和 2 次 checkpoint、恢复后的 12 次真实模型决策和 3 次 checkpoint、四角色用户意图自由社会的 24 次真实决策与 checkpoint 全部通过；另通过 24 次有界真实模型回放（并发 4）和五个隔离 checkpoint 故障注入点。自由社会这一轮出现 12 次 gather、7 次 build、1 次 give、0 次 say；这证明本轮确有资源分工与转移，不证明角色自发对话或稳定社会涌现。artifact：模型运行 `wispiva-product-model-evidence` [ID 12968784289](https://github.com/kikoiio/Wispiva/actions/runs/41037865211#artifacts)，产品验证 `wispiva-results-0` [ID 12968859202](https://github.com/kikoiio/Wispiva/actions/runs/41037867018#artifacts)。这些是合成场景和自动化客户端证据，仍需真人体验、实际意图确认与更大规模容量验证。
 
-容量预验收：[Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 在 5,000／10,000 规则策略实体、认知开关两种设置下，各重复 3 轮，全部存活且完成 12 次决策；日志最低步频 10.88–11.03 steps/s。其 RSS／CPU 采样错误地指向 Python launcher，而非 Luanti 进程，故资源数据作废。容量 runner 已修正为采样引擎 PID，等待完整重跑；上述结果不能用来声称资源成本或 LLM 角色容量。
+容量预验收：[Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 在 5,000／10,000 规则策略实体、认知开关两种设置下，各重复 3 轮，全部存活且完成 12 次决策；日志最低步频 10.88–11.03 steps/s。其 RSS／CPU 采样错误地指向 Python launcher，而非 Luanti 进程，故资源数据作废。`49cb1b0` 改为采样 Luanti 引擎 PID；Actions 41044694644 暴露引擎退出后 PID 被清空的问题，已由 `30d26a1` 修正。修正版容量阶梯仍待完整重跑；此前结果不能用于声称资源成本或 LLM 角色容量。
 
 ## 产品目标与当前交付面
 
