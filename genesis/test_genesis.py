@@ -1,9 +1,10 @@
 import copy
 import json
 import unittest
+from unittest import mock
 from genesis.genesis import GenesisError, actor_memories, generate, parse_json, public_view, validate
 from genesis.model_adapter import responses_model
-from model.adapter import Config
+from model.adapter import Config, ModelError
 
 
 def draft():
@@ -66,6 +67,34 @@ class GenesisTests(unittest.TestCase):
             generate('idea', model)
         self.assertEqual(error.exception.code, 'invalid_draft')
         self.assertEqual(len(calls), 3)
+
+    def test_transient_provider_failure_retries_with_bounded_backoff(self):
+        calls = []
+
+        def model(*_):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ModelError('rate_limited')
+            return json.dumps(draft(), ensure_ascii=False)
+
+        with mock.patch('time.sleep') as sleep:
+            result = generate('河谷', model)
+        self.assertEqual(result, draft())
+        self.assertEqual(len(calls), 2)
+        sleep.assert_called_once_with(1)
+
+    def test_transient_provider_failure_stops_after_three_attempts(self):
+        calls = []
+
+        def model(*_):
+            calls.append(1)
+            raise ModelError('transport_error')
+
+        with mock.patch('time.sleep') as sleep, self.assertRaises(GenesisError) as error:
+            generate('河谷', model)
+        self.assertEqual(error.exception.code, 'model_failed')
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
 
     def test_references_layout_and_unknown_fields(self):
         d = draft(); d['actors'][0]['placeId'] = 'missing'; d['layout']['places'][0]['grid'] = [True, 0]; d['extra'] = 1
