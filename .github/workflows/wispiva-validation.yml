@@ -277,7 +277,7 @@ jobs:
       - name: Verify persistent product world client acceptance
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
-          engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 60 \\
+          engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 60 \
             --screenshot "$GITHUB_WORKSPACE/view-acceptance.png"
       - name: Run real model product world with private memory audit
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
