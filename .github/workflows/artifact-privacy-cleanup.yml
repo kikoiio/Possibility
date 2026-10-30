@@ -1,0 +1,83 @@
+name: Remove exposed synthetic private-data artifacts
+on:
+  push:
+    branches: [ ops/wispiva-privacy-artifact-cleanup-20261030 ]
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Stop an obsolete CJK run before it can publish another raw draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_API: ${{ github.api_url }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=41083814007
+          status=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GH_API/repos/$GH_REPOSITORY/actions/runs/$run_id" | jq -r .status)
+          if [ "$status" != completed ]; then
+            curl -sS -o /dev/null -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GH_API/repos/$GH_REPOSITORY/actions/runs/$run_id/cancel"
+            for _ in $(seq 1 120); do
+              status=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$GH_API/repos/$GH_REPOSITORY/actions/runs/$run_id" | jq -r .status)
+              [ "$status" = completed ] && break
+              sleep 5
+            done
+            [ "$status" = completed ]
+          fi
+      - name: Remove raw test-memory artifacts and old request logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_API: ${{ github.api_url }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
+          : > product-model-runs.txt
+          for page in $(seq 1 20); do
+            response=$(curl -fsS "${auth[@]}" "$GH_API/repos/$GH_REPOSITORY/actions/runs?per_page=100&page=$page")
+            printf '%s' "$response" | jq -r '.workflow_runs[] | select(.head_branch | startswith("validation/luanti-product-model-")) | .id' >> product-model-runs.txt
+            count=$(printf '%s' "$response" | jq '.workflow_runs | length')
+            [ "$count" -lt 100 ] && break
+          done
+          sort -u -o product-model-runs.txt product-model-runs.txt
+          while IFS= read -r run_id; do
+            [ -n "$run_id" ] || continue
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "${auth[@]}" "$GH_API/repos/$GH_REPOSITORY/actions/runs/$run_id/logs")
+            case "$code" in 204|404|410) ;; *) echo "Could not remove logs for run $run_id: HTTP $code" >&2; exit 1 ;; esac
+          done < product-model-runs.txt
+
+          : > raw-artifact-ids.txt
+          for page in $(seq 1 20); do
+            response=$(curl -fsS "${auth[@]}" "$GH_API/repos/$GH_REPOSITORY/actions/artifacts?per_page=100&page=$page")
+            printf '%s' "$response" | jq -r '.artifacts[] | select(
+              (.name == "wispiva-results-0" and (.workflow_run.head_branch | startswith("validation/luanti-genesis-cjk-"))) or
+              ((.name == "wispiva-product-model-evidence" or .name == "wispiva-product-model-worker-evidence")
+                and (.workflow_run.head_branch | startswith("validation/luanti-product-model-")))
+            ) | .id' >> raw-artifact-ids.txt
+            count=$(printf '%s' "$response" | jq '.artifacts | length')
+            [ "$count" -lt 100 ] && break
+          done
+          sort -u -o raw-artifact-ids.txt raw-artifact-ids.txt
+          while IFS= read -r artifact_id; do
+            [ -n "$artifact_id" ] || continue
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "${auth[@]}" "$GH_API/repos/$GH_REPOSITORY/actions/artifacts/$artifact_id")
+            case "$code" in 204|404|410) ;; *) echo "Could not remove artifact $artifact_id: HTTP $code" >&2; exit 1 ;; esac
+          done < raw-artifact-ids.txt
+          echo "Removed product-model logs: $(wc -l < product-model-runs.txt)"
+          echo "Removed raw artifacts: $(wc -l < raw-artifact-ids.txt)"
+          for page in $(seq 1 20); do
+            response=$(curl -fsS "${auth[@]}" "$GH_API/repos/$GH_REPOSITORY/actions/artifacts?per_page=100&page=$page")
+            remaining=$(printf '%s' "$response" | jq '[.artifacts[] | select(
+              (.name == "wispiva-results-0" and (.workflow_run.head_branch | startswith("validation/luanti-genesis-cjk-"))) or
+              ((.name == "wispiva-product-model-evidence" or .name == "wispiva-product-model-worker-evidence")
+                and (.workflow_run.head_branch | startswith("validation/luanti-product-model-")))
+            )] | length')
+            [ "$remaining" -eq 0 ] || { echo "Raw artifacts remain on page $page" >&2; exit 1; }
+            count=$(printf '%s' "$response" | jq '.artifacts | length')
+            [ "$count" -lt 100 ] && break
+          done
+          echo "Artifact inventory verified clean."

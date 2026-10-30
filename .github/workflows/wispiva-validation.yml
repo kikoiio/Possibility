@@ -391,10 +391,13 @@ jobs:
                   pending_messages.append({'target': target_actor, 'text': text})
           assert message_events, 'real model did not produce a say action in the social scenario'
           assert delivered_messages, {'message_events': message_events, 'pending_messages': pending_messages}
-          print(json.dumps({'requests': len(requests), 'responses': len(responses),
-                            'actors': sorted(actors), 'message_events': message_events,
-                            'delivered_messages': delivered_messages,
-                            'pending_messages': pending_messages}, indent=2))
+          summary = {'requests': len(requests), 'responses': len(responses),
+                     'actor_count': len(actors), 'message_events': len(message_events),
+                     'delivered_messages': len(delivered_messages),
+                     'pending_messages': len(pending_messages)}
+          Path('.ci-product-model/evidence-summary.json').write_text(
+              json.dumps(summary, indent=2) + '\\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2))
           PY
       - name: Verify live reflection writeback and resume
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
@@ -460,7 +463,12 @@ jobs:
           peak = re.search(r'spool workers finished peak_active=(\d+)', worker_log)
           assert 'spool worker concurrency=4 fixture=false' in worker_log and peak, worker_log
           assert 2 <= int(peak.group(1)) <= 4, worker_log
-          print(json.dumps({'world_id': creation['world_id'], 'requests': len(requests)}))
+          actor_count = len({json.loads(path.read_text())['context']['model_input']['actor']['id']
+                             for path in requests})
+          summary = {'world_id': creation['world_id'], 'requests': len(requests),
+                     'actor_count': actor_count, 'worker_peak': int(peak.group(1))}
+          (root / 'evidence-summary.json').write_text(json.dumps(summary, indent=2) + '\\n')
+          print(json.dumps(summary))
           PY
       - name: Replay bounded real-model load
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
@@ -551,7 +559,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wispiva-product-model-evidence
-          path: .ci-product-model
+          path: |
+            .ci-product-model/evidence-summary.json
+            .ci-product-model/memory-first.json
+            .ci-product-model/memory-resumed.json
+            .ci-product-model/model-load/summary.json
+            .ci-product-model/fault-probes/*/result.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
@@ -560,7 +573,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wispiva-product-model-worker-evidence
-          path: .ci-free-social
+          path: |
+            .ci-free-social/evidence-summary.json
+            .ci-free-social/model-load/concurrency-*/summary.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
@@ -947,7 +962,7 @@ jobs:
             evidence/luanti/agent/ci-agent-*
             evidence/luanti/agent/ci-resource.*
             evidence/luanti/agent/ci-memory-*
-            genesis-results/
+            genesis-results/results.json
             evidence/luanti/agent/ci-large-*
             evidence/luanti/agent/ci-repeat-*
             evidence/luanti/agent/ci-opt-*
