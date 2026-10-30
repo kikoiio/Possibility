@@ -195,19 +195,22 @@ PY
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
-  local peak_kb=0 t=0 cpu_ticks=0
+  local peak_kb=0 t=0 cpu_ticks=0 engine_pid=""
   local ticks_per_second
   ticks_per_second=$(getconf CLK_TCK)
   while kill -0 "$pid" 2>/dev/null && [[ "$t" -lt "$SECONDS_MAX" ]]; do
     sleep 1
     t=$((t + 1))
-    if [[ -r "/proc/$pid/status" ]]; then
+    if [[ -z "$engine_pid" ]] || ! kill -0 "$engine_pid" 2>/dev/null; then
+      engine_pid=$(pgrep -P "$pid" -x luantiserver 2>/dev/null | head -n 1 || true)
+    fi
+    if [[ -n "$engine_pid" && -r "/proc/$engine_pid/status" ]]; then
       local rss
-      rss=$(awk '/^VmRSS:/ {print $2}' "/proc/$pid/status" 2>/dev/null)
+      rss=$(awk '/^VmRSS:/ {print $2}' "/proc/$engine_pid/status" 2>/dev/null)
       local sampled_ticks
-      sampled_ticks=$(awk '{print $14 + $15}' "/proc/$pid/stat" 2>/dev/null)
+      sampled_ticks=$(awk '{print $14 + $15}' "/proc/$engine_pid/stat" 2>/dev/null)
       [[ -z "${sampled_ticks:-}" ]] || cpu_ticks="$sampled_ticks"
-      [[ -n "${rss:-}" ]] && echo "$t $rss $cpu_ticks" >> "$rssfile"
+      [[ -n "${rss:-}" ]] && echo "$t $rss $cpu_ticks $engine_pid" >> "$rssfile"
       [[ -n "${rss:-}" ]] && [[ "$rss" -gt "$peak_kb" ]] && peak_kb="$rss"
     fi
   done
@@ -238,6 +241,7 @@ PY
   if kill -0 "$pid" 2>/dev/null; then
     failed+=("进程未退出（pid $pid）")
   fi
+  [[ -n "$engine_pid" ]] || failed+=("没有捕获到 Luanti 引擎 PID，资源指标无效")
 
   [[ "$exit_code" -eq 0 ]] || failed+=("引擎退出码 $exit_code")
 
@@ -317,8 +321,9 @@ PY
     else
       echo "执行模式: rule-policy"
     fi
-    echo "峰值 RSS: $((peak_kb / 1024)) MiB"
-    echo "引擎 CPU 秒 (最后1秒采样): $(awk -v ticks="$cpu_ticks" -v hz="$ticks_per_second" 'BEGIN{printf "%.3f", ticks/hz}')"
+    echo "Luanti 引擎 PID: ${engine_pid:-not-captured}"
+    echo "Luanti 引擎峰值 RSS: $((peak_kb / 1024)) MiB"
+    echo "Luanti 引擎累计 CPU 秒 (最后采样): $(awk -v ticks="$cpu_ticks" -v hz="$ticks_per_second" 'BEGIN{printf "%.3f", ticks/hz}')"
     echo
     echo "--- 配置 ---"
     command sed 's/^/  /' "$conf"
@@ -343,7 +348,7 @@ PY
 
   normalize_deterministic "$log" > "$EVIDENCE/$LABEL.$tag.events"
 
-  echo "[$LABEL.$tag] $stopped_by, ${t}s, 峰值 $((peak_kb / 1024)) MiB, 事件 $(wc -l < "$EVIDENCE/$LABEL.$tag.events") 行"
+  echo "[$LABEL.$tag] $stopped_by, ${t}s, Luanti 引擎峰值 RSS $((peak_kb / 1024)) MiB, 事件 $(wc -l < "$EVIDENCE/$LABEL.$tag.events") 行"
   if [[ ${#failed[@]} -eq 0 ]]; then
     echo "[$LABEL.$tag] PASS"
     return 0
