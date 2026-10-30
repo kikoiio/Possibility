@@ -10,4 +10,6 @@
 
 第二次真实模型运行 [Actions 41076669398](https://github.com/kikoiio/Wispiva/actions/runs/41076669398) 同样通过全量单测、客户端验收及中文持久世界运行。18 次决策分别为 gather 9、build 7、give 1、approach 1；产生 16 个资源事件，直接 message 事件仍为 0。逐角色私有记忆检查再度达到 3/3，串读 0。19 次模型尝试中 18 次成功、1 次 `invalid_action`，之后运行完成；6 次反思也完成。Actions 日志记录 decision 尝试 43,314 input／453 output tokens、反思 2,310／758，中文草稿生成 2,090／697。重复运行间 gather/build 稳定出现，但对话尚未出现，give 仅一轮发生，不能据此判断稳定分工或社会涌现。该 run 的 artifact `wispiva-cjk-product-summary` 记录不含私密原文的行为摘要。
 
-当前又把精确 provider usage 汇总加入摘要，准备再跑一次来形成可下载的 usage artifact。这个题材仍是自动验收样本，不表示用户已审阅该草稿或替代真人 Luanti 体验。
+提交 `f9e473701b102220573ff1bd81961fdf53439dfe` 加入了真实 provider usage 汇总、实时 pause／speed／resume 检查和可修订的 Genesis CLI。Actions [41079793257](https://github.com/kikoiio/Wispiva/actions/runs/41079793257) 已通过暂停、暂停中改速、恢复后逻辑时间继续推进，以及中文意图世界创建；最终逐步状态和 usage artifact 正由 Actions [41080849574](https://github.com/kikoiio/Wispiva/actions/runs/41080849574) 确认。该题材仍是自动验收样本，不表示用户已审阅草稿或替代真人 Luanti 体验。
+
+另加入针对历史记忆任务 artifact 的无模型评分路径：汇总 FIFO／retrieval 的每任务正确率、配对胜负、错误类别与供应商 token，不输出原始回答。它将在独立 `validation/luanti-memory-audit-*` 分支运行，以避免重复付费／消耗模型调用。

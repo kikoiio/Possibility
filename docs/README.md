@@ -19,14 +19,14 @@
 | 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
 | 工作计划 | 产品与真实模型 Actions 通过；真实 provider 并发测至 16，真人体验、真实意图确认和千级 LLM 服务能力仍待验 | 2026-10-30 | [工作计划](PLAN.md) |
 | 规则／认知实体容量证据 | 20–10k 阶梯全员存活；10k 引擎 RSS 1.22–1.49 GiB；LLM 队列只做模拟，不代表真实模型容量 | 2026-10-30 | [容量阶梯证据](../evidence/luanti/agent/capacity-2026-10-30.md) |
-| 研究 | 方法、容量与记忆研究；研究结论以实际测量范围为准 | 2026-10-29 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
+| 研究 | 方法、容量与记忆研究；逐任务真实模型评分汇总接入 Actions，结论以实际评分范围为准 | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
 | 创建世界原型 | 另一分支快照；可供参考，本 worktree 尚未接入 | 2026-10-28 | `proto/world-genesis`，`prototypes/README.md` |
 | 运行时验证与历史证据 | Luanti 适配层的验证工具、历史计划和量测 | 2026-10-29 | [运行时说明](../validation/luanti/README.md)、[验证记录](../validation/luanti/PLAN.md) |
 | 产品目录迁移验证 | 根目录迁移后的引擎、恢复及预览检查 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/product-root-2026-10-29/README.md) |
 | 起源原型验证 | 起源数据原型与既有运行时回归，未验证集成 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-2026-10-29/README.md) |
 | 起源与资源集成验证 | 确认绑定、假引擎对账及既有 Luanti 回归 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-integration-2026-10-29/README.md) |
-| 用户意图创建案例 | 两个非固定题材草稿与确认边界；中文自由聚落两轮真实模型持久世界和记忆隔离验收通过，provider usage artifact 补充中 | 2026-10-30 | [创建案例](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md)、[中文运行记录](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md) |
+| 用户意图创建案例 | 两个非固定题材草稿与确认边界；中文自由聚落两轮真实模型持久世界和记忆隔离验收通过，usage artifact 与记忆评测汇总由 Actions 验证 | 2026-10-30 | [创建案例](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md)、[中文运行记录](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md) |
 | 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程、重启恢复和自动客户端验收 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
 | 真实模型产品世界验证 | 三角色对话／资源行动与反思恢复、四角色自由社会、provider 并发 1–16 回放；明确不代表千级 LLM 容量 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-model-2026-10-30/README.md) |
 | 产品长期记忆主循环证据 | 主循环 L2 写回、belief 检索、正常重启后的版本和动作反馈保留 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-memory-runtime-2026-10-30/README.md) |

@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ${{ (startsWith(github.ref_name, 'validation/luanti-memory-') || startsWith(github.ref_name, 'validation/luanti-budget-')) && 'wispiva-model-validation' || 'wispiva-validation' }}
   cancel-in-progress: false
@@ -627,7 +628,7 @@ jobs:
           if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
           python3 -B validation/luanti/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
       - name: Controlled memory tasks and bounded concurrency probes
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') }}
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
@@ -637,7 +638,7 @@ jobs:
           python3 -B model/memory_eval.py --output memory-results/tasks.json
           python3 -B model/memory_eval.py --probe --output memory-results/concurrency.json
       - name: Soft callback budget tradeoff
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') || startsWith(github.ref_name, 'validation/luanti-budget-') }}
+        if: ${{ (startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-')) || startsWith(github.ref_name, 'validation/luanti-budget-') }}
         run: |
           python3 -B validation/luanti/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
       - name: Model-driven agent loop
@@ -870,6 +871,29 @@ jobs:
         with:
           name: wispiva-cjk-product-summary
           path: cjk-product-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Download prior real-model memory evaluation
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
+        uses: actions/download-artifact@v4
+        with:
+          name: wispiva-results-0
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 41063917433
+          path: prior-memory-results
+      - name: Score prior real-model memory evaluation
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
+        run: |
+          python3 -B validation/summarize_memory_artifact.py \
+            prior-memory-results/memory-results/tasks.json \
+            --output memory-audit-summary.json
+      - name: Upload memory evaluation score summary
+        if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispiva-memory-audit-summary
+          path: memory-audit-summary.json
           if-no-files-found: warn
           retention-days: 14
       - name: Repeated 1000-agent capacity measurement
