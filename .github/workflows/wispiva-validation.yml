@@ -214,6 +214,64 @@ jobs:
           grep -q 'SOCIETY product-checkpoint commit version=' .ci-product/world/private/product.log
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
 
+      - name: Verify live product pause, speed and resume controls
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        run: |
+          set -euo pipefail
+          world="$GITHUB_WORKSPACE/.ci-product/world"
+          log="$GITHUB_WORKSPACE/.ci-product/control-server.log"
+          engine/luanti/run_product.sh --world "$world" --fake-model --resume --serve --reflection-every 0 >"$log" 2>&1 &
+          server=$!
+          cleanup() {
+            kill -TERM "$server" 2>/dev/null || true
+            set +e
+            wait "$server"
+            status=$?
+            set -e
+            if [[ "$status" -ne 0 && "$status" -ne 143 ]]; then
+              cat "$log" >&2
+              return "$status"
+            fi
+            if pgrep -x luantiserver >/dev/null; then
+              echo 'Luanti server remained after control test cleanup' >&2
+              return 1
+            fi
+          }
+          trap cleanup EXIT
+          ready=0
+          for _ in $(seq 1 30); do
+            if grep -q 'SOCIETY spawn count=' "$log"; then ready=1; break; fi
+            if ! kill -0 "$server" 2>/dev/null; then cat "$log" >&2; exit 1; fi
+            sleep 1
+          done
+          test "$ready" -eq 1 || { cat "$log" >&2; exit 1; }
+          python3 -B - <<'PY'
+          import json
+          import time
+          from engine.luanti.control import send_command
+
+          world = '.ci-product/world'
+          initial = send_command(world, 'status')
+          assert initial['ok'] and not initial['status']['paused'], initial
+          paused = send_command(world, 'pause')
+          assert paused['ok'] and paused['status']['paused'], paused
+          frozen_at = paused['status']['logical_time']
+          time.sleep(2)
+          frozen = send_command(world, 'status')
+          assert frozen['status']['paused'] and frozen['status']['logical_time'] == frozen_at, (paused, frozen)
+          slowed = send_command(world, 'speed', rate=2)
+          assert slowed['status']['paused'] and slowed['status']['rate'] == 2, slowed
+          resumed = send_command(world, 'resume')
+          assert resumed['ok'] and not resumed['status']['paused'], resumed
+          time.sleep(3)
+          advanced = send_command(world, 'status')
+          assert advanced['status']['logical_time'] > resumed['status']['logical_time'], (resumed, advanced)
+          send_command(world, 'pause')
+          print(json.dumps({'pause_freezes_time': True, 'speed_while_paused': slowed['status']['rate'],
+                            'resume_advances_time': True,
+                            'logical_time_paused': frozen_at,
+                            'logical_time_after_resume': advanced['status']['logical_time']}))
+          PY
       - name: Verify persistent product world client acceptance
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
