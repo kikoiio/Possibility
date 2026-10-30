@@ -62,6 +62,15 @@ test('room, outdoor ground, roof, doorway and L-shaped connection', function()
   assert(find(plan,'node:10,2,2').value == false)
 end)
 
+test('natural grass-to-dirt evolution is compatible only for ground surfaces', function()
+  local plan = projection.plan(fixture())
+  assert(projection.node_matches_origin(find(plan,'node:12,0,6'),'default:dirt'))
+  assert(projection.node_matches_origin(find(plan,'node:12,0,6'),'default:dirt_with_grass'))
+  assert(not projection.node_matches_origin(find(plan,'node:12,0,6'),'air'))
+  assert(not projection.node_matches_origin(find(plan,'node:0,0,1'),'default:dirt'))
+  assert(not projection.node_matches_origin(find(plan,'node:12,0,6'),'default:stone'))
+end)
+
 test('actor identity and interactive object binding preserved without secrets', function()
   local plan = projection.plan(fixture())
   local actor = find(plan,'actor:alice').value

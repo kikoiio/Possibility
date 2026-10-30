@@ -185,6 +185,16 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(totals["resource_conservation"]["failure"], 1)
         self.assertEqual(totals["resource_conservation"]["unknown"], 1)
 
+    def test_environment_regeneration_is_included_in_resource_conservation(self):
+        self.write("run.events", "SOCIETY resource-verify initial=3 environment_delta=14 expected=17 world=16 inventory=1 ok=true\n")
+        totals = summarize.summarize(self.root)["totals"]
+        check = totals["resource_conservation"]["checks"][0]
+        self.assertEqual(check["environment_delta"], 14)
+        self.assertEqual(check["expected"], 17)
+        self.assertEqual(check["delta"], 14)
+        self.assertEqual(check["expected_delta"], 0)
+        self.assertTrue(check["conserved"])
+
     def test_cli_repeated_runs_ignore_report_only_and_unrelated_logs(self):
         self.retry_run()
         self.write("worker.log", "not an agent run\n")

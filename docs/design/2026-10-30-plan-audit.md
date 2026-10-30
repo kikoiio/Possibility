@@ -55,3 +55,13 @@
 
 
 恢复入口首次云端回归 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 的两项新用例因 fixture 初始化顺序失败：测试目录先有数据文件，世界身份创建因此按预期被拒绝。已修正为先创建身份再填充测试 checkpoint；下一次 Actions 验证该修改。恢复协议实现本身仍需通过新的云端结果。
+
+
+## Restore failure: evolved ground and resource accounting
+
+[Actions 41117324797](https://github.com/kikoiio/Wispiva/actions/runs/41117324797) passed unit tests, the three-agent real-model product loop and a committed checkpoint (24 decisions; 33 events; 79 memory records), then failed on resume because a projected grass node at `0,0,-2` was plain dirt. Recovery compared immutable origin projection exactly and treated this terrain evolution as corruption. It also emitted `resource-verify initial=3 world=16 inventory=1`, missing the 14 units released by the environment process. The next implementation permits only the one-way grass-to-dirt surface evolution and checks resource conservation against initial stock plus environment delta; walls, paths, indoor floors, and other projected nodes remain exact. These fixes need a fresh Actions result before this recovery path is considered verified.
+
+
+### 回归夹具与大文件恢复
+
+Actions [41118712614](https://github.com/kikoiio/Wispiva/actions/runs/41118712614) 因大文件 API 提交截断 `init.lua`、在单测解析时失败；完整 81 KB 源文件已从父提交恢复并重应用补丁。随后 [Actions 41119361344](https://github.com/kikoiio/Wispiva/actions/runs/41119361344) 通过 Lua 和其他 Python 回归，但新增摘要器测试错误调用 `load()` 而失败；用例现改为 `summarize()` 并重跑。两次运行都还没有完成目标模型恢复场景的验证。

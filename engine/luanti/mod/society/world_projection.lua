@@ -210,6 +210,18 @@ function M.plan(manifest)
     operations=operations}
 end
 
+-- The base game can naturally turn a grass surface into plain dirt when its
+-- light conditions change (for example, after a resource or structure is
+-- placed above it). This is a valid world evolution, not a changed origin
+-- structure. Keep all other projected nodes exact during product recovery.
+function M.node_matches_origin(operation, actual_name)
+  if type(operation) ~= 'table' or operation.kind ~= 'node'
+    or type(actual_name) ~= 'string' then return false end
+  local expected = operation.value and operation.value.name or 'air'
+  return actual_name == expected
+    or (expected == 'default:dirt_with_grass' and actual_name == 'default:dirt')
+end
+
 function M.apply(manifest, adapter)
   local plan = M.plan(manifest) -- Recompile rather than trust a mutable caller plan.
   check(type(adapter) == 'table' and type(adapter.binding) == 'function'

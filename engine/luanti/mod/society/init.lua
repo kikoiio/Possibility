@@ -267,6 +267,7 @@ if WORLD_PRODUCT then
 end
 local live = {}          -- 上一次统计时每个 agent 的 _steps 快照
 local resource_initial = nil
+local resource_initial_environment = nil
 local index = spatial.new(math.max(SENSE, 1))
 local cached_nodes = node_cache.new(minetest, {MARK_NODE, "society:resource"}, 16, 1024)
 local object_queries = 0
@@ -1343,6 +1344,8 @@ local function spawn_agents()
 	if MODEL or SEED_RESOURCES then
 		local in_world, inventory = resource_total()
 		resource_initial = in_world + inventory
+		resource_initial_environment = environment_process
+			and environment_process:export().amount or 0
 	end
 end
 
@@ -1388,7 +1391,7 @@ local function apply_product_projection()
 				-- later interactions, so they must not freeze a valid world.
 				if expected ~= "air" then
 					local actual = minetest.get_node_or_nil(operation.position)
-					if not actual or actual.name ~= expected then
+					if not actual or not world_projection.node_matches_origin(operation, actual.name) then
 						freeze_product_state("origin projection differs from committed map")
 						fail("product-reconcile", "map=%s expected=%s actual=%s", operation.key, expected,
 							actual and actual.name or "unknown")
@@ -1751,8 +1754,13 @@ minetest.register_on_shutdown(function()
 	end
 	if resource_initial then
 		local in_world, inventory = resource_total()
-		ev("resource-verify initial=%d world=%d inventory=%d ok=%s", resource_initial,
-			in_world, inventory, tostring(resource_initial == in_world + inventory))
+		local environment_amount = environment_process
+			and environment_process:export().amount or resource_initial_environment or 0
+		local environment_delta = environment_amount - (resource_initial_environment or 0)
+		local expected = resource_initial + environment_delta
+		ev("resource-verify initial=%d environment_delta=%d expected=%d world=%d inventory=%d ok=%s",
+			resource_initial, environment_delta, expected, in_world, inventory,
+			tostring(expected == in_world + inventory))
 	end
 	if PERSIST and not S.failed then
 		local saved = {}
