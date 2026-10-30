@@ -55,7 +55,7 @@ class AdapterTests(unittest.TestCase):
             'knowledge.reflections are private',
             'sources and access labels mark evidence boundaries',
             'current contains immediate observation, inventory',
-            'observation.nearby_agents lists valid numeric target IDs',
+            'observation.nearby_agents lists valid numeric target ids',
             'visible_agents provides public names, positions, and distances',
             'other agents\' roles, goals, and private memories are not part of your observation',
             'feedback is the previous action’s actual result',
