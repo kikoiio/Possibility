@@ -49,6 +49,6 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 `memory_eval.py` 的默认任务是 5 类 × 3 seeds × FIFO／retrieval，共 30 次真实配置模型调用：延迟回忆、消息来源、过期事实、已知失败后的替代选项报告，以及中文短线索回忆。共享容量 16、最多 2 条、规范紧凑 JSON 最多 512 UTF-8 字节；这些是相同上限，实际 token 分别审计。每个条件先通过 `cognition/test_retrieval.lua --select` 调用同一份 `memory.lua`；答案仅在评分侧，provider 输入不含答案。消息类任务没有执行世界动作，替代桥名回答不能当作实际避免重复失败的证据。
 
-`--probe` 另做 1／2／4 并发，各 8 次固定请求，共 24 次。主进程用线程协调独立子进程，每次请求包含子进程启动的硬超时 30 秒，零重试；两个命令分别限额最多 48 次，默认合计 48 次。`--fixture` 仅验证协议和评分；输出标明 synthetic。
+`--probe` 另做 1／2／4 并发，各 8 次固定请求，共 24 次。主进程用线程协调独立子进程，每次请求包含子进程启动的硬超时 30 秒，零重试；两个命令各自限额最多 48 次，默认合计 54 次。`--fixture` 仅验证协议和评分；输出标明 synthetic。
 
 结果保存固定评分、上下文／事件哈希、源码 SHA-256、实际已知 token 和未知审计缺口，不保存原始 provider 文本。探针只有每级一个小批，含子进程与网络开销，无法证明供应商容量、免费额度或稳定加速比；原有引擎 spool 仍是单 worker。HTTP 429 单独报告 `rate_limited`；其他传输错误仍未细分。畸形 token 字段带 `usage.invalid=true`，不会被当成完整用量。

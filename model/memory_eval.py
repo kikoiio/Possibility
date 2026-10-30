@@ -1,6 +1,6 @@
 """Paired Lua-memory tasks through adapter.decide; sanitized, bounded evidence.
 
-Default: 4 tasks x 3 seeds x 2 arms = 24 model calls, without retries.
+Default: 5 tasks x 3 seeds x 2 arms = 30 model calls, without retries.
 --fixture is a synthetic protocol/scorer check, never model-quality evidence.
 --probe (alias --concurrency-probe 1 2 4) uses 8 fixed calls per level.
 All model calls run in disposable children with a hard deadline. Real execution

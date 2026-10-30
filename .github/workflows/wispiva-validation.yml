@@ -590,7 +590,7 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           engine/luanti/run.sh --label ci-model --agents 3 --decisions 2 --interval 1 --seconds 600 --model
-      - name: Generate two synthetic world drafts with the configured model
+      - name: Generate three world drafts with the configured model
         if: ${{ startsWith(github.ref_name, 'validation/luanti-genesis-') }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
@@ -609,7 +609,8 @@ jobs:
           results = []
           for index, intent in enumerate((
               'A rainy fishing harbor with three residents who repair boats and trade fish.',
-              'A quiet mountain library with three caretakers and a garden.'), 1):
+              'A quiet mountain library with three caretakers and a garden.',
+              '在一处河谷建立自由聚落。三位居民没有指定职业，让他们根据经历自行决定如何分工、交流和应对环境；只描述当前世界和局部目标，不安排剧情结局。地点包括河边空地、旧磨坊和山路入口，每个人有一段只属于本人的私人记忆。'), 1):
               try:
                   draft = generate(intent, model)
                   Path(f'genesis-results/draft-{index}.json').write_text(
