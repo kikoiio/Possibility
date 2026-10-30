@@ -1,8 +1,8 @@
 # 实施计划审计（2026-10-30）
 
-本文审计当前工作区的 [`docs/PLAN.md`](../PLAN.md)。本文不改变计划勾选状态，也不把夹具验证写成产品完成。当前审计基线是分支 `wispiva/world-product` 的提交 `55a5ffa8`；对应的真实模型产品运行是 [Actions 41010708756](https://github.com/kikoiio/Wispiva/actions/runs/41010708756)。
+本文审计当前工作区的 [`docs/PLAN.md`](../PLAN.md)。本文不改变计划勾选状态，也不把夹具验证写成产品完成。当前审计基线是分支 `wispiva/world-product` 的提交 `85de7985`；真实模型产品运行是 [Actions 41010708756](https://github.com/kikoiio/Wispiva/actions/runs/41010708756)，Lua apply 回归是 [Actions 41012930532](https://github.com/kikoiio/Wispiva/actions/runs/41012930532)。
 
-仓库内 `docs/` 和 `evidence/` 的相对 Markdown 链接均能解析到现有文件。Actions 41010708756 已成功完成并对应当前产品提交；其真实模型 artifact 已在产品证据 README 中记录。历史证据中的旧提交仍只作为历史运行记录引用。
+仓库内 `docs/` 和 `evidence/` 的相对 Markdown 链接均能解析到现有文件。Actions 41010708756 对应真实模型提交，Actions 41012930532 对应当前产品提交；真实模型 artifact 已在产品证据 README 中记录。历史证据中的旧提交仍只作为历史运行记录引用。
 
 ## 未勾选项
 
@@ -26,7 +26,7 @@
 
 4. **长期记忆文档已同步当前边界。** [`cognition/README.md`](../../cognition/README.md) 记录了 `store:reflect`、真实 provider 的一次 L2 验证和仍待完成的宿主触发、写回与质量评估；`model/README.md` 记录了 `reflection_host.py` 的显式写回边界。
 
-5. **本地链接完整不等于证据新鲜。** 本次静态检查没有发现 `docs/` 或 `evidence/` 中指向不存在文件的相对链接。当前产品模型证据已对应提交 `55a5ffa8`，但它仍只覆盖小规模真实模型运行，不能替代真人体验、跨存储崩溃测试或大规模真实 LLM 容量证据。
+5. **本地链接完整不等于证据新鲜。** 本次静态检查没有发现 `docs/` 或 `evidence/` 中指向不存在文件的相对链接。当前产品模型证据对应提交 `55a5ffa8`，产品分支当前提交 `85de7985` 的 Lua apply 回归已由 Actions 41012930532 验证；这些证据仍不能替代真人体验、跨存储崩溃测试或大规模真实 LLM 容量证据。
 
 ## 审计后的推进顺序
 
