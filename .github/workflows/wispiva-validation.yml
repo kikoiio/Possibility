@@ -338,7 +338,7 @@ jobs:
                             'pending_messages': pending_messages}, indent=2))
           PY
       - name: Verify live reflection writeback and resume
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
@@ -360,6 +360,7 @@ jobs:
           set -euo pipefail
           python3 -B - <<'PY'
           import json
+          import re
           from pathlib import Path
           from genesis.store import DraftStore
           from genesis.model_adapter import responses_model
@@ -386,6 +387,7 @@ jobs:
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-free-social/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model --model-workers 4
           python3 -B - <<'PY'
           import json
+          import re
           from pathlib import Path
           root = Path('.ci-free-social')
           creation = json.loads((root / 'creation-result.json').read_text())
@@ -395,6 +397,10 @@ jobs:
           assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
           requests = list((root / 'world/private/model-audit').rglob('request-*.json'))
           assert len(requests) >= 12, len(requests)
+          worker_log = (root / 'world/private/worker.log').read_text(errors='replace')
+          peak = re.search(r'spool workers finished peak_active=(\d+)', worker_log)
+          assert 'spool worker concurrency=4 fixture=false' in worker_log and peak, worker_log
+          assert 2 <= int(peak.group(1)) <= 4, worker_log
           print(json.dumps({'world_id': creation['world_id'], 'requests': len(requests)}))
           PY
       - name: Replay bounded real-model load

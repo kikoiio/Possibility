@@ -32,7 +32,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 模型输出投影到白名单字段：`inspect/mark/advance`、带 `target` 的 `approach`、带 `point` 的 `wander/gather/build`、带 `target/text` 的 `say`。忽略多余字段，坐标和 ID 允许数学上为整数的 JSON 数字，拒绝布尔、非有限和小数值。未知字段不能改变端点、节点名或审计来源。邻居目标必须来自观察，坐标必须在边界内；执行前再次按当前世界验证。`why` 由代码固定为 `model`。
 
-`spool_worker.py` 默认以 1 个 worker 顺序处理请求，也可用 `--workers 1..256` 设置有界并行度；产品入口通过 `run_product.sh --model-workers N` 配置，实验入口使用 `run.sh --model-workers N`。线程池各自启动隔离 bridge 子进程；worker 通过原子 rename 争抢请求、原子发布响应，同一请求至多由一个 worker 处理。停止时不再领取新请求，并等待／中止在途 provider 调用按请求超时和 STOP 协议结束。`invalid_action`、`invalid_response`、`transport_error`、`provider_failed` 和 HTTP 429 `rate_limited` 最多尝试 3 次，重试间隔为 1／2 秒，每次都审计；重试有界，仍失败时停止当前世界并报告固定错误。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。有界 worker 池提供并发上限，不实现供应商全局配额、公平优先级、跨世界预算或 token 成本控制。
+`spool_worker.py` 默认以 1 个 worker 顺序处理请求，也可用 `--workers 1..256` 设置有界并行度；产品入口通过 `run_product.sh --model-workers N` 配置，实验入口使用 `run.sh --model-workers N`。线程池各自启动隔离 bridge 子进程；worker 通过原子 rename 争抢请求、原子发布响应，同一请求至多由一个 worker 处理。worker 日志记录配置值和本轮观测到的 `peak_active`。停止时不再领取新请求，并等待／中止在途 provider 调用按请求超时和 STOP 协议结束。`invalid_action`、`invalid_response`、`transport_error`、`provider_failed` 和 HTTP 429 `rate_limited` 最多尝试 3 次，重试间隔为 1／2 秒，每次都审计；重试有界，仍失败时停止当前世界并报告固定错误。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。有界 worker 池提供并发上限，不实现供应商全局配额、公平优先级、跨世界预算或 token 成本控制。
 
 审计记录请求 ID、角色、动作、origin、耗时、可用 token、重试与固定错误码，不记录密钥或原始 provider 文本。适配器返回上下文与提示 SHA-256；原始合成消息只在显式 `society_log_messages=true` 时记录。本轮实验的世界、角色和消息均为合成数据。
 

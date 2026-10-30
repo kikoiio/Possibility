@@ -8,6 +8,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -147,23 +148,42 @@ def serve(directory, timeout=30.0, poll_interval=0.1, runner=run_bridge, workers
             not 1 <= workers <= MAX_WORKERS):
         raise ValueError('invalid worker configuration')
     stop = directory / 'STOP'
+    active_lock = threading.Lock()
+    active_count = 0
+    peak_active = 0
+
+    def process_claim(path):
+        nonlocal active_count, peak_active
+        with active_lock:
+            active_count += 1
+            peak_active = max(peak_active, active_count)
+        try:
+            return process_one(directory, path, timeout, runner=runner)
+        finally:
+            with active_lock:
+                active_count -= 1
+
+    print(f'spool workers configured={workers}', flush=True)
     active = set()
-    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='wispiva-model') as pool:
-        while True:
-            if not stop.exists():
-                for path in sorted(directory.glob('request-*.json')):
-                    if len(active) >= workers or stop.exists():
-                        break
-                    active.add(pool.submit(process_one, directory, path, timeout, runner))
-            if not active:
-                if stop.exists():
-                    return
-                time.sleep(poll_interval)
-                continue
-            completed, active = wait(active, timeout=poll_interval,
-                                     return_when=FIRST_COMPLETED)
-            for future in completed:
-                future.result()
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='wispiva-model') as pool:
+            while True:
+                if not stop.exists():
+                    for path in sorted(directory.glob('request-*.json')):
+                        if len(active) >= workers or stop.exists():
+                            break
+                        active.add(pool.submit(process_claim, path))
+                if not active:
+                    if stop.exists():
+                        return
+                    time.sleep(poll_interval)
+                    continue
+                completed, active = wait(active, timeout=poll_interval,
+                                         return_when=FIRST_COMPLETED)
+                for future in completed:
+                    future.result()
+    finally:
+        print(f'spool workers finished peak_active={peak_active}', flush=True)
 
 
 def main():

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -148,15 +150,19 @@ class SpoolTests(unittest.TestCase):
         thread = threading.Thread(target=worker.serve,
                                   args=(self.root, 1, 0.01, runner),
                                   kwargs={'workers': 3})
-        thread.start()
-        deadline = time.monotonic() + 3
-        while len(completed) < 8 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        (self.root / 'STOP').touch()
-        thread.join(timeout=3)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            thread.start()
+            deadline = time.monotonic() + 3
+            while len(completed) < 8 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            (self.root / 'STOP').touch()
+            thread.join(timeout=3)
         self.assertFalse(thread.is_alive())
         self.assertEqual(peak, 3)
         self.assertEqual(sorted(completed), list(range(1, 9)))
+        self.assertIn('spool workers configured=3', output.getvalue())
+        self.assertIn('spool workers finished peak_active=3', output.getvalue())
         for request_id in range(1, 9):
             result = json.loads((self.root / f'response-{request_id}.json').read_text())
             self.assertEqual((result['id'], result['ok']), (request_id, True))
