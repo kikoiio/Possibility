@@ -1,6 +1,6 @@
 # 中文自由聚落草稿生成
 
-[GitHub Actions 41069246124](https://github.com/kikoiio/Wispiva/actions/runs/41069246124) 在 `validation/luanti-genesis-cjk-20261030` 上首次运行真实配置模型。更新后的 [Actions 41072461877](https://github.com/kikoiio/Wispiva/actions/runs/41072461877) 重新验证了两个英文题材和一个中文自由聚落意图；三个草稿均满足 schema 并通过空间编译，三次生成各一次完成响应，token 用量完整。中文生成用了 2,090 input、734 output，共 2,824 tokens。artifact `wispiva-results-0` 附三份草稿和 `genesis-results/results.json`，`unsupported` 字段记录未落地的规则、地形／出生安全、路径语义和角色 runtime 边界。
+[GitHub Actions 41069246124](https://github.com/kikoiio/Wispiva/actions/runs/41069246124) 在 `validation/luanti-genesis-cjk-20261030` 上首次运行真实配置模型。更新后的 [Actions 41072461877](https://github.com/kikoiio/Wispiva/actions/runs/41072461877) 重新验证了两个英文题材和一个中文自由聚落意图；三个草稿均满足 schema 并通过空间编译，三次生成各一次完成响应，token 用量完整。中文生成用了 2,090 input、734 output，共 2,824 tokens。该时期的 `wispiva-results-0` 曾包含三份草稿和 `genesis-results/results.json`；前者已按隐私复核撤下。安全的 `results.json` 只记录结构计数、unsupported 边界和 token 汇总。
 
 中文意图：
 

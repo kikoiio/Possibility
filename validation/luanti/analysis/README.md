@@ -2,8 +2,11 @@
 
 `summarize.py` 用标准库解析 SOCIETY 原始日志，保留每次运行的来源与行号，输出描述性 JSON。支持 `.log`、`.log.gz`、`.events`、`.events.gz`，相同运行优先完整日志，避免重复统计。重试 token 与延迟按 attempt 计数，不再重复加上最终 action；缺失测量保留 null。
 
+公开 Actions 工件必须使用 `--public`。该模式保留事件计数和数值摘要，移除原始日志行、对话文本、完整配置和报告头；默认模式仍适合仅在本地受控目录中做原始调试。不要把默认输出上传到公开仓库。
+
 ```sh
 python3 -B validation/luanti/analysis/summarize.py --compact --input <证据目录> --output <结果.json>
+python3 -B validation/luanti/analysis/summarize.py --compact --public --input <证据目录> --output <公开摘要.json>
 python3 -B -m unittest discover -s validation/luanti/analysis -v
 ```
 

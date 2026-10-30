@@ -245,7 +245,7 @@ def source_timing(records):
             "model_actions_per_second": actions / span if span is not None and span > 0 else None}
 
 
-def summarize(input_dir, compact=False):
+def summarize(input_dir, compact=False, public=False):
     root = Path(input_dir)
     if not root.is_dir():
         raise ValueError(f"input must be a directory: {root}")
@@ -306,7 +306,7 @@ def summarize(input_dir, compact=False):
     totals["throughput"] = {"measured_runs": len(timed), "measured_actions": actions,
                             "source_span_seconds": seconds if timed else None,
                             "model_actions_per_second": actions / seconds if seconds > 0 else None}
-    return {
+    result = {
         "schema_version": 1, "input": str(root), "run_count": len(runs), "compact": compact,
         "notes": [
             "Descriptive observations only; no claims of statistical significance or causal effects.",
@@ -325,6 +325,28 @@ def summarize(input_dir, compact=False):
         ],
         "totals": totals, "runs": runs,
     }
+    if public:
+        # Public artifacts keep counts and numeric measurements only. Raw SOCIETY
+        # records may contain private dialogue; report headers may contain goals.
+        result["input"] = root.name
+        result["notes"] = [
+            "Public summary omits raw event lines, message text, full run configuration and report headers.",
+            "Counts and numeric measurements are descriptive observations, not statistical significance or causal claims.",
+            "Message delivery counts exclude message-text records.",
+            "Token totals cover known values only; null means no measurement and complete=false flags missing usage.",
+        ]
+        public_runs = []
+        for run in runs:
+            public_runs.append({
+                "run_id": run["run_id"],
+                "source": Path(run["source"]).name,
+                "ignored_source_count": len(run["ignored_sources"]),
+                "report": {key: run["report"][key]
+                           for key in ("peak_rss_mib", "result", "execution_mode")},
+                "summary": run["summary"],
+            })
+        result["runs"] = public_runs
+    return result
 
 
 def main(argv=None):
@@ -332,9 +354,10 @@ def main(argv=None):
     parser.add_argument("--input", required=True, type=Path, help="recursively search this directory")
     parser.add_argument("--output", required=True, type=Path, help="write descriptive JSON here")
     parser.add_argument("--compact", action="store_true", help="collapse repeated non-metric events using exact multiplicity")
+    parser.add_argument("--public", action="store_true", help="omit raw events, message text, run configuration and report headers")
     args = parser.parse_args(argv)
     try:
-        result = summarize(args.input, compact=args.compact)
+        result = summarize(args.input, compact=args.compact, public=args.public)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("w", encoding="utf-8") as output:
             json.dump(result, output, ensure_ascii=False, indent=2, allow_nan=False)

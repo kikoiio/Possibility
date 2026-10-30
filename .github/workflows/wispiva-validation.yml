@@ -958,7 +958,7 @@ jobs:
       - name: Summarize observed results
         if: always()
         run: |
-          python3 -B validation/luanti/analysis/summarize.py --compact --input evidence/luanti/agent --output observed-results.json
+          python3 -B validation/luanti/analysis/summarize.py --compact --public --input evidence/luanti/agent --output observed-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -968,18 +968,7 @@ jobs:
             observed-results.json
             run-metadata.json
             scale-results/
-            evidence/luanti/agent/ci-cognition.*
-            evidence/luanti/agent/ci-model.*
-            evidence/luanti/agent/ci-reset.*
-            evidence/luanti/agent/ci-preserve.*
-            evidence/luanti/agent/ci-invalid-retry.*
-            evidence/luanti/agent/ci-agent-*
-            evidence/luanti/agent/ci-resource.*
-            evidence/luanti/agent/ci-memory-*
             genesis-results/results.json
-            evidence/luanti/agent/ci-large-*
-            evidence/luanti/agent/ci-repeat-*
-            evidence/luanti/agent/ci-opt-*
             unit-tests.log
           if-no-files-found: warn
           retention-days: 14
