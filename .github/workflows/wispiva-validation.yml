@@ -383,7 +383,7 @@ jobs:
           finally:
               store.close()
           PY
-          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-free-social/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-free-social/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model --model-workers 4
           python3 -B - <<'PY'
           import json
           from pathlib import Path

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # --reflection-every N forms a private L2 belief every N decisions (default 3;
 # 0 disables it). --audit-model retains private input/output evidence per run.
+# --model-workers N bounds concurrent model requests (default 1, maximum 256).
 set -uo pipefail
 umask 077
 
@@ -24,6 +25,7 @@ RESUME=0
 SERVE=0
 VISUAL_FIXTURE=0
 AUDIT_MODEL=0
+MODEL_WORKERS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,10 +42,16 @@ while [[ $# -gt 0 ]]; do
     --serve) SERVE=1; shift ;;
     --visual-fixture) VISUAL_FIXTURE=1; shift ;;
     --audit-model) AUDIT_MODEL=1; shift ;;
+    --model-workers) MODEL_WORKERS="$2"; shift 2 ;;
     -h|--help) sed -n '1,26p' "$0"; exit 0 ;;
     *) echo "run_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ ! "$MODEL_WORKERS" =~ ^[1-9][0-9]{0,2}$ ]] || (( MODEL_WORKERS > 256 )); then
+  echo "run_product.sh: --model-workers must be between 1 and 256" >&2
+  exit 2
+fi
 
 if [[ "$SERVE" -eq 1 ]]; then
   SECONDS_MAX=0
@@ -116,10 +124,12 @@ chmod 600 "$conf"
 if [[ "$VISUAL_FIXTURE" -eq 1 ]]; then
   :
 elif [[ "$FIXTURE" -eq 1 ]]; then
-  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 --fixture > "$WORLD/private/worker.log" 2>&1 &
+  echo "spool worker concurrency=$MODEL_WORKERS fixture=true" > "$WORLD/private/worker.log"
+  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 --workers "$MODEL_WORKERS" --fixture >> "$WORLD/private/worker.log" 2>&1 &
   worker_pid=$!
 else
-  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 > "$WORLD/private/worker.log" 2>&1 &
+  echo "spool worker concurrency=$MODEL_WORKERS fixture=false" > "$WORLD/private/worker.log"
+  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 --workers "$MODEL_WORKERS" >> "$WORLD/private/worker.log" 2>&1 &
   worker_pid=$!
 fi
 

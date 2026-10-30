@@ -1,5 +1,6 @@
 """Single-owner JSON file spool; request execution is isolated in a child process."""
 import argparse
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ except ImportError:  # direct worker script execution
 
 NAME = re.compile(r'request-(0|[1-9][0-9]{0,15})\.json\Z')
 MAX_ID = 2**53 - 1
+MAX_WORKERS = 256
 
 
 def run_bridge(request, stop, timeout):
@@ -138,17 +140,30 @@ def fake_runner(request, stop, timeout):
     return result
 
 
-def serve(directory, timeout=30.0, poll_interval=0.1, runner=run_bridge):
+def serve(directory, timeout=30.0, poll_interval=0.1, runner=run_bridge, workers=1):
     directory = Path(directory)
-    if not directory.is_dir() or not 0 < timeout <= 300 or not 0.01 <= poll_interval <= 5:
+    if (not directory.is_dir() or not 0 < timeout <= 300 or
+            not 0.01 <= poll_interval <= 5 or type(workers) is not int or
+            not 1 <= workers <= MAX_WORKERS):
         raise ValueError('invalid worker configuration')
     stop = directory / 'STOP'
-    while not stop.exists():
-        for path in sorted(directory.glob('request-*.json')):
-            if stop.exists():
-                break
-            process_one(directory, path, timeout, runner=runner)
-        time.sleep(poll_interval)
+    active = set()
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='wispiva-model') as pool:
+        while True:
+            if not stop.exists():
+                for path in sorted(directory.glob('request-*.json')):
+                    if len(active) >= workers or stop.exists():
+                        break
+                    active.add(pool.submit(process_one, directory, path, timeout, runner))
+            if not active:
+                if stop.exists():
+                    return
+                time.sleep(poll_interval)
+                continue
+            completed, active = wait(active, timeout=poll_interval,
+                                     return_when=FIRST_COMPLETED)
+            for future in completed:
+                future.result()
 
 
 def main():
@@ -156,13 +171,18 @@ def main():
     parser.add_argument('directory')
     parser.add_argument('--timeout', type=float, default=30.0, help='per request deadline in seconds (0 < t <= 300)')
     parser.add_argument('--poll-interval', type=float, default=0.1)
+    parser.add_argument('--workers', type=int, default=1,
+                        help=f'maximum concurrent model requests (1..{MAX_WORKERS})')
     parser.add_argument('--fixture', action='store_true', help='use deterministic offline fixture, not a model')
     args = parser.parse_args()
+    stop_path = Path(args.directory) / 'STOP'
     def stop_signal(signum, frame):
+        stop_path.touch(exist_ok=True)
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop_signal)
     try:
-        serve(args.directory, args.timeout, args.poll_interval, fake_runner if args.fixture else run_bridge)
+        serve(args.directory, args.timeout, args.poll_interval,
+              fake_runner if args.fixture else run_bridge, workers=args.workers)
     except (OSError, ValueError):
         print('spool worker configuration or I/O failure', file=sys.stderr)
         return 1

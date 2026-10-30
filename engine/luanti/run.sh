@@ -14,6 +14,7 @@
 #   engine/luanti/run.sh --label m0-n12 --agents 12 --decisions 6
 #   engine/luanti/run.sh --label m0-stop --decisions 0 --seconds 20   # 不自动关服，测 SIGTERM 停止路径
 #   engine/luanti/run.sh --label m0-run --repeat 2   # 跑两次并比对事件序列
+#   engine/luanti/run.sh --label model --model --model-workers 4 # 最多四个并发模型请求
 #   engine/luanti/run.sh --label saved --resume-preserve # 从已有世界恢复角色记忆
 #   engine/luanti/run.sh --label saved --long-term-memory # 启用长期记忆及正常停服快照
 #   engine/luanti/run.sh --label m0-negative --set society_spacing=64 \
@@ -43,6 +44,7 @@ REPEAT=1
 PORT=30077
 EXPECT_FAIL=""
 MODEL=0
+MODEL_WORKERS=1
 FIXTURE=0
 RESUME=0
 RESET_MINDS=1
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="$2"; shift 2 ;;
     --expect-fail) EXPECT_FAIL="$2"; shift 2 ;;
     --model) MODEL=1; shift ;;
+    --model-workers) MODEL_WORKERS="$2"; shift 2 ;;
     --fake-model) MODEL=1; FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
     --resume-preserve) RESUME=1; RESET_MINDS=0; shift ;;
@@ -71,6 +74,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "run.sh: 未知参数 $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ ! "$MODEL_WORKERS" =~ ^[1-9][0-9]{0,2}$ ]] || (( MODEL_WORKERS > 256 )); then
+  echo "run.sh: --model-workers must be between 1 and 256" >&2
+  exit 2
+fi
 
 if [[ ! "$LABEL" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "run.sh: label 只能包含字母、数字、下划线和连字符" >&2
@@ -180,7 +188,7 @@ PY
   if [[ "$MODEL" -eq 1 ]]; then
     local worker_flags=()
     if [[ "$FIXTURE" -eq 1 ]]; then worker_flags+=(--fixture); fi
-    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 "${worker_flags[@]}" > "$world/worker.log" 2>&1 &
+    python3 -B "$EXP/model/spool_worker.py" "$spool" --timeout 45 --workers "$MODEL_WORKERS" "${worker_flags[@]}" > "$world/worker.log" 2>&1 &
     worker_pid=$!
   fi
   # Keep the Wispiva world identity and cooperative lock for the full engine
@@ -320,6 +328,9 @@ PY
       echo "模型: ${XUNFEI_MODEL:-${WISPIVA_LLM_MODEL:-not-configured}}"
     else
       echo "执行模式: rule-policy"
+    fi
+    if [[ "$MODEL" -eq 1 ]]; then
+      echo "模型并发 worker 上限: $MODEL_WORKERS"
     fi
     echo "Luanti 引擎 PID: ${engine_pid:-not-captured}"
     echo "Luanti 引擎峰值 RSS: $((peak_kb / 1024)) MiB"

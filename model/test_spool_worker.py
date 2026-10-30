@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -123,6 +124,47 @@ class SpoolTests(unittest.TestCase):
                 process.kill()
                 process.wait()
             process.stderr.close()
+
+    def test_parallel_workers_are_bounded_and_complete_each_request_once(self):
+        for request_id in range(1, 9):
+            (self.root / f'request-{request_id}.json').write_text(
+                json.dumps({'id': request_id, 'context': {}}))
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+        completed = []
+
+        def runner(request, stop, timeout):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.04)
+            with lock:
+                active -= 1
+                completed.append(request['id'])
+            return {'id': request['id'], 'ok': True, 'action': {'kind': 'inspect'}}
+
+        thread = threading.Thread(target=worker.serve,
+                                  args=(self.root, 1, 0.01, runner),
+                                  kwargs={'workers': 3})
+        thread.start()
+        deadline = time.monotonic() + 3
+        while len(completed) < 8 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        (self.root / 'STOP').touch()
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(peak, 3)
+        self.assertEqual(sorted(completed), list(range(1, 9)))
+        for request_id in range(1, 9):
+            result = json.loads((self.root / f'response-{request_id}.json').read_text())
+            self.assertEqual((result['id'], result['ok']), (request_id, True))
+
+    def test_worker_count_is_bounded(self):
+        for workers in (0, worker.MAX_WORKERS + 1, True):
+            with self.subTest(workers=workers), self.assertRaises(ValueError):
+                worker.serve(self.root, workers=workers)
 
 
 if __name__ == '__main__':
