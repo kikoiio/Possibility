@@ -11,6 +11,7 @@
 | 产品提交与模型输入 | 产品状态账本、冻结恢复边界与 `wispiva.model-input` v1 | 2026-10-29 | [产品状态与模型输入边界](design/2026-10-29-product-state-and-model-input.md) |
 | 产品运行与三维观察 | 持续服务、观察者出生点及 Luanti 客户端进入路径 | 2026-10-29 | [当前架构](architecture.md) |
 | 受控世界接入边界 | `launch.py` 在 Luanti 进程生命周期内持有 `WorldSession`；地图、事件、库存和记忆共同提交尚未完成 | 2026-10-29 | [启动器](../engine/luanti/launch.py)、[世界会话](../engine/luanti/world_session.py)、[世界身份](../engine/luanti/world_identity.py)、[世界锁](../engine/luanti/world_lock.py) |
+| 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
 | 工作计划 | 本分支独立产品级通用创建、持续世界、角色与记忆的实施及验收 | 2026-10-29 | [工作计划](PLAN.md) |
 | 研究 | 方法、容量与记忆研究；研究结论以实际测量范围为准 | 2026-10-29 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |

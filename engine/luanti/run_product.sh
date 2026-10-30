@@ -108,7 +108,7 @@ cleanup() {
 trap cleanup EXIT
 
 HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" python3 -B "$HERE/launch.py" \
-  --world "$WORLD" -- \
+  --require-product-contract --world "$WORLD" -- \
   "$ENGINE" --config "$conf" --world "$WORLD" --gameid minetest_game --logfile "$log" &
 server_pid=$!
 
