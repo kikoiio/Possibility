@@ -2,9 +2,9 @@
 
 本目录记录分支 `validation/luanti-product-model-20261030-e15e52a` 上的真实模型产品切片。模型密钥只通过 GitHub Actions secret 注入，没有写入代码或 artifact。
 
-- 验证运行：[Actions 41008153510](https://github.com/kikoiio/Wispiva/actions/runs/41008153510)
-- 提交：[3563083e](https://github.com/kikoiio/Wispiva/commit/3563083e6478eff1c8ff583760548f1e7570589a)
-- 原始 artifact：`wispiva-product-model-evidence`，ID `12956093221`
+- 验证运行：[Actions 41010708756](https://github.com/kikoiio/Wispiva/actions/runs/41010708756)
+- 提交：[55a5ffa8](https://github.com/kikoiio/Wispiva/commit/55a5ffa8b3dc22e27d3afdb3a7c26f1423168178)
+- 原始 artifact：`wispiva-product-model-evidence`，ID `12957746448`
 
 场景创建一个确认后的 Luanti 产品世界，包含 Alice、Bob、Cora 三个角色、一个共享水井和绿色资源。每个角色收到自己的起始私有种子；模型输入还包含角色局部观察、当前库存、可行动作和上次执行反馈。世界运行完成 18 个真实决策，记录 `say=6`、`gather=6`、`inspect=4`、`approach=1`、`build=1`，并写入产品 checkpoint、世界事件和长期记忆。
 
@@ -16,8 +16,8 @@
 - 模型无效动作会有限重试；一次 `transport_error` 在重试后成功，provider 失败不会被改写成规则动作。
 - gather 的成功、`resource_mismatch` 失败、行动反馈、环境事件和产品 checkpoint 都保留在世界日志中。
 
-当前工作流还包含一个 source-grounded L2 反思步骤：它从 Cora 已经获得的 5 条 L1 经历中选取有限输入，调用同一配置的真实 provider，返回了同 topic、非空且只引用已提供 source IDs 的反思提案，并保存安全审计。`reflection-result.json` 记录了 809 个总 tokens、5 个来源 ID 和 provider 输入／提示哈希；该结果证明真实 provider 的反思边界已运行，仍不自动写入角色长期记忆，也不证明反思质量或矛盾信念处理。
+当前工作流还包含一个 source-grounded L2 反思步骤：它从 Cora 已经获得的 4 条 L1 经历中选取有限输入，调用同一配置的真实 provider，返回了同 topic、非空且只引用已提供 source IDs 的反思提案，并保存安全审计。`reflection-result.json` 记录了 841 个总 tokens、4 个来源 ID 和 provider 输入／提示哈希；该结果证明真实 provider 的反思边界已运行，仍不自动写入角色长期记忆，也不证明反思质量或矛盾信念处理。
 
-第一次重跑发现原有验收脚本按消息文本比较，误把同一句话分别发送给两个角色判为越权；运行时的 rumor `source.id` 和 `audience` 已显示为不同消息实例。提交 `3563083e` 改为按稳定消息来源 ID 验收，Actions `41008153510` 已成功通过。
+第一次重跑发现原有验收脚本按消息文本比较，误把同一句话分别发送给两个角色判为越权；运行时的 rumor `source.id` 和 `audience` 已显示为不同消息实例。提交 `3563083e` 改为按稳定消息来源 ID 验收，Actions `41008153510` 和 `41010708756` 均已成功通过。
 
 这项证据证明小规模真实模型闭环、当前输入隐私边界和一次真实 source-grounded L2 provider 调用。它不证明 L2 结果已自动写回主循环、反思质量、断电级跨存储原子提交、长期崩溃恢复、真实用户意图链路、真人三维体验、供应商吞吐或千至万级真实 LLM 角色容量。

@@ -42,7 +42,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 轻量离线测试：`python3 -B -m unittest discover -s model -t . -v`。实际调用记录在 [Luanti 适配层证据](../evidence/luanti/model/) 和 [执行计划](../docs/PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。
 
-2026-10-30 UTC 的真实模型产品切片见 [证据](../evidence/luanti/product-model-2026-10-30/README.md)。Actions 41008153510 记录了 3 个角色的 18 个决策、对白、资源成功与失败、输入隔离、有限重试和一次 source-grounded L2 反思；该运行仍是受控小规模场景，不代表长期或万级模型容量。
+2026-10-30 UTC 的真实模型产品切片见 [证据](../evidence/luanti/product-model-2026-10-30/README.md)。Actions 41010708756 记录了 3 个角色的 18 个决策、对白、资源成功与失败、输入隔离、有限重试和一次 source-grounded L2 反思；该运行仍是受控小规模场景，不代表长期或万级模型容量。
 
 
 ## 受控记忆任务与并发探针
