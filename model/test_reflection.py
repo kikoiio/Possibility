@@ -3,6 +3,7 @@ import unittest
 
 from model.adapter import Config
 from model.reflection import ReflectionError, build_input, reflect, validate_output
+from model.reflection_host import ReflectionHostError, reflect_and_persist
 
 
 def _request():
@@ -53,6 +54,42 @@ class ReflectionTests(unittest.TestCase):
         self.assertEqual(result["reflection"]["source_ids"], ["l1-1"])
         self.assertEqual(seen[0]["input"][1]["content"], json.dumps(request, ensure_ascii=True,
                                                                        sort_keys=True, separators=(",", ":")))
+
+    def test_host_persists_only_after_source_grounded_provider_result(self):
+        request = _request()
+        persisted = []
+
+        def append(*args):
+            persisted.append(args)
+            actor, topic, source_ids, text, time, source_id = args
+            return {"id": "reflection:alice:the well:1", "layer": "L2", "owner": actor,
+                    "topic": topic, "experiences": source_ids, "text": text,
+                    "time": time, "source": {"kind": "reflection", "id": source_id}}
+
+        def transport(config, body):
+            return (b'data: {"type":"response.output_text.delta","delta":"{\\"topic\\":\\"the well\\",\\"text\\":\\"Bob may help.\\",\\"source_ids\\":[\\"l1-1\\"]}"}\n\n'
+                    b'data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n')
+
+        result = reflect_and_persist(Config("https://example.test/v1", "test", "secret"),
+                                     request, append, time=4, source_id="provider-1",
+                                     transport=transport)
+        self.assertEqual(result["persisted"]["id"], "reflection:alice:the well:1")
+        self.assertEqual(persisted[0][:3], ("alice", "the well", ["l1-1"]))
+
+    def test_host_rejects_bad_persistence_result(self):
+        request = _request()
+
+        def append(*args):
+            return {"id": "wrong", "layer": "L1", "owner": "alice",
+                    "topic": "the well", "experiences": ["l1-1"]}
+
+        def transport(config, body):
+            return (b'data: {"type":"response.output_text.delta","delta":"{\\"topic\\":\\"the well\\",\\"text\\":\\"x\\",\\"source_ids\\":[\\"l1-1\\"]}"}\n\n'
+                    b'data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n')
+
+        with self.assertRaises(ReflectionHostError):
+            reflect_and_persist(Config("https://example.test/v1", "test", "secret"),
+                                request, append, time=4, transport=transport)
 
 
 if __name__ == "__main__":
