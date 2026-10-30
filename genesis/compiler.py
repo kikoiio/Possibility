@@ -72,7 +72,8 @@ def compile_plan(draft):
                           for c in source['layout']['connections']), key=lambda c: (c['from'], c['to']))
     return {
         'schema_version': 1,
-        'public': {'title': source['title'], 'bounds': {'min': {'x': -BOUND, 'y': SPAWN_Y, 'z': -BOUND},
+        'public': {'title': source['title'], 'description': source['description'],
+                   'bounds': {'min': {'x': -BOUND, 'y': SPAWN_Y, 'z': -BOUND},
                     'max': {'x': BOUND, 'y': SPAWN_Y, 'z': BOUND}},
                    'grid_spacing': GRID_SPACING, 'places': places, 'actors': public_actors,
                    'semantic_connections': connections},

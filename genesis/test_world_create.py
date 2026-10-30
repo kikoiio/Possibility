@@ -36,6 +36,8 @@ class WorldCreateTests(unittest.TestCase):
         manifest = json.loads(manifest_path.read_text())
         self.assertEqual(manifest["world_id"], result["world_id"])
         self.assertEqual(manifest["origin_event_id"], result["origin_event_id"])
+        self.assertEqual(manifest["public"]["title"], row["draft"]["title"])
+        self.assertEqual(manifest["public"]["description"], row["draft"]["description"])
         self.assertEqual(manifest["actors"][0]["memory_seeds"][0]["text"], "私人的经历")
         self.assertTrue((target / "worldmods" / "society" / "init.lua").is_file())
         self.assertTrue((target / "server.conf").is_file())

@@ -5,7 +5,7 @@ from validation.summarize_memory_artifact import summarize
 
 
 TASKS = ('delayed_recall', 'source_attribution', 'stale_fact',
-         'avoiding_known_failure', 'chinese_fragment_recall')
+         'avoiding_known_failure', 'chinese_fragment_recall', 'chinese_explicit_recall')
 
 
 def artifact(*, include_selection=True):
@@ -22,13 +22,14 @@ def artifact(*, include_selection=True):
                     row['memory_evidence_selected'] = strategy == 'retrieval' and seed < 2
                 records.append(row)
     by_strategy = {
-        strategy: {'requests': 15, 'error_count': 0,
-                   'token_audits': {'complete': 15, 'missing': 0, 'invalid': 0},
+        strategy: {'requests': 18, 'error_count': 0,
+                   'token_audits': {'complete': 18, 'missing': 0, 'invalid': 0},
                    'exact_token_totals': {'input_tokens': 30, 'output_tokens': 15,
                                           'total_tokens': 45}}
         for strategy in ('fifo', 'retrieval')}
     return {'kind': 'memory_tasks', 'fixture': False,
-            'evidence_kind': 'actual_configured_model', 'planned_calls': 30,
+            'evidence_kind': 'actual_configured_model', 'planned_calls': 36,
+            'seeds': [1, 2, 3],
             'retries': 0, 'records': records, 'pairs': pairs,
             'by_strategy': by_strategy}
 
@@ -44,6 +45,7 @@ class MemoryArtifactSummaryTests(unittest.TestCase):
             result['per_task']['chinese_fragment_recall']['retrieval']
             ['memory_evidence_selection'],
             {'measured': 3, 'selected': 2, 'coverage': 2 / 3})
+        self.assertEqual(result['per_task']['chinese_explicit_recall']['retrieval']['requests'], 3)
 
     def test_old_artifacts_are_explicitly_unmeasured(self):
         result = summarize(artifact(include_selection=False))

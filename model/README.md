@@ -22,6 +22,8 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 持久起源的 Python 接入点为 `build_manifest_context(manifest, binding, local, ...)`，接受受信任的 `wispiva-world-creation-materials` v1 handoff：检查外层世界身份与绑定，只从其中的 `origin_event` 派生角色上下文，其他全角色材料不会进入提示。`genesis/world_create.py` 发布的 Luanti `wispiva-world-manifest` 由当前产品 Lua 运行时直接投影；后续会把两种 handoff 合并为一个版本化传输协议。文件加载、认证和完整 manifest 校验仍由调用方负责。也可独立调用 `retrieve_genesis_memories(event, binding, query='', max_entries=8, max_bytes=4096)`，从可信的持久 `genesis.created` 载荷检索。返回 `memory`、`memory_query` 和 `memory_scope`，`build_context`／`decide` 已将这份投影用于模型输入。上下文入口接受 `memory_query`、`max_memory_entries`、`max_memory_bytes` 关键字参数；默认查询使用本人私有目标，独立检索接口的空查询则按种子顺序选取。调用方可用当前角色已获授权的局部线索作为查询。
 
+Luanti 产品主循环还把确认草稿的公开标题和描述作为一条 `genesis.public` fact 加入每个角色的 `knowledge.facts`。它沿用 `wispiva.model-input` v1，不把整份 manifest 或原始 intent 送给 provider；事实 audience 逐请求限制为当前角色。旧 manifest 没有公开描述时继续只传标题。共享事实占用一个 facts 槽位，传感器事实会为其留出预算。
+
 每条记录保留 `world_id`、稳定的 `seed_id`、`owner`、原文以及 `source = {kind: "genesis.seed", event_id, id: seed_id}`；跨世界索引必须使用 `(world_id, seed_id)`。`known_by` 只列拥有者，表示这份种子的授权接收人，不推断其他人的知情状态。`classification = "unknown"`，`time` 和 `importance` 为 `null`：种子没有提供真实性分类、发生时间或重要度，不将起源提交当成种子内容已真实发生的证明，也不生成 L0 事实、L1 存储写入或 L2 反思。
 
 检索使用大小写折叠后的完整词项重合度排序，同分按原始种子顺序；无匹配时按原始顺序回退，选中项最终保留种子顺序。它不做中文分词、语义检索或真实性判断。默认最多 8 条、完整 ASCII 转义紧凑 JSON 数组最多 4096 字节，预算可降低；不截断记录，未选中的数量写入 `memory_scope.omitted`，原始持久种子不变。兼容字段 `self.memories` 仅保留同批选中种子，不能绕过检索预算；整个模型上下文仍受 16000 字节上限约束。此切片只完成 Python 投影及模型调用路径，manifest 文件读取、Lua 主循环接线和长期记忆写回由运行时集成负责。
