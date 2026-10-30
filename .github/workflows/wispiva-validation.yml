@@ -42,13 +42,15 @@ jobs:
               lua5.1 test_reflection_apply.lua
               lua5.1 test_reflection_runtime.lua
               lua5.1 test_logical_clock.lua
+              lua5.1 test_product_state.lua
               lua5.1 test_world_events.lua
               lua5.1 test_environment.lua
-              lua5.1 test_product_state.lua
               lua5.1 test_model_envelope.lua
             )
           lua5.1 engine/luanti/mod/society/test_world_projection.lua
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
+          python3 -B -m unittest -v engine/luanti/test_control.py
+          python3 -B -m unittest -v validation/test_model_load.py validation/test_product_memory_audit.py
           python3 -B -m unittest -v engine/luanti/test_snapshot.py
           python3 -B -m unittest -v engine/luanti/test_recovery_journal.py engine/luanti/test_world_identity.py engine/luanti/test_world_lock.py engine/luanti/test_world_session.py engine/luanti/test_launch.py
           python3 -B -m unittest discover -s validation/luanti/scale -t . -p 'test_*.py' -v
@@ -347,6 +349,67 @@ jobs:
           cp "$root/world/private/product.log" "$root/first-run.log"
           engine/luanti/run_product.sh --world "$root/world" --resume --decisions 4 --interval 1 --seconds 900 --reflection-every 3 --audit-model
           python3 -B -m validation.product_memory_audit --world "$root/world" --before "$root/before-resume.json" --output "$root/memory-resumed.json"
+      - name: Run user-intent free society product world
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from genesis.store import DraftStore
+          from genesis.model_adapter import responses_model
+          from genesis.world_create import create_world
+          from model.adapter import Config
+          root = Path('.ci-free-social').absolute()
+          root.mkdir(mode=0o700)
+          intent = ('Create a free society in a small frontier settlement. The residents have no assigned jobs; '
+                    'let them decide for themselves how to divide work, form friendships, exchange resources, '
+                    'disagree, and change their settlement over time. Begin with a shared commons, a few scarce '
+                    'resources, and four residents with different backgrounds. Preserve uncertainty where the '
+                    'intent does not specify an outcome; do not script a predetermined story.')
+          store = DraftStore(root / 'drafts.sqlite', create=True)
+          try:
+              record = store.create_from_intent(intent, responses_model(Config.from_env()))
+              assert 3 <= len(record['draft']['actors']) <= 8, len(record['draft']['actors'])
+              store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
+              result = create_world(store, record['id'], record['revision'], root / 'world')
+              (root / 'creation-result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+              (root / 'intent.txt').write_text(intent, encoding='utf-8')
+          finally:
+              store.close()
+          PY
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-free-social/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.ci-free-social')
+          creation = json.loads((root / 'creation-result.json').read_text())
+          assert creation['world_id']
+          log = (root / 'world/private/product.log').read_text(errors='replace')
+          assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log
+          assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
+          requests = list((root / 'world/private/model-audit').rglob('request-*.json'))
+          assert len(requests) >= 12, len(requests)
+          print(json.dumps({'world_id': creation['world_id'], 'requests': len(requests)}))
+          PY
+      - name: Replay bounded real-model load
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 -B validation/model_load.py --audit-dir .ci-product-model/world/private/model-audit --calls 24 --concurrency 4 --output .ci-product-model/model-load
+      - name: Probe product checkpoint failure windows
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        run: |
+          set -euo pipefail
+          python3 -B validation/product_faults.py --source .ci-product-model/world --output .ci-product-model/fault-probes
       - name: Upload real model product evidence
         if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         uses: actions/upload-artifact@v4

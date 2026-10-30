@@ -1,0 +1,210 @@
+[
+  {
+    "audience": [
+      "0"
+    ],
+    "experiences": [
+      "world-event:24:actor",
+      "world-event:21:actor",
+      "world-event:8:actor",
+      "world-event:9:actor",
+      "world-event:10:actor"
+    ],
+    "id": "reflection:0:current goals and relationships:1",
+    "layer": "L2",
+    "owner": "0",
+    "source": {
+      "id": "product.1793348078.3857:request:10",
+      "kind": "reflection"
+    },
+    "text": "I’m unsure how to adjust after a failed gather (possibly due to a resource mismatch at my position), so my working goal is to locate a viable green resource, potentially near the well; I’ve had useful contact with agent 1 (met them, delivered the green-resource message twice) and have also met agent 2, but I don’t yet know who can help me recover from the failed gather.",
+    "time": 67.0,
+    "topic": "current goals and relationships",
+    "version": 1.0
+  },
+  {
+    "audience": [
+      "1"
+    ],
+    "experiences": [
+      "world-event:25:actor",
+      "world-event:22:actor",
+      "world-event:18:actor",
+      "world-event:21:recipient",
+      "world-event:9:recipient",
+      "world-event:19:actor",
+      "world-event:8:recipient"
+    ],
+    "id": "reflection:1:current goals and relationships:1",
+    "layer": "L2",
+    "owner": "1",
+    "source": {
+      "id": "product.1793348078.3857:request:11",
+      "kind": "reflection"
+    },
+    "text": "My most recent aims were movement and discovery: I set a destination, inspected, and successfully gathered at (-1, 1, -2) (captured_at 50 and 16). I also have information from agent 0—repeated at captured_at 7 and 27—that a green resource is by the well; this is hearsay, not verified by me. I have met agent 0 and agent 2. Uncertainty: I don’t know whether returning to the well to collect that resource fits my current priorities. Plan: weigh the gathered item against the reported well resource and consider contacting agent 0 to confirm the location before deciding whether to move there.",
+    "time": 83.0,
+    "topic": "current goals and relationships",
+    "version": 1.0
+  },
+  {
+    "audience": [
+      "2"
+    ],
+    "experiences": [
+      "world-event:20:actor",
+      "world-event:23:actor",
+      "world-event:26:actor",
+      "world-event:10:recipient",
+      "world-event:19:recipient"
+    ],
+    "id": "reflection:2:current goals and relationships:1",
+    "layer": "L2",
+    "owner": "2",
+    "source": {
+      "id": "product.1793348078.3857:request:12",
+      "kind": "reflection"
+    },
+    "text": "I’ve been consistently making progress toward goals that involve gathering at positions near 1,1,-2 and moving to 1,1,-1, and I’ve also recently met agent 0 and agent 1. It’s unclear yet whether those meetings changed my goals or standing, but one plan is to continue the same pattern: prioritize gathering around the 1,1,-2 area while moving toward 1,1,-1 when I next act, and if I meet agent 0 or agent 1 again, try to learn from them what they expect from me so I can better align my next gathering/wander steps with any relationship-based needs.",
+    "time": 101.0,
+    "topic": "current goals and relationships",
+    "version": 1.0
+  },
+  {
+    "audience": [
+      "0"
+    ],
+    "experiences": [
+      "world-event:33:actor",
+      "world-event:30:actor",
+      "world-event:27:actor",
+      "world-event:24:actor",
+      "world-event:21:actor"
+    ],
+    "id": "reflection:0:current goals and relationships:2",
+    "layer": "L2",
+    "owner": "0",
+    "source": {
+      "id": "product.1793348078.3857:request:19",
+      "kind": "reflection"
+    },
+    "text": "I'm interpreting my recent attempts and messages to agent 1 with some uncertainty: two failed gather attempts at position -2,1,-2 suggest I may need to change my approach or location for resource collection, while my repeated successful messages about finding a green resource by the well indicate I want to maintain this cooperative relationship and share useful information.",
+    "time": 152.0,
+    "topic": "current goals and relationships",
+    "version": 2.0
+  },
+  {
+    "audience": [
+      "1"
+    ],
+    "experiences": [
+      "world-event:34:actor",
+      "world-event:31:actor",
+      "world-event:30:recipient",
+      "world-event:28:actor"
+    ],
+    "id": "reflection:1:current goals and relationships:2",
+    "layer": "L2",
+    "owner": "1",
+    "source": {
+      "id": "product.1793348078.3857:request:20",
+      "kind": "reflection"
+    },
+    "text": "I’m currently prioritizing movement-based objectives: I set a destination and successfully approached at least twice (world-event:31, world-event:28), then followed it up by advancing/moving to a new position (world-event:34). I’m uncertain what this says about my broader goals beyond progressing toward set destinations, and I don’t yet have enough evidence to clarify relationships—only that I received information from another agent (world-event:30) about finding a green resource by the well.",
+    "time": 164.0,
+    "topic": "current goals and relationships",
+    "version": 2.0
+  },
+  {
+    "audience": [
+      "2"
+    ],
+    "experiences": [
+      "world-event:35:actor",
+      "world-event:32:actor",
+      "world-event:29:actor",
+      "world-event:26:actor",
+      "world-event:19:recipient"
+    ],
+    "id": "reflection:2:current goals and relationships:2",
+    "layer": "L2",
+    "owner": "2",
+    "source": {
+      "id": "product.1793348078.3857:request:21",
+      "kind": "reflection"
+    },
+    "text": "Looking back on my recent experiences, my efforts to orient myself and move toward new locations appear to be succeeding: I have managed to wander to a destination at 1,1,-1, advance to 1,1,-2, and conduct successful inspections along the way. Alongside this physical progression, I also recently met agent 1, though it is unclear what impact this encounter will have on my relationships or future trajectory. As I continue to navigate the world, I plan to build on these successful movements and interactions to further clarify my goals and the connections I am forming.",
+    "time": 176.0,
+    "topic": "current goals and relationships",
+    "version": 2.0
+  },
+  {
+    "audience": [
+      "0"
+    ],
+    "experiences": [
+      "world-event:42:actor",
+      "world-event:39:actor",
+      "world-event:33:actor",
+      "world-event:30:actor",
+      "world-event:36:actor"
+    ],
+    "id": "reflection:0:current goals and relationships:3",
+    "layer": "L2",
+    "owner": "0",
+    "source": {
+      "id": "product.1793348275.4123:request:4",
+      "kind": "reflection"
+    },
+    "text": "I may have settled into a steady cadence: several successful wanders positioned me near the well (ending at (-2,1,-2)), where a green resource was reportedly found. Yet my most recent gather attempt there failed due to a resource mismatch, so I’m uncertain what I currently have in hand and whether I should keep prioritizing collection around that area, return to the well to clarify what was actually obtained, or share a quick status with agent 1 to recalibrate before my next action.",
+    "time": 222.0,
+    "topic": "current goals and relationships",
+    "version": 3.0
+  },
+  {
+    "audience": [
+      "1"
+    ],
+    "experiences": [
+      "world-event:43:actor",
+      "world-event:40:actor",
+      "world-event:42:recipient",
+      "world-event:37:actor",
+      "world-event:34:actor"
+    ],
+    "id": "reflection:1:current goals and relationships:3",
+    "layer": "L2",
+    "owner": "1",
+    "source": {
+      "id": "product.1793348275.4123:request:5",
+      "kind": "reflection"
+    },
+    "text": "I may be navigating toward the well: the approach attempts succeeded with a destination set (world-event:43:actor, world-event:40:actor), and agent 0 told me a green resource was by the well (world-event:42:recipient). I also recently inspected (world-event:37:actor) and advanced with a move reported at position 0,1,-2 (world-event:34:actor), so I need to determine whether I am already close enough to the well to act or whether I should continue/re-plan the route.",
+    "time": 234.0,
+    "topic": "current goals and relationships",
+    "version": 3.0
+  },
+  {
+    "audience": [
+      "2"
+    ],
+    "experiences": [
+      "world-event:32:actor",
+      "world-event:35:actor",
+      "world-event:38:actor",
+      "world-event:41:actor",
+      "world-event:44:actor"
+    ],
+    "id": "reflection:2:current goals and relationships:3",
+    "layer": "L2",
+    "owner": "2",
+    "source": {
+      "id": "product.1793348275.4123:request:6",
+      "kind": "reflection"
+    },
+    "text": "All five recorded events show inspect actions succeeding and being observed, but they do not state any goals, relationship changes, or people involved, so I am treating this as a pattern to verify: my current goals and relationships should be defined by interactions beyond these inspect outcomes.",
+    "time": 243.0,
+    "topic": "current goals and relationships",
+    "version": 3.0
+  }
+]

@@ -2,6 +2,7 @@
 # --reflection-every N forms a private L2 belief every N decisions (default 3;
 # 0 disables it). --audit-model retains private input/output evidence per run.
 set -uo pipefail
+umask 077
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -15,6 +16,8 @@ SECONDS_MAX=180
 DECISIONS=10
 INTERVAL=2
 REFLECTION_EVERY=3
+TIME_RATE=24
+FAULT_STAGE=""
 PORT=30078
 FIXTURE=0
 RESUME=0
@@ -29,6 +32,8 @@ while [[ $# -gt 0 ]]; do
     --decisions) DECISIONS="$2"; shift 2 ;;
     --interval) INTERVAL="$2"; shift 2 ;;
     --reflection-every) REFLECTION_EVERY="$2"; shift 2 ;;
+    --speed) TIME_RATE="$2"; shift 2 ;;
+    --fault-stage) FAULT_STAGE="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --fake-model) FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
@@ -46,6 +51,8 @@ if [[ "$SERVE" -eq 1 ]]; then
 fi
 
 [[ "$REFLECTION_EVERY" =~ ^[0-9]+$ ]] || { echo "run_product.sh: --reflection-every must be a nonnegative integer" >&2; exit 2; }
+python3 -B -c 'import sys,math; rate=float(sys.argv[1]); sys.exit(0 if math.isfinite(rate) and 0<=rate<=1000 else 2)' "$TIME_RATE" || { echo "run_product.sh: --speed must be between 0 and 1000" >&2; exit 2; }
+case "$FAULT_STAGE" in ""|after_map|after_environment|after_agents|before_commit|after_commit) ;; *) echo 'run_product.sh: invalid fault stage' >&2; exit 2 ;; esac
 [[ -n "$WORLD" && -d "$WORLD" ]] || { echo "run_product.sh: --world must name an existing product world" >&2; exit 2; }
 [[ -x "$ENGINE" ]] || { echo "run_product.sh: engine unavailable: $ENGINE" >&2; exit 2; }
 [[ -f "$WORLD/wispiva-world-id" ]] || { echo "run_product.sh: missing world identity" >&2; exit 2; }
@@ -53,6 +60,8 @@ namespace="product.$(date +%s).$$"
 spool="$WORLD/private/model-spool/$namespace"
 audit_dir="$WORLD/private/model-audit/$namespace"
 mkdir -p "$spool"
+mkdir -p "$WORLD/private/control"
+chmod 700 "$WORLD/private/control"
 if [[ "$AUDIT_MODEL" -eq 1 ]]; then
   mkdir -p "$audit_dir"
   chmod 700 "$WORLD/private/model-audit" "$audit_dir"
@@ -97,6 +106,9 @@ society_event_namespace = $namespace
 society_model_audit = $([[ "$AUDIT_MODEL" -eq 1 ]] && echo true || echo false)
 society_model_audit_dir = $audit_dir
 society_reflection_every = $REFLECTION_EVERY
+society_time_rate = $TIME_RATE
+society_control_dir = $WORLD/private/control
+society_fault_stage = $FAULT_STAGE
 EOF
 chmod 600 "$conf"
 

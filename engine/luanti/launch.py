@@ -8,6 +8,7 @@ skip.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import signal
@@ -32,6 +33,43 @@ def _forward(child, signum, _frame):
             pass
 
 
+def _verify_product_checkpoint(world_dir, world_id):
+    """Clear the durable session marker only after a clean, matching checkpoint."""
+    world = Path(world_dir)
+    try:
+        path = world / 'mod_storage/society'
+        with path.open('rb') as source:
+            raw = source.read(32 * 1024 * 1024 + 1)
+        if len(raw) > 32 * 1024 * 1024:
+            raise ValueError
+        fields = json.loads(raw)
+        state = json.loads(fields['product_state'])
+        agents = json.loads(fields['agent_state'])
+        environment = json.loads(fields['environment_state'])
+        if (state['world_id'] != world_id or state['phase'] != 'READY' or
+                state.get('pending') is not None or fields.get('product_active_run') or
+                state['clock']['logical_time'] != environment['time'] or
+                state['components']['memory'] != len(agents['long_term']['records']) or
+                state['components']['events'] != len(agents['world_events']['events'])):
+            raise ValueError
+        # The engine has exited. Flush its independent stores before removing
+        # the fsynced recovery marker; any failure leaves the world fenced.
+        for item in (path, world / 'map.sqlite'):
+            fd = os.open(item, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        for directory in (path.parent, world):
+            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    except (OSError, ValueError, KeyError, TypeError):
+        raise RecoveryRequired('product checkpoint is incomplete; recovery marker retained') from None
+
+
 def run(command, world_dir, *, create=False, expected_world_id=None, env=None,
         require_product_contract=False, cwd=None):
     """Run *command* while holding the world's exclusive session lock."""
@@ -53,7 +91,7 @@ def run(command, world_dir, *, create=False, expected_world_id=None, env=None,
                 previous[signum] = signal.signal(
                     signum, lambda sig, frame, child=child: _forward(child, sig, frame))
             try:
-                return child.wait()
+                status = child.wait()
             finally:
                 for signum, handler in previous.items():
                     signal.signal(signum, handler)
@@ -64,8 +102,15 @@ def run(command, world_dir, *, create=False, expected_world_id=None, env=None,
                     except subprocess.TimeoutExpired:
                         child.kill()
                         child.wait()
-        finally:
+        except BaseException:
+            # Process creation, signal handling, or uncertain cleanup must keep
+            # the durable marker for the next opener.
+            raise
+        if status == 0:
+            if require_product_contract:
+                _verify_product_checkpoint(world_dir, session.world_id)
             journal.finish()
+        return status
 
 
 def main(argv=None):

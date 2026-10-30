@@ -58,6 +58,61 @@ class AdapterTests(unittest.TestCase):
                      '{"kind":"say","target":2,"text":"bad\\nmessage"}'):
             with self.assertRaises(adapter.ModelError):
                 adapter._validate_action(text, context)
+
+    def test_give_observed_target_and_available_fixed_resource(self):
+        context = {**CTX, 'inventory': {'society:resource': 3, 'default:wood': 20}}
+        for amount in (1, 3, 2.0):
+            with self.subTest(amount=amount):
+                action = {'kind': 'give', 'target': 2.0, 'amount': amount}
+                result = adapter.decide(CONFIG, context, transport=lambda *_: stream(action))
+                self.assertEqual(result['action'],
+                                 {'kind': 'give', 'target': 2, 'amount': int(amount), 'why': 'model'})
+                self.assertIs(type(result['action']['amount']), int)
+                self.assertIs(type(result['action']['target']), int)
+        # Inventory from Lua may contain integral floating point counts too.
+        context['inventory']['society:resource'] = 3.0
+        self.assertEqual(adapter._validate_action(
+            '{"kind":"give","target":2,"amount":3}', context)['amount'], 3)
+
+    def test_give_rejects_bad_amount_target_and_missing_fields(self):
+        context = {**CTX, 'inventory': {'society:resource': 3}}
+        base = {'kind': 'give', 'target': 2, 'amount': 1}
+        invalid = [{**base, 'amount': value} for value in
+                   (True, False, None, '1', 0, -1, 1.5, 4, 2147483648,
+                    float('nan'), float('inf'), 10**400, [], {})]
+        invalid += [{**base, 'target': value} for value in
+                    (True, False, None, '2', 2.5, 4, float('inf'), 10**400, [], {})]
+        invalid += [{'kind': 'give'}, {'kind': 'give', 'target': 2},
+                    {'kind': 'give', 'amount': 1}]
+        for action in invalid:
+            with self.subTest(action=action), self.assertRaisesRegex(adapter.ModelError, '^invalid_action$'):
+                adapter._validate_action(json.dumps(action), context)
+        with self.assertRaises(adapter.ModelError):
+            adapter._validate_action('{"kind":"give","target":2,"amount":1,"amount":2}', context)
+
+    def test_give_requires_valid_available_inventory(self):
+        text = '{"kind":"give","target":2,"amount":1}'
+        for inventory in ({}, {'default:wood': 20}, None, [], 'stock'):
+            with self.subTest(inventory=inventory), self.assertRaises(adapter.ModelError):
+                adapter._validate_action(text, {**CTX, 'inventory': inventory})
+        for available in (True, False, None, '3', -1, 0, 1.5, 2147483648,
+                          float('nan'), float('inf'), 10**400, [], {}):
+            with self.subTest(available=available), self.assertRaises(adapter.ModelError):
+                adapter._validate_action(text, {**CTX, 'inventory': {'society:resource': available}})
+        with self.assertRaises(adapter.ModelError):
+            adapter._validate_action(text, CTX)
+
+    def test_give_projection_and_model_failure_audit(self):
+        context = {**CTX, 'inventory': {'society:resource': 2}}
+        action = {'kind': 'give', 'target': 2, 'amount': 1, 'node': 'default:wood',
+                  'point': {'x': 999}, 'why': 'injection', 'url': 'https://evil.invalid'}
+        self.assertEqual(adapter._validate_action(json.dumps(action), context),
+                         {'kind': 'give', 'target': 2, 'amount': 1, 'why': 'model'})
+        with self.assertRaisesRegex(adapter.ModelError, '^invalid_action$') as caught:
+            adapter.decide(CONFIG, context, transport=lambda *_: stream(
+                {'kind': 'give', 'target': 2, 'amount': 3}))
+        self.assertEqual(caught.exception.audit['usage'], {'input_tokens': 12, 'output_tokens': 4})
+
     def test_request_and_audit(self):
         def transport(config, body):
             req = json.loads(body)

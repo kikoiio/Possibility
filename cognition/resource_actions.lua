@@ -8,6 +8,9 @@
 -- integer node coordinates within Euclidean distance 1.5 of the actor.
 -- Both return true on verified success, otherwise false, reason. count(name)
 -- and inventory() provide read-only access (inventory returns a copy).
+-- transfer(sender, recipient, name, amount) hands inventory between instances
+-- within Euclidean distance 2.5, without map writes. Both instances are locked
+-- through position checks and the synchronous, resource-conserving update.
 -- This is not a protection, line-of-sight, or engine callback adapter; the
 -- integrator must enforce those policies in the injected engine. The engine
 -- must synchronously apply writes and give truthful readbacks. Failed writes
@@ -15,6 +18,7 @@
 local M = {}
 local MAX_COUNT = 2147483647
 local MAX_COORD = 31000
+local instances = setmetatable({}, {__mode = "k"})
 
 local function finite(n)
   return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
@@ -50,6 +54,37 @@ function M.validate_inventory(value)
   return stock
 end
 
+function M.transfer(sender_actions, recipient_actions, name, amount)
+  local sender, recipient = instances[sender_actions], instances[recipient_actions]
+  if not sender or not recipient then return false, "invalid action instance" end
+  if sender_actions == recipient_actions then return false, "cannot transfer to self" end
+  if not valid_name(name) then return false, "invalid node name" end
+  if not finite(amount) or amount <= 0 or amount > MAX_COUNT or amount ~= math.floor(amount) then
+    return false, "invalid amount"
+  end
+  if sender.busy or recipient.busy then return false, "action already in progress" end
+  sender.busy, recipient.busy = true, true
+  local ok, result, reason = pcall(function()
+    local from = sender.object:get_pos()
+    if not valid_pos(from, false) then return false, "invalid actor position" end
+    from = copy_pos(from)
+    local to = recipient.object:get_pos()
+    if not valid_pos(to, false) then return false, "invalid actor position" end
+    local dx, dy, dz = from.x - to.x, from.y - to.y, from.z - to.z
+    if dx * dx + dy * dy + dz * dz > 6.25 then return false, "target out of reach" end
+    local available, held = sender.stock[name] or 0, recipient.stock[name] or 0
+    if available < amount then return false, "insufficient inventory" end
+    if held > MAX_COUNT - amount then return false, "inventory full" end
+    if available == amount then sender.stock[name] = nil
+    else sender.stock[name] = available - amount end
+    recipient.stock[name] = held + amount
+    return true
+  end)
+  sender.busy, recipient.busy = false, false
+  if not ok then return false, "engine or input error" end
+  return result, reason
+end
+
 function M.new(engine, object, initial_inventory)
   assert(type(engine) == "table" and type(engine.get_node_or_nil) == "function"
     and type(engine.set_node) == "function", "engine read and write functions required")
@@ -57,7 +92,9 @@ function M.new(engine, object, initial_inventory)
     and type(object.get_pos) == "function", "actor object required")
   assert(initial_inventory == nil or type(initial_inventory) == "table", "invalid inventory")
   local stock = M.validate_inventory(initial_inventory or {})
-  local actions, busy = {}, false
+  local actions = {}
+  local state = {stock = stock, object = object, busy = false}
+  instances[actions] = state
 
   function actions:count(name)
     assert(valid_name(name), "invalid node name")
@@ -104,10 +141,10 @@ function M.new(engine, object, initial_inventory)
   end
 
   local function run(kind, pos, name)
-    if busy then return false, "action already in progress" end
-    busy = true
+    if state.busy then return false, "action already in progress" end
+    state.busy = true
     local ok, result, reason = pcall(perform, kind, pos, name)
-    busy = false
+    state.busy = false
     if not ok then return false, "engine or input error" end
     return result, reason
   end

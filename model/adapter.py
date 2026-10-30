@@ -23,10 +23,14 @@ MAX_REQUEST = 32768
 MAX_STREAM = 1048576
 MAX_TEXT = 8192
 PROMPT = ('Choose one action for the given observation. Return only a JSON object: '
-          '{"kind":"inspect"|"mark"|"advance"|"approach"|"wander"|"say"|"gather"|"build"}. '
+          '{"kind":"inspect"|"mark"|"advance"|"approach"|"wander"|"say"|"give"|"gather"|"build"}. '
           'For approach add integer "target" from nearby_agents. For wander add '
           '"point":{"x":integer,"y":integer,"z":integer} inside bounds. '
           'For say add integer "target" from nearby_agents and a short "text" message. '
+          'For give add integer "target" from nearby_agents and positive integer "amount" '
+          'no greater than your inventory of society:resource. Give physically hands that '
+          'resource to the target within Euclidean distance 2.5 blocks. To give to a '
+          'farther target, approach then advance until in reach. '
           'For gather or build add point x,y,z; gather a visible society:resource within '
           '1.5 blocks, build into nearby air when carrying society:resource. '
           'local_actions lists currently reachable gather_points and build_points. '
@@ -36,7 +40,8 @@ PROMPT = ('Choose one action for the given observation. Return only a JSON objec
           'Use advance only when has_target is true. For inspect, mark, and advance output '
           'only kind. For approach output only kind and target. For wander output only kind '
           'and point. Gather and build also use only kind and point. For say output only '
-          'kind, target, and text. Do not add any other keys. '
+          'kind, target, and text. For give output only kind, target, and amount. '
+          'Do not add any other keys. '
           'In product input, experiences describe this actor’s perspective; rumors are '
           'unverified reports, unknowns are uncertain seeds, and reflections are private '
           'versioned beliefs rather than established facts. '
@@ -178,7 +183,7 @@ def _validate_action(text: str, context: Mapping[str, Any]) -> dict:
             raise ValueError
         kind = action.get('kind')
         fields = {'inspect': (), 'mark': (), 'advance': (), 'approach': ('target',),
-                  'say': ('target', 'text'), 'wander': ('point',),
+                  'say': ('target', 'text'), 'give': ('target', 'amount'), 'wander': ('point',),
                   'gather': ('point',), 'build': ('point',)}
         if not isinstance(kind, str) or kind not in fields:
             raise ValueError
@@ -191,6 +196,8 @@ def _validate_action(text: str, context: Mapping[str, Any]) -> dict:
             return int(value)
         if 'target' in action:
             action['target'] = integral(action['target'])
+        if 'amount' in action:
+            action['amount'] = integral(action['amount'])
         if 'point' in action:
             action['point'] = {axis: integral(action['point'][axis]) for axis in ('x', 'y', 'z')}
         obs = context['observation']
@@ -202,6 +209,12 @@ def _validate_action(text: str, context: Mapping[str, Any]) -> dict:
             pass
         elif kind == 'say' and set(action) == {'kind', 'target', 'text'} and type(action['target']) is int and any(type(agent) is int and agent == action['target'] for agent in obs['nearby_agents']) and isinstance(action['text'], str) and 0 < len(action['text'].encode('utf-8')) <= 240 and not any(ord(c) < 32 for c in action['text']):
             pass
+        elif kind == 'give' and set(action) == {'kind', 'target', 'amount'}:
+            if not any(type(agent) is int and agent == action['target'] for agent in obs['nearby_agents']):
+                raise ValueError
+            available = integral(context['inventory'].get('society:resource', 0))
+            if not 0 < action['amount'] <= available <= 2147483647:
+                raise ValueError
         elif kind in ('wander', 'gather', 'build') and set(action) == {'kind', 'point'}:
             point, bounds = action['point'], context['bounds']
             if not isinstance(point, dict) or set(point) != {'x', 'y', 'z'}:

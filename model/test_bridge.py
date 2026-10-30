@@ -218,15 +218,18 @@ class BridgeReflectionTests(unittest.TestCase):
                 reflect.assert_called_once()
 
     def test_real_provider_failure_stops_decision(self):
-        decision = mock.Mock()
-        with mock.patch.object(adapter, '_transport', side_effect=adapter.ModelError('transport_error')):
-            sink = io.StringIO()
-            bridge.serve(io.StringIO(json.dumps({'id': 7, 'context': self.context()}) + '\n'),
-                         sink, adapter.Config('https://example.test/v1', 'test', 'secret-key'),
-                         decision=decision)
-        self.assertEqual(json.loads(sink.getvalue()),
-                         {'id': 7, 'ok': False, 'error': 'provider_failed'})
-        decision.assert_not_called()
+        for code, expected in (('transport_error', 'provider_failed'),
+                               ('rate_limited', 'rate_limited'), ('timeout', 'timeout')):
+            with self.subTest(code=code):
+                decision = mock.Mock()
+                with mock.patch.object(adapter, '_transport', side_effect=adapter.ModelError(code)):
+                    sink = io.StringIO()
+                    bridge.serve(io.StringIO(json.dumps({'id': 7, 'context': self.context()}) + '\n'),
+                                 sink, adapter.Config('https://example.test/v1', 'test', 'secret-key'),
+                                 decision=decision)
+                self.assertEqual(json.loads(sink.getvalue()),
+                                 {'id': 7, 'ok': False, 'error': expected})
+                decision.assert_not_called()
 
     def test_provider_proposal_with_unknown_sources_stops_decision(self):
         decision = mock.Mock()
@@ -295,6 +298,17 @@ class BridgeReflectionTests(unittest.TestCase):
         self.assertEqual(response['attempts'][0]['reflection_audit'], result['reflection_audit'])
         self.assertEqual(response['attempts'][0]['error'], 'rate_limited')
         runner.assert_called_once()
+
+    def test_decision_exception_keeps_only_this_requests_reflection_audit(self):
+        source = io.StringIO(json.dumps({'id': 7, 'context': self.context()}) + '\n{broken\n')
+        sink = io.StringIO()
+        bridge.serve(source, sink, object(),
+                     decision=mock.Mock(side_effect=RuntimeError('private-provider secret-key')),
+                     reflection=lambda *_: {'reflection': {'text': 'private'}, 'audit': {'usage': {}}})
+        self.assertEqual([json.loads(line) for line in sink.getvalue().splitlines()], [
+            {'id': 7, 'ok': False, 'error': 'invalid_request', 'reflection_audit': {'usage': {}}},
+            {'id': None, 'ok': False, 'error': 'invalid_request'},
+        ])
 
     def test_no_reflection_preserves_legacy_and_envelope_requests(self):
         for context in ({'legacy': True}, {'model_input': self.envelope()}):

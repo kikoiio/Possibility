@@ -146,7 +146,10 @@ def reflect(config: adapter.Config, request: Mapping[str, Any], *,
         result = validate_output(json.loads(output_text, object_pairs_hook=_pairs), request)
     except ReflectionError:
         raise
-    except (adapter.ModelError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+    except adapter.ModelError as exc:
+        code = str(exc)
+        raise ReflectionError(code if code in ('rate_limited', 'timeout') else 'provider_failed') from None
+    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
         raise ReflectionError("provider_failed") from None
     return {"reflection": result,
             "audit": {"context_sha256": hashlib.sha256(payload.encode()).hexdigest(),

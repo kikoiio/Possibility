@@ -7,6 +7,7 @@ local world_events = dofile(minetest.get_modpath("society") .. "/world_events.lu
 local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua")
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
+local logical_clock = dofile(minetest.get_modpath("society") .. "/logical_clock.lua")
 local model_envelope = dofile(minetest.get_modpath("society") .. "/model_envelope.lua")
 local reflection_runtime = dofile(minetest.get_modpath("society") .. "/reflection_runtime.lua")
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
@@ -88,6 +89,12 @@ local offline_seconds = 0
 local product_clock_bootstrap = false
 local environment_process
 local environment_last_time = 0
+local simulation_clock
+local time_wait_seconds, time_active_seconds, time_paused_seconds = 0, 0, 0
+local function world_time()
+	if WORLD_PRODUCT and simulation_clock then return simulation_clock:export().logical_time end
+	return minetest.get_gametime()
+end
 local function save_product_state()
 	assert(WORLD_PRODUCT and product_state, "product state unavailable")
 	local encoded = minetest.write_json(product_state:export())
@@ -113,10 +120,11 @@ local function freeze_product_state(reason)
 end
 local function set_product_clock(engine_time, wall_time)
 	if not WORLD_PRODUCT or not product_state then return end
-	local existing = product_state:clock()
+	local clock = simulation_clock and simulation_clock:export() or {fraction=0, rate=24, paused=false}
 	product_state:set_clock({version=1, logical_time=environment_last_time,
-		engine_time=math.max(0, math.floor(engine_time or 0)),
-		saved_wall_time=existing and existing.saved_wall_time or math.max(0, math.floor(wall_time or os.time()))})
+		engine_time=math.max(0, math.floor(engine_time or minetest.get_gametime())),
+		saved_wall_time=math.max(0, math.floor(wall_time or os.time())),
+		fraction=clock.fraction, rate=clock.rate, paused=clock.paused})
 end
 if WORLD_PRODUCT then
 	local raw_state = storage:get_string("product_state")
@@ -173,6 +181,17 @@ local S = {
 	finished = false, failed = nil,
 }
 
+local FAULT_STAGE = cfg("society_fault_stage", "")
+assert(FAULT_STAGE == "" or ({after_map=true, after_environment=true, after_agents=true,
+	before_commit=true, after_commit=true})[FAULT_STAGE], "invalid fault injection stage")
+local function injected_fault(stage)
+	if WORLD_PRODUCT and FAULT_STAGE == stage then
+		S.failed = "injected-fault"
+		minetest.log("error", "SOCIETY injected-fault stage=" .. stage)
+		error("Wispiva controlled interruption: " .. stage)
+	end
+end
+
 local view_landmarks, view_route = {}, {}
 local view_guide, view_route_index = nil, 1
 local view_route_seen, view_players = {}, {}
@@ -202,6 +221,10 @@ if WORLD_PRODUCT then
 		assert(raw ~= "", "product environment checkpoint is missing while committed state is present")
 	end
 	local clock = product_state:clock()
+	simulation_clock = logical_clock.new({logical_time=environment_last_time,
+		fraction=clock and clock.fraction or 0,
+		rate=clock and clock.rate or tonumber(cfg("society_time_rate", "24")),
+		paused=clock and clock.paused or false})
 	if not clock then
 		local committed = components.map > 0 or components.actors > 0 or components.inventory > 0
 			or components.events > 0 or components.memory > 0 or components.environment > 0
@@ -209,7 +232,7 @@ if WORLD_PRODUCT then
 			freeze_product_state("committed product state is missing logical clock")
 			error("committed product state is missing logical clock")
 		end
-		set_product_clock(environment_last_time, minetest.get_gametime())
+		set_product_clock(minetest.get_gametime(), os.time())
 		product_clock_bootstrap = true
 		save_product_state()
 	else
@@ -673,7 +696,7 @@ local function apply(self, action, pos)
 		reason = reason or (ok and "world-verified" or "action-failed")
 		cached_nodes:invalidate(action.point)
 		self._last_action = {kind = kind, point = action.point, ok = ok, reason = reason}
-		self._episodic:add({time = minetest.get_gametime(),
+		self._episodic:add({time = world_time(),
 			text = string.format("%s at %d,%d,%d %s: %s; inventory=%d", kind,
 				action.point.x, action.point.y, action.point.z, ok and "succeeded" or "failed",
 				reason, self._resources:count("society:resource")),
@@ -682,10 +705,29 @@ local function apply(self, action, pos)
 			tostring(ok), tostring(reason or "none"):gsub("%s+", "_"), self._resources:count("society:resource"))
 		return ok, reason
 	end
+	if kind == "give" then
+		local recipient = agents[action.target]
+		if recipient and recipient._resources and recipient.object and recipient.object:get_pos() then
+			local ok, reason = resources.transfer(self._resources, recipient._resources,
+				"society:resource", action.amount)
+			if ok then
+				self._episodic:add({time = world_time(),
+					text = string.format("gave %d society:resource to agent %d", action.amount, action.target),
+					source = {kind = "action", id = self._id}})
+				recipient._episodic:add({time = world_time(),
+					text = string.format("received %d society:resource from agent %d", action.amount, self._id),
+					source = {kind = "agent", id = tostring(self._id)}})
+			end
+			ev("ev=resource-transfer agent=%d recipient=%d amount=%d ok=%s reason=%s",
+				self._id, action.target, action.amount, tostring(ok), tostring(reason or "ok"):gsub("%s+", "_"))
+			return ok, reason or "transferred"
+		end
+		return false, "recipient-gone"
+	end
 	if kind == "say" then
 		local recipient = agents[action.target]
 		if GENESIS_PREVIEW then
-			local ok, reason = preview_module.deliver(self, recipient, action.text, minetest.get_gametime())
+			local ok, reason = preview_module.deliver(self, recipient, action.text, world_time())
 			if ok then
 				if VISUAL then self.object:set_properties({nametag=self._persona .. "\n" .. action.text}) end
 				ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target, minetest.sha256(action.text))
@@ -694,12 +736,12 @@ local function apply(self, action, pos)
 		end
 		if recipient and recipient.object and recipient.object:get_pos() then
 			local message_id = string.format("%s:message:%d:%d", EVENT_NAMESPACE, self._id, self._decisions + 1)
-			recipient._inbox[#recipient._inbox + 1] = {time = minetest.get_gametime(),
+			recipient._inbox[#recipient._inbox + 1] = {time = world_time(),
 				from = self._id, text = action.text, message_id = message_id}
 			if #recipient._inbox > 32 then table.remove(recipient._inbox, 1) end
-			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
+			recipient._episodic:add({time = world_time(), text = action.text,
 				source = {kind = "agent", id = tostring(self._id)}})
-			self._episodic:add({time = minetest.get_gametime(), text = action.text,
+			self._episodic:add({time = world_time(), text = action.text,
 				source = {kind = "self", id = tostring(self._id)}})
 			if VISUAL then self.object:set_properties({nametag = self._persona .. "\n" .. action.text}) end
 			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
@@ -727,7 +769,7 @@ local function settle_contacts(self, pos)
 				local operation_id = string.format("%s:contact:%d:%d", EVENT_NAMESPACE,
 					math.min(self._id, le._id), math.max(self._id, le._id))
 				local committed, event = pcall(event_log.commit, event_log, operation_id, {
-					time = minetest.get_gametime(), kind = "meet", actor = tostring(self._id),
+					time = world_time(), kind = "meet", actor = tostring(self._id),
 					ok = true, reason = "contact", participants = {tostring(le._id)},
 				})
 				if not committed then
@@ -737,7 +779,7 @@ local function settle_contacts(self, pos)
 					return
 				end
 				if LONG_TERM then
-					local ok, detail = pcall(history.record_meeting, history, tostring(self._id), tostring(le._id), minetest.get_gametime(), event.id)
+					local ok, detail = pcall(history.record_meeting, history, tostring(self._id), tostring(le._id), world_time(), event.id)
 					if not ok then
 						ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
 						S.failed = "long-term-record"
@@ -756,6 +798,12 @@ local function settle_contacts(self, pos)
 end
 
 local function decide_and_act(self)
+	if WORLD_PRODUCT and MODEL and not self._pending then
+		-- A fast provider response cannot make one role outrun the slowest role.
+		for _, other in pairs(agents) do
+			if self._decisions > other._decisions then return end
+		end
+	end
 	local pos = self.object:get_pos()
 	if not pos then
 		ev("fail=no-position agent=%d persona=%s", self._id, self._persona)
@@ -785,7 +833,7 @@ local function decide_and_act(self)
 			if node.name == MARK_NODE then marks = marks + 1 end
 			if node.name == "society:resource" then resource_count = resource_count + 1 end
 		end
-		self._episodic:add({time = minetest.get_gametime(),
+		self._episodic:add({time = world_time(),
 			text = string.format("nearby agents=%d marks=%d resources=%d", #local_obs.agents, marks, resource_count),
 			source = {kind = "observation", id = self._id}})
 		obs.local_view = local_obs
@@ -825,7 +873,7 @@ local function decide_and_act(self)
 			else selected_memory = {} end
 			local context = {observation = {has_target = obs.has_target,
 				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
-				self_id = self._id, time = minetest.get_gametime(), persona = self._persona,
+				self_id = self._id, time = world_time(), persona = self._persona,
 				goal = (GENESIS_PREVIEW or WORLD_PRODUCT) and self._genesis.goal or GOAL,
 				nearby_positions = obs.local_view and obs.local_view.agents or {},
 				movement_target = self._target,
@@ -864,7 +912,7 @@ local function decide_and_act(self)
 						fp(node.pos.x), fp(node.pos.y), fp(node.pos.z)),
 						text = "I can currently observe " .. node.name .. " nearby.",
 						source = {kind = "engine.sensor", id = "observation:" .. tostring(self._id)},
-						scope = "public", audience = {self._genesis.actor_id}, captured_at = minetest.get_gametime()})
+						scope = "public", audience = {self._genesis.actor_id}, captured_at = world_time()})
 				end
 				for _, memory in ipairs(selected_memory or {}) do
 					if not seed_ids[memory.id] and memory.layer ~= "L2" then
@@ -905,18 +953,18 @@ local function decide_and_act(self)
 					feedback = {available = true, attempt_id = self._last_action.attempt_id,
 						requested = {kind = self._last_action.kind, point = self._last_action.point},
 						status = self._last_action.ok and "succeeded" or "failed", reason = self._last_action.reason,
-						event_id = self._last_action.event_id, observed_at = minetest.get_gametime(),
+						event_id = self._last_action.event_id, observed_at = world_time(),
 						world_revision = self._last_action.world_revision}
 				end
 				local envelope = model_envelope.build({world_id = genesis_manifest.world_id,
 					origin_event_id = genesis_manifest.origin_event_id, actor_id = self._genesis.actor_id,
 					runtime_id = self._id, decision_id = EVENT_NAMESPACE .. ":agent:" .. tostring(self._id) .. ":decision:" .. tostring(self._decisions + 1),
-					world_revision = product_state:version(), observed_at = minetest.get_gametime(),
+					world_revision = product_state:version(), observed_at = world_time(),
 					actor = {name = self._genesis.name, role = self._genesis.role, goal = self._genesis.goal,
 						role_source = {kind = "genesis.actor", id = genesis_manifest.origin_event_id .. ":" .. self._genesis.actor_id},
 						goal_source = {kind = "genesis.goal", id = genesis_manifest.origin_event_id .. ":" .. self._genesis.actor_id}},
 					permissions = {read_scopes = {"world.public", "self.experience", "self.memory", "direct.messages"},
-						allowed_actions = {"inspect", "wander", "advance", "approach", "say", "gather", "build"}},
+						allowed_actions = {"inspect", "wander", "advance", "approach", "say", "give", "gather", "build"}},
 					facts = facts, experiences = experiences, rumors = rumors, unknowns = unknowns, reflections = reflections,
 					observation = context.observation, inventory = context.inventory,
 					affordances = context.local_actions, feedback = feedback})
@@ -945,7 +993,8 @@ local function decide_and_act(self)
 					return
 				end
 			end
-			self._pending = {id = request_id, started = minetest.get_us_time(), reflection = context.reflection_input}
+			self._pending = {id = request_id, started = minetest.get_us_time(),
+				reflection = context.reflection_input, inbox = self._inbox}
 			self._inbox = {}
 			ev("ev=model-request agent=%d request=%d", self._id, request_id)
 			return
@@ -1002,7 +1051,7 @@ local function decide_and_act(self)
 			local accepted, belief = pcall(function()
 				assert(reflection_request, "unsolicited reflection")
 				return reflection_runtime.apply(history, tostring(self._id), reflection_request,
-					result.reflection, minetest.get_gametime(), EVENT_NAMESPACE .. ":request:" .. tostring(id))
+					result.reflection, world_time(), EVENT_NAMESPACE .. ":request:" .. tostring(id))
 			end)
 			if not accepted then
 				ev("fail=model-reflection agent=%d request=%d", self._id, id)
@@ -1019,13 +1068,16 @@ local function decide_and_act(self)
 		action = result.action
 		local valid = action.kind == "inspect" or action.kind == "mark"
 			or (action.kind == "advance" and self._target ~= nil)
-		if action.kind == "approach" or action.kind == "say" then
+		if action.kind == "approach" or action.kind == "say" or action.kind == "give" then
 			for _, other in ipairs(obs.nearby_agents) do
 				if other == action.target then valid = true end
 			end
 			if action.kind == "say" then
 				valid = valid and type(action.text) == "string" and #action.text > 0
 					and #action.text <= 240 and not action.text:find("[%c]")
+			elseif action.kind == "give" then
+				valid = valid and type(action.amount) == "number" and action.amount == math.floor(action.amount)
+					and action.amount > 0 and action.amount <= self._resources:count("society:resource")
 			end
 		elseif (action.kind == "wander" or action.kind == "gather" or action.kind == "build") and type(action.point) == "table" then
 			local p = action.point
@@ -1061,11 +1113,11 @@ local function decide_and_act(self)
 	if action.kind == "mark" then point = {x=fp(pos.x)+self._facing.x, y=fp(pos.y), z=fp(pos.z)+self._facing.z} end
 	if action.kind == "advance" then point = self.object:get_pos() end
 	local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
-	local delivered = action.kind == "say" and ok
+	local delivered = (action.kind == "say" or action.kind == "give") and ok
 	local operation_id = string.format("%s:agent:%d:decision:%d", EVENT_NAMESPACE,
 		self._id, self._decisions + 1)
 	local committed, event = pcall(event_log.commit, event_log, operation_id, {
-		time = minetest.get_gametime(), kind = action.kind, actor = tostring(self._id), ok = ok,
+		time = world_time(), kind = action.kind, actor = tostring(self._id), ok = ok,
 		reason = reason or "unspecified", detail = detail, point = point,
 		participants = delivered and {tostring(action.target)} or {},
 	})
@@ -1077,7 +1129,7 @@ local function decide_and_act(self)
 	end
 	if LONG_TERM then
 		local recorded, detail = pcall(history.record_outcome, history, tostring(self._id),
-			action.kind, ok, reason or "unspecified", minetest.get_gametime(),
+			action.kind, ok, reason or "unspecified", world_time(),
 			delivered and tostring(action.target) or nil, delivered and action.text or nil, detail, event.id)
 		if not recorded then
 			ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
@@ -1314,6 +1366,7 @@ local function apply_product_projection()
 		end
 		ev("origin projection verified world_id=%s origin_event=%s operations=%d", plan.world_id,
 			plan.origin_event_id, #plan.operations)
+		injected_fault("after_map")
 		return true
 	end
 	local target = components
@@ -1353,6 +1406,7 @@ local function apply_product_projection()
 	end
 	vm:set_data(map_data)
 	vm:write_to_map()
+	injected_fault("after_map")
 	local committed = product_state:commit("origin-projection:" .. genesis_manifest.origin_event_id, target)
 	local encoded = minetest.write_json(committed)
 	storage:set_string("product_state", encoded)
@@ -1431,7 +1485,7 @@ local function emit_stats()
 	end
 	local alive = alive_agents()
 	ev("stats t=%.1f agents=%d/%d stepped_delta=%d steps_per_sec=%.2f decisions=%d marks=%d meetings=%d actions=%s",
-		math.floor(minetest.get_gametime() or -1), alive, COUNT, stepped,
+		math.floor(world_time() or -1), alive, COUNT, stepped,
 		step_count / secs, S.decisions, S.marks, S.meets, action_string())
 	step_count, last_us = 0, now
 
@@ -1450,7 +1504,7 @@ end
 
 local function advance_product_environment()
 	if not WORLD_PRODUCT or not environment_process then return true end
-	local now = math.floor(minetest.get_gametime() or 0)
+	local now = math.floor(world_time() or 0)
 	if now <= environment_last_time then return true end
 	local ok, events = pcall(environment_process.advance, environment_process, now)
 	if not ok then
@@ -1488,6 +1542,64 @@ local function advance_product_environment()
 	return true
 end
 
+local CONTROL_DIR = cfg("society_control_dir", "")
+local function pending_models()
+	local count = 0
+	for _, agent in pairs(agents) do if agent._pending then count = count + 1 end end
+	return count
+end
+local function clock_status()
+	local state = simulation_clock:export()
+	return {logical_time=state.logical_time, rate=state.rate, paused=state.paused,
+		pending_models=pending_models()}
+end
+local function control_clock(command, rate)
+	assert(WORLD_PRODUCT and simulation_clock, "product clock unavailable")
+	if command == "pause" then simulation_clock:pause()
+	elseif command == "resume" then simulation_clock:resume()
+	elseif command == "speed" then simulation_clock:set_rate(rate)
+	else assert(command == "status", "invalid clock command") end
+	return clock_status()
+end
+local function control_config()
+	return {logical_time=simulation_clock:export().logical_time, rate=simulation_clock:export().rate,
+		paused=simulation_clock:export().paused, pending_models=pending_models()}
+end
+local function poll_product_control()
+	if not WORLD_PRODUCT or CONTROL_DIR == "" then return end
+	local path = CONTROL_DIR .. "/request.json"
+	local file = io.open(path, "rb")
+	if not file then return end
+	local raw = file:read(4097); file:close()
+	local request = #raw <= 4096 and minetest.parse_json(raw) or nil
+	local id = type(request) == "table" and request.id or "invalid"
+	if type(id) ~= "string" or #id > 64 or not id:match("^[%w%-]+$") then id = "invalid" end
+	local ok, status = pcall(function()
+		assert(id ~= "invalid", "invalid control id")
+		for key in pairs(request) do
+			assert(key == "id" or key == "command" or (key == "rate" and request.command == "speed"), "invalid control fields")
+		end
+		return control_clock(request.command, request.rate)
+	end)
+	local response = {id=id, ok=ok, status=clock_status(), error=not ok and "invalid_control" or nil}
+	if minetest.safe_file_write(CONTROL_DIR .. "/response.json", minetest.write_json(response)) then
+		os.remove(path)
+		ev("ev=control command=%s ok=%s logical_time=%d rate=%g paused=%s",
+			type(request) == "table" and tostring(request.command) or "invalid", tostring(ok),
+			response.status.logical_time, response.status.rate, tostring(response.status.paused))
+	end
+end
+if WORLD_PRODUCT and minetest.register_chatcommand then
+	minetest.register_chatcommand("wispiva", {params="pause | resume | speed <rate> | status",
+		description="Control Wispiva logical time", privs={server=true}, func=function(_, param)
+			local command, value = param:match("^(%S+)%s*(.-)$")
+			local ok, status = pcall(control_clock, command, tonumber(value))
+			if not ok then return false, "Use: /wispiva pause | resume | speed <0..1000> | status" end
+			return true, string.format("World time %d; speed %gx; paused %s; pending models %d",
+				status.logical_time, status.rate, tostring(status.paused), status.pending_models)
+		end})
+end
+
 local function round_done()
 	if MAX_DECISIONS <= 0 then return false end
 	for i = 0, COUNT - 1 do
@@ -1501,6 +1613,23 @@ minetest.register_globalstep(function(dtime)
 	update_view_scene(dtime)
 	update_view_players()
 	if S.finished or S.failed or S.spawned == 0 then return end
+	poll_product_control()
+	if WORLD_PRODUCT then
+		local state = simulation_clock:export()
+		local paused = state.paused or state.rate == 0
+		local blocked = pending_models() > 0
+		-- Oversized callback gaps are discarded. Provider/validation waits never
+		-- become deferred simulation time, including after process restart.
+		if dtime <= 60 then simulation_clock:advance(dtime, blocked or paused) end
+		if paused then
+			time_paused_seconds = time_paused_seconds + dtime
+			for _, agent in pairs(agents) do
+				if agent._pending then agent._pending.started = agent._pending.started + dtime * 1e6 end
+			end
+			return
+		elseif blocked then time_wait_seconds = time_wait_seconds + dtime
+		else time_active_seconds = time_active_seconds + dtime end
+	end
 	if not advance_product_environment() then return end
 	local frame_started = minetest.get_us_time()
 	local completed = false
@@ -1548,6 +1677,12 @@ end)
 
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
+	if WORLD_PRODUCT and simulation_clock then
+		local clock = simulation_clock:export()
+		ev("product-time logical=%d fraction=%.6f rate=%g paused=%s active_seconds=%.3f model_wait_seconds=%.3f paused_seconds=%.3f offline_seconds=%d",
+			clock.logical_time, clock.fraction, clock.rate, tostring(clock.paused),
+			time_active_seconds, time_wait_seconds, time_paused_seconds, offline_seconds)
+	end
 	local checkpoint_operation, checkpoint_target
 	if WORLD_PRODUCT and PERSIST and not S.failed and product_state:phase() == "READY" then
 		local components = product_state:components()
@@ -1573,7 +1708,8 @@ minetest.register_on_shutdown(function()
 			-- The environment checkpoint and product clock are one recovery
 			-- boundary. Update the in-memory clock before committing the
 			-- product state, otherwise the next boot sees a false divergence.
-			set_product_clock(environment_process:export().time, os.time())
+			set_product_clock(minetest.get_gametime(), os.time())
+			injected_fault("after_environment")
 		end
 	elseif WORLD_PRODUCT and environment_process and S.failed then
 		-- A failed product run is frozen for review. Do not advance the
@@ -1588,6 +1724,21 @@ minetest.register_on_shutdown(function()
 	if PERSIST and not S.failed then
 		local saved = {}
 		for i = 0, COUNT - 1 do
+			-- Cancel unfinished decisions at clean shutdown. Restore their consumed
+			-- inbox to the checkpoint; their old spool is never replayed.
+			local agent = agents[i]
+			if agent and agent._pending then
+				local inbox, seen = {}, {}
+				for _, messages in ipairs({agent._pending.inbox or {}, agent._inbox or {}}) do
+					for _, message in ipairs(messages) do
+						if not seen[message.message_id] then
+							inbox[#inbox + 1], seen[message.message_id] = message, true
+						end
+					end
+				end
+				while #inbox > 32 do table.remove(inbox, 1) end
+				agent._inbox = inbox
+			end
 			local ok, snapshot = pcall(persistence.snapshot, agents[i])
 			if not ok or not snapshot then
 				ev("fail=persist agent=%d", i)
@@ -1611,16 +1762,19 @@ minetest.register_on_shutdown(function()
 			ev("fail=persist reason=write-or-readback")
 			return
 		end
+		injected_fault("after_agents")
 		ev("persist agents=%d", #saved)
 		if LONG_TERM or history:count() > 0 or event_log:count() > 0 then
 			ev("long-term-checkpoint records=%d world-events=%d scope=normal-shutdown no-map-transaction=true crash-recovery=false", history:count(), event_log:count())
 		end
 	end
 	if WORLD_PRODUCT and checkpoint_operation then
+		injected_fault("before_commit")
 		local committed = product_state:commit(checkpoint_operation, checkpoint_target)
 		local encoded = minetest.write_json(committed)
 		storage:set_string("product_state", encoded)
 		assert(storage:get_string("product_state") == encoded, "product checkpoint state write/readback failed")
+		injected_fault("after_commit")
 		storage:set_string("product_active_run", "")
 		assert(storage:get_string("product_active_run") == "", "product active marker clear failed")
 		product_active_run = false

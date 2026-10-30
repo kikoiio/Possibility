@@ -27,6 +27,7 @@
 | 用户意图创建案例 | 两个非固定题材的可编辑草稿、确认 revision、私有 intent 和公开／私有边界回归 | 2026-10-29 | [原始证据](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md) |
 | 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程、重启恢复和自动客户端验收 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
 | 真实模型产品世界验证 | 3 个合成角色的真实模型请求、私有记忆隔离、目标消息接收、动作／资源反馈、token／延迟／重试审计 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-model-2026-10-30/README.md) |
+| 产品长期记忆主循环证据 | 主循环 L2 写回、belief 检索、正常重启后的版本和动作反馈保留 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-memory-runtime-2026-10-30/README.md) |
 | 产品状态与模型输入验证 | `wispiva-product-state`、`wispiva.model-input` v1、preview 复制及持久产品世界恢复 | 2026-10-29 | [原始证据](../evidence/luanti/product-state-model-input-2026-10-29/README.md) |
 | 世界会话边界验证 | Luanti 启动器持锁、身份建立、信号转发及跨进程生命周期 | 2026-10-29 | [原始证据](../evidence/luanti/world-session-2026-10-29/README.md) |
 | 世界事件账本验证 | 行动结果、接触、幂等事件身份与 checkpoint 接入 | 2026-10-29 | [原始证据](../evidence/luanti/world-events-2026-10-29/README.md) |

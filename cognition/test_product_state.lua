@@ -27,4 +27,57 @@ fails(function() interrupted:assert_ready() end, "not ready")
 assert(interrupted:pending().operation_id == "checkpoint:2")
 assert(product_state.load(interrupted:export()):pending().operation_id == "checkpoint:2")
 fails(function() interrupted:freeze("different reason") end, "reason mismatch")
+
+local function equal(a, b)
+  assert(type(a) == type(b), "type differs")
+  if type(a) ~= "table" then assert(a == b, "value differs"); return end
+  for key, value in pairs(a) do equal(value, b[key]) end
+  for key in pairs(b) do assert(a[key] ~= nil, "extra field") end
+end
+local legacy = {version=1, logical_time=7, engine_time=9, saved_wall_time=11}
+local clocks = product_state.new("clock-world", "clock-origin")
+clocks:set_clock(legacy)
+equal(clocks:clock(), legacy)
+equal(product_state.load(clocks:export()):clock(), legacy)
+-- Every extension is independently optional, including false and zero values.
+for _, extra in ipairs({{fraction=0}, {fraction=0.75}, {rate=0}, {rate=1000},
+    {rate=0.5}, {paused=false}, {paused=true}, {fraction=0.25, rate=24, paused=true}}) do
+  local next_clock = {}
+  for key, value in pairs(legacy) do next_clock[key] = value end
+  for key, value in pairs(extra) do next_clock[key] = value end
+  clocks:set_clock(next_clock)
+  equal(clocks:clock(), next_clock)
+  equal(product_state.load(clocks:export()):clock(), next_clock)
+  local exported = clocks:clock()
+  exported.fraction, exported.rate, exported.paused = 0.9, 999, false
+  equal(clocks:clock(), next_clock)
+  local restored = product_state.load(clocks:export())
+  next_clock.logical_time = 99
+  assert(restored:clock().logical_time == 7)
+end
+local valid = clocks:export()
+local invalid = {
+  fraction={-1, 1, 0/0, math.huge, -math.huge, false, "0.5", {}},
+  rate={-1, 1000.01, 0/0, math.huge, -math.huge, false, "24", {}},
+  paused={0, 1, "false", {}},
+}
+for field, values in pairs(invalid) do
+  for _, value in ipairs(values) do
+    local bad = {}
+    for key, item in pairs(legacy) do bad[key] = item end
+    bad[field] = value
+    fails(function() clocks:set_clock(bad) end, "invalid clock " .. field)
+    equal(clocks:export(), valid)
+    local snapshot = clocks:export()
+    snapshot.clock = bad
+    fails(function() product_state.load(snapshot) end, "invalid clock " .. field)
+    assert(snapshot.clock[field] == value or value ~= value)
+  end
+end
+-- Replacing an extended clock with a legacy clock removes the optional fields.
+clocks:set_clock(legacy)
+equal(clocks:clock(), legacy)
+clocks:set_clock(nil)
+assert(clocks:clock() == nil and product_state.load(clocks:export()):clock() == nil)
+fails(function() interrupted:set_clock(legacy) end, "frozen")
 print("product state tests passed")

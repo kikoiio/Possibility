@@ -1,0 +1,21 @@
+{
+  "requests": 36,
+  "reflection_calls": 9,
+  "durable_beliefs": 9,
+  "retrieved_beliefs": 9,
+  "actors": [
+    "alice",
+    "bob",
+    "cora"
+  ],
+  "resumed_actors": 3,
+  "runs": [
+    "product.1793348078.3857",
+    "product.1793348275.4123"
+  ],
+  "usage": {
+    "input_tokens": 80198.0,
+    "output_tokens": 2197.0,
+    "total_tokens": 82395.0
+  }
+}

@@ -40,8 +40,24 @@ local function clock(value)
   integer(value.logical_time, 'clock logical_time')
   integer(value.engine_time, 'clock engine_time')
   integer(value.saved_wall_time, 'clock saved_wall_time')
-  return {version=1, logical_time=value.logical_time, engine_time=value.engine_time,
+  local result = {version=1, logical_time=value.logical_time, engine_time=value.engine_time,
     saved_wall_time=value.saved_wall_time}
+  -- Optional v1 extensions: do not fill defaults into legacy checkpoints.
+  if value.fraction ~= nil then
+    assert(type(value.fraction) == 'number' and value.fraction == value.fraction
+      and value.fraction >= 0 and value.fraction < 1, 'invalid clock fraction')
+    result.fraction = value.fraction
+  end
+  if value.rate ~= nil then
+    assert(type(value.rate) == 'number' and value.rate == value.rate
+      and value.rate >= 0 and value.rate <= 1000, 'invalid clock rate')
+    result.rate = value.rate
+  end
+  if value.paused ~= nil then
+    assert(type(value.paused) == 'boolean', 'invalid clock paused')
+    result.paused = value.paused
+  end
+  return result
 end
 local function validate(value)
   assert(type(value) == 'table' and value.format == 'wispiva-product-state' and value.version == 1,

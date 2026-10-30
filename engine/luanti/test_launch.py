@@ -1,4 +1,6 @@
 import subprocess
+import copy
+import json
 import sys
 import tempfile
 import time
@@ -6,6 +8,8 @@ import unittest
 from pathlib import Path
 
 from engine.luanti.world_session import WorldSession
+from engine.luanti.launch import _verify_product_checkpoint
+from engine.luanti.recovery_journal import MARKER_FILE, RecoveryRequired
 
 
 SCRIPT = Path(__file__).with_name('launch.py')
@@ -47,8 +51,41 @@ class LauncherTests(unittest.TestCase):
                 'raise SystemExit(7)',
             ], cwd=Path(__file__).resolve().parents[2])
             self.assertEqual(result.returncode, 7)
+            self.assertTrue((world / MARKER_FILE).is_file())
+            retry = subprocess.run([
+                sys.executable, '-B', str(SCRIPT), '--world', str(world), '--',
+                sys.executable, '-c', 'raise SystemExit(0)',
+            ], capture_output=True)
+            self.assertNotEqual(retry.returncode, 0)
+            self.assertIn(b'requires recovery', retry.stderr)
             with WorldSession(world):
                 pass
+
+    def test_product_cleanup_requires_complete_persisted_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp)
+            (world / 'mod_storage').mkdir()
+            (world / 'map.sqlite').write_bytes(b'fixture-map')
+            state = {'world_id': 'w', 'phase': 'READY', 'clock': {'logical_time': 7},
+                     'components': {'memory': 1, 'events': 1}}
+            fields = {'product_state': json.dumps(state),
+                      'agent_state': json.dumps({'long_term': {'records': [{}]},
+                                                 'world_events': {'events': [{}]}}),
+                      'environment_state': json.dumps({'time': 7}), 'product_active_run': ''}
+            path = world / 'mod_storage/society'
+            path.write_text(json.dumps(fields))
+            _verify_product_checkpoint(world, 'w')
+            for key, value in [('phase', 'PREPARING'), ('world_id', 'other'),
+                               ('clock', {'logical_time': 8}), ('pending', {'id': 'p'}),
+                               ('components', {'memory': 2, 'events': 1})]:
+                bad = copy.deepcopy(state)
+                bad[key] = value
+                path.write_text(json.dumps({**fields, 'product_state': json.dumps(bad)}))
+                with self.assertRaises(RecoveryRequired):
+                    _verify_product_checkpoint(world, 'w')
+            path.write_text(json.dumps({**fields, 'product_active_run': 'unfinished'}))
+            with self.assertRaises(RecoveryRequired):
+                _verify_product_checkpoint(world, 'w')
 
 
 if __name__ == '__main__':
