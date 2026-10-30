@@ -224,6 +224,26 @@ def correct_action(action, expected):
             and {key: value for key, value in action.items() if key != 'why'} == expected)
 
 
+def memory_evidence_selected(case, entries):
+    """Report whether the selected prompt evidence contains the task's answer.
+
+    This is a boolean diagnostic only; neither the expected answer nor memory
+    text is copied into evaluation records.
+    """
+    if case.task == 'source_attribution':
+        target = case.expected['target']
+        return any(isinstance(entry, dict)
+                   and isinstance(entry.get('source'), dict)
+                   and entry['source'].get('id') == target
+                   and isinstance(entry.get('text'), str)
+                   and 'amber cache location is' in entry['text'] for entry in entries)
+    answer = case.expected.get('text')
+    if not isinstance(answer, str):
+        return False
+    return any(isinstance(entry, dict) and isinstance(entry.get('text'), str)
+               and answer in entry['text'] for entry in entries)
+
+
 def score_details(action, expected, oracle=None):
     """Classify an adapter-validated action using only the private Case oracle.
 
@@ -466,6 +486,8 @@ def task_suite(lua, seeds, *, capacity=16, max_entries=2, max_chars=512,
                       goal_sha256=digest(case.goal), context_sha256=digest(context),
                       selected_memory_sha256=digest(selection['entries']),
                       selected_entries=len(selection['entries']),
+                      memory_evidence_selected=memory_evidence_selected(
+                          case, selection['entries']),
                       serialized_chars=selection['serialized_chars'],
                       stored_entries=selection['stored_entries'])
         records.append(record)

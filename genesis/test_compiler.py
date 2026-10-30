@@ -20,6 +20,8 @@ class CompilerTests(unittest.TestCase):
             with self.subTest(count=count):
                 d = with_actors(count)
                 plan = compile_plan(d)
+                self.assertEqual(plan['public']['title'], d['title'])
+                self.assertEqual(plan['public']['description'], d['description'])
                 self.assertEqual(len(plan['public']['actors']), count)
                 self.assertEqual([a['ordinal'] for a in plan['public']['actors']], list(range(count)))
                 points = [tuple(a['position'].values()) for a in plan['public']['actors']]

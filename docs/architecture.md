@@ -7,7 +7,7 @@
 | 组件 | 位置 | 当前能力和限制 |
 | --- | --- | --- |
 | Luanti 运行时 | [runtime/bootstrap.sh](../engine/luanti/runtime/bootstrap.sh) | 从系统软件源下载并解包引擎和 Minetest Game 到项目内 `.runtime/`，记录哈希；没有锁定未来软件包版本。 |
-| 实体与规则调度 | [engine/luanti/mod/society/init.lua](../engine/luanti/mod/society/init.lua)、[policy.lua](../engine/luanti/mod/society/policy.lua)、[cognition/navigation.lua](../cognition/navigation.lua) | 服务端实体、有限 BFS 移动、标记、接触与分帧决策；产品世界启动时读取持久起源 manifest，按空间投影生成地点、连接和角色起点，provider 请求只发送当前角色的 `wispiva.model-input` envelope。导航会在每次移动前回读地面、身体空间、墙体和地图节点变化；仍不实现普通生存游戏的碰撞、跳跃或第一人称视觉。 |
+| 实体与规则调度 | [engine/luanti/mod/society/init.lua](../engine/luanti/mod/society/init.lua)、[policy.lua](../engine/luanti/mod/society/policy.lua)、[cognition/navigation.lua](../cognition/navigation.lua) | 服务端实体、有限 BFS 移动、标记、接触与分帧决策；产品世界启动时读取持久起源 manifest，按空间投影生成地点、连接和角色起点，provider 请求只发送当前角色的 `wispiva.model-input` envelope。已将经确认草稿的公开标题和描述作为 `genesis.public` fact 注入每个角色的 envelope，原始 intent、私有 goal 和其他角色记忆不通过该记录共享。导航会在每次移动前回读地面、身体空间、墙体和地图节点变化；仍不实现普通生存游戏的碰撞、跳跃或第一人称视觉。 |
 | 观察与动作 | [cognition/](../cognition/README.md) | 球形范围观察、空间索引、节点缓存、资源采集与放置、资源回读；无视线遮挡，不是第一人称视觉。资源操作限于实验节点。 |
 | 私有记忆与世界事件 | [cognition/memory.lua](../cognition/memory.lua)、[long_term_memory.lua](../cognition/long_term_memory.lua)、[world_events.lua](../cognition/world_events.lua) | 每角色有短期记忆、长期 L0/L1/L2 记录、消息 inbox 和上次动作反馈；产品模型输入明确分为事实、本人经历、传闻和未知，均带来源与 audience。实际行动先进入按运行命名空间和操作键幂等的 `world-event:N` 账本，正常停服 checkpoint 保存事件、记忆、消息与角色状态。真实 provider 的独立 L2 校验已在 Actions 41010708756 通过；当前代码新增主循环定期触发、仅本人持久 L1 来源写回，以及独立 belief 槽位选择最新主题版本，集成云端验收已由 Actions 41025066379 通过；崩溃窗口和地图原子提交仍未完成。 |
 | 模型桥接 | [model/](../model/README.md) | Lua 将模型输入 envelope 和兼容上下文提交到私有文件队列，Python worker 在 provider 调用前校验世界、角色、知识分类、来源和 audience，并只发送 envelope；兼容上下文只留在本地做动作结果校验。并非千人模型调度器。夹具和真实模型分开记录。 |
@@ -27,7 +27,7 @@
 | 三维世界中观察 | 有临时 Luanti 实体展示原型 | 可用场景、真实行走、清晰互动、视觉质量和用户体验尚未验收。 |
 | 自主角色与环境后果 | 小规模真实模型闭环、持久起点、空间投影、有限资源动作和一个逻辑时间资源过程 | 丰富行动、真实寻路、地图共同提交、可持续生活和真实互动质量尚未证明。 |
 | 主观记忆 | 短期经历与可选长期 L0/L1 记录，正常停服保留恢复；检索含数字 ID、词项和汉字相邻二元组匹配 | 前史导入、主观解释、反思质量、语义检索、知识传播、崩溃恢复及分岔继承。 |
-| 起源到模型输入 | 产品 Lua 主循环生成 `wispiva.model-input` v1，注入当前角色的 role、goal、私有种子、选择后的经历、消息、当前观察、库存、可行动作和上次执行反馈；Python bridge 在 provider 前拒绝越权或缺来源记录，并排除 legacy 私有字段。真实模型产品运行已验证该 envelope、私有 audience、消息来源和 source-grounded L2 输入。并非千人模型调度器。 | Python `origin_context.py` 仍是离线旧入口；两种 handoff 尚未统一，认证、观察真实性、执行时可达性、反思写回恢复和大规模真实模型行为仍需单独验收。 |
+| 起源到模型输入 | 产品 Lua 主循环生成 `wispiva.model-input` v1，注入当前角色的 role、goal、私有种子、选择后的经历、消息、当前观察、库存、可行动作和上次执行反馈；另向每个 envelope 加入从已确认公开投影派生的共享世界标题／描述 fact。Python bridge 在 provider 前拒绝越权或缺来源记录，并排除 legacy 私有字段。真实模型产品运行已验证该 envelope、私有 audience、消息来源和 source-grounded L2 输入；共享公开 fact 的新增集成待 Actions 验证。并非千人模型调度器。 | Python `origin_context.py` 仍是离线旧入口；两种 handoff 尚未统一，认证、观察真实性、执行时可达性、反思写回恢复和大规模真实模型行为仍需单独验收。 |
 | 持续时间与恢复 | 产品服务器支持 `--serve`，正常停止保存逻辑时间、环境、角色、消息、事件和记忆，`--resume` 不补算离线时间；启动时发现 pending/active marker 会拒绝继续。 | 暂停/恢复控制面、真实断电窗口、地图与 mod storage 的共同回滚、观察者重连体验。 |
 | 数千至万级 | 有规则实体／感知负载及小批真实模型证据 | 实际模型并发、决策频率、成本、长期运行与社会行为；不可用规则容量代替。 |
 

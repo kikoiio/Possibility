@@ -14,6 +14,11 @@ def checkpoint(world):
 def audit(world, before=None):
     world = Path(world)
     saved = checkpoint(world)
+    manifest = json.loads((world / 'private/wispiva-origin.json').read_text())
+    public = manifest['public']
+    expected_world_text = 'World: ' + public['title']
+    if public.get('description'):
+        expected_world_text += '. ' + public['description']
     records = {row['id']: row for row in saved['long_term']['records']}
     beliefs = {key: row for key, row in records.items() if row['layer'] == 'L2'}
     assert beliefs, 'no durable L2 records'
@@ -27,6 +32,12 @@ def audit(world, before=None):
         envelope = context['model_input']
         validate(envelope)
         actor = envelope['actor']['id']
+        public_genesis = [row for row in envelope['knowledge']['facts']
+                          if row['source']['kind'] == 'genesis.public']
+        assert len(public_genesis) == 1, 'missing shared public world context'
+        assert public_genesis[0]['source']['id'] == envelope['request']['origin_event_id']
+        assert public_genesis[0]['text'] == expected_world_text
+        assert public_genesis[0]['access'] == {'scope': 'public', 'audience': [actor]}
         owner = str(int(envelope['actor']['runtime_id']))
         actor_owners[actor] = owner
         runs.setdefault(path.parent.name, []).append(envelope)

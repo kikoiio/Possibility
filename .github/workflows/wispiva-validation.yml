@@ -50,6 +50,7 @@ jobs:
               lua5.1 test_navigation.lua
             )
           lua5.1 engine/luanti/mod/society/test_world_projection.lua
+          lua5.1 engine/luanti/mod/society/test_genesis_context.lua
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v
           python3 -B -m unittest -v engine/luanti/test_control.py
           python3 -B -m unittest -v validation/test_model_load.py validation/test_product_memory_audit.py
@@ -657,7 +658,7 @@ jobs:
           if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
           python3 -B validation/luanti/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
       - name: Controlled memory tasks and bounded concurrency probes
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') && github.ref_name != 'validation/luanti-memory-selector-20261030' }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
@@ -666,8 +667,19 @@ jobs:
           mkdir -p memory-results
           python3 -B model/memory_eval.py --output memory-results/tasks.json
           python3 -B model/memory_eval.py --probe --output memory-results/concurrency.json
+      - name: Memory evidence selection diagnostic
+        if: ${{ github.ref_name == 'validation/luanti-memory-selector-20261030' }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p memory-results
+          python3 -B model/memory_eval.py --output memory-results/tasks.json
+          python3 -B validation/summarize_memory_artifact.py \
+            memory-results/tasks.json --output memory-results/public-summary.json
       - name: Soft callback budget tradeoff
-        if: ${{ (startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-')) || startsWith(github.ref_name, 'validation/luanti-budget-') }}
+        if: ${{ ((startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') && github.ref_name != 'validation/luanti-memory-selector-20261030') || startsWith(github.ref_name, 'validation/luanti-budget-')) }}
         run: |
           python3 -B validation/luanti/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
       - name: Model-driven agent loop
@@ -958,7 +970,7 @@ jobs:
       - name: Summarize observed results
         if: always()
         run: |
-          python3 -B validation/luanti/analysis/summarize.py --compact --input evidence/luanti/agent --output observed-results.json
+          python3 -B validation/luanti/analysis/summarize.py --compact --public --input evidence/luanti/agent --output observed-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -968,18 +980,7 @@ jobs:
             observed-results.json
             run-metadata.json
             scale-results/
-            evidence/luanti/agent/ci-cognition.*
-            evidence/luanti/agent/ci-model.*
-            evidence/luanti/agent/ci-reset.*
-            evidence/luanti/agent/ci-preserve.*
-            evidence/luanti/agent/ci-invalid-retry.*
-            evidence/luanti/agent/ci-agent-*
-            evidence/luanti/agent/ci-resource.*
-            evidence/luanti/agent/ci-memory-*
             genesis-results/results.json
-            evidence/luanti/agent/ci-large-*
-            evidence/luanti/agent/ci-repeat-*
-            evidence/luanti/agent/ci-opt-*
             unit-tests.log
           if-no-files-found: warn
           retention-days: 14

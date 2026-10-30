@@ -93,7 +93,7 @@ class ProductMemoryFixture:
                 'goal': {'text': 'learn', 'source': {'kind': 'genesis.goal', 'id': 'goal:alice'}},
                 'permissions': {'read_scopes': ['public', 'private'], 'allowed_actions': ['inspect']},
             },
-            'knowledge': {'facts': [], 'experiences': [], 'rumors': [], 'unknowns': [],
+            'knowledge': {'facts': [self.public_world_fact('alice')], 'experiences': [], 'rumors': [], 'unknowns': [],
                           'reflections': []},
             'current': {'observation': {}, 'inventory': {}, 'affordances': {}},
             'feedback': {'available': False},
@@ -112,6 +112,12 @@ class ProductMemoryFixture:
             }
         return value
 
+    @staticmethod
+    def public_world_fact(actor):
+        return {'id': 'genesis:world:genesis:1', 'text': 'World: River valley. Shared public setting.',
+                'source': {'kind': 'genesis.public', 'id': 'genesis:1'},
+                'epistemic': 'fact', 'access': {'scope': 'public', 'audience': [actor]}}
+
     def resume(self):
         before = self.root / 'before.json'
         before.write_text(json.dumps(self.saved))
@@ -125,6 +131,12 @@ class ProductMemoryFixture:
     def write(self):
         # Luanti's mod storage is JSON containing the serialized checkpoint string.
         self.storage.write_text(json.dumps({'agent_state': json.dumps(self.saved)}))
+        private = self.world / 'private'
+        private.mkdir(parents=True, exist_ok=True)
+        (private / 'wispiva-origin.json').write_text(json.dumps({
+            'origin_event_id': 'genesis:1',
+            'public': {'title': 'River valley', 'description': 'A shared public setting.'},
+        }))
         for (run, request_id), value in self.requests.items():
             directory = self.world / 'private/model-audit' / run
             directory.mkdir(parents=True, exist_ok=True)
@@ -166,6 +178,10 @@ class ProductMemoryAuditTests(unittest.TestCase):
         self.assertLess(set(cited), {row['id'] for row in selected})
         self.assertEqual(self.run_audit()['reflection_calls'], 1)
 
+    def test_missing_shared_public_world_context_is_rejected(self):
+        self.fixture.requests[('run-a', 1)]['context']['model_input']['knowledge']['facts'] = []
+        self.assert_rejected()
+
     def test_resume_preserves_history_belief_and_first_action_feedback(self):
         before = self.fixture.resume()
         result = self.run_audit(before)
@@ -188,6 +204,7 @@ class ProductMemoryAuditTests(unittest.TestCase):
         envelope = self.fixture.requests[('run-a', 2)]['context']['model_input']
         envelope['actor'].update(id='bob', runtime_id=1, name='Bob')
         envelope['request']['actor_id'] = 'bob'
+        envelope['knowledge']['facts'][0]['access']['audience'] = ['bob']
         envelope['knowledge']['reflections'][0]['access']['audience'] = ['bob']
         self.assert_rejected()
 

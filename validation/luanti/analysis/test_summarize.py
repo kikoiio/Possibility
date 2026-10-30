@@ -75,6 +75,19 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(run["summary"]["throughput"]["source_span_seconds"], 10)
         self.assertEqual(run["summary"]["throughput"]["model_actions_per_second"], 0.1)
 
+    def test_public_summary_removes_raw_messages_and_free_text_configuration(self):
+        self.write("nested/retries.run1.log", self.fixture("retries.txt"))
+        self.write("nested/retries.run1.report.txt", self.fixture("report.txt"))
+        result = summarize.summarize(self.root, compact=True, public=True)
+        encoded = json.dumps(result, ensure_ascii=False)
+        run = result["runs"][0]
+        self.assertNotIn("raw_records", run)
+        self.assertNotIn("report_raw", run)
+        self.assertNotIn("config", run["report"])
+        self.assertNotIn("hello latency_ms=999", encoded)
+        self.assertEqual(result["totals"]["messages"], 1)
+        self.assertEqual(result["totals"]["event_counts"]["message-text"], 1)
+
     def test_missing_metadata_unknown_usage_and_invalid_samples(self):
         self.write("old.events", self.fixture("missing.txt"))
         result = summarize.summarize(self.root)
