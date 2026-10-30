@@ -23,7 +23,7 @@ jobs:
       - name: Install runtime
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti luanti-server luanti-game-minetest xvfb
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git procps python3 lua5.1 luanti luanti-server luanti-game-minetest xvfb imagemagick
       - uses: actions/checkout@v4
       - name: Unit tests
         run: |
@@ -277,7 +277,8 @@ jobs:
       - name: Verify persistent product world client acceptance
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
-          engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 60
+          engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 60 \\
+            --screenshot "$GITHUB_WORKSPACE/.ci-product/view-acceptance.png"
       - name: Run real model product world with private memory audit
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         env:
@@ -1001,5 +1002,6 @@ jobs:
             scale-results/
             genesis-results/results.json
             unit-tests.log
+            .ci-product/view-acceptance.png
           if-no-files-found: warn
           retention-days: 14
