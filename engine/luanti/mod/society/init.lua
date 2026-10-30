@@ -9,6 +9,7 @@ local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.l
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
 local logical_clock = dofile(minetest.get_modpath("society") .. "/logical_clock.lua")
 local model_envelope = dofile(minetest.get_modpath("society") .. "/model_envelope.lua")
+local genesis_context = dofile(minetest.get_modpath("society") .. "/genesis_context.lua")
 local reflection_runtime = dofile(minetest.get_modpath("society") .. "/reflection_runtime.lua")
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
@@ -933,12 +934,16 @@ local function decide_and_act(self)
 						list[#list + 1] = record
 					end
 				end
+				add_unique(facts, genesis_context.public_world_fact(
+					genesis_manifest, self._genesis.actor_id))
 				for _, node in ipairs(context.visible_nodes or {}) do
-					add_unique(facts, {id = string.format("observation:%s:%d:%d:%d", self._id,
-						fp(node.pos.x), fp(node.pos.y), fp(node.pos.z)),
-						text = "I can currently observe " .. node.name .. " nearby.",
-						source = {kind = "engine.sensor", id = "observation:" .. tostring(self._id)},
-						scope = "public", audience = {self._genesis.actor_id}, captured_at = world_time()})
+					if #facts < 32 then
+						add_unique(facts, {id = string.format("observation:%s:%d:%d:%d", self._id,
+							fp(node.pos.x), fp(node.pos.y), fp(node.pos.z)),
+							text = "I can currently observe " .. node.name .. " nearby.",
+							source = {kind = "engine.sensor", id = "observation:" .. tostring(self._id)},
+							scope = "public", audience = {self._genesis.actor_id}, captured_at = world_time()})
+					end
 				end
 				for _, memory in ipairs(selected_memory or {}) do
 					if not seed_ids[memory.id] and memory.layer ~= "L2" then
