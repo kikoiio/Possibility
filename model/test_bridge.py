@@ -293,11 +293,14 @@ class BridgeReflectionTests(unittest.TestCase):
             request = root / 'request-7.json'
             request.write_text(json.dumps({'id': 7, 'context': self.context()}))
             runner = mock.Mock(return_value=result)
-            spool_worker.process_one(root, request, 1, runner=runner)
+            with mock.patch.object(spool_worker.time, 'sleep'):
+                spool_worker.process_one(root, request, 1, runner=runner)
             response = json.loads((root / 'response-7.json').read_text())
-        self.assertEqual(response['attempts'][0]['reflection_audit'], result['reflection_audit'])
-        self.assertEqual(response['attempts'][0]['error'], 'rate_limited')
-        runner.assert_called_once()
+        self.assertEqual([attempt['reflection_audit'] for attempt in response['attempts']],
+                         [result['reflection_audit']] * 3)
+        self.assertEqual([attempt['error'] for attempt in response['attempts']],
+                         ['rate_limited'] * 3)
+        self.assertEqual(runner.call_count, 3)
 
     def test_decision_exception_keeps_only_this_requests_reflection_audit(self):
         source = io.StringIO(json.dumps({'id': 7, 'context': self.context()}) + '\n{broken\n')
