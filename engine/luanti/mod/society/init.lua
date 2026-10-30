@@ -8,6 +8,7 @@ local persistence = dofile(minetest.get_modpath("society") .. "/persistence.lua"
 local resources = dofile(minetest.get_modpath("society") .. "/resource_actions.lua")
 local action_context = dofile(minetest.get_modpath("society") .. "/action_context.lua")
 local model_envelope = dofile(minetest.get_modpath("society") .. "/model_envelope.lua")
+local reflection_runtime = dofile(minetest.get_modpath("society") .. "/reflection_runtime.lua")
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
 local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
@@ -61,6 +62,9 @@ local MODEL = cfg("society_model", "false") == "true"
 local SEED_RESOURCES = cfg("society_seed_resources", "false") == "true"
 local MODEL_MEMORY = cfg("society_model_memory", "true") == "true"
 local LONG_TERM = cfg("society_long_term_memory", "false") == "true"
+local REFLECTION_EVERY = tonumber(cfg("society_reflection_every", "0"))
+assert(REFLECTION_EVERY and REFLECTION_EVERY >= 0 and REFLECTION_EVERY == math.floor(REFLECTION_EVERY),
+	"invalid society_reflection_every")
 local LOG_MESSAGES = cfg("society_log_messages", "false") == "true"
 local GOAL = cfg("society_goal", "Explore, gather resources, build, and interact with nearby agents.")
 local VIEW_GUIDE = cfg("society_view_guide", "false") == "true"
@@ -846,7 +850,7 @@ local function decide_and_act(self)
 			context.local_actions = action_context.describe(minetest, pos,
 				context.visible_nodes, context.inventory, context.bounds)
 			if WORLD_PRODUCT then
-				local facts, experiences, rumors, unknowns = {}, {}, {}, {}
+				local facts, experiences, rumors, unknowns, reflections = {}, {}, {}, {}, {}
 				local seed_ids, knowledge_ids = {}, {}
 				for _, seed in ipairs(self._genesis.memory_seeds or {}) do seed_ids[seed.seed_id] = true end
 				local function add_unique(list, record)
@@ -863,7 +867,7 @@ local function decide_and_act(self)
 						scope = "public", audience = {self._genesis.actor_id}, captured_at = minetest.get_gametime()})
 				end
 				for _, memory in ipairs(selected_memory or {}) do
-					if not seed_ids[memory.id] then
+					if not seed_ids[memory.id] and memory.layer ~= "L2" then
 						local kind = memory.classification == "rumor" and "rumor"
 							or (memory.classification == "unknown" and "unknown" or "experience")
 						local source = memory.source or {}
@@ -891,6 +895,11 @@ local function decide_and_act(self)
 						text = message.text, source = {kind = "agent_message", id = message.message_id or tostring(message.from)},
 						scope = "private", audience = {self._genesis.actor_id}, captured_at = message.time})
 				end
+				for _, belief in ipairs(reflection_runtime.beliefs(history, tostring(self._id))) do
+					add_unique(reflections, {id = belief.id, text = belief.text,
+						source = {kind = "reflection", id = belief.source.id, revision = belief.version},
+						captured_at = belief.time, scope = "private", audience = {self._genesis.actor_id}})
+				end
 				local feedback = {available = false}
 				if self._last_action then
 					feedback = {available = true, attempt_id = self._last_action.attempt_id,
@@ -908,11 +917,15 @@ local function decide_and_act(self)
 						goal_source = {kind = "genesis.goal", id = genesis_manifest.origin_event_id .. ":" .. self._genesis.actor_id}},
 					permissions = {read_scopes = {"world.public", "self.experience", "self.memory", "direct.messages"},
 						allowed_actions = {"inspect", "wander", "advance", "approach", "say", "gather", "build"}},
-					facts = facts, experiences = experiences, rumors = rumors, unknowns = unknowns,
+					facts = facts, experiences = experiences, rumors = rumors, unknowns = unknowns, reflections = reflections,
 					observation = context.observation, inventory = context.inventory,
 					affordances = context.local_actions, feedback = feedback})
 				model_envelope.validate(envelope)
 				context.model_input = envelope
+				if REFLECTION_EVERY > 0 and self._decisions > 0 and self._decisions % REFLECTION_EVERY == 0 then
+					context.reflection_input = reflection_runtime.request(history, tostring(self._id),
+						genesis_manifest.world_id, self._genesis.actor_id, "current goals and relationships")
+				end
 			end
 			if GENESIS_PREVIEW then context.preview_unsupported_actions = {"mark", "gather", "build"} end
 			local path = SPOOL .. "/request-" .. request_id .. ".json"
@@ -932,13 +945,13 @@ local function decide_and_act(self)
 					return
 				end
 			end
-			self._pending = {id = request_id, started = minetest.get_us_time()}
+			self._pending = {id = request_id, started = minetest.get_us_time(), reflection = context.reflection_input}
 			self._inbox = {}
 			ev("ev=model-request agent=%d request=%d", self._id, request_id)
 			return
 		end
 		local path = SPOOL .. "/response-" .. self._pending.id .. ".json"
-		if minetest.get_us_time() - self._pending.started > (COUNT * 135 + 30) * 1000000 then
+		if minetest.get_us_time() - self._pending.started > (COUNT * 270 + 30) * 1000000 then
 			os.remove(path)
 			ev("fail=model-timeout agent=%d request=%d", self._id, self._pending.id)
 			S.failed = "model-timeout"
@@ -963,6 +976,7 @@ local function decide_and_act(self)
 			end
 		end
 		os.remove(path)
+		local reflection_request = self._pending.reflection
 		self._pending = nil
 		if result and type(result.attempts) == "table" then
 			for n, attempt in ipairs(result.attempts) do
@@ -983,6 +997,24 @@ local function decide_and_act(self)
 			S.failed = "model-response"
 			summary_and_stop()
 			return
+		end
+		if reflection_request or result.reflection ~= nil then
+			local accepted, belief = pcall(function()
+				assert(reflection_request, "unsolicited reflection")
+				return reflection_runtime.apply(history, tostring(self._id), reflection_request,
+					result.reflection, minetest.get_gametime(), EVENT_NAMESPACE .. ":request:" .. tostring(id))
+			end)
+			if not accepted then
+				ev("fail=model-reflection agent=%d request=%d", self._id, id)
+				S.failed = "model-reflection"
+				summary_and_stop()
+				return
+			end
+			local audit = result.reflection_audit or {}
+			local usage = audit.usage or {}
+			ev("ev=model-reflection agent=%d request=%d version=%d sources=%d latency_ms=%s input_tokens=%s output_tokens=%s",
+				self._id, id, belief.version, #belief.experiences, tostring(audit.latency_ms or "unknown"),
+				tostring(usage.input_tokens or "unknown"), tostring(usage.output_tokens or "unknown"))
 		end
 		action = result.action
 		local valid = action.kind == "inspect" or action.kind == "mark"

@@ -1,7 +1,7 @@
 -- Lua 5.1 model-input projection.  The executor still owns final action
 -- validation; this module makes the model's knowledge boundary explicit.
 local M = {}
-local KINDS = {fact=true, experience=true, rumor=true, unknown=true}
+local KINDS = {fact=true, experience=true, rumor=true, unknown=true, belief=true}
 local SCOPES = {public=true, private=true, direct=true, system=true}
 local STATUSES = {succeeded=true, failed=true, rejected=true, stale=true, unknown=true}
 
@@ -110,6 +110,10 @@ function M.build(input)
   add(knowledge.experiences, input.experiences, input.actor_id, 'experience', 32, seen)
   add(knowledge.rumors, input.rumors, input.actor_id, 'rumor', 32, seen)
   add(knowledge.unknowns, input.unknowns, input.actor_id, 'unknown', 32, seen)
+  if input.reflections ~= nil then
+    knowledge.reflections = {}
+    add(knowledge.reflections, input.reflections, input.actor_id, 'belief', 8, seen)
+  end
   local envelope = {
     schema='wispiva.model-input', version=1,
     request={decision_id=input.decision_id, world_id=input.world_id, actor_id=input.actor_id,
@@ -141,7 +145,7 @@ function M.validate(value)
     source(value.actor[field].source)
   end
   permissions(value.actor.permissions)
-  local epistemic = {facts='fact', experiences='experience', rumors='rumor', unknowns='unknown'}
+  local epistemic = {facts='fact', experiences='experience', rumors='rumor', unknowns='unknown', reflections='belief'}
   local seen = {}
   for _, kind in ipairs({'facts', 'experiences', 'rumors', 'unknowns'}) do
     assert(type(value.knowledge[kind]) == 'table', 'invalid knowledge section')
@@ -149,6 +153,17 @@ function M.validate(value)
     for _, record in ipairs(value.knowledge[kind]) do
       assert(record.epistemic == epistemic[kind], 'knowledge kind mismatch')
       local projected = item(record, request.actor_id, epistemic[kind])
+      assert(not seen[projected.id], 'duplicate knowledge id')
+      seen[projected.id] = true
+    end
+  end
+  if value.knowledge.reflections ~= nil then
+    array(value.knowledge.reflections, 'reflection records', 8)
+    for _, record in ipairs(value.knowledge.reflections) do
+      assert(record.epistemic == 'belief', 'reflection must be a belief')
+      local projected = item(record, request.actor_id, 'belief')
+      assert(projected.source.kind == 'reflection' and projected.source.revision ~= nil,
+        'reflection version required')
       assert(not seen[projected.id], 'duplicate knowledge id')
       seen[projected.id] = true
     end

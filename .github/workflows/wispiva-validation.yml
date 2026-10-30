@@ -40,6 +40,8 @@ jobs:
               lua5.1 test_long_term_memory.lua
               lua5.1 test_long_term_integration.lua
               lua5.1 test_reflection_apply.lua
+              lua5.1 test_reflection_runtime.lua
+              lua5.1 test_logical_clock.lua
               lua5.1 test_world_events.lua
               lua5.1 test_environment.lua
               lua5.1 test_product_state.lua
@@ -257,7 +259,7 @@ jobs:
             sleep 1
           done
           ! pgrep -f 'luantiserver' >/dev/null 2>&1
-          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 6 --interval 1 --seconds 600 --audit-model
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 8 --interval 1 --seconds 1200 --reflection-every 3 --audit-model
           python3 -B - <<'PY'
           import json
           from pathlib import Path
@@ -266,8 +268,8 @@ jobs:
           assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log, 'no real model action was recorded'
           assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
           audit = root / 'private/model-audit'
-          requests = sorted(audit.glob('request-*.json'))
-          responses = sorted(audit.glob('response-*.json'))
+          requests = sorted(audit.rglob('request-*.json'))
+          responses = sorted(audit.rglob('response-*.json'))
           assert len(requests) >= 6 and len(responses) >= 6, (len(requests), len(responses))
           actor_by_runtime = {}
           request_rows = []
@@ -326,7 +328,7 @@ jobs:
                             'delivered_messages': delivered_messages,
                             'pending_messages': pending_messages}, indent=2))
           PY
-      - name: Run source-grounded L2 reflection
+      - name: Verify live reflection writeback and resume
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
@@ -334,50 +336,11 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           set -euo pipefail
-          python3 -B - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          from model.adapter import Config
-          from model.reflection import build_input, reflect
-
-          root = Path('.ci-product-model/world')
-          requests = sorted((root / 'private/model-audit').glob('request-*.json'))
-          chosen = None
-          for path in reversed(requests):
-              envelope = json.loads(path.read_text())['context']['model_input']
-              rows = envelope['knowledge'].get('experiences') or []
-              if rows:
-                  chosen = (envelope, rows)
-                  break
-          assert chosen is not None, 'real model run produced no L1 experiences for reflection'
-          envelope, rows = chosen
-          request = build_input(
-              world_id=envelope['request']['world_id'],
-              actor_id=envelope['request']['actor_id'],
-              topic='shared resource',
-              experiences=[{
-                  'id': row['id'], 'text': row['text'], 'source': row['source'],
-                  'captured_at': row.get('captured_at'),
-                  'audience': row['access']['audience'],
-              } for row in rows])
-          result = reflect(Config.from_env(), request)
-          cited = set(result['reflection']['source_ids'])
-          assert cited and cited <= {row['id'] for row in request['experiences']}
-          output = root / 'private/model-audit/reflection-result.json'
-          output.write_text(json.dumps({
-              'actor_id': request['request']['actor_id'],
-              'topic': result['reflection']['topic'],
-              'text': result['reflection']['text'],
-              'source_ids': result['reflection']['source_ids'],
-              'audit': result['audit'],
-          }, ensure_ascii=False, indent=2), encoding='utf-8')
-          os.chmod(output, 0o600)
-          print(json.dumps({'actor_id': request['request']['actor_id'],
-                            'source_count': len(request['experiences']),
-                            'cited_count': len(cited),
-                            'usage': result['audit']['usage']}))
-          PY
+          root="$GITHUB_WORKSPACE/.ci-product-model"
+          python3 -B -m validation.product_memory_audit --world "$root/world" --output "$root/memory-first.json" --save-checkpoint "$root/before-resume.json"
+          cp "$root/world/private/product.log" "$root/first-run.log"
+          engine/luanti/run_product.sh --world "$root/world" --resume --decisions 4 --interval 1 --seconds 900 --reflection-every 3 --audit-model
+          python3 -B -m validation.product_memory_audit --world "$root/world" --before "$root/before-resume.json" --output "$root/memory-resumed.json"
       - name: Upload real model product evidence
         if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         uses: actions/upload-artifact@v4

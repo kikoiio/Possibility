@@ -23,6 +23,23 @@ def envelope():
 
 
 class ProductEnvelopeTests(unittest.TestCase):
+    def test_reflections_are_versioned_private_beliefs(self):
+        value = envelope()
+        value['knowledge']['reflections'] = [{
+            'id': 'reflection:alice:goals:2', 'text': 'I may ask for help.',
+            'epistemic': 'belief',
+            'source': {'kind': 'reflection', 'id': 'request:7', 'revision': 2},
+            'access': {'scope': 'private', 'audience': ['alice']}}]
+        self.assertTrue(validate(value))
+        for field, replacement in [('epistemic', 'experience'),
+                                   ('source', {'kind': 'reflection', 'id': 'request:7'}),
+                                   ('access', {'scope': 'private', 'audience': ['bob']})]:
+            old = value['knowledge']['reflections'][0][field]
+            value['knowledge']['reflections'][0][field] = replacement
+            with self.assertRaises(EnvelopeError):
+                validate(value)
+            value['knowledge']['reflections'][0][field] = old
+
     def test_valid_envelope(self):
         self.assertTrue(validate(envelope()))
 

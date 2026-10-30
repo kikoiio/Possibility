@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# --reflection-every N forms a private L2 belief every N decisions (default 3;
+# 0 disables it). --audit-model retains private input/output evidence per run.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,6 +14,7 @@ WORLD=""
 SECONDS_MAX=180
 DECISIONS=10
 INTERVAL=2
+REFLECTION_EVERY=3
 PORT=30078
 FIXTURE=0
 RESUME=0
@@ -25,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --seconds) SECONDS_MAX="$2"; shift 2 ;;
     --decisions) DECISIONS="$2"; shift 2 ;;
     --interval) INTERVAL="$2"; shift 2 ;;
+    --reflection-every) REFLECTION_EVERY="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --fake-model) FIXTURE=1; shift ;;
     --resume) RESUME=1; shift ;;
@@ -41,22 +45,25 @@ if [[ "$SERVE" -eq 1 ]]; then
   DECISIONS=0
 fi
 
+[[ "$REFLECTION_EVERY" =~ ^[0-9]+$ ]] || { echo "run_product.sh: --reflection-every must be a nonnegative integer" >&2; exit 2; }
 [[ -n "$WORLD" && -d "$WORLD" ]] || { echo "run_product.sh: --world must name an existing product world" >&2; exit 2; }
 [[ -x "$ENGINE" ]] || { echo "run_product.sh: engine unavailable: $ENGINE" >&2; exit 2; }
 [[ -f "$WORLD/wispiva-world-id" ]] || { echo "run_product.sh: missing world identity" >&2; exit 2; }
-mkdir -p "$WORLD/private/model-spool"
+namespace="product.$(date +%s).$$"
+spool="$WORLD/private/model-spool/$namespace"
+audit_dir="$WORLD/private/model-audit/$namespace"
+mkdir -p "$spool"
 if [[ "$AUDIT_MODEL" -eq 1 ]]; then
-  mkdir -p "$WORLD/private/model-audit"
-  chmod 700 "$WORLD/private/model-audit"
+  mkdir -p "$audit_dir"
+  chmod 700 "$WORLD/private/model-audit" "$audit_dir"
 fi
-chmod 700 "$WORLD/private" "$WORLD/private/model-spool"
+chmod 700 "$WORLD/private" "$WORLD/private/model-spool" "$spool"
 
 if pgrep -f 'luantiserver' >/dev/null 2>&1; then
   echo "run_product.sh: another luantiserver is running" >&2
   exit 2
 fi
 
-namespace="product.$(date +%s).$$"
 conf="$WORLD/private/.runtime.conf"
 log="$WORLD/private/product.log"
 worker_pid=""
@@ -73,7 +80,7 @@ server_map_save_interval = 1
 static_spawnpoint = (0,2,-20)
 society_world_product = true
 society_genesis_manifest = $WORLD/private/wispiva-origin.json
-society_spool = $WORLD/private/model-spool
+society_spool = $spool
 society_model = $([[ "$VISUAL_FIXTURE" -eq 1 ]] && echo false || echo true)
 society_cognition = $([[ "$VISUAL_FIXTURE" -eq 1 ]] && echo false || echo true)
 society_visual = true
@@ -88,17 +95,18 @@ society_max_decisions = $DECISIONS
 society_decide_interval = $INTERVAL
 society_event_namespace = $namespace
 society_model_audit = $([[ "$AUDIT_MODEL" -eq 1 ]] && echo true || echo false)
-society_model_audit_dir = $WORLD/private/model-audit
+society_model_audit_dir = $audit_dir
+society_reflection_every = $REFLECTION_EVERY
 EOF
 chmod 600 "$conf"
 
 if [[ "$VISUAL_FIXTURE" -eq 1 ]]; then
   :
 elif [[ "$FIXTURE" -eq 1 ]]; then
-  python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 --fixture > "$WORLD/private/worker.log" 2>&1 &
+  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 --fixture > "$WORLD/private/worker.log" 2>&1 &
   worker_pid=$!
 else
-  python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 > "$WORLD/private/worker.log" 2>&1 &
+  python3 -B "$ROOT/model/spool_worker.py" "$spool" --timeout 90 > "$WORLD/private/worker.log" 2>&1 &
   worker_pid=$!
 fi
 

@@ -12,7 +12,10 @@ import json
 import math
 from typing import Any, Callable, Mapping
 
-from . import adapter
+try:
+    from . import adapter
+except ImportError:  # direct worker script execution
+    import adapter
 
 MAX_EXPERIENCES = 16
 MAX_TEXT = 4096

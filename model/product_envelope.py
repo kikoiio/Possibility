@@ -129,7 +129,7 @@ def validate(value: Mapping[str, Any], *, max_bytes: int = MAX_ENVELOPE_BYTES) -
     _unique_strings(permissions['allowed_actions'])
 
     knowledge = value['knowledge']
-    _fields(knowledge, set(EPISTEMIC))
+    _fields(knowledge, set(EPISTEMIC), {'reflections'})
     seen: set[str] = set()
     for section, expected in EPISTEMIC.items():
         for record in _array(knowledge[section], MAX_RECORDS):
@@ -137,6 +137,11 @@ def validate(value: Mapping[str, Any], *, max_bytes: int = MAX_ENVELOPE_BYTES) -
             if record['id'] in seen:
                 raise EnvelopeError('invalid_model_input')
             seen.add(record['id'])
+    for record in _array(knowledge.get('reflections'), 8):
+        _knowledge_record(record, actor_id, 'belief')
+        if record['source']['kind'] != 'reflection' or 'revision' not in record['source'] or record['id'] in seen:
+            raise EnvelopeError('invalid_model_input')
+        seen.add(record['id'])
 
     current = value['current']
     _fields(current, {'observation', 'inventory', 'affordances'})

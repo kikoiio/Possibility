@@ -104,7 +104,8 @@ def process_one(directory, path, timeout, runner=run_bridge):
                     result = runner(request, directory / 'STOP', timeout)
                     attempts.append({'ok': result.get('ok') is True,
                                      'error': result.get('error'),
-                                     'audit': result.get('audit')})
+                                     'audit': result.get('audit'),
+                                     'reflection_audit': result.get('reflection_audit')})
                     if result.get('ok') is True or result.get('error') not in ('invalid_action', 'transport_error'):
                         break
                 result['attempts'] = attempts
@@ -123,8 +124,15 @@ def fake_runner(request, stop, timeout):
     inventory = context.get('inventory') or {}
     point = {'x': int(pos['x'] + 1), 'y': int(pos['y']), 'z': int(pos['z'])}
     kind = 'build' if inventory.get('society:resource', 0) else 'gather'
-    return {'id': request['id'], 'ok': True, 'action': {'kind': kind, 'point': point, 'why': 'fixture'},
-            'audit': {'latency_ms': 0, 'usage': {}}}
+    result = {'id': request['id'], 'ok': True, 'action': {'kind': kind, 'point': point, 'why': 'fixture'},
+              'audit': {'latency_ms': 0, 'usage': {}}}
+    if context.get('reflection_input'):
+        reflection = context['reflection_input']
+        result['reflection'] = {'topic': reflection['request']['topic'],
+                                'text': 'Fixture interpretation of my recent experiences.',
+                                'source_ids': [reflection['experiences'][0]['id']]}
+        result['reflection_audit'] = {'origin': 'fixture', 'latency_ms': 0, 'usage': {}}
+    return result
 
 
 def serve(directory, timeout=30.0, poll_interval=0.1, runner=run_bridge):

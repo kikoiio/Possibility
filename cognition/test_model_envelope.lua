@@ -16,6 +16,14 @@ assert(e.schema == "wispiva.model-input" and e.knowledge.facts[1].epistemic == "
 assert(e.knowledge.experiences[1].epistemic == "experience" and e.knowledge.rumors[1].epistemic == "rumor")
 assert(e.knowledge.unknowns[1].epistemic == "unknown")
 assert(envelope.validate(e))
+e.knowledge.reflections = {{id="reflection:alice:goals:2", text="I may ask for help", epistemic="belief",
+  source={kind="reflection", id="request:7", revision=2}, access={scope="private",audience={"alice"}}}}
+assert(envelope.validate(e))
+e.knowledge.reflections[1].epistemic = "experience"
+assert(not pcall(envelope.validate, e))
+e.knowledge.reflections[1].epistemic = "belief"
+e.knowledge.reflections[1].source.revision = nil
+assert(not pcall(envelope.validate, e))
 local ok = pcall(function() envelope.build({world_id="world-1", origin_event_id="genesis:created", actor_id="alice", decision_id="1", actor={name="Alice",role="r",goal="g",role_source={kind="x",id="y"},goal_source={kind="x",id="z"}}, unknowns={{id="s",text="private",source={kind="x",id="y"},audience={"bob"}}}}) end)
 assert(not ok)
 print("model envelope tests passed")
