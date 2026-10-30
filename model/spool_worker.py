@@ -100,7 +100,8 @@ def process_one(directory, path, timeout, runner=run_bridge):
         else:
             try:
                 attempts = []
-                retryable = ('invalid_action', 'transport_error', 'provider_failed', 'rate_limited')
+                retryable = ('invalid_action', 'invalid_response', 'transport_error',
+                             'provider_failed', 'rate_limited')
                 for attempt in range(3):
                     result = runner(request, directory / 'STOP', timeout)
                     attempts.append({'ok': result.get('ok') is True,

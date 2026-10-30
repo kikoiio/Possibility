@@ -38,11 +38,11 @@ class SpoolTests(unittest.TestCase):
         self.assertEqual([a['error'] for a in result['attempts']], ['transport_error', None])
         self.assertEqual(runner.call_count, 2)
 
-    def test_provider_and_rate_limit_retries_are_bounded_and_audited(self):
+    def test_invalid_response_and_rate_limit_retries_are_bounded_and_audited(self):
         path = self.root / 'request-5.json'
         path.write_text(json.dumps({'id': 5, 'context': {}}))
         runner = mock.Mock(side_effect=[
-            {'id': 5, 'ok': False, 'error': 'provider_failed'},
+            {'id': 5, 'ok': False, 'error': 'invalid_response'},
             {'id': 5, 'ok': False, 'error': 'rate_limited'},
             {'id': 5, 'ok': True, 'action': {'kind': 'inspect'}},
         ])
@@ -50,9 +50,24 @@ class SpoolTests(unittest.TestCase):
             worker.process_one(self.root, path, 1, runner=runner)
         result = json.loads((self.root / 'response-5.json').read_text())
         self.assertEqual([a['error'] for a in result['attempts']],
-                         ['provider_failed', 'rate_limited', None])
+                         ['invalid_response', 'rate_limited', None])
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
         self.assertEqual(runner.call_count, 3)
+
+    def test_provider_failure_retries_are_bounded_and_audited(self):
+        path = self.root / 'request-6.json'
+        path.write_text(json.dumps({'id': 6, 'context': {}}))
+        runner = mock.Mock(side_effect=[
+            {'id': 6, 'ok': False, 'error': 'provider_failed'},
+            {'id': 6, 'ok': True, 'action': {'kind': 'inspect'}},
+        ])
+        with mock.patch.object(worker.time, 'sleep') as sleep:
+            worker.process_one(self.root, path, 1, runner=runner)
+        result = json.loads((self.root / 'response-6.json').read_text())
+        self.assertEqual([attempt['error'] for attempt in result['attempts']],
+                         ['provider_failed', None])
+        self.assertEqual(runner.call_count, 2)
+        sleep.assert_called_once_with(1)
 
     def test_atomic_response_and_bad_requests(self):
         request = {'id': 3, 'context': {'observation': {}}}
