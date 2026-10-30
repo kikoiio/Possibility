@@ -984,9 +984,9 @@ jobs:
         run: |
           exp=engine/luanti
           "$exp/run.sh" --label ci-base --agents 3 --decisions 8 --interval 1 --set society_spacing=2 --set society_seed_resources=true --set society_cognition=true
-          for trial in 1 2 3; do
+          for trial in 1 2 3 4 5 6; do
             order="true false"
-            if [ "$trial" = 2 ]; then order="false true"; fi
+            if [ "$((trial % 2))" = 0 ]; then order="false true"; fi
             for memory in $order; do
               label="ci-memory-${memory}-${trial}"
               python3 "$exp/snapshot.py" "$exp/worlds/ci-base.run1" "$exp/worlds/${label}.run1"
@@ -1008,7 +1008,7 @@ jobs:
           result = json.loads(Path('observed-results.json').read_text(encoding='utf-8'))
           rows = []
           for run in result['runs']:
-              match = re.search(r'ci-memory-(true|false)-([123])', run['run_id'] + '/' + run['source'])
+              match = re.search(r'ci-memory-(true|false)-([1-6])', run['run_id'] + '/' + run['source'])
               if not match:
                   continue
               model = run['summary']['model']
