@@ -40,7 +40,7 @@ Luanti 运行时已经能从 manifest 读取公开地点、连接和角色起点
 这带来两个边界：
 
 - DraftStore 可以显示起源已 confirmed，但产品世界目录尚未发布或发布失败。
-- `create_world()` 现在对已存在目标执行只读重核：identity、manifest、contract、creation record、origin SQLite 起始事件和 runtime 入口全部与当前确认 revision 一致时，才返回 `idempotent=true`；损坏目录或另一确认请求一律 `existing_world_conflict`，不覆盖任何内容。`genesis.test_world_create` 已定向覆盖精确重试和冲突保留；完整 Actions 回归待本轮提交运行。
+- `create_world()` 现在对已存在目标执行只读重核：identity、manifest、contract、creation record、origin SQLite 起始事件和 runtime 入口全部与当前确认 revision 一致时，才返回 `idempotent=true`；损坏目录或另一确认请求一律 `existing_world_conflict`，不覆盖任何内容。`genesis.test_world_create` 定向覆盖精确重试和冲突保留；[Actions 41076669398](https://github.com/kikoiio/Wispiva/actions/runs/41076669398) 的全量回归通过。
 - DraftStore 仍没有与产品目录共同推进的发布状态或 operation ID。若跨库之间的状态不一致，当前只能拒绝重试，不能报告 `PUBLISHING`、`UNKNOWN/FROZEN`、`PUBLISHED` 等持久状态，也不能自动从未知状态恢复。
 
 这不是要把两个文件系统强行做成一个事务，而是需要一个明确的跨存储状态机：发布前、已发布、待核对和已就绪必须可区分；未知状态必须冻结并要求核对。逐目录的完全匹配重试已落地，但 DraftStore 发布账本和 operation 绑定仍待实现。

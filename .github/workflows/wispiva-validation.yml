@@ -704,11 +704,45 @@ jobs:
           responses = sorted((world / 'private/model-audit').rglob('response-*.json'))
           assert len(requests) >= 6 and len(responses) >= 6, (len(requests), len(responses))
           action_counts = Counter()
+          usage_totals = Counter()
+          usage_missing = 0
+          usage_invalid = 0
+          provider_attempts = 0
+          reflection_usage = Counter()
+          reflection_missing = 0
+          reflection_invalid = 0
+          reflection_attempts = 0
           for path in responses:
-              action = json.loads(path.read_text(encoding='utf-8')).get('action', {})
+              response = json.loads(path.read_text(encoding='utf-8'))
+              action = response.get('action', {})
               if isinstance(action, dict) and isinstance(action.get('kind'), str):
                   action_counts[action['kind']] += 1
+              for attempt in response.get('attempts') or []:
+                  provider_attempts += 1
+                  usage = ((attempt.get('audit') or {}).get('usage') or {})
+                  if usage.get('invalid') is True:
+                      usage_invalid += 1
+                  elif all(type(usage.get(key)) is int and usage[key] >= 0
+                           for key in ('input_tokens', 'output_tokens')):
+                      usage_totals['input_tokens'] += usage['input_tokens']
+                      usage_totals['output_tokens'] += usage['output_tokens']
+                  else:
+                      usage_missing += 1
+                  reflection = attempt.get('reflection_audit')
+                  if reflection is not None:
+                      reflection_attempts += 1
+                      usage = (reflection.get('usage') or {}) if isinstance(reflection, dict) else {}
+                      if usage.get('invalid') is True:
+                          reflection_invalid += 1
+                      elif all(type(usage.get(key)) is int and usage[key] >= 0
+                               for key in ('input_tokens', 'output_tokens')):
+                          reflection_usage['input_tokens'] += usage['input_tokens']
+                          reflection_usage['output_tokens'] += usage['output_tokens']
+                      else:
+                          reflection_missing += 1
           assert sum(action_counts.values()) >= 6, action_counts
+          usage_status = ('invalid' if usage_invalid else
+                          'complete' if provider_attempts and not usage_missing else 'incomplete')
           seeds = {actor['actor_id']: [seed['text'] for seed in actor['memory_seeds']]
                    for actor in manifest['actors']}
           seen_actors = set()
@@ -739,6 +773,28 @@ jobs:
               'actors_with_own_seed_in_model_input': len(own_seed_seen),
               'private_seed_cross_actor_leaks': 0,
               'model_action_counts': dict(sorted(action_counts.items())),
+              'provider_attempts': provider_attempts,
+              'provider_token_usage': {
+                  'status': usage_status,
+                  'complete_attempts': provider_attempts - usage_missing - usage_invalid,
+                  'missing_attempts': usage_missing,
+                  'invalid_attempts': usage_invalid,
+                  'input_tokens': usage_totals['input_tokens'],
+                  'output_tokens': usage_totals['output_tokens'],
+                  'total_tokens': usage_totals['input_tokens'] + usage_totals['output_tokens'],
+              },
+              'reflection_attempts': reflection_attempts,
+              'reflection_token_usage': {
+                  'status': ('invalid' if reflection_invalid else
+                             'complete' if reflection_attempts and not reflection_missing else
+                             'incomplete' if reflection_attempts else 'not_requested'),
+                  'complete_attempts': reflection_attempts - reflection_missing - reflection_invalid,
+                  'missing_attempts': reflection_missing,
+                  'invalid_attempts': reflection_invalid,
+                  'input_tokens': reflection_usage['input_tokens'],
+                  'output_tokens': reflection_usage['output_tokens'],
+                  'total_tokens': reflection_usage['input_tokens'] + reflection_usage['output_tokens'],
+              },
               'world_message_events': log.count('SOCIETY ev=message '),
               'world_resource_events': log.count('SOCIETY ev=resource '),
               'unsupported_genesis_feature_count': len(
