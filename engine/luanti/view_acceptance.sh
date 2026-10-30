@@ -77,7 +77,7 @@ fi
 
 set +e
 xvfb-run -a -s '-screen 0 1024x768x24 -nolisten tcp' \
-  "$HERE/view_product.sh" --port "$PORT" --name "$NAME" --acceptance \
+  "$HERE/view_product.sh" --port "$PORT" --name "$NAME" \
   --seconds "$SECONDS_MAX" --config "$client_config" --logfile "$client_log"
 client_status=$?
 set -e
