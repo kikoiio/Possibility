@@ -205,6 +205,113 @@ jobs:
       - name: Verify persistent product world client acceptance
         run: |
           engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 20
+      - name: Run real model product world with private memory audit
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from genesis.store import DraftStore
+          from genesis.world_create import create_world
+          root = Path('.ci-product-model').absolute()
+          root.mkdir(mode=0o700)
+          store = DraftStore(root / 'drafts.sqlite', create=True)
+          try:
+              draft = {
+                  'schemaVersion': 1,
+                  'title': 'A well-side meeting',
+                  'description': 'Three residents meet beside a well and decide what to do with a green resource.',
+                  'places': [{'id': 'well', 'name': 'The well', 'description': 'A shared meeting place beside a green resource.'}],
+                  'actors': [
+                      {'id': 'alice', 'name': 'Alice', 'role': 'scout',
+                       'goal': 'Greet Bob, tell him you found a green resource by the well, then gather it.', 'placeId': 'well'},
+                      {'id': 'bob', 'name': 'Bob', 'role': 'listener',
+                       'goal': 'Stay near Alice, respond to her greeting, then inspect the green resource.', 'placeId': 'well'},
+                      {'id': 'cora', 'name': 'Cora', 'role': 'observer',
+                       'goal': 'Observe quietly. You do not know Alice’s private discovery unless someone tells you.', 'placeId': 'well'},
+                  ],
+                  'memories': [
+                      {'actorId': 'alice', 'text': 'I discovered a green resource by the well before this run and want Bob to know.'},
+                      {'actorId': 'bob', 'text': 'I am waiting by the well and will listen to Alice.'},
+                      {'actorId': 'cora', 'text': 'I was away from the well and do not know Alice’s discovery.'},
+                  ],
+                  'rules': [],
+                  'layout': {'places': [{'placeId': 'well', 'space': 'outdoor', 'grid': [0, 0]}], 'connections': []},
+              }
+              record = store.create(draft)
+              store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
+              result = create_world(store, record['id'], record['revision'], root / 'world')
+              (root / 'creation-result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          finally:
+              store.close()
+          PY
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 6 --interval 1 --seconds 600 --audit-model
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.ci-product-model/world')
+          log = (root / 'private/product.log').read_text(errors='replace')
+          assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log, 'no real model action was recorded'
+          assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
+          audit = root / 'private/model-audit'
+          requests = sorted(audit.glob('request-*.json'))
+          responses = sorted(audit.glob('response-*.json'))
+          assert len(requests) >= 6 and len(responses) >= 6, (len(requests), len(responses))
+          actor_by_runtime = {}
+          request_rows = []
+          for path in requests:
+              value = json.loads(path.read_text())
+              envelope = value['context']['model_input']
+              actor = envelope['request']['actor_id']
+              runtime = envelope['actor']['runtime_id']
+              actor_by_runtime[runtime] = actor
+              request_rows.append((actor, envelope))
+          seeds = {
+              'alice': 'I discovered a green resource by the well before this run and want Bob to know.',
+              'bob': 'I am waiting by the well and will listen to Alice.',
+              'cora': 'I was away from the well and do not know Alice’s discovery.',
+          }
+          actors = {actor for actor, _ in request_rows}
+          assert actors == set(seeds), actors
+          for actor, envelope in request_rows:
+              encoded = json.dumps(envelope, ensure_ascii=False)
+              assert seeds[actor] in encoded
+              for other, seed in seeds.items():
+                  if other != actor:
+                      assert seed not in encoded, (actor, other)
+          message_observed = False
+          for path in responses:
+              value = json.loads(path.read_text())
+              action = value.get('action', {})
+              if action.get('kind') != 'say':
+                  continue
+              message_observed = True
+              target_actor = actor_by_runtime.get(action.get('target'))
+              assert target_actor in actors, (action, actor_by_runtime)
+              text = action['text']
+              recipient_rows = [envelope for actor, envelope in request_rows if actor == target_actor]
+              assert any(any(text == item['text'] for item in envelope['knowledge']['rumors'])
+                         for envelope in recipient_rows), (target_actor, text)
+              other_rows = [envelope for actor, envelope in request_rows if actor != target_actor]
+              assert all(all(text != item['text'] for item in envelope['knowledge']['rumors'])
+                         for envelope in other_rows), (target_actor, text)
+          assert message_observed, 'real model did not produce a say action in the social scenario'
+          print(json.dumps({'requests': len(requests), 'responses': len(responses),
+                            'actors': sorted(actors), 'message_observed': message_observed}, indent=2))
+          PY
+      - name: Upload real model product evidence
+        if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispiva-product-model-evidence
+          path: .ci-product-model
+          if-no-files-found: error
+          retention-days: 14
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
         run: |
