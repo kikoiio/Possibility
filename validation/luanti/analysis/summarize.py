@@ -176,11 +176,20 @@ def metrics(records):
             resources[fields["action"]][outcome] += 1
         elif record["kind"] == "resource-verify":
             check = {key: number(fields.get(key), integer=True) for key in ("initial", "world", "inventory")}
+            check["environment_delta"] = number(fields.get("environment_delta"), integer=True) or 0
+            expected = number(fields.get("expected"), integer=True)
+            if expected is None and check["initial"] is not None:
+                expected = check["initial"] + check["environment_delta"]
+            check["expected"] = expected
             check["reported_ok"] = {"true": True, "false": False}.get(fields.get("ok"))
             delta = (check["world"] + check["inventory"] - check["initial"]
                      if all(check[key] is not None for key in ("initial", "world", "inventory")) else None)
+            expected_delta = (check["world"] + check["inventory"] - expected
+                              if expected is not None and check["world"] is not None
+                              and check["inventory"] is not None else None)
             check["delta"] = delta
-            check["conserved"] = delta == 0 if delta is not None else None
+            check["expected_delta"] = expected_delta
+            check["conserved"] = expected_delta == 0 if expected_delta is not None else None
             outcome = ("failure" if check["reported_ok"] is False or check["conserved"] is False
                        else "success" if check["conserved"] is True else "unknown")
             conservation[outcome] += 1

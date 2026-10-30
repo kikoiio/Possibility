@@ -130,3 +130,8 @@ python3 -B engine/luanti/launch.py --world <世界目录> --recover-committed-ch
 
 
 恢复入口测试首次运行 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 失败于测试夹具：夹具先创建 map/mod-storage 文件，之后才创建世界身份；WorldSession 正确拒绝在非空目录内初始化身份。夹具现改为先发布世界身份，再写入模拟 checkpoint；恢复代码将在后续 Actions 重跑。该失败没有执行到实际产品集成步骤。
+
+
+## Map recovery compatibility and resource accounting (Actions 41117324797)
+
+This model-validation run passed unit tests and the three-character product loop: 24 real decisions, 12 `say`, 11 `inspect`, 1 `gather`; checkpoint version 2 contained 33 world events and 79 memory records. The follow-up resume then froze at `node:0,0,-2`: origin projection expected grass, Luanti returned dirt. This exposed an overly strict recovery comparison for a mutable ground surface; the later free-society stage was skipped. The same run also showed that the resource audit compared world+inventory (17) against the pre-run baseline (3) while the regenerative environment added 14. Projection matching now allows only grass-to-dirt on projected outdoor ground; the resource check includes environment delta. New Actions will verify both fixes. This run is not successful resume evidence.

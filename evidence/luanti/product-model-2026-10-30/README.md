@@ -103,3 +103,8 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 ### 恢复测试夹具修正
 
 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 在新增恢复用例处失败，原因是测试夹具先写 map/mod-storage、再初始化 world identity；产品的身份协议会拒绝在非空目录创建新身份。夹具已调整为先创建身份，再填入模拟的 `READY` checkpoint；[Actions 41116220558](https://github.com/kikoiio/Wispiva/actions/runs/41116220558) 通过修正版新恢复用例和完整产品回归。
+
+
+## Product resume failure and ground reconciliation fix
+
+[Actions 41117324797](https://github.com/kikoiio/Wispiva/actions/runs/41117324797) passed the real-model three-character product loop with 24 completed decisions (12 say, 11 inspect, 1 gather), checkpoint version 2, 33 world events and 79 memory records. Its follow-up resume failed closed because committed outdoor ground at `0,0,-2` was `default:dirt` while origin expected `default:dirt_with_grass`; the free-society stage was consequently skipped. The run also exposed an accounting gap: environment regeneration raised the expected total by 14, but the audit compared against the initial 3 alone (actual 16 in world plus 1 in inventory). The fix allows only grass-to-dirt for outdoor ground during reconciliation and includes environment delta in expected resource conservation; all structure nodes remain exact. This is a regression diagnosis, not a recovery pass.
