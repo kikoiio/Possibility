@@ -201,7 +201,7 @@ PY
   while kill -0 "$pid" 2>/dev/null && [[ "$t" -lt "$SECONDS_MAX" ]]; do
     sleep 1
     t=$((t + 1))
-    if [[ -z "$engine_pid" ]] || ! kill -0 "$engine_pid" 2>/dev/null; then
+    if [[ -z "$engine_pid" ]]; then
       engine_pid=$(pgrep -P "$pid" -x luantiserver 2>/dev/null | head -n 1 || true)
     fi
     if [[ -n "$engine_pid" && -r "/proc/$engine_pid/status" ]]; then
