@@ -58,6 +58,8 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 
   持久创建入口和 CLI 已接上；`DraftStore.create_from_intent` 现在保存原始 intent，确认前可编辑，确认后的产品 manifest 和 `creation.json` 保留私有 intent 摘要。编译器现在允许最多 64 个角色，并按地点提供确定的 25 个起点槽位。新增[两个非固定题材产品案例](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md)，分别覆盖草稿 v1→v2、确认 revision 2、私有角色目标／记忆和公开投影隔离；固定 `example.json` 仍只作为回归夹具。产品验收仍需真实用户确认和语义隐私审查。
 
+  [Genesis CLI](../genesis/README.md) 现在提供 `read --draft-only` 导出和 revision-checked `edit`，用户可编辑 JSON 草稿、再次检查新 revision，再显式确认；stale edit 和确认后的修改会失败。它让草稿编辑／确认可直接操作，但仍不是图形化创建向导，也没有把公开／私有预览呈现在一个用户界面中。
+
   [真实模型 Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 新增“small frontier settlement”自由社会用户意图，模型生成草稿、通过引用与空间编译、确认并创建持久 Luanti 世界。生成器现在对无效 JSON／schema 最多进行三次有界尝试，重试只带字段路径和错误码；仍未通过就不创建草稿。此合成用户意图验证了可运行链路，不代替真实用户编辑和确认体验。
   [真实模型 Actions 41069246124](https://github.com/kikoiio/Wispiva/actions/runs/41069246124) 又将英文题材和中文河谷自由聚落意图送入同一生成器；三份草稿均通过 schema 和空间编译。该动作只生成草稿，不代表用户确认或持久创建；此首轮的模型 token usage 未被适配层暴露，现已补上审计回调，待新运行复核。
 - [ ] **空间与三维体验。** 为已确认世界构造地面、建筑、连接、物件和实体，提供合适的进入点与镜头。角色具备可辨认外观和行动反馈，对话与变化在世界内可见；行动与场景对应同一事实。产品服务器已支持 `--serve`，`view_product.sh` 可用真实 Luanti 客户端从观察者出生点连接；[Actions 40956198179](https://github.com/kikoiio/Wispiva/actions/runs/40956198179) 已自动验证连接、场景交互和引导到达，[Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018) 在产品世界重新验证客户端连接与确定性交互。自动验收不再使用会误伤引导角色的随机输入。角色移动接入 `cognition/navigation.lua` 有界 BFS；地点连接投影也会确定性绕开第三方地点。仍需真人实际进入 Luanti 评价移动／观察／互动，并继续扩展楼梯、外观和题材生成器。

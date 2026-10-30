@@ -5,6 +5,7 @@
 | 项目意图与需求 | Wispiva 共同产品目标；本分支采用 Luanti | 2026-10-29 | [项目意图](intent.md) |
 | 当前架构 | 本 worktree 的现有组件和缺口；L2 写回、belief 输入、BFS 导航及可控逻辑时钟已接入；live pause/resume 运行验收进行中 | 2026-10-30 | [当前架构](architecture.md) |
 | 仓库布局 | 产品实现、验证工具和历史证据的边界 | 2026-10-29 | [仓库布局](repository-layout.md) |
+| 世界草稿创建与确认 CLI | 真实模型生成、草稿 JSON 导出／编辑、revision 确认、Luanti 持久发布与安全重试用法 | 2026-10-30 | [Genesis 操作说明](../genesis/README.md) |
 | 目标架构 | Wispiva 产品在 Minecraft-like 基底上的目标实现；草案，不等同于现状 | 2026-10-29 | [目标设计](design/2026-10-27-target-architecture.md) |
 | 集成审查 | 创建、世界身份、资源投影与记忆之间尚未解决的契约 | 2026-10-29 | [创建与持久世界集成审查](design/2026-10-29-origin-integration-audit.md) |
 | 集成契约 | 面向假引擎的版本化起源、身份及资源对账设计提案 | 2026-10-29 | [世界起源契约](design/2026-10-29-world-origin-contract.md) |

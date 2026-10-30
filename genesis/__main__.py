@@ -40,6 +40,11 @@ def main():
     recover.add_argument('--draft-db', required=True); recover.add_argument('--draft-id', required=True)
     inspect = sub.add_parser('read', help='read a private draft record')
     inspect.add_argument('--draft-db', required=True); inspect.add_argument('--draft-id', required=True)
+    inspect.add_argument('--draft-only', action='store_true', help='print only the editable draft JSON')
+    edit = sub.add_parser('edit', help='replace one draft revision with edited JSON')
+    edit.add_argument('--draft-db', required=True); edit.add_argument('--draft-id', required=True)
+    edit.add_argument('--revision', required=True, type=int)
+    edit.add_argument('--draft', required=True, help='file containing the complete edited draft JSON')
     check_confirmed = sub.add_parser('preflight', help='check a confirmed revision without creating a Luanti world')
     check_confirmed.add_argument('--draft-db', required=True); check_confirmed.add_argument('--draft-id', required=True)
     check_confirmed.add_argument('--revision', required=True, type=int); check_confirmed.add_argument('--world-path', required=True)
@@ -87,7 +92,13 @@ def main():
             store = _open_store(args.draft_db)
             try: record = store.read(args.draft_id)
             finally: store.close()
-            _print(record)
+            _print(record['draft'] if args.draft_only else record)
+        elif args.command == 'edit':
+            store = _open_store(args.draft_db)
+            try: record = store.update(args.draft_id, args.revision, _read_draft(args.draft))
+            finally: store.close()
+            _print({'id': record['id'], 'revision': record['revision'],
+                    'status': record['status'], 'intent': record['intent']})
         elif args.command == 'confirm':
             store = _open_store(args.draft_db)
             try: result = store.confirm(args.draft_id, args.revision, args.world_path)
