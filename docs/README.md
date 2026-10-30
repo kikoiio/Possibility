@@ -10,8 +10,12 @@
 | 集成契约 | 面向假引擎的版本化起源、身份及资源对账设计提案 | 2026-10-29 | [世界起源契约](design/2026-10-29-world-origin-contract.md) |
 | 产品提交与模型输入 | 产品状态账本、冻结恢复边界与 `wispiva.model-input` v1 | 2026-10-29 | [产品状态与模型输入边界](design/2026-10-29-product-state-and-model-input.md) |
 | 真实模型角色与环境闭环验收 | 当前真实模型、fixture 产品闭环证据的边界，以及角色输入／输出、失败、记忆来源和世界后果的验收设计 | 2026-10-30 | [真实模型角色与环境闭环验收设计](design/2026-10-30-real-model-world-loop-acceptance.md) |
+| L2 长期记忆 API 审查 | L2 记录签名、不变量、检索边界与测试矩阵 | 2026-10-30 | [L2 长期记忆 API 设计审查](design/2026-10-30-l2-memory-api-review.md) |
+| 意图到世界起点审查 | 当前用户意图、草稿、起源、产品世界和 Luanti 接入链路及缺口 | 2026-10-30 | [意图到世界起点](design/2026-10-30-intent-to-world.md) |
+| 计划审计 | 未完成项的证据、状态与下一步 | 2026-10-30 | [计划审计](design/2026-10-30-plan-audit.md) |
 | 产品运行与三维观察 | 持续服务、观察者出生点及 Luanti 客户端进入路径 | 2026-10-29 | [当前架构](architecture.md) |
 | 受控世界接入边界 | `launch.py` 在 Luanti 进程生命周期内持有 `WorldSession`；地图、事件、库存和记忆共同提交尚未完成 | 2026-10-29 | [启动器](../engine/luanti/launch.py)、[世界会话](../engine/luanti/world_session.py)、[世界身份](../engine/luanti/world_identity.py)、[世界锁](../engine/luanti/world_lock.py) |
+| 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
 | 工作计划 | 本分支独立产品级通用创建、持续世界、角色与记忆的实施及验收 | 2026-10-29 | [工作计划](PLAN.md) |
 | 研究 | 方法、容量与记忆研究；研究结论以实际测量范围为准 | 2026-10-29 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
@@ -21,7 +25,10 @@
 | 起源原型验证 | 起源数据原型与既有运行时回归，未验证集成 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-2026-10-29/README.md) |
 | 起源与资源集成验证 | 确认绑定、假引擎对账及既有 Luanti 回归 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-integration-2026-10-29/README.md) |
 | 用户意图创建案例 | 两个非固定题材的可编辑草稿、确认 revision、私有 intent 和公开／私有边界回归 | 2026-10-29 | [原始证据](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md) |
-| 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程和重启恢复 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
+| 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程、重启恢复和自动客户端验收 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
+| 真实模型产品世界验证 | 3 个合成角色的真实模型请求、私有记忆隔离、目标消息接收、动作／资源反馈、token／延迟／重试审计 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-model-2026-10-30/README.md) |
 | 产品状态与模型输入验证 | `wispiva-product-state`、`wispiva.model-input` v1、preview 复制及持久产品世界恢复 | 2026-10-29 | [原始证据](../evidence/luanti/product-state-model-input-2026-10-29/README.md) |
 | 世界会话边界验证 | Luanti 启动器持锁、身份建立、信号转发及跨进程生命周期 | 2026-10-29 | [原始证据](../evidence/luanti/world-session-2026-10-29/README.md) |
 | 世界事件账本验证 | 行动结果、接触、幂等事件身份与 checkpoint 接入 | 2026-10-29 | [原始证据](../evidence/luanti/world-events-2026-10-29/README.md) |
+| 启动器断电恢复标记 | 启动会话 marker 的原子发布、异常残留、跨世界拒绝与显式确认 | 2026-10-30 | [实现与测试](../engine/luanti/recovery_journal.py) |
+| Actions 工作流审查 | 真模型、Luanti、GUI、容量验证的资源和失败诊断边界 | 2026-10-30 | [工作流审查](../.github/workflows/WORKFLOW-AUDIT.md) |

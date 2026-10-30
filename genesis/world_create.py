@@ -19,6 +19,7 @@ import tempfile
 from genesis.compiler import CompileError, compile_plan
 from genesis.store import DraftCorrupt, DraftStore
 from engine.luanti.world_session import WorldSession
+from world.product_contract import build_contract
 from world.store import CorruptStore, WorldStore
 
 
@@ -128,6 +129,7 @@ def build_manifest(row, plan, event, world_id):
         manifest["intent"] = row["intent"]
         manifest["intent_sha256"] = hashlib.sha256(
             row["intent"].encode("utf-8")).hexdigest()
+    manifest["contract"] = build_contract(manifest)
     return manifest
 
 
@@ -203,6 +205,7 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
         _write_private(manifest_path, manifest)
         _install_runtime(stage, manifest_path)
         manifest_path.unlink()
+        _write_private(stage / "private" / "wispiva-contract.json", manifest["contract"])
         shutil.copyfile(Path(row["target"]), stage / "private" / "origin.sqlite")
         os.chmod(stage / "private" / "origin.sqlite", 0o600)
         _write_private(stage / "private" / "creation.json", {
@@ -210,6 +213,9 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
             "world_id": manifest["world_id"], "draft_id": row["id"],
             "revision": row["revision"], "origin_event_id": event["id"],
             "manifest": "private/wispiva-origin.json",
+            "contract": "private/wispiva-contract.json",
+            "world_id": manifest["world_id"],
+            "origin_event_id": manifest["origin_event_id"],
             "intent_sha256": manifest.get("intent_sha256"),
         })
         _sync_dir(stage / "private")

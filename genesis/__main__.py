@@ -29,7 +29,8 @@ def main():
     create_draft = sub.add_parser('create-draft', help='generate and persist one editable draft with its private intent')
     create_draft.add_argument('--draft-db', required=True)
     create_draft.add_argument('--intent', required=True)
-    create_draft.add_argument('--response', required=True, help='file containing a model-generated JSON response')
+    create_draft.add_argument('--response', help='file containing a model-generated JSON response')
+    create_draft.add_argument('--live', action='store_true', help='call the configured model provider')
     save = sub.add_parser('save', help='persist a validated draft in a new or existing private DraftStore')
     save.add_argument('--draft-db', required=True); save.add_argument('--draft', required=True)
     confirm = sub.add_parser('confirm', help='explicitly confirm one draft revision into a new WorldStore')
@@ -57,11 +58,19 @@ def main():
             draft = generate(args.intent, lambda system, user: response)
             _print(draft)
         elif args.command == 'create-draft':
-            response = Path(args.response).read_text(encoding='utf-8')
             path = Path(args.draft_db)
             store = _open_store(path, create=not path.exists())
             try:
-                record = store.create_from_intent(args.intent, lambda system, user: response)
+                if bool(args.response) == args.live:
+                    raise GenesisError('choose_exactly_one', ['one of --response or --live is required'])
+                if args.live:
+                    from .model_adapter import responses_model
+                    from model.adapter import Config
+                    model = responses_model(Config.from_env())
+                else:
+                    response = Path(args.response).read_text(encoding='utf-8')
+                    model = lambda system, user: response
+                record = store.create_from_intent(args.intent, model)
             finally:
                 store.close()
             _print({'id': record['id'], 'revision': record['revision'],

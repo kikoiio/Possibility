@@ -17,6 +17,7 @@ FIXTURE=0
 RESUME=0
 SERVE=0
 VISUAL_FIXTURE=0
+AUDIT_MODEL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --resume) RESUME=1; shift ;;
     --serve) SERVE=1; shift ;;
     --visual-fixture) VISUAL_FIXTURE=1; shift ;;
+    --audit-model) AUDIT_MODEL=1; shift ;;
     -h|--help) sed -n '1,26p' "$0"; exit 0 ;;
     *) echo "run_product.sh: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -43,6 +45,10 @@ fi
 [[ -x "$ENGINE" ]] || { echo "run_product.sh: engine unavailable: $ENGINE" >&2; exit 2; }
 [[ -f "$WORLD/wispiva-world-id" ]] || { echo "run_product.sh: missing world identity" >&2; exit 2; }
 mkdir -p "$WORLD/private/model-spool"
+if [[ "$AUDIT_MODEL" -eq 1 ]]; then
+  mkdir -p "$WORLD/private/model-audit"
+  chmod 700 "$WORLD/private/model-audit"
+fi
 chmod 700 "$WORLD/private" "$WORLD/private/model-spool"
 
 if pgrep -f 'luantiserver' >/dev/null 2>&1; then
@@ -63,6 +69,7 @@ enable_damage = false
 creative_mode = true
 max_forceloaded_blocks = -1
 dedicated_server_step = 0.09
+server_map_save_interval = 1
 static_spawnpoint = (0,2,-20)
 society_world_product = true
 society_genesis_manifest = $WORLD/private/wispiva-origin.json
@@ -80,6 +87,8 @@ society_reset_minds = false
 society_max_decisions = $DECISIONS
 society_decide_interval = $INTERVAL
 society_event_namespace = $namespace
+society_model_audit = $([[ "$AUDIT_MODEL" -eq 1 ]] && echo true || echo false)
+society_model_audit_dir = $WORLD/private/model-audit
 EOF
 chmod 600 "$conf"
 
@@ -87,10 +96,11 @@ if [[ "$VISUAL_FIXTURE" -eq 1 ]]; then
   :
 elif [[ "$FIXTURE" -eq 1 ]]; then
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 --fixture > "$WORLD/private/worker.log" 2>&1 &
+  worker_pid=$!
 else
   python3 -B "$ROOT/model/spool_worker.py" "$WORLD/private/model-spool" --timeout 45 > "$WORLD/private/worker.log" 2>&1 &
+  worker_pid=$!
 fi
-worker_pid=$!
 
 cleanup() {
   if [[ -n "$worker_pid" ]]; then kill -TERM "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi
@@ -98,7 +108,7 @@ cleanup() {
 trap cleanup EXIT
 
 HOME="$LUA_HOME" LD_LIBRARY_PATH="$LIBDIR" python3 -B "$HERE/launch.py" \
-  --world "$WORLD" -- \
+  --require-product-contract --world "$WORLD" -- \
   "$ENGINE" --config "$conf" --world "$WORLD" --gameid minetest_game --logfile "$log" &
 server_pid=$!
 

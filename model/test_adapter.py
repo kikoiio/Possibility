@@ -67,6 +67,7 @@ class AdapterTests(unittest.TestCase):
             return stream({'kind': 'approach', 'target': 2})
         result = adapter.decide(CONFIG, CTX, transport=transport)
         self.assertEqual(result['action'], {'kind': 'approach', 'target': 2, 'why': 'model'})
+        self.assertEqual(json.loads(result['output_text']), {'kind': 'approach', 'target': 2})
         self.assertEqual(result['audit']['usage'], {'input_tokens': 12, 'output_tokens': 4})
         self.assertNotIn('secret-key', repr(result))
         self.assertNotIn('secret-key', repr(CONFIG))

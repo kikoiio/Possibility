@@ -143,6 +143,14 @@ if GENESIS_PREVIEW then
     preview_actors = preview_module.validate(minetest.parse_json(raw), COUNT)
 end
 local SPOOL = cfg("society_spool", "")
+local MODEL_AUDIT_DIR = cfg("society_model_audit_dir", "")
+local MODEL_AUDIT = cfg("society_model_audit", "false") == "true"
+if MODEL_AUDIT then
+	assert(MODEL_AUDIT_DIR ~= "", "model audit requires society_model_audit_dir")
+	local probe = assert(io.open(MODEL_AUDIT_DIR .. "/.writable", "wb"), "model audit directory unavailable")
+	probe:close()
+	os.remove(MODEL_AUDIT_DIR .. "/.writable")
+end
 local request_id = 0
 local step_count, last_us = 0, minetest.get_us_time()
 
@@ -686,9 +694,9 @@ local function apply(self, action, pos)
 				from = self._id, text = action.text, message_id = message_id}
 			if #recipient._inbox > 32 then table.remove(recipient._inbox, 1) end
 			recipient._episodic:add({time = minetest.get_gametime(), text = action.text,
-				source = {kind = "agent", id = self._id}})
+				source = {kind = "agent", id = tostring(self._id)}})
 			self._episodic:add({time = minetest.get_gametime(), text = action.text,
-				source = {kind = "self", id = self._id}})
+				source = {kind = "self", id = tostring(self._id)}})
 			if VISUAL then self.object:set_properties({nametag = self._persona .. "\n" .. action.text}) end
 			ev("ev=message agent=%d recipient=%d sha256=%s", self._id, action.target,
 				minetest.sha256(action.text))
@@ -861,7 +869,12 @@ local function decide_and_act(self)
 						local source = memory.source or {}
 						local memory_id = memory.id or string.format("episodic:%s:%s:%s",
 							tostring(source.kind), tostring(source.id), tostring(memory.time))
-						local record = {id = memory_id, text = memory.text, source = source,
+						-- Legacy episodic checkpoints may contain numeric runtime IDs.
+						-- The provider-facing envelope has a textual provenance contract;
+						-- normalize this boundary without rewriting restored history.
+						local envelope_source = {kind = source.kind, id = tostring(source.id),
+							revision = source.revision}
+						local record = {id = memory_id, text = memory.text, source = envelope_source,
 							captured_at = memory.time, scope = "private", audience = {self._genesis.actor_id}}
 						if kind == "rumor" then add_unique(rumors, record)
 						elseif kind == "unknown" then add_unique(unknowns, record)
@@ -910,6 +923,15 @@ local function decide_and_act(self)
 				summary_and_stop()
 				return
 			end
+			if MODEL_AUDIT then
+				local audit_path = MODEL_AUDIT_DIR .. "/request-" .. request_id .. "-agent-" .. self._id .. ".json"
+				if not minetest.safe_file_write(audit_path, encoded) then
+					ev("fail=model-audit-write agent=%d request=%d kind=request", self._id, request_id)
+					S.failed = "model-audit-write"
+					summary_and_stop()
+					return
+				end
+			end
 			self._pending = {id = request_id, started = minetest.get_us_time()}
 			self._inbox = {}
 			ev("ev=model-request agent=%d request=%d", self._id, request_id)
@@ -927,10 +949,20 @@ local function decide_and_act(self)
 		if not f then
 			return
 		end
+		local id = self._pending.id
 		local result = minetest.parse_json(f:read("*a"))
 		f:close()
+		if MODEL_AUDIT then
+			local audit_path = MODEL_AUDIT_DIR .. "/response-" .. id .. "-agent-" .. self._id .. ".json"
+			local response_json = minetest.write_json(result or {id=id, ok=false, error="invalid_response"})
+			if not minetest.safe_file_write(audit_path, response_json) then
+				ev("fail=model-audit-write agent=%d request=%d kind=response", self._id, id)
+				S.failed = "model-audit-write"
+				summary_and_stop()
+				return
+			end
+		end
 		os.remove(path)
-		local id = self._pending.id
 		self._pending = nil
 		if result and type(result.attempts) == "table" then
 			for n, attempt in ipairs(result.attempts) do
@@ -1270,6 +1302,25 @@ local function apply_product_projection()
 			end
 		end
 	end
+	-- Luanti's normal map-save cadence is asynchronous. Flush the emerged
+	-- origin region through VoxelManip before publishing the product commit,
+	-- so a restart cannot observe a committed projection with an old map.
+	local vm = minetest.get_voxel_manip(
+		{x = -BOUND, y = 0, z = -BOUND}, {x = BOUND, y = 4, z = BOUND})
+	local minp, maxp = vm:get_emerged_area()
+	local sx, sy = maxp.x - minp.x + 1, maxp.y - minp.y + 1
+	local map_data = vm:get_data()
+	for _, operation in ipairs(plan.operations) do
+		if operation.kind == "node" then
+			local p = operation.position
+			local name = operation.value and operation.value.name or "air"
+			local index = (p.z - minp.z) * sy * sx + (p.y - minp.y) * sx + (p.x - minp.x) + 1
+			assert(index >= 1 and index <= #map_data, "origin projection outside emerged map")
+			map_data[index] = minetest.get_content_id(name)
+		end
+	end
+	vm:set_data(map_data)
+	vm:write_to_map()
 	local committed = product_state:commit("origin-projection:" .. genesis_manifest.origin_event_id, target)
 	local encoded = minetest.write_json(committed)
 	storage:set_string("product_state", encoded)
@@ -1301,7 +1352,7 @@ minetest.after(1, function()
 			if calls_remaining == 0 then
 				local first_product_projection = WORLD_PRODUCT
 					and product_state:components().map == 0
-				if VISUAL or first_product_projection then
+				if (VISUAL and not WORLD_PRODUCT) or first_product_projection then
 					for x = -BOUND, BOUND do
 						for z = -BOUND, BOUND do
 							minetest.set_node({x=x, y=0, z=z}, {name="default:dirt_with_grass"})
@@ -1466,7 +1517,7 @@ end)
 -- 被外部 SIGTERM 停掉时也要留下完整账，否则「启停」只测了成功路径。
 minetest.register_on_shutdown(function()
 	local checkpoint_operation, checkpoint_target
-	if WORLD_PRODUCT and PERSIST and not S.failed then
+	if WORLD_PRODUCT and PERSIST and not S.failed and product_state:phase() == "READY" then
 		local components = product_state:components()
 		checkpoint_operation = "checkpoint:" .. EVENT_NAMESPACE .. ":" .. tostring(product_state:version() + 1)
 		checkpoint_target = components
@@ -1479,7 +1530,7 @@ minetest.register_on_shutdown(function()
 		save_product_state()
 		ev("product-checkpoint prepare operation=%s", checkpoint_operation)
 	end
-	if WORLD_PRODUCT and environment_process then
+	if WORLD_PRODUCT and environment_process and not S.failed then
 		local encoded = minetest.write_json(environment_process:export())
 		local written = pcall(storage.set_string, storage, "environment_state", encoded)
 		if not written or storage:get_string("environment_state") ~= encoded then
@@ -1487,7 +1538,15 @@ minetest.register_on_shutdown(function()
 			return
 		else
 			ev("environment-checkpoint time=%d", environment_process:export().time)
+			-- The environment checkpoint and product clock are one recovery
+			-- boundary. Update the in-memory clock before committing the
+			-- product state, otherwise the next boot sees a false divergence.
+			set_product_clock(environment_process:export().time, os.time())
 		end
+	elseif WORLD_PRODUCT and environment_process and S.failed then
+		-- A failed product run is frozen for review. Do not advance the
+		-- environment or logical clock after the failure boundary.
+		ev("environment-checkpoint skipped reason=run-failed")
 	end
 	if resource_initial then
 		local in_world, inventory = resource_total()

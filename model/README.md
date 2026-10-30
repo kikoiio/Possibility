@@ -18,6 +18,8 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 产品 Lua 运行时生成 `wispiva.model-input` v1。`knowledge.facts`、`experiences`、`rumors`、`unknowns` 分别表达当前事实、本人经历、收到的传闻和有来源但未证实的内容；每项包含稳定 ID、来源和 `access.audience`。`current` 承载观察、库存与可行动作，`feedback` 承载上一次实际执行结果。`model/bridge.py` 在调用 provider 前验证 schema、世界/角色绑定、四类 epistemic 标签、来源及 audience，失败时不产生模型调用；有 envelope 的请求只把 envelope 发送给 provider，legacy 字段只用于本地动作校验。Lua envelope、bridge 和 adapter 测试覆盖了隐私越权、缺来源记录及 provider 载荷隔离。
 
+`model/reflection.py` 提供独立的 `wispiva.reflection-input` v1 桥接：调用方先从一个角色自己的 L1 记录中选出有限经历，保留来源、audience 和 captured time；provider 只能返回同一 topic 的文本解释以及它引用的 source IDs。未知 source、跨角色 audience、重复引用、空引用和额外字段都会在 provider 前或返回后拒绝。它返回上下文／提示哈希和 provider usage，但不会直接写入长期记忆；宿主在认证角色、确认知情范围并通过 `store:reflect` 生成连续 L2 版本后才持久化。
+
 持久起源的 Python 接入点为 `build_manifest_context(manifest, binding, local, ...)`，接受受信任的 `wispiva-world-creation-materials` v1 handoff：检查外层世界身份与绑定，只从其中的 `origin_event` 派生角色上下文，其他全角色材料不会进入提示。`genesis/world_create.py` 发布的 Luanti `wispiva-world-manifest` 由当前产品 Lua 运行时直接投影；后续会把两种 handoff 合并为一个版本化传输协议。文件加载、认证和完整 manifest 校验仍由调用方负责。也可独立调用 `retrieve_genesis_memories(event, binding, query='', max_entries=8, max_bytes=4096)`，从可信的持久 `genesis.created` 载荷检索。返回 `memory`、`memory_query` 和 `memory_scope`，`build_context`／`decide` 已将这份投影用于模型输入。上下文入口接受 `memory_query`、`max_memory_entries`、`max_memory_bytes` 关键字参数；默认查询使用本人私有目标，独立检索接口的空查询则按种子顺序选取。调用方可用当前角色已获授权的局部线索作为查询。
 
 每条记录保留 `world_id`、稳定的 `seed_id`、`owner`、原文以及 `source = {kind: "genesis.seed", event_id, id: seed_id}`；跨世界索引必须使用 `(world_id, seed_id)`。`known_by` 只列拥有者，表示这份种子的授权接收人，不推断其他人的知情状态。`classification = "unknown"`，`time` 和 `importance` 为 `null`：种子没有提供真实性分类、发生时间或重要度，不将起源提交当成种子内容已真实发生的证明，也不生成 L0 事实、L1 存储写入或 L2 反思。
@@ -30,7 +32,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 模型输出投影到白名单字段：`inspect/mark/advance`、带 `target` 的 `approach`、带 `point` 的 `wander/gather/build`、带 `target/text` 的 `say`。忽略多余字段，坐标和 ID 允许数学上为整数的 JSON 数字，拒绝布尔、非有限和小数值。未知字段不能改变端点、节点名或审计来源。邻居目标必须来自观察，坐标必须在边界内；执行前再次按当前世界验证。`why` 由代码固定为 `model`。
 
-`spool_worker.py` 顺序处理请求，每次调用独立子进程；45 秒墙钟时限后终止并回收。仅 `invalid_action` 最多尝试 3 次，每次都审计；传输错误、provider 错误不会无界重试。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。该队列只是小规模基线，未实现生产级公平调度或供应商并发限额管理。
+`spool_worker.py` 顺序处理请求，每次调用独立子进程；45 秒墙钟时限后终止并回收。`invalid_action` 和瞬时 `transport_error` 都最多尝试 3 次，每次都审计；provider 错误不会无界重试，失败仍会停止当前世界并报告固定错误。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。该队列只是小规模基线，未实现生产级公平调度或供应商并发限额管理。
 
 审计记录请求 ID、角色、动作、origin、耗时、可用 token、重试与固定错误码，不记录密钥或原始 provider 文本。适配器返回上下文与提示 SHA-256；原始合成消息只在显式 `society_log_messages=true` 时记录。本轮实验的世界、角色和消息均为合成数据。
 
@@ -38,7 +40,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 ## 验证与结论范围
 
-轻量离线测试：`python3 -B -m unittest discover -s model -t . -v`。实际调用记录在 [Luanti 适配层证据](../evidence/luanti/model/) 和 [执行计划](../docs/PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。
+轻量离线测试：`python3 -B -m unittest discover -s model -t . -v`。实际调用记录在 [Luanti 适配层证据](../evidence/luanti/model/) 和 [执行计划](../docs/PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。\n\n2026-10-30 UTC 的真实模型产品切片见 [证据](../evidence/luanti/product-model-2026-10-30/README.md)。Actions 40996501320 记录了 3 个角色的 18 个决策、4 次对白、资源成功与失败、输入隔离和有限重试；该运行仍是受控小规模场景，不代表长期或万级模型容量。
 
 
 ## 受控记忆任务与并发探针

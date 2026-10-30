@@ -105,7 +105,7 @@ def process_one(directory, path, timeout, runner=run_bridge):
                     attempts.append({'ok': result.get('ok') is True,
                                      'error': result.get('error'),
                                      'audit': result.get('audit')})
-                    if result.get('ok') is True or result.get('error') != 'invalid_action':
+                    if result.get('ok') is True or result.get('error') not in ('invalid_action', 'transport_error'):
                         break
                 result['attempts'] = attempts
             except Exception:

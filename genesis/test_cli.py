@@ -45,6 +45,13 @@ class GenesisCliTests(unittest.TestCase):
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(result, {'status': 'valid'})
 
+    def test_create_draft_requires_response_or_live_model(self):
+        code, result, err = self.run_cli('create-draft', '--draft-db', str(self.db),
+                                         '--intent', 'a quiet valley')
+        self.assertNotEqual(code, 0)
+        self.assertIsNone(result)
+        self.assertIn('choose_exactly_one', err)
+
 
 if __name__ == '__main__':
     unittest.main()

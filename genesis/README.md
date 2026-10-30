@@ -46,6 +46,8 @@ Run at repository root. The CLI consumes an already obtained model response; it 
 python3 -m genesis validate genesis/example.json
 python3 -m genesis generate --intent '安静的河谷，有一位旅人' --response genesis/example.json > /path/to/new-draft.json
 python3 -m genesis create-draft --draft-db /private/drafts.sqlite --intent '当前用户的世界描述' --response /private/model-response.json
+# 已配置 XUNFEI_* 或 WISPIVA_LLM_* 时，可以直接调用真实模型生成可编辑草稿：
+python3 -m genesis create-draft --draft-db /private/drafts.sqlite --intent '当前用户的世界描述' --live
 python3 -m genesis save --draft-db /private/drafts.sqlite --draft /path/to/new-draft.json
 python3 -m genesis read --draft-db /private/drafts.sqlite --draft-id DRAFT_ID
 python3 -m genesis confirm --draft-db /private/drafts.sqlite --draft-id DRAFT_ID --revision 1 --world-path /private/world.sqlite
@@ -54,7 +56,7 @@ python3 -m genesis create-world --draft-db /private/drafts.sqlite --draft-id DRA
 python3 -m unittest genesis.test_genesis genesis.test_store genesis.test_compiler genesis.test_preflight genesis.test_preview -v
 ```
 
-The `generate` and `create-draft` commands consume an already obtained model response; they do not contact a model or load credentials. The response must have been generated for the current intent. Invalid input exits nonzero and prints safe diagnostics to stderr. The CLI validates structure and persists the binding, but it does not establish semantic fidelity between an arbitrary supplied response and the intent.
+`generate` 仍消费已经取得的模型响应；`create-draft` 默认也消费响应文件，使用 `--live` 时才读取显式配置并调用真实 provider。两种路径都只生成可编辑草稿，不会自动确认或创建世界。响应必须针对当前 intent 生成。无效输入以非零状态退出并向 stderr 输出安全诊断；结构校验和 intent 绑定不能代替用户检查公开／私有预览及语义一致性确认。
 
 `create-world` is the persistent product path. It requires the exact confirmed
 draft revision and its unchanged origin checkpoint, then publishes a fresh

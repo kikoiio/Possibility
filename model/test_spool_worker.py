@@ -27,6 +27,17 @@ class SpoolTests(unittest.TestCase):
         self.assertEqual([a['ok'] for a in result['attempts']], [False, True])
         self.assertEqual(runner.call_count, 2)
 
+    def test_transport_retries_are_bounded_and_audited(self):
+        path = self.root / 'request-2.json'
+        path.write_text(json.dumps({'id': 2, 'context': {}}))
+        runner = mock.Mock(side_effect=[{'id': 2, 'ok': False, 'error': 'transport_error',
+                                         'audit': {'latency_ms': 30000}},
+                                       {'id': 2, 'ok': True, 'action': {'kind': 'inspect'}}])
+        worker.process_one(self.root, path, 1, runner=runner)
+        result = json.loads((self.root / 'response-2.json').read_text())
+        self.assertEqual([a['error'] for a in result['attempts']], ['transport_error', None])
+        self.assertEqual(runner.call_count, 2)
+
     def test_atomic_response_and_bad_requests(self):
         request = {'id': 3, 'context': {'observation': {}}}
         path = self.root / 'request-3.json'

@@ -283,7 +283,8 @@ def decide(config: Config, context: Mapping[str, Any], *, transport: Callable[[C
     except Exception:
         raise ModelError('transport_error', audit={
             'latency_ms': round((time.monotonic() - started) * 1000), 'usage': {}}) from None
-    return {'action': action, 'audit': {'context_sha256': hashlib.sha256(data.encode()).hexdigest(),
+    return {'action': action, 'output_text': text,
+            'audit': {'context_sha256': hashlib.sha256(data.encode()).hexdigest(),
             'prompt_sha256': hashlib.sha256(PROMPT.encode()).hexdigest(),
             'latency_ms': round((time.monotonic() - started) * 1000), 'usage': usage}}
 
