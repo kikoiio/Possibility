@@ -413,7 +413,7 @@ jobs:
           set -euo pipefail
           audit_dir=.ci-product-model/world/private/model-audit
           output_dir=.ci-product-model/model-load
-          if [[ "$GITHUB_REF_NAME" == 'validation/luanti-product-model-workers-20261030' ]]; then
+          if [ "$GITHUB_REF_NAME" = 'validation/luanti-product-model-workers-20261030' ]; then
             audit_dir=.ci-free-social/world/private/model-audit
             output_dir=.ci-free-social/model-load
           fi
