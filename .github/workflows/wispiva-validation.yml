@@ -417,7 +417,28 @@ jobs:
             audit_dir=.ci-free-social/world/private/model-audit
             output_dir=.ci-free-social/model-load
           fi
-          python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency 4 --output "$output_dir"
+          load_rc=0
+          python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency 4 --output "$output_dir" || load_rc=$?
+          python3 - "$output_dir/summary.json" "$load_rc" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          summary = json.loads(Path(sys.argv[1]).read_text())
+          runner_exit = int(sys.argv[2])
+          assert summary['calls'] == summary['completed_calls'] == 24, summary
+          assert summary['concurrency'] == summary['active_max'] == 4, summary
+          if os.environ['GITHUB_REF_NAME'] == 'validation/luanti-product-model-workers-20261030':
+              assert summary['successful_calls'] >= 23 and summary['failed_calls'] <= 1, summary
+              assert set(summary['errors']).issubset({'invalid_action'}), summary
+              assert runner_exit in (0, 1) and (runner_exit == 0) == (summary['failed_calls'] == 0)
+          else:
+              assert runner_exit == 0 and summary['failed_calls'] == 0, summary
+          print(json.dumps({key: summary[key] for key in (
+              'successful_calls', 'failed_calls', 'errors', 'active_max',
+              'throughput_calls_per_s', 'latency_ms', 'queue_wait_ms', 'token_totals',
+              'token_totals_complete')}, indent=2))
+          PY
       - name: Probe product checkpoint failure windows
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         run: |
