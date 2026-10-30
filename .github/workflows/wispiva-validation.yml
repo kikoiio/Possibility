@@ -229,7 +229,7 @@ jobs:
             wait "$server"
             status=$?
             set -e
-            if [[ "$status" -ne 0 && "$status" -ne 143 ]]; then
+            if [ "$status" -ne 0 ] && [ "$status" -ne 143 ]; then
               cat "$log" >&2
               return "$status"
             fi
