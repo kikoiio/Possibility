@@ -11,7 +11,7 @@
 | 计划项 | 状态 | 当前证据 | 下一步 |
 | --- | --- | --- | --- |
 | 统一创建与状态契约 | 部分完成 | [`product_state.lua`](../../cognition/product_state.lua) 已实现 `READY`、`PREPARING`、`FROZEN`、准备与提交版本；[Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 对复制世界通过地图投影后、环境后、角色后、commit 前、commit 后五个故障窗口的恢复检查。 | 确定跨组件权威归属并完成地图、库存、事件、记忆、环境共同事务设计。当前恢复证据不证明全局原子提交或断电级持久性。 |
-| 用户意图到世界起点 | 部分完成 | 两个可编辑非固定题材和四角色 `small frontier settlement` 自由社会世界由意图进入真实模型生成、验证、确认及持久 Luanti 创建链路；[Actions 41058674691](https://github.com/kikoiio/Wispiva/actions/runs/41058674691) 又通过创建与运行。[Actions 41069246124](https://github.com/kikoiio/Wispiva/actions/runs/41069246124) 用同一真实生成器处理中文河谷自由聚落意图，生成和空间编译步骤通过。 | 用真实用户提供的文本／素材走完草稿审阅、修改、确认，并由用户检查语义和私有信息投影；复核中文草稿 artifact。当前题材和角色细节仍是验收样本，中文运行只证明草稿与编译，不证明用户接受或世界已创建。 |
+| 用户意图到世界起点 | 部分完成 | 两个可编辑非固定题材和四角色 `small frontier settlement` 自由社会世界由意图进入真实模型生成、验证、确认及持久 Luanti 创建链路；[Actions 41058674691](https://github.com/kikoiio/Wispiva/actions/runs/41058674691) 又通过创建与运行。[Actions 41072461877](https://github.com/kikoiio/Wispiva/actions/runs/41072461877) 对中文河谷自由聚落意图重新生成并编译三位居民草稿，usage 完整（2,090 input、734 output tokens）。 | 当前新增的 Actions 验收将尝试把中文草稿送入确认、持久世界和真实角色循环；仍需用户审阅、修改和确认语义，真人 Luanti 体验，且自动私有记忆检查不能替代社会行为质量评估。 |
 | 空间与三维体验 | 部分完成 | [`product-world-2026-10-29/README.md`](../../evidence/luanti/product-world-2026-10-29/README.md)记录地面、室内外投影、连接、角色起点、客户端连接、场景互动和引导到达。Actions `40956198179` 是该运行的远端引用；本次提交把 `advance` 接入 [`cognition/navigation.lua`](../../cognition/navigation.lua) 的有界 BFS。 | 完成真人 Luanti 客户端验收，记录用户是否能移动、观察、理解互动及其后果。随后补充真实通行、碰撞、寻路、外观和不同题材的场景验证。当前导航只回读平面节点，实体最终仍用受控 `set_pos` 更新。 |
 | 记忆从起点进入主循环 | 部分完成 | `wispiva.model-input` v1、来源和 audience 校验、`store:reflect`、定期真实反思、L2 写回、最新主题版本检索及重启恢复已有实现；[Actions 41063917433](https://github.com/kikoiio/Wispiva/actions/runs/41063917433) 另完成 30 次 FIFO／retrieval 真实模型任务（5 类 × 3 seeds × 2 arms，含中文短线索）和 24 次并发探针，完整 token 审计、零调用错误。逐任务正确率留在 artifact，未据 workflow 成功推断回答正确。 | 复核 artifact 的逐任务正确率；评估长期反思事实性、矛盾信念和长时检索质量；扩大情境覆盖并做真人角色质量评审。当前短时合成运行不证明长时记忆质量。 |
 | 真实角色与环境闭环 | 部分完成 | [`environment.lua`](../../cognition/environment.lua) 按逻辑时间推进资源。四轮用户意图自由社会短场景共 96 次真实决策、4 次 `say`、4 次 `give`、32 次 gather、15 次 build，并保存 248 条记忆；正式会议事件为 0。逐轮结果见[证据表](../../evidence/luanti/product-model-2026-10-30/README.md#四次自由社会场景汇总)。 | 增加交流、冲突和共同目标情境，进行多轮重复并由真人评价角色行为。四轮中 say 只在一轮出现、give 只在两轮出现，尚未形成稳定互动证据。 |
@@ -20,7 +20,7 @@
 
 ## 已完成但证据或文档没有完全同步的内容
 
-2026-10-30 的 [Actions 41069246124](https://github.com/kikoiio/Wispiva/actions/runs/41069246124) 和 [41063917433](https://github.com/kikoiio/Wispiva/actions/runs/41063917433) 新增实时中文世界意图草稿／空间编译和含中文短线索的真实记忆任务。两者均用合成输入；后者完整审计 token 且没有调用错误，但逐任务答案仍应以 artifact 评分为准。
+2026-10-30 的 [Actions 41072461877](https://github.com/kikoiio/Wispiva/actions/runs/41072461877) 和 [41063917433](https://github.com/kikoiio/Wispiva/actions/runs/41063917433) 新增实时中文世界意图草稿／空间编译和含中文短线索的真实记忆任务。中文草稿生成 usage 完整；记忆任务无 provider 调用错误，但逐任务答案仍应以 artifact 评分为准。中文意图的 Draft 确认、持久 Luanti 角色运行与逐角色记忆边界验收已加入后续 Actions，结果待跑。
 
 1. **产品模型输入边界和反思写回已有集成证据。** `wispiva.model-input` v1、来源、audience、动作反馈、周期反思和 source-grounded L2 写回已进入产品闭环。Actions 41037865211 通过反思及重启恢复；长期质量、冲突信念和真人角色评价仍未完成，因此记忆计划保持部分完成。
 

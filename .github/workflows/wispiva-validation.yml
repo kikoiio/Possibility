@@ -624,25 +624,129 @@ jobs:
               except Exception as exc:
                   result = {'index': index, 'ok': False,
                             'error': getattr(exc, 'code', type(exc).__name__), 'token_usage': None}
-              attempts = usages[usage_start:]
+              responses = usages[usage_start:]
               required = ('input_tokens', 'output_tokens')
-              if attempts and any(item.get('invalid') for item in attempts):
-                  token_usage = {'status': 'invalid', 'calls': len(attempts), 'tokens': None}
-              elif attempts and all(all(key in item for key in required) for item in attempts):
-                  input_tokens = sum(item['input_tokens'] for item in attempts)
-                  output_tokens = sum(item['output_tokens'] for item in attempts)
-                  token_usage = {'status': 'complete', 'calls': len(attempts),
+              if responses and any(item.get('invalid') for item in responses):
+                  token_usage = {'status': 'invalid', 'completed_responses': len(responses), 'tokens': None}
+              elif responses and all(all(key in item for key in required) for item in responses):
+                  input_tokens = sum(item['input_tokens'] for item in responses)
+                  output_tokens = sum(item['output_tokens'] for item in responses)
+                  token_usage = {'status': 'complete', 'completed_responses': len(responses),
                                  'tokens': {'input_tokens': input_tokens,
                                             'output_tokens': output_tokens,
                                             'total_tokens': input_tokens + output_tokens}}
               else:
-                  token_usage = {'status': 'missing', 'calls': len(attempts), 'tokens': None}
+                  token_usage = {'status': 'missing', 'completed_responses': len(responses), 'tokens': None}
               result['token_usage'] = token_usage
               results.append(result)
               print(json.dumps(result, ensure_ascii=False))
           Path('genesis-results/results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
           if not all(result['ok'] for result in results): raise SystemExit(1)
           PY
+      - name: Create and run the Chinese free-settlement intent in Luanti
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-genesis-cjk-') }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from genesis.store import DraftStore
+          from genesis.world_create import create_world
+          from model.product_envelope import validate
+
+          root = Path('.ci-cjk-world').absolute()
+          root.mkdir(mode=0o700)
+          intent = ('在一处河谷建立自由聚落。三位居民没有指定职业，让他们根据经历自行决定如何分工、交流和应对环境；'
+                    '只描述当前世界和局部目标，不安排剧情结局。地点包括河边空地、旧磨坊和山路入口，'
+                    '每个人有一段只属于本人的私人记忆。')
+          draft = json.loads(Path('genesis-results/draft-3.json').read_text(encoding='utf-8'))
+          assert len(draft['actors']) == 3, len(draft['actors'])
+          assert {memory['actorId'] for memory in draft['memories']} == {actor['id'] for actor in draft['actors']}
+          store = DraftStore(root / 'drafts.sqlite', create=True)
+          try:
+              record = store.create(draft, intent=intent)
+              assert record['intent'] == intent and record['revision'] == 1
+              store.confirm(record['id'], record['revision'], root / 'origin.sqlite')
+              result = create_world(store, record['id'], record['revision'], root / 'world')
+              (root / 'creation-result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          finally:
+              store.close()
+
+          manifest = json.loads((root / 'world/private/wispiva-origin.json').read_text(encoding='utf-8'))
+          creation = json.loads((root / 'world/private/creation.json').read_text(encoding='utf-8'))
+          assert manifest['intent'] == intent
+          digest = hashlib.sha256(intent.encode('utf-8')).hexdigest()
+          assert manifest['intent_sha256'] == creation['intent_sha256'] == digest
+          assert len(manifest['actors']) == 3
+          assert all(actor['memory_seeds'] for actor in manifest['actors'])
+          print(json.dumps({'created': True, 'actors': len(manifest['actors']),
+                            'intent_sha256': digest, 'private_seed_counts': {
+                                actor['actor_id']: len(actor['memory_seeds']) for actor in manifest['actors']}}))
+          PY
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-cjk-world/world" --decisions 6 --interval 1 --seconds 1200 --reflection-every 2 --audit-model --model-workers 3
+          python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from model.product_envelope import validate
+
+          root = Path('.ci-cjk-world')
+          world = root / 'world'
+          manifest = json.loads((world / 'private/wispiva-origin.json').read_text(encoding='utf-8'))
+          log = (world / 'private/product.log').read_text(errors='replace')
+          assert 'SOCIETY ev=model-action ' in log and 'origin=model' in log
+          assert 'SOCIETY product-checkpoint commit ' in log and 'SOCIETY done result=ok' in log
+          requests = sorted((world / 'private/model-audit').rglob('request-*.json'))
+          responses = sorted((world / 'private/model-audit').rglob('response-*.json'))
+          assert len(requests) >= 6 and len(responses) >= 6, (len(requests), len(responses))
+          seeds = {actor['actor_id']: [seed['text'] for seed in actor['memory_seeds']]
+                   for actor in manifest['actors']}
+          seen_actors = set()
+          own_seed_seen = set()
+          for path in requests:
+              value = json.loads(path.read_text(encoding='utf-8'))
+              envelope = value['context']['model_input']
+              assert validate(envelope)
+              actor = envelope['request']['actor_id']
+              assert actor in seeds
+              seen_actors.add(actor)
+              encoded = json.dumps(envelope, ensure_ascii=False)
+              for other, actor_seeds in seeds.items():
+                  for seed in actor_seeds:
+                      if other == actor:
+                          if seed in encoded:
+                              own_seed_seen.add(actor)
+                      else:
+                          assert seed not in encoded, (actor, other)
+          assert seen_actors == set(seeds), seen_actors
+          assert own_seed_seen == set(seeds), own_seed_seen
+          summary = {
+              'world_created': True,
+              'actors': len(seeds),
+              'requests': len(requests),
+              'responses': len(responses),
+              'actors_observed_by_model': len(seen_actors),
+              'actors_with_own_seed_in_model_input': len(own_seed_seen),
+              'private_seed_cross_actor_leaks': 0,
+              'checkpoint_committed': 'SOCIETY product-checkpoint commit ' in log,
+              'world_loop_completed': 'SOCIETY done result=ok' in log,
+              'genesis_token_usage': json.loads(Path('genesis-results/results.json').read_text())[2]['token_usage'],
+          }
+          Path('cjk-product-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload Chinese intent product summary
+        if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-genesis-cjk-') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispiva-cjk-product-summary
+          path: cjk-product-summary.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Repeated 1000-agent capacity measurement
         if: ${{ startsWith(github.ref_name, 'validation/luanti-model-') }}
         run: |

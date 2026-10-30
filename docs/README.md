@@ -25,7 +25,7 @@
 | 产品目录迁移验证 | 根目录迁移后的引擎、恢复及预览检查 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/product-root-2026-10-29/README.md) |
 | 起源原型验证 | 起源数据原型与既有运行时回归，未验证集成 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-2026-10-29/README.md) |
 | 起源与资源集成验证 | 确认绑定、假引擎对账及既有 Luanti 回归 | 2026-10-29 | [Actions 原始证据](../evidence/luanti/origin-integration-2026-10-29/README.md) |
-| 用户意图创建案例 | 两个非固定题材的可编辑草稿、确认 revision、私有 intent 和公开／私有边界回归 | 2026-10-29 | [原始证据](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md) |
+| 用户意图创建案例 | 两个非固定题材的可编辑草稿、确认 revision、私有 intent 和公开／私有边界回归；中文自由聚落真实生成及产品级 Luanti 运行验收进行中 | 2026-10-30 | [创建案例](../evidence/luanti/genesis/2026-10-29-product-intents/summary.md)、[中文运行记录](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md) |
 | 持久产品世界验证 | 已确认 Draft 到 Luanti 世界目录、空间投影、角色私有起点、环境过程、重启恢复和自动客户端验收 | 2026-10-29 | [原始证据](../evidence/luanti/product-world-2026-10-29/README.md) |
 | 真实模型产品世界验证 | 三角色对话／资源行动与反思恢复、四角色自由社会、provider 并发 1–16 回放；明确不代表千级 LLM 容量 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-model-2026-10-30/README.md) |
 | 产品长期记忆主循环证据 | 主循环 L2 写回、belief 检索、正常重启后的版本和动作反馈保留 | 2026-10-30 UTC | [原始证据](../evidence/luanti/product-memory-runtime-2026-10-30/README.md) |
