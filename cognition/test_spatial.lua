@@ -68,7 +68,8 @@ local observed_index = spatial.new(4)
 local observer = {get_pos = function() return pos(0) end,
   get_luaentity = function() error("self must be filtered before reading its entity") end}
 local peer_pos = pos(1)
-local peer_entity = {name = "society:agent", _id = 2, _memory = {secret = "private"}}
+local peer_entity = {name = "society:agent", _id = 2, _persona = "Visible Neighbor",
+  _memory = {secret = "private"}, _goal = "private goal", _genesis = {memory_seeds = {"private seed"}}}
 local peer = {get_pos = function() return peer_pos end,
   get_luaentity = function() return peer_entity end}
 observed_index:upsert(1, observer, observer:get_pos())
@@ -79,9 +80,21 @@ end}
 equal(engine.get_objects_inside_radius(pos(0), 2), {observer, peer})
 local sensed = observation.observe(engine, observer, {radius = 2, node_names = {}})
 assert(#sensed.agents == 1 and sensed.agents[1].id == 2 and sensed.agents[1].distance == 1)
-assert(sensed.agents[1]._memory == nil and sensed.agents[1].secret == nil)
+assert(sensed.agents[1].name == "Visible Neighbor" and sensed.agents[1].pos.x == 1)
+assert(sensed.agents[1]._memory == nil and sensed.agents[1]._goal == nil
+  and sensed.agents[1]._genesis == nil and sensed.agents[1].secret == nil)
+local farther_entity = {name = "society:agent", _id = 3, _persona = "Farther Neighbor"}
+local farther_pos = pos(2)
+local farther = {get_pos = function() return farther_pos end,
+  get_luaentity = function() return farther_entity end}
+observed_index:upsert(3, farther, farther_pos)
+local bounded = observation.observe(engine, observer, {radius = 3, node_names = {}, max_agents = 1})
+assert(#bounded.agents == 1 and bounded.agents[1].id == 2,
+  "visible agents are bounded and nearest first")
 peer_pos = pos(20)
 observed_index:upsert(2, peer, peer:get_pos())
+farther_pos = pos(30)
+observed_index:upsert(3, farther, farther:get_pos())
 assert(#observation.observe(engine, observer, {radius = 2, node_names = {}}).agents == 0)
 
 -- Invalid updates must leave the previous mapping intact.

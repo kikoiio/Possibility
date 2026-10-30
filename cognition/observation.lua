@@ -19,11 +19,21 @@ local function id_less(a, b)
   return a.id < b.id
 end
 
+local function public_name(entity)
+  local name = entity._persona
+  if type(name) ~= "string" or name == "" or #name > 128 or name:find("[%z\1-\31\127]") then
+    return tostring(entity._id)
+  end
+  return name
+end
+
 -- Only public identity and position cross the boundary; Lua entity tables never do.
 function M.observe(engine, self_object, options)
   assert(type(engine) == "table" and self_object, "engine and self object required")
   assert(type(options) == "table" and finite(options.radius) and options.radius >= 0, "invalid radius")
   assert(type(options.node_names) == "table", "node_names required")
+  local max_agents = options.max_agents or 16
+  assert(finite(max_agents) and max_agents >= 1 and max_agents == math.floor(max_agents), "invalid max_agents")
   local pos = self_object:get_pos()
   if not pos then return nil, "observer has no position" end
   pos = position(pos)
@@ -43,12 +53,17 @@ function M.observe(engine, self_object, options)
         local dx, dy, dz = other_pos.x - pos.x, other_pos.y - pos.y, other_pos.z - pos.z
         local d2 = dx * dx + dy * dy + dz * dz
         if d2 <= radius * radius then
-          agents[#agents + 1] = {id = entity._id, pos = other_pos, distance = math.sqrt(d2)}
+          agents[#agents + 1] = {id = entity._id, name = public_name(entity),
+            pos = other_pos, distance = math.sqrt(d2)}
         end
       end
     end
   end
-  table.sort(agents, id_less)
+  table.sort(agents, function(a, b)
+    if a.distance ~= b.distance then return a.distance < b.distance end
+    return id_less(a, b)
+  end)
+  while #agents > max_agents do agents[#agents] = nil end
   local nodes = {}
   if #options.node_names > 0 then
     local minp = {x = pos.x - radius, y = pos.y - radius, z = pos.z - radius}
