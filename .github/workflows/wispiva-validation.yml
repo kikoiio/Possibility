@@ -694,7 +694,7 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           mkdir -p memory-results
-          python3 -B model/memory_eval.py --output memory-results/tasks.json
+          python3 -B model/memory_eval.py --seeds 11 12 13 14 --max-calls 48 --output memory-results/tasks.json
           python3 -B model/memory_eval.py --probe --output memory-results/concurrency.json
       - name: Memory evidence selection diagnostic
         if: ${{ github.ref_name == 'validation/luanti-memory-selector-20261030' }}
