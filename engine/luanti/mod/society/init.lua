@@ -900,7 +900,9 @@ local function decide_and_act(self)
 					{strategy=MEMORY_MODE, max_entries=8, max_chars=4096})
 			else selected_memory = {} end
 			local context = {observation = {has_target = obs.has_target,
-				nearby_agents = obs.nearby_agents, pos = obs.pos, marks_nearby = obs.marks_nearby},
+				nearby_agents = obs.nearby_agents,
+				visible_agents = obs.local_view and obs.local_view.agents or {},
+				pos = obs.pos, marks_nearby = obs.marks_nearby},
 				self_id = self._id, time = world_time(), persona = self._persona,
 				goal = (GENESIS_PREVIEW or WORLD_PRODUCT) and self._genesis.goal or GOAL,
 				nearby_positions = obs.local_view and obs.local_view.agents or {},
