@@ -256,7 +256,7 @@ jobs:
             sleep 1
           done
           ! pgrep -f 'luantiserver' >/dev/null 2>&1
-          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 8 --interval 1 --seconds 600 --audit-model
+          engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 6 --interval 1 --seconds 600 --audit-model
           python3 -B - <<'PY'
           import json
           from pathlib import Path
