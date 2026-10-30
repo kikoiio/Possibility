@@ -143,6 +143,14 @@ if GENESIS_PREVIEW then
     preview_actors = preview_module.validate(minetest.parse_json(raw), COUNT)
 end
 local SPOOL = cfg("society_spool", "")
+local MODEL_AUDIT_DIR = cfg("society_model_audit_dir", "")
+local MODEL_AUDIT = cfg("society_model_audit", "false") == "true"
+if MODEL_AUDIT then
+	assert(MODEL_AUDIT_DIR ~= "", "model audit requires society_model_audit_dir")
+	local probe = assert(io.open(MODEL_AUDIT_DIR .. "/.writable", "wb"), "model audit directory unavailable")
+	probe:close()
+	os.remove(MODEL_AUDIT_DIR .. "/.writable")
+end
 local request_id = 0
 local step_count, last_us = 0, minetest.get_us_time()
 
@@ -915,6 +923,15 @@ local function decide_and_act(self)
 				summary_and_stop()
 				return
 			end
+			if MODEL_AUDIT then
+				local audit_path = MODEL_AUDIT_DIR .. "/request-" .. request_id .. "-agent-" .. self._id .. ".json"
+				if not minetest.safe_file_write(audit_path, encoded) then
+					ev("fail=model-audit-write agent=%d request=%d kind=request", self._id, request_id)
+					S.failed = "model-audit-write"
+					summary_and_stop()
+					return
+				end
+			end
 			self._pending = {id = request_id, started = minetest.get_us_time()}
 			self._inbox = {}
 			ev("ev=model-request agent=%d request=%d", self._id, request_id)
@@ -932,10 +949,20 @@ local function decide_and_act(self)
 		if not f then
 			return
 		end
+		local id = self._pending.id
 		local result = minetest.parse_json(f:read("*a"))
 		f:close()
+		if MODEL_AUDIT then
+			local audit_path = MODEL_AUDIT_DIR .. "/response-" .. id .. "-agent-" .. self._id .. ".json"
+			local response_json = minetest.write_json(result or {id=id, ok=false, error="invalid_response"})
+			if not minetest.safe_file_write(audit_path, response_json) then
+				ev("fail=model-audit-write agent=%d request=%d kind=response", self._id, id)
+				S.failed = "model-audit-write"
+				summary_and_stop()
+				return
+			end
+		end
 		os.remove(path)
-		local id = self._pending.id
 		self._pending = nil
 		if result and type(result.attempts) == "table" then
 			for n, attempt in ipairs(result.attempts) do
