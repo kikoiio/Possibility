@@ -117,22 +117,58 @@ function M.plan(manifest)
     seen[a .. ':' .. b] = true; connections[#connections+1] = {from=a, to=b}
   end
   table.sort(connections, function(a,b) return a.from .. ':' .. a.to < b.from .. ':' .. b.to end)
+  local function route(a, b, from, to)
+    local function route_key(x, z) return x .. ',' .. z end
+    local function blocked(x, z)
+      for _, other in ipairs(ordered) do
+        if other.id ~= from and other.id ~= to
+          and math.abs(x-other.anchor.x) <= other.radius
+          and math.abs(z-other.anchor.z) <= other.radius then
+          return true
+        end
+      end
+      return false
+    end
+    local queue = {{x=a.x, z=a.z, parent=0}}
+    local seen = {[route_key(a.x, a.z)] = 1}
+    local directions = {{1,0}, {0,1}, {-1,0}, {0,-1}}
+    local finish, cursor = nil, 1
+    while cursor <= #queue and not finish do
+      local current = queue[cursor]
+      if current.x == b.x and current.z == b.z then
+        finish = cursor
+        break
+      end
+      for _, direction in ipairs(directions) do
+        local x, z = current.x + direction[1], current.z + direction[2]
+        local key = route_key(x, z)
+        if x >= -64 and x <= 64 and z >= -64 and z <= 64
+          and not seen[key] and not blocked(x, z) then
+          queue[#queue+1] = {x=x, z=z, parent=cursor}
+          seen[key] = #queue
+        end
+      end
+      cursor = cursor + 1
+    end
+    check(finish ~= nil, 'no clear connection route')
+    local reversed = {}
+    while finish > 0 do
+      local item = queue[finish]
+      reversed[#reversed+1] = {x=item.x, z=item.z}
+      finish = item.parent
+    end
+    local result = {}
+    for i = #reversed, 1, -1 do result[#result+1] = reversed[i] end
+    return result
+  end
   for _, c in ipairs(connections) do
     local a,b = places[c.from].anchor, places[c.to].anchor
     local function path(x,z)
-      for _, other in ipairs(ordered) do
-        check(other.id == c.from or other.id == c.to
-          or math.abs(x-other.anchor.x) > other.radius
-          or math.abs(z-other.anchor.z) > other.radius, 'path crosses unrelated place')
-      end
       node(point(x,0,z), 'default:stone')
       path_cells[key(point(x,1,z))] = true
       for y=1,3 do node(point(x,y,z), nil) end
     end
-    local x,z = a.x,a.z
-    path(x,z)
-    while x ~= b.x do x=x+(x < b.x and 1 or -1); path(x,z) end
-    while z ~= b.z do z=z+(z < b.z and 1 or -1); path(x,z) end
+    for _, p in ipairs(route(a, b, c.from, c.to)) do path(p.x,p.z) end
   end
   local function interior(place_id, p)
     local place = places[place_id]

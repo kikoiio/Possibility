@@ -254,11 +254,17 @@ test('invalid references, overlap and duplicate identities fail closed', functio
   end
 end)
 
-test('paths through unrelated rooms are rejected', function()
+test('connection routes around unrelated rooms', function()
   local doc=fixture()
   doc.public.places[2].anchor={x=16,y=1,z=0}
   doc.public.places[3]={id='middle',space='indoor',anchor={x=8,y=1,z=0}}
-  fails(function() projection.plan(doc) end,'path crosses unrelated place')
+  local plan=projection.plan(doc)
+  assert(find(plan,'node:8,0,0').value.name == 'default:wood')
+  local stones=0
+  for _,op in ipairs(plan.operations) do
+    if op.kind == 'node' and op.value and op.value.name == 'default:stone' then stones=stones+1 end
+  end
+  assert(stones > 0)
 end)
 
 test('empty actors/objects/connections allowed and one-place plan applies', function()
