@@ -37,9 +37,13 @@ def _text(value: Any, *, empty: bool = False) -> str:
 
 
 def _integer(value: Any, *, minimum: int = 0) -> int:
-    if type(value) is not int or value < minimum:
+    # Luanti's JSON writer serializes every Lua number as a JSON number;
+    # integral values therefore arrive as Python floats at this boundary.
+    # Accept only finite integral floats, while continuing to reject booleans
+    # and fractional values.
+    if type(value) not in (int, float) or not math.isfinite(value) or int(value) != value or value < minimum:
         raise EnvelopeError('invalid_model_input')
-    return value
+    return int(value)
 
 
 def _number(value: Any) -> Any:
