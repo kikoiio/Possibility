@@ -114,7 +114,7 @@ class ProductMemoryFixture:
 
     @staticmethod
     def public_world_fact(actor):
-        return {'id': 'genesis:world:genesis:1', 'text': 'World: River valley. Shared public setting.',
+        return {'id': 'genesis:world:genesis:1', 'text': 'World: River valley. A shared public setting.',
                 'source': {'kind': 'genesis.public', 'id': 'genesis:1'},
                 'epistemic': 'fact', 'access': {'scope': 'public', 'audience': [actor]}}
 
