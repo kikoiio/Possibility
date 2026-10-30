@@ -14,6 +14,8 @@ status: active
 
 四次重复的自由社会短场景共完成 96 次真实决策、保存 248 条记忆记录；共出现 4 次 `say` 和 4 次 `give`，分别只在 1/4 与 2/4 轮出现，正式 meeting 事件为 0。该波动更支持“交互能力已进入动作空间”，还不足以说明互动稳定或形成社会结构；逐轮结果见[场景证据表](../evidence/luanti/product-model-2026-10-30/README.md#四次自由社会场景汇总)。
 
+加长验证 [Actions 41088765681](https://github.com/kikoiio/Wispiva/actions/runs/41088765681) 又运行四角色、每角色 24 次决策，共 96 次；采集、建造、探索和前进均出现，但 `say`、`give`、message、meeting 均为 0。世界 checkpoint 成功，后续 24 次并发负载回放为 23/24 可执行，1 次 `invalid_action` 使该负载 job 未通过。更长运行没有带来角色间直接交流的证据；详细计数和限制见[自由社会证据](../evidence/luanti/product-model-2026-10-30/README.md#更长自由社会回放2026-10-30)。
+
 容量证据见[角色容量阶梯](../evidence/luanti/agent/capacity-2026-10-30.md)：[Actions 41045304874](https://github.com/kikoiio/Wispiva/actions/runs/41045304874) 的 20–1,000 角色、8 种角色数／认知设置全部通过，所有实体存活并完成 4 次规则决策，引擎采样 RSS 为 80–111 MiB；[Actions 41046819509](https://github.com/kikoiio/Wispiva/actions/runs/41046819509) 的 5,000／10,000 角色、认知开关两种设置各重复 3 次，全员存活并完成 12 次决策，10k RSS 为 1,220–1,493 MiB。各阶梯都通过运行器 10 steps/s 硬门槛，但最低步频 10.85–11.07 仍略低于 11.1 实时参考线。10k／3 秒服务延迟的队列模拟中，即使 1,000 个 worker，60 秒仍有 9,000 个请求待处理；这是模拟，不是真实 provider 测量。全部实体容量结果均使用规则策略，不是 LLM 角色服务能力。
 
 ## 产品目标与当前交付面
