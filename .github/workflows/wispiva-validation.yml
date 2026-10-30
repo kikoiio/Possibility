@@ -250,6 +250,11 @@ jobs:
           finally:
               store.close()
           PY
+          for _ in $(seq 1 30); do
+            if ! pgrep -f 'luantiserver' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          ! pgrep -f 'luantiserver' >/dev/null 2>&1
           engine/luanti/run_product.sh --world "$GITHUB_WORKSPACE/.ci-product-model/world" --decisions 6 --interval 1 --seconds 600 --audit-model
           python3 -B - <<'PY'
           import json
@@ -311,6 +316,7 @@ jobs:
           name: wispiva-product-model-evidence
           path: .ci-product-model
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
       - name: Capacity ladder
         if: ${{ !startsWith(github.ref_name, 'validation/luanti-verify-') && !startsWith(github.ref_name, 'validation/luanti-genesis-') && !startsWith(github.ref_name, 'validation/luanti-budget-') && !startsWith(github.ref_name, 'validation/luanti-opt-') && !startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-model-') && !startsWith(github.ref_name, 'validation/luanti-product-model-') && !startsWith(github.ref_name, 'validation/luanti-agent-') && !startsWith(github.ref_name, 'validation/luanti-large-') && github.ref_name != 'wispiva/world-product' }}
