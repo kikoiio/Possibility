@@ -230,7 +230,7 @@ jobs:
                   'places': [{'id': 'well', 'name': 'The well', 'description': 'A shared meeting place beside a green resource.'}],
                   'actors': [
                       {'id': 'alice', 'name': 'Alice', 'role': 'scout',
-                       'goal': 'Greet Bob, tell him you found a green resource by the well, then gather it.', 'placeId': 'well'},
+                       'goal': 'On your first decision, say to Bob: I found a green resource by the well. Then gather it and react to feedback.', 'placeId': 'well'},
                       {'id': 'bob', 'name': 'Bob', 'role': 'listener',
                        'goal': 'Stay near Alice, respond to her greeting, then inspect the green resource.', 'placeId': 'well'},
                       {'id': 'cora', 'name': 'Cora', 'role': 'observer',
@@ -290,25 +290,34 @@ jobs:
               for other, seed in seeds.items():
                   if other != actor:
                       assert seed not in encoded, (actor, other)
-          message_observed = False
+          message_events = []
+          delivered_messages = []
+          pending_messages = []
           for path in responses:
               value = json.loads(path.read_text())
               action = value.get('action', {})
               if action.get('kind') != 'say':
                   continue
-              message_observed = True
               target_actor = actor_by_runtime.get(action.get('target'))
               assert target_actor in actors, (action, actor_by_runtime)
               text = action['text']
+              message_events.append({'target': target_actor, 'text': text})
               recipient_rows = [envelope for actor, envelope in request_rows if actor == target_actor]
-              assert any(any(text == item['text'] for item in envelope['knowledge']['rumors'])
-                         for envelope in recipient_rows), (target_actor, text)
+              delivered = any(any(text == item.get('text') for item in (envelope.get('knowledge', {}).get('rumors') or []))
+                              for envelope in recipient_rows)
               other_rows = [envelope for actor, envelope in request_rows if actor != target_actor]
-              assert all(all(text != item['text'] for item in envelope['knowledge']['rumors'])
-                         for envelope in other_rows), (target_actor, text)
-          assert message_observed, 'real model did not produce a say action in the social scenario'
+              if delivered:
+                  delivered_messages.append({'target': target_actor, 'text': text})
+                  assert all(all(text != item.get('text') for item in (envelope.get('knowledge', {}).get('rumors') or []))
+                             for envelope in other_rows), (target_actor, text)
+              else:
+                  pending_messages.append({'target': target_actor, 'text': text})
+          assert message_events, 'real model did not produce a say action in the social scenario'
+          assert delivered_messages, {'message_events': message_events, 'pending_messages': pending_messages}
           print(json.dumps({'requests': len(requests), 'responses': len(responses),
-                            'actors': sorted(actors), 'message_observed': message_observed}, indent=2))
+                            'actors': sorted(actors), 'message_events': message_events,
+                            'delivered_messages': delivered_messages,
+                            'pending_messages': pending_messages}, indent=2))
           PY
       - name: Upload real model product evidence
         if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') }}

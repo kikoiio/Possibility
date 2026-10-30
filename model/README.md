@@ -30,7 +30,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 模型输出投影到白名单字段：`inspect/mark/advance`、带 `target` 的 `approach`、带 `point` 的 `wander/gather/build`、带 `target/text` 的 `say`。忽略多余字段，坐标和 ID 允许数学上为整数的 JSON 数字，拒绝布尔、非有限和小数值。未知字段不能改变端点、节点名或审计来源。邻居目标必须来自观察，坐标必须在边界内；执行前再次按当前世界验证。`why` 由代码固定为 `model`。
 
-`spool_worker.py` 顺序处理请求，每次调用独立子进程；45 秒墙钟时限后终止并回收。仅 `invalid_action` 最多尝试 3 次，每次都审计；传输错误、provider 错误不会无界重试。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。该队列只是小规模基线，未实现生产级公平调度或供应商并发限额管理。
+`spool_worker.py` 顺序处理请求，每次调用独立子进程；45 秒墙钟时限后终止并回收。`invalid_action` 和瞬时 `transport_error` 都最多尝试 3 次，每次都审计；provider 错误不会无界重试，失败仍会停止当前世界并报告固定错误。Lua 的队列总截止时间为 `角色数 × 135 + 30` 秒，并在接受已存在的响应前检查。该队列只是小规模基线，未实现生产级公平调度或供应商并发限额管理。
 
 审计记录请求 ID、角色、动作、origin、耗时、可用 token、重试与固定错误码，不记录密钥或原始 provider 文本。适配器返回上下文与提示 SHA-256；原始合成消息只在显式 `society_log_messages=true` 时记录。本轮实验的世界、角色和消息均为合成数据。
 
@@ -38,7 +38,7 @@ engine/luanti/run.sh --label model-trial --agents 3 --decisions 8 --interval 1 -
 
 ## 验证与结论范围
 
-轻量离线测试：`python3 -B -m unittest discover -s model -t . -v`。实际调用记录在 [Luanti 适配层证据](../evidence/luanti/model/) 和 [执行计划](../docs/PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。
+轻量离线测试：`python3 -B -m unittest discover -s model -t . -v`。实际调用记录在 [Luanti 适配层证据](../evidence/luanti/model/) 和 [执行计划](../docs/PLAN.md)。少量串行调用只证明闭环和观测到的时延，不代表供应商最大吞吐、万级 LLM 容量或记忆效果。没有观察到行为时也保留结果；确定性夹具与任务提示诱导的协作不能视为自发社会涌现。\n\n2026-10-30 UTC 的真实模型产品切片见 [证据](../evidence/luanti/product-model-2026-10-30/README.md)。Actions 40996501320 记录了 3 个角色的 18 个决策、4 次对白、资源成功与失败、输入隔离和有限重试；该运行仍是受控小规模场景，不代表长期或万级模型容量。
 
 
 ## 受控记忆任务与并发探针
