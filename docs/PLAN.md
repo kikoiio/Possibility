@@ -111,3 +111,10 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 ## 已有证据与限制
 
 实验中 Luanti 服务端实体、局部范围观察、受限动作、少量真实模型闭环、停服快照和检索实验已运行，见[实验说明](../validation/luanti/README.md)及[历史实验计划](../validation/luanti/PLAN.md)。10,000 角色预算调优为完整规则负载：65 ms 设置五次通过当时的步频门槛、决策间隔中位约 4.97 秒，并未满足 2 秒目标；不是万级模型容量。[受控记忆任务](../evidence/luanti/model/2026-10-28-retrieval/summary.md)中检索 12/12、FIFO 0/12，任务范围有限，不能外推长期世界。目标创建链路、持续环境、完整主观记忆、通用真人参与和产品级视觉均尚未验收。
+
+
+## 自由社会长场景恢复失败（Actions 41113101332）
+
+在当前产品树 `7ccd1ff` 上执行四角色自由社会场景，每角色预算 24 次。真实模型完成 91/96 次决策：`advance=5`、`approach=7`、`build=11`、`gather=14`、`give=2`、`inspect=13`、`say=32`、`wander=7`；产生 32 条消息事件（29 种内容指纹）和 2 次资源转移，未产生正式 meeting。模型错误计数为 8 次 `invalid_response`、2 次 `provider_failed`、3 次 `invalid_action`；最后一项在三次有界重试后失败。此前同一 Actions 的三角色产品循环及恢复阶段通过，单元回归通过；失败发生在这次长场景。
+
+失败时没有提交 checkpoint，世界未完成；启动器保留 recovery marker，资源审计因未提交而不匹配。这证明对模型故障的拒绝和隔离有效，但暴露了部分运行后的恢复产品缺口。不得清除 marker 后直接续跑。下一步应设计并验证可审计的恢复协议：明确可恢复的最后提交、检查地图／库存／事件／记忆／逻辑时钟的一致性，对未提交动作采取回滚或幂等重放，并在验证通过前保持世界冻结。该轮不构成完成世界或稳定社会互动的证据；安全聚合 artifact 为 [ID 13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)，包含更完整验证信息的产物为 [ID 13006260146](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13006260146)。

@@ -86,3 +86,10 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 ## Luanti 客户端画面验收（Actions 41110698741）
 
 [Actions 41110698741](https://github.com/kikoiio/Wispiva/actions/runs/41110698741) 在 CI 的 Xvfb 中启动真实 Luanti 客户端，连接合成产品世界，验证 scene-ready、玩家加入、互动和引导到达，并在到达后捕获 1280×720 客户端画面。安全产品 artifact [ID 13002868352](https://github.com/kikoiio/Wispiva/actions/runs/41110698741/artifacts/13002868352) 包含 `view-acceptance.png`；上传 allowlist 只加入这张合成场景画面。它为人查看 Minecraft-like 世界提供实际客户端截图，但不能替代真人进入游戏的交互评价；本机没有 Luanti 客户端，因此没有声称完成本地视觉验收。
+
+
+## 四角色长自由社会与恢复边界（Actions 41113101332）
+
+运行在产品树 `7ccd1ff` 的四角色世界，每角色最多 24 次真实模型决策。最终 91/96 次完成，动作数为 `advance=5, approach=7, build=11, gather=14, give=2, inspect=13, say=32, wander=7`；消息事件 32、资源转移 2、meeting 0。错误共计 `invalid_response=8`、`provider_failed=2`、`invalid_action=3`。最后一次请求在 3 次有界重试后仍返回无效响应，因此场景以失败退出，没有 checkpoint，且世界未完成。安全摘要 artifact [13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)；额外验证 artifact [13006260146](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13006260146)。
+
+同次 Actions 的测试和较短的三角色模型运行／恢复阶段通过；长场景的失败不是回归测试失败。恢复 marker 被保留，资源结算审计未通过，因为没有完成的 checkpoint。现有实现选择冻结而非猜测部分存储状态，保护了安全边界；目前没有自动协调并继续的协议。此轮显示角色能发消息和转移资源，但不足以证明稳定互动，也不能被记作完成的持久世界。恢复实现必须先明确 checkpoint 边界，并验证回滚／幂等恢复、事件与库存无重复结算、逻辑时间不前跳。
