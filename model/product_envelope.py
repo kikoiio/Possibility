@@ -53,6 +53,10 @@ def _number(value: Any) -> Any:
 
 
 def _array(value: Any, maximum: int) -> list[Any]:
+    # An empty Lua table is serialized as JSON null by Luanti.  Treat that
+    # representation as an empty collection at this protocol boundary.
+    if value is None:
+        return []
     if type(value) is not list or len(value) > maximum:
         raise EnvelopeError('invalid_model_input')
     return value
@@ -137,7 +141,7 @@ def validate(value: Mapping[str, Any], *, max_bytes: int = MAX_ENVELOPE_BYTES) -
     current = value['current']
     _fields(current, {'observation', 'inventory', 'affordances'})
     for key in ('observation', 'inventory', 'affordances'):
-        if type(current[key]) is not dict:
+        if current[key] is not None and type(current[key]) is not dict:
             raise EnvelopeError('invalid_model_input')
 
     feedback = value['feedback']
