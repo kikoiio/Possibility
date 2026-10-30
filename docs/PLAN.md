@@ -85,6 +85,8 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
   产品接口已有 `control.py` 和 `/wispiva pause|resume|speed|status`，逻辑时钟会在暂停或模型等待时停止累计。[Actions 41079793257](https://github.com/kikoiio/Wispiva/actions/runs/41079793257) 已在 live 服务验证暂停后逻辑时间保持、暂停时改速、恢复后继续前进。无客户端长期运行、暂停期间断线／重连、离线时间和跨存储崩溃一致性仍未覆盖。
 
   当前实现已有逻辑时间控制文件接口和 `/wispiva pause|resume|speed|status`，产品主循环会把模型等待、暂停和离线时间分开计量；启动器会在异常后保留 recovery marker，并在 checkpoint、事件、记忆和环境时钟一致后才清理。[Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 已通过五个 checkpoint 故障窗口，全部验证 marker 保留、恢复重试和源世界不变；另以并发 4 完成 24 次已审计请求的负载回放。这是有限调用批次和隔离复制世界结果，不代表供应商容量、千名 LLM 角色服务或长期稳定性。暂停／无观看／重连真人验收及默认 24× 目标仍未完成。
+
+  新增 `engine/luanti/launch.py --world <世界目录> --recover-committed-checkpoint`，用于恢复“checkpoint 已完整提交、但 launcher 尚未来得及清除 marker”的窄崩溃窗口。命令先拒绝仍在运行的 Luanti server，再在独占世界会话和产品契约校验下核对 `READY`、无 pending commit、无活动 run、记忆／事件计数和逻辑时钟；只有全部一致才清除 marker。面对未完成的自由社会长场景，该命令应拒绝，不能把部分状态变成可运行状态。云端 Actions [41116220558](https://github.com/kikoiio/Wispiva/actions/runs/41116220558) 已通过新恢复用例、产品回归、持久世界恢复和客户端验收；跨多存储事务、回滚长运行中未提交地图变化和真人恢复体验仍未解决。
 - [ ] **端到端体验与证据（当前为部分完成）。** 对真实用户意图运行完整链路，记录版本、初始状态、每次真实模型调用和角色可见输入、行动、世界变化、私有记忆来源及失败。做真人体验和实际三维交互验收；报告模型、token、延迟、等待、运行时间与覆盖范围，不能将夹具或规则策略标成真实模型。
 
   Actions [41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 曾验证对应提交 `6d160dd` 的三角色真实动作、反思和恢复、用户意图自由社会、24 次并发受控请求回放及五类 checkpoint 故障；其含私有记忆的原始 artifact 和公开日志已撤下，聚合结果保留在[证据页](../evidence/luanti/product-model-2026-10-30/README.md)。[Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018) 验证产品世界 Lua/Python 回归、持久世界恢复和自动 Luanti 客户端交互。仍缺真实用户意图确认、真人三维评价、真实世界长期运行和全局多存储事务证据。
@@ -112,29 +114,6 @@ Wispiva 是一个独立产品：用户用自然语言或素材描述想要的世
 
 实验中 Luanti 服务端实体、局部范围观察、受限动作、少量真实模型闭环、停服快照和检索实验已运行，见[实验说明](../validation/luanti/README.md)及[历史实验计划](../validation/luanti/PLAN.md)。10,000 角色预算调优为完整规则负载：65 ms 设置五次通过当时的步频门槛、决策间隔中位约 4.97 秒，并未满足 2 秒目标；不是万级模型容量。[受控记忆任务](../evidence/luanti/model/2026-10-28-retrieval/summary.md)中检索 12/12、FIFO 0/12，任务范围有限，不能外推长期世界。目标创建链路、持续环境、完整主观记忆、通用真人参与和产品级视觉均尚未验收。
 
+## 最新自由社会长场景与 marker 恢复
 
-## 自由社会长场景恢复失败（Actions 41113101332）
-
-在当前产品树 `7ccd1ff` 上执行四角色自由社会场景，每角色预算 24 次。真实模型完成 91/96 次决策：`advance=5`、`approach=7`、`build=11`、`gather=14`、`give=2`、`inspect=13`、`say=32`、`wander=7`；产生 32 条消息事件（29 种内容指纹）和 2 次资源转移，未产生正式 meeting。模型错误计数为 8 次 `invalid_response`、2 次 `provider_failed`、3 次 `invalid_action`；最后一项在三次有界重试后失败。此前同一 Actions 的三角色产品循环及恢复阶段通过，单元回归通过；失败发生在这次长场景。
-
-失败时没有提交 checkpoint，世界未完成；启动器保留 recovery marker，资源审计因未提交而不匹配。这证明对模型故障的拒绝和隔离有效，但暴露了部分运行后的恢复产品缺口。不得清除 marker 后直接续跑。下一步应设计并验证可审计的恢复协议：明确可恢复的最后提交、检查地图／库存／事件／记忆／逻辑时钟的一致性，对未提交动作采取回滚或幂等重放，并在验证通过前保持世界冻结。该轮不构成完成世界或稳定社会互动的证据；安全聚合 artifact 为 [ID 13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)，包含更完整验证信息的产物为 [ID 13006260146](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13006260146)。
-
-
-提交后恢复命令现已实现：
-
-```sh
-python3 -B engine/luanti/launch.py --world <世界目录> --recover-committed-checkpoint
-```
-
-它先拒绝运行中的 Luanti server，再在世界锁和产品契约校验下验证完整 READY checkpoint、活动 run 已清除、逻辑时钟／环境、长期记忆／事件计数一致；只有已提交状态才清除 launcher marker。未完成长场景仍冻结。本命令与不完整状态拒绝逻辑的云端验证为 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669)，该运行待完成。
-
-
-恢复入口测试首次运行 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 失败于测试夹具：夹具先创建 map/mod-storage 文件，之后才创建世界身份；WorldSession 正确拒绝在非空目录内初始化身份。夹具现改为先发布世界身份，再写入模拟 checkpoint；恢复代码将在后续 Actions 重跑。该失败没有执行到实际产品集成步骤。
-
-
-## Map recovery compatibility and resource accounting (Actions 41117324797)
-
-This model-validation run passed unit tests and the three-character product loop: 24 real decisions, 12 `say`, 11 `inspect`, 1 `gather`; checkpoint version 2 contained 33 world events and 79 memory records. The follow-up resume then froze at `node:0,0,-2`: origin projection expected grass, Luanti returned dirt. This exposed an overly strict recovery comparison for a mutable ground surface; the later free-society stage was skipped. The same run also showed that the resource audit compared world+inventory (17) against the pre-run baseline (3) while the regenerative environment added 14. Projection matching now allows only grass-to-dirt on projected outdoor ground; the resource check includes environment delta. New Actions will verify both fixes. This run is not successful resume evidence.
-
-
-Actions [41118712614](https://github.com/kikoiio/Wispiva/actions/runs/41118712614) 的恢复实现验证被一份截断的 `init.lua` 阻断；其后续提交从完整父版本重建文件。Actions [41119361344](https://github.com/kikoiio/Wispiva/actions/runs/41119361344) 确认 Lua／多数 Python 回归通过，但新摘要器用例调用了不存在的 `load()`，此回归夹具已改用 `summarize()`；恢复兼容逻辑仍待新的完整 Actions 验收。
+四角色每人 24 次真实决策预算的长场景完成 91/96 次决策，出现 32 条对白事件和 2 次资源转移，没有 meeting。最后一个响应在三次重试后仍失败，因此世界没有 checkpoint，启动器保留 recovery marker；这不是完成世界的证据。产品证据见 [Actions 41113101332](https://github.com/kikoiio/Wispiva/actions/runs/41113101332)。恢复命令只清理完整 checkpoint 已提交后的遗留 marker，不会修复这个未完成世界。恢复测试夹具首次失败于身份初始化顺序（Actions 41115517669），修正后的 [Actions 41116220558](https://github.com/kikoiio/Wispiva/actions/runs/41116220558) 已通过。

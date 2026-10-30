@@ -41,27 +41,8 @@
 
 本审计同步到产品提交 `b8cf457`、真实模型验证提交 `281d00e`、20–10k 规则／认知实体阶梯和真实 provider 并发 1–16 阶梯。并发回放共 120 次、110 次可执行动作；其余均为 `invalid_action`，并发 16 的 24 次样本全部可执行。现有模型阶梯只重放四个角色上下文，不能外推到千级 LLM 角色。仍未完成的计划项保持部分完成：长时及多世界运行、跨存储一致性、真实用户意图审阅、真人三维验收、记忆质量和社会行为评估均需要新的产品证据或用户体验。
 
+## 自由社会长场景后的恢复边界
 
-## 长自由社会场景后的更新（Actions 41113101332）
+[Actions 41113101332](https://github.com/kikoiio/Wispiva/actions/runs/41113101332) 的四角色长场景完成 91/96 次决策，产生 32 条消息事件和 2 次资源转移；末次模型响应在三次重试后失败，未提交 checkpoint，recovery marker 保留。不得手动清除 marker 后继续。
 
-在产品树 `7ccd1ff` 上，三角色回归／恢复前置阶段通过；四角色每人 24 次预算的真实模型场景完成 91/96 次决策，发生 32 条消息事件与 2 次物品转移，没有 meeting。末次模型响应在三次有界重试后仍无效，导致 Actions 失败；该长场景未写 checkpoint，世界未完成，launcher 保留 recovery marker。安全汇总 artifact [13004204099](https://github.com/kikoiio/Wispiva/actions/runs/41113101332/artifacts/13004204099)。
-
-这次运行把两个未完成问题分开：互动行为已出现但稳定性未知；模型故障后的部分世界不能安全自动恢复。恢复标记的 fail-closed 行为符合现有安全边界，但还没有面向用户的 reconcile/resume 协议。推进顺序：先定义 checkpoint 与未提交操作的权威关系和对账规则，再以故障注入验证无重复结算、状态一致和恢复后可继续；在这之前不得通过手动删除 marker 让世界继续运行。
-
-
-### 已提交 checkpoint 的受限恢复入口
-
-`launch.py --recover-committed-checkpoint` 已加入：它在检查 Luanti server 已停止、取得世界独占锁、验证产品契约和完整 checkpoint 后，才清除 launcher marker。该命令只处理 commit 已完成但 marker 清理未完成的崩溃窗口；模型调用失败产生的 active run、PREPARING 状态或组件不匹配均继续冻结。回归由 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 执行，尚待结果；长场景部分推进的回滚／续跑仍无实现。
-
-
-恢复入口首次云端回归 [Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 的两项新用例因 fixture 初始化顺序失败：测试目录先有数据文件，世界身份创建因此按预期被拒绝。已修正为先创建身份再填充测试 checkpoint；下一次 Actions 验证该修改。恢复协议实现本身仍需通过新的云端结果。
-
-
-## Restore failure: evolved ground and resource accounting
-
-[Actions 41117324797](https://github.com/kikoiio/Wispiva/actions/runs/41117324797) passed unit tests, the three-agent real-model product loop and a committed checkpoint (24 decisions; 33 events; 79 memory records), then failed on resume because a projected grass node at `0,0,-2` was plain dirt. Recovery compared immutable origin projection exactly and treated this terrain evolution as corruption. It also emitted `resource-verify initial=3 world=16 inventory=1`, missing the 14 units released by the environment process. The next implementation permits only the one-way grass-to-dirt surface evolution and checks resource conservation against initial stock plus environment delta; walls, paths, indoor floors, and other projected nodes remain exact. These fixes need a fresh Actions result before this recovery path is considered verified.
-
-
-### 回归夹具与大文件恢复
-
-Actions [41118712614](https://github.com/kikoiio/Wispiva/actions/runs/41118712614) 因大文件 API 提交截断 `init.lua`、在单测解析时失败；完整 81 KB 源文件已从父提交恢复并重应用补丁。随后 [Actions 41119361344](https://github.com/kikoiio/Wispiva/actions/runs/41119361344) 通过 Lua 和其他 Python 回归，但新增摘要器测试错误调用 `load()` 而失败；用例现改为 `summarize()` 并重跑。两次运行都还没有完成目标模型恢复场景的验证。
+`launch.py --recover-committed-checkpoint` 现在只处理完整 checkpoint 提交后 launcher 未清理 marker 的窄窗口，并在 Luanti server 运行时拒绝执行。它无法恢复部分推进的场景；需继续设计并验证跨地图、库存、事件、记忆、环境时钟的对账或回滚策略。新增恢复用例第一次因夹具先写世界数据后建身份而失败（[Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669)）；夹具顺序已修正，云端复跑 [41116220558](https://github.com/kikoiio/Wispiva/actions/runs/41116220558) 已通过。
