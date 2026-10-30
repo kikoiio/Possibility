@@ -57,6 +57,11 @@ class AdapterTests(unittest.TestCase):
             'current contains immediate observation, inventory',
             'feedback is the previous action’s actual result',
             'runtime validation is the safety boundary',
+            'consider nearby agents',
+            'would benefit from coordination',
+            'one concise, relevant message',
+            'do not invent needs',
+            'continue independent work',
         ):
             with self.subTest(guidance=guidance):
                 self.assertIn(guidance, prompt)
