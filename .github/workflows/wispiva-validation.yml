@@ -301,10 +301,10 @@ jobs:
               assert target_actor in actors, (action, actor_by_runtime)
               text = action['text']
               recipient_rows = [envelope for actor, envelope in request_rows if actor == target_actor]
-              assert any(any(text == item['text'] for item in envelope['knowledge']['rumors'])
+              assert any(any(text == item['text'] for item in (envelope.get('knowledge', {}).get('rumors') or []))
                          for envelope in recipient_rows), (target_actor, text)
               other_rows = [envelope for actor, envelope in request_rows if actor != target_actor]
-              assert all(all(text != item['text'] for item in envelope['knowledge']['rumors'])
+              assert all(all(text != item['text'] for item in (envelope.get('knowledge', {}).get('rumors') or []))
                          for envelope in other_rows), (target_actor, text)
           assert message_observed, 'real model did not produce a say action in the social scenario'
           print(json.dumps({'requests': len(requests), 'responses': len(responses),
