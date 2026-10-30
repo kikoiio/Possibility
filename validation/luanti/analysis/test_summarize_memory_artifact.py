@@ -38,9 +38,9 @@ class MemoryArtifactSummaryTests(unittest.TestCase):
     def test_reports_selection_coverage_without_memory_text(self):
         result = summarize(artifact())
         self.assertEqual(result['strategy_results']['retrieval']['memory_evidence_selection'],
-                         {'measured': 15, 'selected': 10, 'coverage': 10 / 15})
+                         {'measured': 18, 'selected': 12, 'coverage': 12 / 18})
         self.assertEqual(result['strategy_results']['fifo']['memory_evidence_selection'],
-                         {'measured': 15, 'selected': 0, 'coverage': 0})
+                         {'measured': 18, 'selected': 0, 'coverage': 0})
         self.assertEqual(
             result['per_task']['chinese_fragment_recall']['retrieval']
             ['memory_evidence_selection'],
