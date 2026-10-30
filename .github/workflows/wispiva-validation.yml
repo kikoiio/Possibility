@@ -303,13 +303,19 @@ jobs:
               text = action['text']
               message_events.append({'target': target_actor, 'text': text})
               recipient_rows = [envelope for actor, envelope in request_rows if actor == target_actor]
-              delivered = any(any(text == item.get('text') for item in (envelope.get('knowledge', {}).get('rumors') or []))
-                              for envelope in recipient_rows)
-              other_rows = [envelope for actor, envelope in request_rows if actor != target_actor]
+              candidates = [item for envelope in recipient_rows
+                            for item in (envelope.get('knowledge', {}).get('rumors') or [])
+                            if item.get('text') == text and item.get('source', {}).get('kind') == 'agent_message']
+              delivered = bool(candidates)
               if delivered:
                   delivered_messages.append({'target': target_actor, 'text': text})
-                  assert all(all(text != item.get('text') for item in (envelope.get('knowledge', {}).get('rumors') or []))
-                             for envelope in other_rows), (target_actor, text)
+                  for item in candidates:
+                      source_id = item['source']['id']
+                      assert item['access']['audience'] == [target_actor], (target_actor, item)
+                      for other, envelope in request_rows:
+                          if other == target_actor:
+                              continue
+                          assert all(source_id != other_item.get('source', {}).get('id') for other_item in (envelope.get('knowledge', {}).get('rumors') or [])), (target_actor, source_id, other)
               else:
                   pending_messages.append({'target': target_actor, 'text': text})
           assert message_events, 'real model did not produce a say action in the social scenario'
