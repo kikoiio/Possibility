@@ -111,7 +111,7 @@ The exact output shape is:
     "actors": [{"actor_id": "traveler", "ordinal": 0, "name": "旅人", "place_id": "bank", "grid": [0, 0], "position": {"x": 0, "y": 1, "z": 0}}],
     "semantic_connections": []
   },
-  "private_actors": {"traveler": {"role": "访客", "goal": "找到住处", "memory_seeds": ["曾在上游遇见一位渔夫。"]}},
+  "private_actors": {"<actor-id>": {"role": "<private role omitted>", "goal": "<private goal omitted>", "memory_seeds": ["<private seed omitted>"]}},
   "unsupported": [{"code": "luanti_map_not_integrated"}, {"code": "terrain_and_spawn_safety_unverified"}, {"code": "semantic_connections_not_paths"}, {"code": "character_runtime_not_integrated"}]
 }
 ```
