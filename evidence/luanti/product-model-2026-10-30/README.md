@@ -102,4 +102,4 @@ Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回
 
 ### 恢复测试夹具修正
 
-[Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 在新增恢复用例处失败，原因是测试夹具先写 map/mod-storage、再初始化 world identity；产品的身份协议会拒绝在非空目录创建新身份。夹具已调整为先创建身份，再填入模拟的 `READY` checkpoint。此结果不是恢复入口的通过证据；修正版仍待云端 Actions 重跑。
+[Actions 41115517669](https://github.com/kikoiio/Wispiva/actions/runs/41115517669) 在新增恢复用例处失败，原因是测试夹具先写 map/mod-storage、再初始化 world identity；产品的身份协议会拒绝在非空目录创建新身份。夹具已调整为先创建身份，再填入模拟的 `READY` checkpoint；[Actions 41116220558](https://github.com/kikoiio/Wispiva/actions/runs/41116220558) 通过修正版新恢复用例和完整产品回归。
