@@ -411,18 +411,33 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           set -euo pipefail
-          python3 -B validation/model_load.py --audit-dir .ci-product-model/world/private/model-audit --calls 24 --concurrency 4 --output .ci-product-model/model-load
+          audit_dir=.ci-product-model/world/private/model-audit
+          output_dir=.ci-product-model/model-load
+          if [[ "$GITHUB_REF_NAME" == 'validation/luanti-product-model-workers-20261030' ]]; then
+            audit_dir=.ci-free-social/world/private/model-audit
+            output_dir=.ci-free-social/model-load
+          fi
+          python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency 4 --output "$output_dir"
       - name: Probe product checkpoint failure windows
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         run: |
           set -euo pipefail
           python3 -B validation/product_faults.py --source .ci-product-model/world --output .ci-product-model/fault-probes
       - name: Upload real model product evidence
-        if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') }}
+        if: ${{ always() && startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         uses: actions/upload-artifact@v4
         with:
           name: wispiva-product-model-evidence
           path: .ci-product-model
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+      - name: Upload real model worker evidence
+        if: ${{ always() && github.ref_name == 'validation/luanti-product-model-workers-20261030' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispiva-product-model-worker-evidence
+          path: .ci-free-social
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
