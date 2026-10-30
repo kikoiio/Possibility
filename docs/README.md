@@ -9,10 +9,10 @@
 | 集成审查 | 创建、世界身份、资源投影与记忆之间尚未解决的契约 | 2026-10-29 | [创建与持久世界集成审查](design/2026-10-29-origin-integration-audit.md) |
 | 集成契约 | 面向假引擎的版本化起源、身份及资源对账设计提案 | 2026-10-29 | [世界起源契约](design/2026-10-29-world-origin-contract.md) |
 | 产品提交与模型输入 | 产品状态账本、冻结恢复边界与 `wispiva.model-input` v1 | 2026-10-29 | [产品状态与模型输入边界](design/2026-10-29-product-state-and-model-input.md) |
-| 真实模型角色与环境闭环验收 | 当前真实模型、fixture 产品闭环证据的边界，以及角色输入／输出、失败、记忆来源和世界后果的验收设计 | 2026-10-30 | [真实模型角色与环境闭环验收设计](design/2026-10-30-real-model-world-loop-acceptance.md) |
+| 真实模型角色与环境闭环验收 | 当前真实模型、fixture 产品闭环证据的边界，以及角色输入／输出、失败、记忆来源、有限导航和世界后果的验收设计 | 2026-10-30 | [真实模型角色与环境闭环验收设计](design/2026-10-30-real-model-world-loop-acceptance.md) |
 | L2 长期记忆 API 审查 | L2 记录签名、不变量、检索边界与测试矩阵 | 2026-10-30 | [L2 长期记忆 API 设计审查](design/2026-10-30-l2-memory-api-review.md) |
 | 意图到世界起点审查 | 当前用户意图、草稿、起源、产品世界和 Luanti 接入链路及缺口 | 2026-10-30 | [意图到世界起点](design/2026-10-30-intent-to-world.md) |
-| 计划审计 | 未完成项的证据、状态与下一步 | 2026-10-30 | [计划审计](design/2026-10-30-plan-audit.md) |
+| 计划审计 | 未完成项的证据、状态与下一步；已记录有限 BFS 导航接入及真实通行待验 | 2026-10-30 | [计划审计](design/2026-10-30-plan-audit.md) |
 | 产品运行与三维观察 | 持续服务、观察者出生点及 Luanti 客户端进入路径 | 2026-10-29 | [当前架构](architecture.md) |
 | 受控世界接入边界 | `launch.py` 在 Luanti 进程生命周期内持有 `WorldSession`；地图、事件、库存和记忆共同提交尚未完成 | 2026-10-29 | [启动器](../engine/luanti/launch.py)、[世界会话](../engine/luanti/world_session.py)、[世界身份](../engine/luanti/world_identity.py)、[世界锁](../engine/luanti/world_lock.py) |
 | 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
