@@ -13,6 +13,8 @@ end}
 local pos = {x = 0, y = 1, z = 0}
 local first = context.describe(engine, pos, nodes, {}, bounds)
 assert(#first.gather_points == 1 and first.gather_points[1].x == 1)
+assert(first.transfer.item == "society:resource" and first.transfer.max_distance == 2.5
+  and first.transfer.target_source == "nearby_agents")
 assert(#first.build_points == 0 and reads == 0)
 local second = context.describe(engine, pos, nodes, {["society:resource"] = 1}, bounds)
 assert(#second.build_points == 5 and reads == 8)

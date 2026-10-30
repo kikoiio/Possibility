@@ -28,7 +28,9 @@ function M.describe(engine, pos, nodes, inventory, bounds)
     end
   end
   return {gather_points = gather, build_points = build, reach = 1.5,
-    movement = "wander or approach sets a destination; advance moves toward it",
+    transfer = {item = "society:resource", max_distance = 2.5,
+      target_source = "nearby_agents"},
+    movement = "wander or approach sets a destination; advance follows a walkable path toward it",
     sensing = "local radius, no line-of-sight occlusion; sampled state can change"}
 end
 

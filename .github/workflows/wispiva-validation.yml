@@ -46,6 +46,7 @@ jobs:
               lua5.1 test_world_events.lua
               lua5.1 test_environment.lua
               lua5.1 test_model_envelope.lua
+              lua5.1 test_navigation.lua
             )
           lua5.1 engine/luanti/mod/society/test_world_projection.lua
           python3 -B -m unittest discover -s model -t . -p 'test_*.py' -v

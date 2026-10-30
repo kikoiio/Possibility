@@ -29,7 +29,12 @@ minetest = {
   register_node=function() end, register_entity=function() end,
   register_globalstep=function(fn) step=fn end, register_on_shutdown=function() end,
   after=function() end, get_objects_inside_radius=function() return {} end,
-  find_nodes_in_area=function() return {} end, get_node_or_nil=function() return {name='air'} end,
+  find_nodes_in_area=function() return {} end,
+  registered_nodes={air={walkable=false}, ['default:stone']={walkable=true},
+    ['society:resource']={walkable=true}},
+  get_node_or_nil=function(pos)
+    return {name = pos.y == 0 and 'default:stone' or 'air'}
+  end,
   get_node=function() return {name='air'} end, set_node=function() writes=writes+1 end,
 }
 original_dofile('engine/luanti/mod/society/init.lua')

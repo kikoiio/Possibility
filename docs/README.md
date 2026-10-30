@@ -3,7 +3,7 @@
 | 类型 | 状态 | 更新 / 核对 | 文档 |
 | --- | --- | --- | --- |
 | 项目意图与需求 | Wispiva 共同产品目标；本分支采用 Luanti | 2026-10-29 | [项目意图](intent.md) |
-| 当前架构 | 本 worktree 的现有组件和缺口；L2 主循环写回及 belief 输入已接线、云端待验 | 2026-10-30 | [当前架构](architecture.md) |
+| 当前架构 | 本 worktree 的现有组件和缺口；L2 主循环写回、belief 输入及有限 BFS 导航已接线、云端待验 | 2026-10-30 | [当前架构](architecture.md) |
 | 仓库布局 | 产品实现、验证工具和历史证据的边界 | 2026-10-29 | [仓库布局](repository-layout.md) |
 | 目标架构 | Wispiva 产品在 Minecraft-like 基底上的目标实现；草案，不等同于现状 | 2026-10-29 | [目标设计](design/2026-10-27-target-architecture.md) |
 | 集成审查 | 创建、世界身份、资源投影与记忆之间尚未解决的契约 | 2026-10-29 | [创建与持久世界集成审查](design/2026-10-29-origin-integration-audit.md) |

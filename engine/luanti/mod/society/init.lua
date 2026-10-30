@@ -13,6 +13,7 @@ local reflection_runtime = dofile(minetest.get_modpath("society") .. "/reflectio
 local spatial = dofile(minetest.get_modpath("society") .. "/spatial.lua")
 local node_cache = dofile(minetest.get_modpath("society") .. "/node_cache.lua")
 local scheduler = dofile(minetest.get_modpath("society") .. "/scheduler.lua")
+local navigation = dofile(minetest.get_modpath("society") .. "/navigation.lua")
 
 local function cfg(name, default)
 	return minetest.settings:get(name) or default
@@ -173,7 +174,7 @@ local PERSONAS = {
 local FACINGS = {
 	{x = 1, z = 0}, {x = 0, z = 1}, {x = -1, z = 0}, {x = 0, z = -1},
 }
-local ACTION_ORDER = {"advance", "approach", "inspect", "mark", "wander", "say", "gather", "build", "unknown"}
+local ACTION_ORDER = {"advance", "approach", "inspect", "mark", "wander", "say", "give", "gather", "build", "unknown"}
 
 local S = {
 	spawned = 0, decisions = 0, marks = 0, meets = 0,
@@ -566,21 +567,23 @@ local function observe(self, pos)
 end
 
 local function step_toward(self, pos, target)
-	local dx = target.x - pos.x
-	local dz = target.z - pos.z
-	local nx, nz = pos.x, pos.z
-	if math.abs(dx) >= math.abs(dz) and dx ~= 0 then
-		nx = pos.x + (dx > 0 and math.min(STEP, dx) or -math.min(STEP, -dx))
-	elseif dz ~= 0 then
-		nz = pos.z + (dz > 0 and math.min(STEP, dz) or -math.min(STEP, -dz))
-	end
-	local np = {x = fp(nx), y = fp(target.y), z = fp(nz)}
-	if not in_bounds(np) then
-		return nil
+	local current = {x = fp(pos.x), y = fp(pos.y), z = fp(pos.z)}
+	local destination = {x = fp(target.x), y = fp(target.y), z = fp(target.z)}
+	local scan_bound = math.min(math.max(BOUND, 1), 64)
+	local scan_cells = math.min(4096, (scan_bound * 2 + 1) * (scan_bound * 2 + 1))
+	local np, reason = navigation.step(minetest, current, destination, {
+		bound = scan_bound, max_scan = scan_cells, step = math.min(math.max(STEP, 1), 64),
+	})
+	if not np then
+		if reason == "arrived" or reason == "target_adjacent" then
+			self._target = nil
+			return current, reason
+		end
+		return nil, reason
 	end
 	self.object:set_pos(np)
 	if OPTIMIZED then index:upsert(self._id, self.object, np) end
-	return np
+	return np, reason
 end
 
 local function apply(self, action, pos)
@@ -588,6 +591,7 @@ local function apply(self, action, pos)
 	if VISUAL then
 		local labels = {advance="Walking", approach="Approaching another agent", inspect="Looking around",
 			mark="Placing a marker", wander="Choosing a destination", say="Sending a message",
+			give="Handing over a resource",
 			gather="Gathering", build="Building"}
 		self.object:set_properties({nametag = self._persona .. "\n" .. (labels[kind] or kind)})
 	end
@@ -599,13 +603,15 @@ local function apply(self, action, pos)
 	end
 
 	if kind == "advance" then
-		local np = step_toward(self, pos, self._target)
+		local destination = self._target
+		local np, move_reason = step_toward(self, pos, destination)
 		if not np then
-			ev("ev=target-dropped agent=%d persona=%s reason=out-of-bounds", self._id, self._persona)
+			ev("ev=target-dropped agent=%d persona=%s reason=%s", self._id, self._persona,
+			tostring(move_reason or "navigation-failed"):gsub("%s+", "_"))
 			self._target = nil
-			return false, "out-of-bounds"
+			return false, move_reason or "navigation-failed"
 		end
-		local d = math.max(math.abs(self._target.x - np.x), math.abs(self._target.z - np.z))
+		local d = math.max(math.abs(destination.x - np.x), math.abs(destination.z - np.z))
 		ev("ev=move agent=%d persona=%s to=%d,%d,%d remaining=%d why=%s",
 			self._id, self._persona, np.x, np.y, np.z, d, action.why or "-")
 		if d <= STEP then
