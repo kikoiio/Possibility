@@ -1,10 +1,10 @@
 # 实施计划审计（2026-10-30）
 
-本文审计当前工作区的 [`docs/PLAN.md`](../PLAN.md)。本文不改变计划勾选状态，也不把夹具验证写成产品完成。产品提交 `6d160ddff916be78ef8f7c10c8edf64c84e4b343` 的回归 [Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018) 和真实模型运行 [Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 均通过。首次容量专项 [Actions 41040386531](https://github.com/kikoiio/Wispiva/actions/runs/41040386531) 与 [41040395398](https://github.com/kikoiio/Wispiva/actions/runs/41040395398) 显示 success，但逐项状态均以 exit 2 在启动前退出：客户端验收遗留 Luanti 服务端。进程清理和退出状态已在 `d6cdbe4` 修复。
+本文审计当前工作区的 [`docs/PLAN.md`](../PLAN.md)。本文不改变计划勾选状态，也不把夹具验证写成产品完成。产品代码提交 `7492eee1607e63f881e8154fee9a00c763f31ff8` 的回归 [Actions 41045295723](https://github.com/kikoiio/Wispiva/actions/runs/41045295723)、20–1,000 容量 [41045304874](https://github.com/kikoiio/Wispiva/actions/runs/41045304874) 和 5,000–10,000 容量 [41046819509](https://github.com/kikoiio/Wispiva/actions/runs/41046819509) 均通过；真实模型产品场景仍由提交 `6d160dd` 的 [Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 验证。首次容量专项 [Actions 41040386531](https://github.com/kikoiio/Wispiva/actions/runs/41040386531) 与 [41040395398](https://github.com/kikoiio/Wispiva/actions/runs/41040395398) 显示 success，但逐项状态均以 exit 2 在启动前退出：客户端验收遗留 Luanti 服务端。进程清理和退出状态已在 `d6cdbe4` 修复。
 
-随后 [Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 完成 5,000／10,000 个规则策略实体（认知开关 false／true，各重复 3 次）：每轮均校验全部实体存活并完成 12 次决策，日志步频最低 10.88–11.03 steps/s。该 run 报告的 17 MiB RSS 和 CPU 值来自 `launch.py` 包装进程，不是 Luanti 引擎，必须作废。`49cb1b0` 首次改为采样引擎 PID；[Actions 41044694644](https://github.com/kikoiio/Wispiva/actions/runs/41044694644) 实测到小场景引擎 RSS 47 MiB，但引擎退出后脚本清空 PID，导致基线失败；[41044701821](https://github.com/kikoiio/Wispiva/actions/runs/41044701821) 因此前置基线失败而未进入规模阶梯。`30d26a1` 修正为保留已捕获 PID；千级和万级阶梯需在该提交上重跑。
+随后 [Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 完成 5,000／10,000 个规则策略实体（认知开关 false／true，各重复 3 次）：每轮均校验全部实体存活并完成 12 次决策，日志步频最低 10.88–11.03 steps/s。该 run 报告的 17 MiB RSS 和 CPU 值来自 `launch.py` 包装进程，不是 Luanti 引擎，必须作废。`49cb1b0` 首次改为采样引擎 PID；[Actions 41044694644](https://github.com/kikoiio/Wispiva/actions/runs/41044694644) 实测到小场景引擎 RSS 47 MiB，但引擎退出后脚本清空 PID，导致基线失败；[41044701821](https://github.com/kikoiio/Wispiva/actions/runs/41044701821) 因此前置基线失败而未进入规模阶梯。`30d26a1` 修正 PID 保留后，[Actions 41045304874](https://github.com/kikoiio/Wispiva/actions/runs/41045304874) 的 20–1,000 角色／认知开关 8 组全部全员推进、通过 10 steps/s 硬门槛，RSS 为 80–111 MiB；步频 10.85–11.07 仍略低于 11.1 实时参考线。[Actions 41046819509](https://github.com/kikoiio/Wispiva/actions/runs/41046819509) 的 5k／10k 阶梯全部 12/12 决策、3/3 重复通过，引擎 RSS 范围 647–1,493 MiB。对应数据与 10k 模型队列推演见[容量证据](../../evidence/luanti/agent/capacity-2026-10-30.md)。
 
-历史运行号仍保留在各自证据页面中；当前产品和模型结论以 `6d160dd` 对应的上述 Actions 为准。专项容量 Actions 完成后，将更新该审计的容量状态与 artifact 链接。
+真实模型行为证据和当前产品代码证据分别指向各自运行提交；容量数据 artifact 链接见[容量证据](../../evidence/luanti/agent/capacity-2026-10-30.md)。历史运行号保留在证据页面中，并按是否真实执行、指标是否有效区分。
 
 ## 未勾选项
 
@@ -32,9 +32,9 @@
 
 ## 审计后的推进顺序
 
-1. 用引擎级资源采样器重跑几十、几百、千级及万级规则／认知实体容量阶梯，分别报告运行吞吐、RSS 和 CPU；真实模型角色容量单独测量。
+1. 在不同云端规格、长时间和多世界条件下复测 5k／10k，并独立评估真实模型角色容量；当前阶梯只测单个规则策略世界。
 2. 继续改进真实意图生成与社会观察评估，不把合成自由社会场景等同于稳定涌现。
 3. 完成真人 Luanti 客户端验收和真实用户意图确认流程。
 4. 分阶段验证真实模型角色服务能力，包括决策频率、队列等待、供应商限流和费用，不以规则实体容量代替。
 
-本审计同步到 `6d160dd` 产品与模型 Actions、`d6cdbe4` 服务端清理修复，以及 `49cb1b0`／`30d26a1` 的引擎资源采样修正。新的容量 Actions 完成后，应继续更新本审计、计划和架构表；Lua／Luanti 执行环境通过云端 Actions 验证。
+本审计同步到 `7492eee` 产品与容量 Actions、`6d160dd` 真实模型 Actions，以及服务端清理和引擎资源采样修复历史；20–10k 单世界规则／认知实体阶梯已归档。尚未完成的是长时、多世界复测和真实模型角色规模验证。

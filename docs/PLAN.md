@@ -4,11 +4,11 @@ status: active
 
 # Wispiva 产品分支实施计划
 
-更新：2026-10-30（最新产品和模型验证均通过，提交 `6d160dd`；[产品 Actions 41037867018](https://github.com/kikoiio/Wispiva/actions/runs/41037867018)，[真实模型 Actions 41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211)）。本分支就是 [Wispiva 产品目标](intent.md)的独立实现，使用 Minecraft-like 的 Luanti 基底，并独立发展，不合并到 `main`。此计划承接用户的方向调整；[目标设计](design/2026-10-27-target-architecture.md)描述拟采用的职责和未决设计。[当前架构](architecture.md)区分现有能力与缺口。历史验证计划和测量继续保留，不把它们改写成产品能力。
+更新：2026-10-30（产品分支最新代码提交 `7492eee` 的 Actions [41045295723](https://github.com/kikoiio/Wispiva/actions/runs/41045295723) 通过；真实模型产品运行提交 `6d160dd` 的 Actions [41037865211](https://github.com/kikoiio/Wispiva/actions/runs/41037865211) 通过；20–10k 容量阶梯见下）。本分支就是 [Wispiva 产品目标](intent.md)的独立实现，使用 Minecraft-like 的 Luanti 基底，并独立发展，不合并到 `main`。此计划承接用户的方向调整；[目标设计](design/2026-10-27-target-architecture.md)描述拟采用的职责和未决设计。[当前架构](architecture.md)区分现有能力与缺口。历史验证计划和测量继续保留，不把它们改写成产品能力。
 
 最新云端证据：Lua/Python 回归、真实产品世界客户端连接、三角色 24 次真实模型决策和 2 次 checkpoint、恢复后的 12 次真实模型决策和 3 次 checkpoint、四角色用户意图自由社会的 24 次真实决策与 checkpoint 全部通过；另通过 24 次有界真实模型回放（并发 4）和五个隔离 checkpoint 故障注入点。自由社会这一轮出现 12 次 gather、7 次 build、1 次 give、0 次 say；这证明本轮确有资源分工与转移，不证明角色自发对话或稳定社会涌现。artifact：模型运行 `wispiva-product-model-evidence` [ID 12968784289](https://github.com/kikoiio/Wispiva/actions/runs/41037865211#artifacts)，产品验证 `wispiva-results-0` [ID 12968859202](https://github.com/kikoiio/Wispiva/actions/runs/41037867018#artifacts)。这些是合成场景和自动化客户端证据，仍需真人体验、实际意图确认与更大规模容量验证。
 
-容量预验收：[Actions 41041685681](https://github.com/kikoiio/Wispiva/actions/runs/41041685681) 在 5,000／10,000 规则策略实体、认知开关两种设置下，各重复 3 轮，全部存活且完成 12 次决策；日志最低步频 10.88–11.03 steps/s。其 RSS／CPU 采样错误地指向 Python launcher，而非 Luanti 进程，故资源数据作废。`49cb1b0` 改为采样 Luanti 引擎 PID；Actions 41044694644 暴露引擎退出后 PID 被清空的问题，已由 `30d26a1` 修正。修正版容量阶梯仍待完整重跑；此前结果不能用于声称资源成本或 LLM 角色容量。
+容量证据见[角色容量阶梯](../evidence/luanti/agent/capacity-2026-10-30.md)：[Actions 41045304874](https://github.com/kikoiio/Wispiva/actions/runs/41045304874) 的 20–1,000 角色、8 种角色数／认知设置全部通过，所有实体存活并完成 4 次规则决策，引擎采样 RSS 为 80–111 MiB；[Actions 41046819509](https://github.com/kikoiio/Wispiva/actions/runs/41046819509) 的 5,000／10,000 角色、认知开关两种设置各重复 3 次，全员存活并完成 12 次决策，10k RSS 为 1,220–1,493 MiB。各阶梯都通过运行器 10 steps/s 硬门槛，但最低步频 10.85–11.07 仍略低于 11.1 实时参考线。10k／3 秒服务延迟的队列模拟中，即使 1,000 个 worker，60 秒仍有 9,000 个请求待处理；这是模拟，不是真实 provider 测量。全部实体容量结果均使用规则策略，不是 LLM 角色服务能力。
 
 ## 产品目标与当前交付面
 
