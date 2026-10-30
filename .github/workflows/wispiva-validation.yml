@@ -1000,6 +1000,45 @@ jobs:
         if: always()
         run: |
           python3 -B validation/luanti/analysis/summarize.py --compact --public --input evidence/luanti/agent --output observed-results.json
+          python3 -B - <<'PY'
+          import json
+          import re
+          from collections import Counter
+          from pathlib import Path
+          result = json.loads(Path('observed-results.json').read_text(encoding='utf-8'))
+          rows = []
+          for run in result['runs']:
+              match = re.search(r'ci-memory-(true|false)-([123])', run['run_id'] + '/' + run['source'])
+              if not match:
+                  continue
+              model = run['summary']['model']
+              rows.append({'memory_enabled': match.group(1) == 'true', 'trial': int(match.group(2)),
+                           'requests': model['requests'], 'actions': model['actions'],
+                           'actions_by_kind': model['actions_by_kind'],
+                           'messages': run['summary']['messages'], 'meetings': run['summary']['meets'],
+                           'attempt_failures': model['attempt_failures'],
+                           'terminal_failures': model['terminal_failures'],
+                           'errors_by_code': model['errors_by_code']})
+          rows.sort(key=lambda row: (row['trial'], row['memory_enabled']))
+          totals = {}
+          for enabled in (False, True):
+              selected = [row for row in rows if row['memory_enabled'] is enabled]
+              actions = Counter()
+              errors = Counter()
+              for row in selected:
+                  actions.update(row['actions_by_kind'])
+                  errors.update(row['errors_by_code'])
+              totals[str(enabled).lower()] = {'trials': len(selected),
+                  'requests': sum(row['requests'] for row in selected),
+                  'actions': sum(row['actions'] for row in selected),
+                  'actions_by_kind': dict(sorted(actions.items())),
+                  'messages': sum(row['messages'] for row in selected),
+                  'meetings': sum(row['meetings'] for row in selected),
+                  'attempt_failures': sum(row['attempt_failures'] for row in selected),
+                  'terminal_failures': sum(row['terminal_failures'] for row in selected),
+                  'errors_by_code': dict(sorted(errors.items()))}
+          print(json.dumps({'memory_comparison': rows, 'totals_by_memory': totals}, sort_keys=True))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
