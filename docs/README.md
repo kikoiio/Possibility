@@ -3,7 +3,7 @@
 | 类型 | 状态 | 更新 / 核对 | 文档 |
 | --- | --- | --- | --- |
 | 项目意图与需求 | Wispiva 共同产品目标；本分支采用 Luanti | 2026-10-29 | [项目意图](intent.md) |
-| 当前架构 | 本 worktree 的现有组件和缺口；L2 写回、belief 输入、BFS 导航及可控逻辑时钟已接入；live pause/resume 运行验收进行中 | 2026-10-30 | [当前架构](architecture.md) |
+| 当前架构 | 本 worktree 的现有组件和缺口；L2 写回、belief 输入、BFS 导航及可控逻辑时钟已接入；Actions 41079793257 已通过 live pause/speed/resume | 2026-10-30 | [当前架构](architecture.md) |
 | 仓库布局 | 产品实现、验证工具和历史证据的边界 | 2026-10-29 | [仓库布局](repository-layout.md) |
 | 世界草稿创建与确认 CLI | 真实模型生成、草稿 JSON 导出／编辑、revision 确认、Luanti 持久发布与安全重试用法 | 2026-10-30 | [Genesis 操作说明](../genesis/README.md) |
 | 目标架构 | Wispiva 产品在 Minecraft-like 基底上的目标实现；草案，不等同于现状 | 2026-10-29 | [目标设计](design/2026-10-27-target-architecture.md) |
@@ -20,6 +20,7 @@
 | 工作计划 | 产品与真实模型 Actions 通过；真实 provider 并发测至 16，真人体验、真实意图确认和千级 LLM 服务能力仍待验 | 2026-10-30 | [工作计划](PLAN.md) |
 | 规则／认知实体容量证据 | 20–10k 阶梯全员存活；10k 引擎 RSS 1.22–1.49 GiB；LLM 队列只做模拟，不代表真实模型容量 | 2026-10-30 | [容量阶梯证据](../evidence/luanti/agent/capacity-2026-10-30.md) |
 | 研究 | 方法、容量与记忆研究；15 对真实模型记忆任务的 artifact-only 评分已完成，结论限于小样本 | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md) |
+| 公开 CI 数据边界 | 原始私有记忆 artifact 已清理；后续上传按汇总文件 allowlist | 2026-10-30 | [产品模型和隐私复核](../evidence/luanti/product-model-2026-10-30/README.md)、[Actions 上传 allowlist](../.github/workflows/wispiva-validation.yml) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
 | 创建世界原型 | 另一分支快照；可供参考，本 worktree 尚未接入 | 2026-10-28 | `proto/world-genesis`，`prototypes/README.md` |
 | 运行时验证与历史证据 | Luanti 适配层的验证工具、历史计划和量测 | 2026-10-29 | [运行时说明](../validation/luanti/README.md)、[验证记录](../validation/luanti/PLAN.md) |
