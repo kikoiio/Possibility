@@ -5,11 +5,12 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from engine.luanti.world_session import WorldSession
-from engine.luanti.launch import _verify_product_checkpoint
-from engine.luanti.recovery_journal import MARKER_FILE, RecoveryRequired
+from engine.luanti.launch import _verify_product_checkpoint, recover_committed_checkpoint
+from engine.luanti.recovery_journal import MARKER_FILE, RecoveryRequired, SessionJournal
 
 
 SCRIPT = Path(__file__).with_name('launch.py')
@@ -86,6 +87,48 @@ class LauncherTests(unittest.TestCase):
             path.write_text(json.dumps({**fields, 'product_active_run': 'unfinished'}))
             with self.assertRaises(RecoveryRequired):
                 _verify_product_checkpoint(world, 'w')
+
+    def test_recovery_clears_marker_only_for_verified_committed_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp)
+            (world / 'mod_storage').mkdir()
+            (world / 'map.sqlite').write_bytes(b'fixture-map')
+            with WorldSession(world, create=True) as session:
+                world_id = session.world_id
+                state = {'world_id': world_id, 'phase': 'READY', 'clock': {'logical_time': 7},
+                         'components': {'memory': 1, 'events': 1}}
+                fields = {'product_state': json.dumps(state),
+                          'agent_state': json.dumps({'long_term': {'records': [{}]},
+                                                     'world_events': {'events': [{}]}}),
+                          'environment_state': json.dumps({'time': 7}), 'product_active_run': ''}
+                (world / 'mod_storage/society').write_text(json.dumps(fields))
+                SessionJournal(session.world_dir, session.world_id).begin()
+            with mock.patch('engine.luanti.launch.validate_world_contract'):
+                session_id = recover_committed_checkpoint(world, expected_world_id=world_id)
+            self.assertTrue(session_id)
+            self.assertFalse((world / MARKER_FILE).exists())
+            with mock.patch('engine.luanti.launch.validate_world_contract'):
+                self.assertIsNone(recover_committed_checkpoint(world, expected_world_id=world_id))
+
+    def test_recovery_keeps_marker_when_checkpoint_is_active_or_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp)
+            (world / 'mod_storage').mkdir()
+            (world / 'map.sqlite').write_bytes(b'fixture-map')
+            with WorldSession(world, create=True) as session:
+                world_id = session.world_id
+                state = {'world_id': world_id, 'phase': 'READY', 'clock': {'logical_time': 7},
+                         'components': {'memory': 1, 'events': 1}}
+                fields = {'product_state': json.dumps(state),
+                          'agent_state': json.dumps({'long_term': {'records': [{}]},
+                                                     'world_events': {'events': [{}]}}),
+                          'environment_state': json.dumps({'time': 7}), 'product_active_run': 'unfinished'}
+                (world / 'mod_storage/society').write_text(json.dumps(fields))
+                SessionJournal(session.world_dir, session.world_id).begin()
+            with mock.patch('engine.luanti.launch.validate_world_contract'):
+                with self.assertRaises(RecoveryRequired):
+                    recover_committed_checkpoint(world, expected_world_id=world_id)
+            self.assertTrue((world / MARKER_FILE).is_file())
 
 
 if __name__ == '__main__':
