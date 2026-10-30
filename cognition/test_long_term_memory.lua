@@ -28,16 +28,25 @@ alice.text = "tampered"; alice.source.id = "tampered"
 store:append(experience("bob-1", "bob", "heard something else"))
 store:append(reflection("reflection-1", "alice", 1, {"alice-1"}))
 store:append(reflection("reflection-2", "alice", 2, {"alice-1"}))
+local reflected = store:reflect("alice", "meeting", {"alice-1"}, "I now think the rumor was plausible", 4, "reasoner-1")
+assert(reflected.id == "reflection:alice:meeting:3" and reflected.version == 3)
+assert(reflected.source.kind == "reflection" and reflected.source.id == "reasoner-1")
+assert(reflected.experiences[1] == "alice-1")
+local reflected_again = store:reflect("alice", "meeting", {"alice-1"}, "I now think the rumor was plausible", 5, "reasoner-2")
+assert(reflected_again.version == 4 and reflected_again.id == "reflection:alice:meeting:4")
 rejected(function() store:append(event("event-1")) end)
 rejected(function() local e = experience("bad", "alice", "missing"); e.source.id = "missing"; store:append(e) end)
 rejected(function() store:append(reflection("bad", "alice", 3, {"bob-1"})) end)
 rejected(function() store:append(reflection("bad", "alice", 3, {"reflection-1"})) end)
 rejected(function() store:append(reflection("bad", "alice", 4, {"alice-1"})) end)
+rejected(function() store:reflect("alice", "meeting", {}, "empty", 6, "reasoner") end)
+rejected(function() store:reflect("alice", "meeting", {"bob-1"}, "wrong owner", 6, "reasoner") end)
+rejected(function() store:reflect("alice", "meeting", {"alice-1", "alice-1"}, "duplicate", 6, "reasoner") end)
 rejected(function() local e = event("bad"); e.extra = true; store:append(e) end)
 local rows = query("alice")
-assert(#rows == 3 and rows[3].text == "heard a rumor" and rows[3].source.id == "event-1")
-rows[3].source.id = "altered"; rows[1].experiences[1] = "bob-1"
-assert(query("alice")[3].source.id == "event-1")
+assert(#rows == 5 and rows[5].text == "heard a rumor" and rows[5].source.id == "event-1")
+rows[5].source.id = "altered"; rows[1].experiences[1] = "bob-1"
+assert(query("alice")[5].source.id == "event-1")
 assert(query("alice")[1].experiences[1] == "alice-1")
 assert(#query("bob") == 1 and #query("world") == 0 and #query("stranger") == 0)
 local result, meta = query("alice", {query="", max_scan=2, max_entries=1, max_bytes=100000})
@@ -53,7 +62,7 @@ rejected(function() query("alice", {query="", max_scan=0, max_entries=1, max_byt
 rejected(function() query("alice", {query="", max_scan=1, max_entries=1, max_bytes=2, cursor=99}) end)
 
 local snapshot = store:export()
-assert(#snapshot.records == 5 and snapshot.records[1].text == "private conversation")
+assert(#snapshot.records == 7 and snapshot.records[1].text == "private conversation")
 local restored = memory.load(snapshot)
 snapshot.records[1].text = "tampered"
 snapshot.records[2].source.id = "tampered"
@@ -67,7 +76,7 @@ bad = store:export(); bad.records[5].version = 5
 rejected(function() memory.load(bad) end)
 bad = store:export(); bad.records[3] = nil
 rejected(function() memory.load(bad) end)
-assert(#store:export().records == 5)
+assert(#store:export().records == 7)
 local many = memory.new()
 many:append(event("event-1"))
 for i = 1, 100 do many:append(experience("item-" .. i, "alice", "entry " .. i)) end

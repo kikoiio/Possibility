@@ -20,6 +20,7 @@ if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from engine.luanti.world_session import WorldSession
+from engine.luanti.recovery_journal import RecoveryRequired, SessionJournal
 from world.product_contract import ProductContractError, validate_world_contract
 
 
@@ -31,8 +32,8 @@ def _forward(child, signum, _frame):
             pass
 
 
-def run(command, world_dir, *, create=False, expected_world_id=None,
-        require_product_contract=False, env=None, cwd=None):
+def run(command, world_dir, *, create=False, expected_world_id=None, env=None,
+        require_product_contract=False, cwd=None):
     """Run *command* while holding the world's exclusive session lock."""
     if not command:
         raise ValueError('missing child command')
@@ -41,25 +42,30 @@ def run(command, world_dir, *, create=False, expected_world_id=None,
                       expected_world_id=expected_world_id) as session:
         if require_product_contract:
             validate_world_contract(world_dir, expected_world_id=session.world_id)
+        journal = SessionJournal(world_dir, session.world_id)
+        journal.begin()
         child_env = dict(os.environ if env is None else env)
         child_env['WISPIVA_WORLD_ID'] = session.world_id
-        child = subprocess.Popen(command, cwd=cwd, env=child_env)
-        previous = {}
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-            previous[signum] = signal.signal(
-                signum, lambda sig, frame, child=child: _forward(child, sig, frame))
         try:
-            return child.wait()
+            child = subprocess.Popen(command, cwd=cwd, env=child_env)
+            previous = {}
+            for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                previous[signum] = signal.signal(
+                    signum, lambda sig, frame, child=child: _forward(child, sig, frame))
+            try:
+                return child.wait()
+            finally:
+                for signum, handler in previous.items():
+                    signal.signal(signum, handler)
+                if child.poll() is None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait()
         finally:
-            for signum, handler in previous.items():
-                signal.signal(signum, handler)
-            if child.poll() is None:
-                child.terminate()
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait()
+            journal.finish()
 
 
 def main(argv=None):
@@ -80,8 +86,9 @@ def main(argv=None):
     try:
         return run(command, args.world, create=args.create_if_missing,
                    expected_world_id=args.expected_world_id,
-                   require_product_contract=args.require_product_contract, cwd=args.cwd)
-    except (BlockingIOError, OSError, ValueError, ProductContractError) as error:
+                   require_product_contract=args.require_product_contract,
+                   cwd=args.cwd)
+    except (BlockingIOError, OSError, ValueError, RecoveryRequired, ProductContractError) as error:
         print('wispiva launcher: ' + str(error), file=sys.stderr)
         return 1
 

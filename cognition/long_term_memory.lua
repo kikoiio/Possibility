@@ -221,6 +221,39 @@ local function build()
     return id
   end
 
+  -- Create one versioned private reflection from this owner's L1 experiences.
+  -- The host must authenticate owner and choose experience_ids from the owner's
+  -- private index. The source_id identifies the reflection producer and is kept
+  -- as provenance; it is not treated as an L0 fact.
+  function store:reflect(owner, topic, experience_ids, text, time, source_id)
+    string_required(owner, "owner")
+    string_required(topic, "topic")
+    assert(array(experience_ids) > 0, "experience_ids must be nonempty")
+    string_required(text, "text")
+    assert(finite(time), "time must be finite")
+    if source_id == nil then source_id = "runtime" end
+    string_required(source_id, "source_id")
+
+    local topics = versions[owner] or {}
+    local version = (topics[topic] or 0) + 1
+    local id = "reflection:" .. owner .. ":" .. topic .. ":" .. tostring(version)
+    local seen = {}
+    for _, experience_id in ipairs(experience_ids) do
+      string_required(experience_id, "experience id")
+      assert(not seen[experience_id], "duplicate L1 source")
+      seen[experience_id] = true
+      local experience = by_id[experience_id]
+      assert(experience and experience.layer == "L1" and experience.owner == owner,
+        "reflection sources must be owner's L1 records")
+    end
+
+    return append({
+      layer = "L2", id = id, owner = owner, time = time, text = text,
+      source = {kind = "reflection", id = source_id}, topic = topic,
+      version = version, experiences = copy(experience_ids),
+    })
+  end
+
   -- Returns newest-first pages from this owner's private L1/L2 index. cursor is
   -- an exclusive upper index, captured from next_cursor; it remains stable as
   -- new records append. max_scan bounds work, max_entries bounds output.

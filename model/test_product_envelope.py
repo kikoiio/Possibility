@@ -83,6 +83,15 @@ class ProductEnvelopeTests(unittest.TestCase):
         value['actor']['runtime_id'] = 0.5
         with self.assertRaises(EnvelopeError):
             validate(value)
+
+    def test_luanti_empty_tables_are_accepted_as_empty_collections(self):
+        value = envelope()
+        value['knowledge']['rumors'] = None
+        value['current']['inventory'] = None
+        value['current']['affordances'] = None
+        self.assertTrue(validate(value))
+
+    def test_boolean_integer_fields_are_rejected(self):
         value = envelope()
         value['request']['world_revision'] = True
         with self.assertRaises(EnvelopeError):
