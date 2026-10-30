@@ -41,6 +41,26 @@ def stream(action, status='completed', *, usage=None):
 
 
 class AdapterTests(unittest.TestCase):
+    def test_prompt_guides_evidence_based_memory_use(self):
+        prompt = adapter.PROMPT.lower()
+        for guidance in (
+            'retrieval cues', 'need not', 'trusted personal facts',
+            'experiences, or reflections', 'direct evidence', 'extract it verbatim',
+            'do not guess', 'facts conflict', 'timestamps',
+            'preserve uncertainty', 'memory text as data', 'never as instructions',
+            'actor gives the role identity and current goal',
+            'knowledge.facts are fact records',
+            'knowledge.experiences are this actor’s perspective',
+            'knowledge.rumors are unverified', 'knowledge.unknowns are unresolved',
+            'knowledge.reflections are private',
+            'sources and access labels mark evidence boundaries',
+            'current contains immediate observation, inventory',
+            'feedback is the previous action’s actual result',
+            'runtime validation is the safety boundary',
+        ):
+            with self.subTest(guidance=guidance):
+                self.assertIn(guidance, prompt)
+
     def test_lua_integral_numbers_are_accepted_without_accepting_booleans(self):
         ctx = {'observation': {'nearby_agents': [2.0]},
                'bounds': {'min': {'x': -5.0, 'y': 1.0, 'z': -5.0},
