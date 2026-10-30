@@ -445,8 +445,9 @@ jobs:
           import json
           import sys
           from pathlib import Path
-          summaries = [json.loads(path.read_text()) for path in
-                       sorted(Path(sys.argv[1]).glob('concurrency-*/summary.json'))]
+          paths = sorted(Path(sys.argv[1]).glob('concurrency-*/summary.json'),
+                         key=lambda path: int(path.parent.name.removeprefix('concurrency-')))
+          summaries = [json.loads(path.read_text()) for path in paths]
           assert [value['concurrency'] for value in summaries] == [1, 2, 4, 8, 16], summaries
           assert all(value['completed_calls'] == 24 for value in summaries), summaries
           calls = sum(value['calls'] for value in summaries)
