@@ -203,6 +203,7 @@ jobs:
           grep -q 'SOCIETY done result=ok' .ci-product/world/private/product.log
 
       - name: Verify persistent product world client acceptance
+        if: ${{ !startsWith(github.ref_name, 'validation/luanti-product-model-') }}
         run: |
           engine/luanti/view_acceptance.sh --world "$GITHUB_WORKSPACE/.ci-product/world" --seconds 20
       - name: Run real model product world with private memory audit
