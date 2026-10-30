@@ -19,7 +19,7 @@
 | 版本化产品创建契约 | 世界身份、起源事件、草稿 revision、组件版本和 Luanti 启动前对账 | 2026-10-30 | [产品创建契约](design/2026-10-30-product-contract.md) |
 | 工作计划 | 产品与真实模型 Actions 通过；真实 provider 并发测至 16，真人体验、真实意图确认和千级 LLM 服务能力仍待验 | 2026-10-30 | [工作计划](PLAN.md) |
 | 规则／认知实体容量证据 | 20–10k 阶梯全员存活；10k 引擎 RSS 1.22–1.49 GiB；LLM 队列只做模拟，不代表真实模型容量 | 2026-10-30 | [容量阶梯证据](../evidence/luanti/agent/capacity-2026-10-30.md) |
-| 研究 | 方法、容量与记忆研究；新一轮 15 对真实模型记忆任务发现 retrieval 15/15 选中证据、作答 12/15，中文题 3/3 检索但 0/3 作答，结论仍限小样本 | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md)、[记忆证据](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md) |
+| 研究 | 方法、容量与记忆研究；最新一轮四角色 96 次真实决策出现 15 次对白和 3 次物品转移；中文记忆短线索与明确逐字提取对照仍待 Actions | 2026-10-30 | [世界模型](research/2026-10-28-world-models.md)、[记忆](research/2026-10-28-memory.md)、[3D 生成](research/2026-10-28-3d-generation.md)、[Minecraft 社会](research/2026-10-28-minecraft-agent-societies.md)、[Mineflayer / Voyager](research/2026-10-28-mineflayer-voyager.md)、[记忆证据](../evidence/luanti/genesis/2026-10-30-cjk-free-society/README.md)、[自由社会证据](../evidence/luanti/product-model-2026-10-30/README.md) |
 | 公开 CI 数据边界 | 原始私有记忆 artifact 已清理；后续上传按汇总文件 allowlist | 2026-10-30 | [产品模型和隐私复核](../evidence/luanti/product-model-2026-10-30/README.md)、[Actions 上传 allowlist](../.github/workflows/wispiva-validation.yml) |
 | 原始素材 | 故事原文，导入模拟尚未实现 | 2026-10-28 | [《红发会》](source-texts/sherlock-holmes/the-red-headed-league.txt) |
 | 创建世界原型 | 另一分支快照；可供参考，本 worktree 尚未接入 | 2026-10-28 | `proto/world-genesis`，`prototypes/README.md` |

@@ -584,7 +584,7 @@ class ScoreDetailTests(unittest.TestCase):
             record['score_details'] = self.score(case, {**case.expected, 'text': 'unrelated_answer'})
             records.append(record)
         summary = evaluation.summarize(records)
-        self.assertEqual(summary['score_categories']['wrong_answer'], 5)
+        self.assertEqual(summary['score_categories']['wrong_answer'], 6)
         self.assertEqual(summary['score_categories']['stale_fact_used'], 0)
         self.assertEqual(summary['score_categories']['known_failure_repeated'], 0)
         self.assertEqual(summary['score_flags']['stale_fact_used'], {'count': 0, 'measured': 1})

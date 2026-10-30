@@ -62,3 +62,11 @@ Genesis 和产品模型 artifact 只保留不含原始提示、回复、角色�
 | 合计 | 96 | 4 | 4 | 32 | 15 | 248 | 4 轮全部完成四角色决策和 checkpoint；说话只出现在 1 轮，转移只出现在 2 轮，正式 meeting 事件为 0 |
 
 Run 41053739638 与 41054466103 的自由社会步骤成功，但各自后续回放汇总曾因独立 worker 验收问题令整条 Actions 失败；回放脚本已修正，41058674691 全流程通过。四轮显示可交互行为会出现但不稳定：模型有时发送消息或转移资源，也有轮次只采集、建造和移动。记忆记录确实随场景保存，数量不等同于记忆质量；以上短场景仍不能证明角色形成稳定关系、共同制度或自发社会。
+
+## 当前公开世界上下文与重复自由社会（Actions 41099553897）
+
+[Actions 41099553897](https://github.com/kikoiio/Wispiva/actions/runs/41099553897) 使用产品提交 `83e34c5` 上的 `genesis.public` fact 和真实模型运行。私有记忆审计通过，确认每个模型请求恰有一条与当前 origin 对应的公开标题／描述 fact，audience 只含当前角色；原始 intent、私有 goal 和其他角色种子没有放进这条共享 fact。产品世界和自由社会世界均正常 checkpoint。
+
+自由社会场景完成四角色各 24 次真实决策，共 96 次请求。安全摘要记录 `gather=36`、`build=28`、`say=15`、`give=3`、`approach=4`、`advance=5`、`inspect=2`、`wander=3`；有 15 个 message 事件、3 个资源转移事件、0 个正式 meeting 事件，worker 峰值为 4。整个场景的 `run_exit_code=0`。尝试过程中计数到 4 次 `invalid_action`、2 次 `invalid_response` 和 3 次 `provider_failed`，均在有界重试下未阻止 96 次决策完成。
+
+同一 run 后续的独立并发 4 负载回放为 23/24 可执行，1 次 `invalid_action`；吞吐 1.108 次/秒，模型延迟 p50/p95 为 3.20/3.77 秒，队列等待 p50/p95 为 7.05/17.26 秒。由于该 gate 要求 24/24 可执行，Actions 总体失败；不要把它写成模型服务负载验证通过。它只说明这一短场景中出现了对白和物品转移，单轮结果不证明稳定的社会演化。安全聚合 artifact 为 [ID 12999250945](https://github.com/kikoiio/Wispiva/actions/runs/41099553897/artifacts/12999250945)。
