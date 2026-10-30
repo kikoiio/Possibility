@@ -123,6 +123,18 @@ class MemoryEvaluationTests(unittest.TestCase):
                                               evaluation._fixture_transport)
         self.assertTrue(result['correct'])
 
+    def test_memory_evidence_selection_is_boolean_and_keeps_answers_private(self):
+        task_cases = {case.task: case for case in evaluation.cases(1)}
+        chinese = task_cases['chinese_fragment_recall']
+        self.assertTrue(evaluation.memory_evidence_selected(chinese, chinese.events[:1]))
+        self.assertFalse(evaluation.memory_evidence_selected(chinese, chinese.events[1:]))
+        source = task_cases['source_attribution']
+        self.assertTrue(evaluation.memory_evidence_selected(source, source.events[:1]))
+        self.assertFalse(evaluation.memory_evidence_selected(source, source.events[1:]))
+        self.assertNotIn(chinese.expected['text'], json.dumps(
+            {'memory_evidence_selected': evaluation.memory_evidence_selected(
+                chinese, chinese.events[:1])}))
+
     def test_exact_scorer_rejects_guessing_wrong_source_and_wrong_actions(self):
         case = evaluation.cases(1)[1]
         context = evaluation.context_for(case, case.events[:1])
@@ -554,6 +566,8 @@ class ScoreDetailTests(unittest.TestCase):
             self.assertEqual(summary['score_flags'][flag], {'count': 0, 'measured': 6})
             self.assertEqual(report['by_strategy']['retrieval']['score_flags'][flag],
                              {'count': 0, 'measured': 3})
+        self.assertTrue(all(type(row['memory_evidence_selected']) is bool
+                            for row in report['records']))
 
     def test_summary_does_not_relabel_wrong_answers_as_known_mistakes(self):
         records = []

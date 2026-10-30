@@ -49,6 +49,7 @@ def summarize(source: dict) -> dict:
                 or exact_tokens['total_tokens'] != exact_tokens['input_tokens'] + exact_tokens['output_tokens']):
             raise ValueError('incomplete provider audit')
         correct = sum(row['correct'] for row in rows)
+        selection = selection_coverage(rows)
         strategy_summary[strategy] = {
             'requests': len(rows),
             'correct': correct,
@@ -57,6 +58,7 @@ def summarize(source: dict) -> dict:
             'provider_errors': source_summary['error_count'],
             'score_categories': source_summary.get('score_categories'),
             'score_flags': source_summary.get('score_flags'),
+            'memory_evidence_selection': selection,
             'exact_provider_tokens': exact_tokens,
         }
 
@@ -68,7 +70,8 @@ def summarize(source: dict) -> dict:
             raise ValueError('task/strategy coverage is incomplete')
         by_task[task] = {
             strategy: {'correct': sum(row['correct'] for row in rows), 'requests': len(rows),
-                       'accuracy': sum(row['correct'] for row in rows) / len(rows)}
+                       'accuracy': sum(row['correct'] for row in rows) / len(rows),
+                       'memory_evidence_selection': selection_coverage(rows)}
             for strategy, rows in task_rows.items()
         }
 
@@ -110,6 +113,21 @@ def summarize(source: dict) -> dict:
             'does not establish long-term memory quality in a live world.'
         ),
     }
+
+
+def selection_coverage(rows: list[dict]) -> dict:
+    """Summarize answer-evidence presence without exposing memory contents.
+
+    Historical artifacts predate this diagnostic and remain valid; their
+    selection coverage is explicitly unmeasured.
+    """
+    measured = [row['memory_evidence_selected'] for row in rows
+                if 'memory_evidence_selected' in row]
+    if any(type(value) is not bool for value in measured):
+        raise ValueError('invalid memory evidence selection flag')
+    selected = sum(measured)
+    return {'measured': len(measured), 'selected': selected,
+            'coverage': selected / len(measured) if measured else None}
 
 
 def main() -> int:

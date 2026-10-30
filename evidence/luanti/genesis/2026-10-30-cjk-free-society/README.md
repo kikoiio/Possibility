@@ -16,4 +16,6 @@
 
 该无模型审计已由 [Actions 41082448598](https://github.com/kikoiio/Wispiva/actions/runs/41082448598) 完成，摘要 artifact [ID 12989508878](https://github.com/kikoiio/Wispiva/actions/runs/41082448598/artifacts/12989508878)。Retrieval 在 15 次任务中答对 13 次（86.7%），FIFO 为 0/15；配对结果 retrieval 胜 13、平 2、FIFO 胜 0。delayed recall、source attribution、stale fact 和 avoiding known failure 均为 3/3；中文短线索 retrieval 为 1/3。两个策略的 30 次 provider 调用全部有完整 token 审计且无调用错误，token 分别为 retrieval 10,746、FIFO 10,665。该评分按精确合法消息比较；三 seeds、固定合成题和一组配置模型不能说明长期记忆或真实社会角色的普遍质量。
 
-隐私边界复核发现历史 CJK `wispiva-results-0` 会公开原始角色记忆草稿；产品模型验证 artifact 会公开完整 request／response 审计。Actions 清理已删除这些 CJK 原始 artifact，并撤下四个真实产品模型验证 run 的日志。安全的 CJK 行为摘要仍保留。提交 `bd71910` 将未来上传限制为汇总结果、记忆审计计数和故障结果；CJK 草稿 artifact 现在只上传 `results.json`，其中不含角色文本。模型工作流的公开日志也只打印交流次数，不打印对话文本。公开仓库中仍应使用合成私有记忆，不能把真人记忆放入 CI 样本。
+后续记忆评测新增 `memory_evidence_selected` 布尔计数和按任务覆盖率，用来区分“相关证据没有进入提示”与“模型看到证据后仍未答对”。该诊断不保存记忆文本；历史 artifact 未记录此字段，因此覆盖率明确为未测量，不能从 13/15 答题分数倒推出检索覆盖。
+
+隐私边界复核发现历史 CJK `wispiva-results-0` 会公开原始角色记忆草稿；产品模型验证 artifact 会公开完整 request／response 审计。Actions 清理已删除这些 CJK 原始 artifact 及五个真实产品模型 run 的原始 artifacts 和日志。安全的 CJK 行为摘要仍保留。提交 `bd71910` 将未来上传限制为汇总结果、记忆审计计数和故障结果；CJK 草稿 artifact 现在只上传 `results.json`，其中不含角色文本。通用 SOCIETY 摘要也使用 `--public`，不再包括原始行、消息文本或自由文本配置；原始 agent 日志不再上传。独立记忆基准 artifact [ID 12983479330](https://github.com/kikoiio/Wispiva/actions/runs/41063917433/artifacts/12983479330) 仍包含固定合成题目和模型回答，用于复现已发布的评分；它不是用户记忆。公开仓库中不得放入真人记忆。

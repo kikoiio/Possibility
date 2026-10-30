@@ -657,7 +657,7 @@ jobs:
           if [ "${{ matrix.count }}" = 10000 ]; then long=60; fi
           python3 -B validation/luanti/scale/compare.py --counts "${{ matrix.count }}" --long-decisions "$long" --output scale-results/comparison.json
       - name: Controlled memory tasks and bounded concurrency probes
-        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') }}
+        if: ${{ startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') && github.ref_name != 'validation/luanti-memory-selector-20261030' }}
         env:
           XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
           XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
@@ -666,8 +666,19 @@ jobs:
           mkdir -p memory-results
           python3 -B model/memory_eval.py --output memory-results/tasks.json
           python3 -B model/memory_eval.py --probe --output memory-results/concurrency.json
+      - name: Memory evidence selection diagnostic
+        if: ${{ github.ref_name == 'validation/luanti-memory-selector-20261030' }}
+        env:
+          XUNFEI_OPENAI_RESPONSE_URL: ${{ vars.XUNFEI_OPENAI_RESPONSE_URL }}
+          XUNFEI_MODEL: ${{ vars.XUNFEI_MODEL }}
+          XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
+        run: |
+          mkdir -p memory-results
+          python3 -B model/memory_eval.py --output memory-results/tasks.json
+          python3 -B validation/summarize_memory_artifact.py \
+            memory-results/tasks.json --output memory-results/public-summary.json
       - name: Soft callback budget tradeoff
-        if: ${{ (startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-')) || startsWith(github.ref_name, 'validation/luanti-budget-') }}
+        if: ${{ ((startsWith(github.ref_name, 'validation/luanti-memory-') && !startsWith(github.ref_name, 'validation/luanti-memory-audit-') && github.ref_name != 'validation/luanti-memory-selector-20261030') || startsWith(github.ref_name, 'validation/luanti-budget-')) }}
         run: |
           python3 -B validation/luanti/scale/compare.py --counts 10000 --repeats 5 --long-decisions 0 --tune-budgets 25,50,65 --output scale-results/budget-tuning.json
       - name: Model-driven agent loop
