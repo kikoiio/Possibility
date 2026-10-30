@@ -165,7 +165,8 @@ local function build()
     assert(detail == nil or type(detail) == "string", "invalid outcome detail")
     if recipient ~= nil then
       string_required(recipient, "recipient")
-      assert(kind == "say" and ok and recipient ~= actor and type(message) == "string", "invalid delivery")
+      assert((kind == "say" or kind == "give") and ok and recipient ~= actor and
+        type(message) == "string", "invalid delivery")
     end
     if event_id ~= nil then string_required(event_id, "event_id") end
     event_id = event_id or ("outcome:" .. tostring(#records + 1))
@@ -176,9 +177,15 @@ local function build()
     if detail then event_text, actor_text = event_text .. "; " .. detail, actor_text .. "; " .. detail end
     local recipient_text
     if recipient then
-      event_text = event_text .. "; to agent " .. recipient .. ": " .. message
-      actor_text = actor_text .. "; to agent " .. recipient .. ": " .. message
-      recipient_text = "agent " .. actor .. " said to me: " .. message
+      if kind == "say" then
+        event_text = event_text .. "; to agent " .. recipient .. ": " .. message
+        actor_text = actor_text .. "; to agent " .. recipient .. ": " .. message
+        recipient_text = "agent " .. actor .. " said to me: " .. message
+      else
+        event_text = event_text .. "; transferred " .. message .. " to agent " .. recipient
+        actor_text = actor_text .. "; transferred " .. message .. " to agent " .. recipient
+        recipient_text = "agent " .. actor .. " gave " .. message .. " to me"
+      end
     end
     local batch = {
       {layer="L0", id=event_id, owner="world", time=time, text=event_text,

@@ -1140,6 +1140,8 @@ local function decide_and_act(self)
 	if action.kind == "advance" then point = self.object:get_pos() end
 	local detail = point and string.format("position=%s,%s,%s", tostring(point.x), tostring(point.y), tostring(point.z)) or nil
 	local delivered = (action.kind == "say" or action.kind == "give") and ok
+	local delivery_text = action.kind == "say" and action.text or
+		(action.kind == "give" and (tostring(action.amount) .. " society:resource") or nil)
 	local operation_id = string.format("%s:agent:%d:decision:%d", EVENT_NAMESPACE,
 		self._id, self._decisions + 1)
 	local committed, event = pcall(event_log.commit, event_log, operation_id, {
@@ -1156,7 +1158,7 @@ local function decide_and_act(self)
 	if LONG_TERM then
 		local recorded, detail = pcall(history.record_outcome, history, tostring(self._id),
 			action.kind, ok, reason or "unspecified", world_time(),
-			delivered and tostring(action.target) or nil, delivered and action.text or nil, detail, event.id)
+			delivered and tostring(action.target) or nil, delivered and delivery_text or nil, detail, event.id)
 		if not recorded then
 			ev("fail=long-term-record agent=%d detail=%s", self._id, tostring(detail):gsub("%s+", "_"))
 			S.failed = "long-term-record"
