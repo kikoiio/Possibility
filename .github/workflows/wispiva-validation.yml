@@ -415,31 +415,72 @@ jobs:
           output_dir=.ci-product-model/model-load
           if [ "$GITHUB_REF_NAME" = 'validation/luanti-product-model-workers-20261030' ]; then
             audit_dir=.ci-free-social/world/private/model-audit
-            output_dir=.ci-free-social/model-load
-          fi
-          load_rc=0
-          python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency 4 --output "$output_dir" || load_rc=$?
-          python3 - "$output_dir/summary.json" "$load_rc" <<'PY'
+            output_root=.ci-free-social/model-load
+            mkdir -p "$output_root"
+            for concurrency in 1 2 4 8 16; do
+              output_dir="$output_root/concurrency-$concurrency"
+              load_rc=0
+              python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency "$concurrency" --output "$output_dir" || load_rc=$?
+              python3 - "$output_dir/summary.json" "$load_rc" "$concurrency" <<'PY'
           import json
-          import os
+          import sys
+          from pathlib import Path
+          summary = json.loads(Path(sys.argv[1]).read_text())
+          runner_exit, requested = int(sys.argv[2]), int(sys.argv[3])
+          safe_errors = {'invalid_config', 'invalid_context', 'request_too_large',
+                         'transport_error', 'invalid_content_type', 'response_too_large',
+                         'output_too_large', 'invalid_response', 'provider_failed',
+                         'incomplete_response', 'invalid_action', 'rate_limited', 'timeout'}
+          assert summary['calls'] == summary['completed_calls'] == 24, summary
+          assert summary['concurrency'] == requested and 1 <= summary['active_max'] <= requested, summary
+          assert set(summary['errors']).issubset(safe_errors), summary
+          assert runner_exit in (0, 1) and (runner_exit == 0) == (summary['failed_calls'] == 0)
+          print(json.dumps({key: summary[key] for key in (
+              'concurrency', 'successful_calls', 'failed_calls', 'errors', 'active_max',
+              'throughput_calls_per_s', 'latency_ms', 'queue_wait_ms', 'token_totals',
+              'token_totals_complete')}, indent=2))
+          PY
+            done
+            python3 - "$output_root" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          summaries = [json.loads(path.read_text()) for path in
+                       sorted(Path(sys.argv[1]).glob('concurrency-*/summary.json'))]
+          assert [value['concurrency'] for value in summaries] == [1, 2, 4, 8, 16], summaries
+          assert all(value['completed_calls'] == 24 for value in summaries), summaries
+          calls = sum(value['calls'] for value in summaries)
+          elapsed = sum(value['elapsed_s'] for value in summaries)
+          print(json.dumps({'runs': len(summaries), 'calls': calls,
+                            'successful_calls': sum(value['successful_calls'] for value in summaries),
+                            'failed_calls': sum(value['failed_calls'] for value in summaries),
+                            'elapsed_s_sum': elapsed,
+                            'aggregate_calls_per_s': calls / elapsed if elapsed else None,
+                            'levels': [{'concurrency': value['concurrency'],
+                                        'active_max': value['active_max'],
+                                        'throughput_calls_per_s': value['throughput_calls_per_s'],
+                                        'failed_calls': value['failed_calls'],
+                                        'errors': value['errors']} for value in summaries]}, indent=2))
+          PY
+          else
+            output_dir=.ci-product-model/model-load
+            load_rc=0
+            python3 -B validation/model_load.py --audit-dir "$audit_dir" --calls 24 --concurrency 4 --output "$output_dir" || load_rc=$?
+            python3 - "$output_dir/summary.json" "$load_rc" <<'PY'
+          import json
           import sys
           from pathlib import Path
           summary = json.loads(Path(sys.argv[1]).read_text())
           runner_exit = int(sys.argv[2])
           assert summary['calls'] == summary['completed_calls'] == 24, summary
           assert summary['concurrency'] == summary['active_max'] == 4, summary
-          if os.environ['GITHUB_REF_NAME'] == 'validation/luanti-product-model-workers-20261030':
-              # This exploratory 24-call replay accepts >=90%; every failure is retained as evidence.
-              assert summary['successful_calls'] >= 22 and summary['failed_calls'] <= 2, summary
-              assert set(summary['errors']).issubset({'invalid_action'}), summary
-              assert runner_exit in (0, 1) and (runner_exit == 0) == (summary['failed_calls'] == 0)
-          else:
-              assert runner_exit == 0 and summary['failed_calls'] == 0, summary
+          assert runner_exit == 0 and summary['failed_calls'] == 0, summary
           print(json.dumps({key: summary[key] for key in (
               'successful_calls', 'failed_calls', 'errors', 'active_max',
               'throughput_calls_per_s', 'latency_ms', 'queue_wait_ms', 'token_totals',
               'token_totals_complete')}, indent=2))
           PY
+          fi
       - name: Probe product checkpoint failure windows
         if: ${{ startsWith(github.ref_name, 'validation/luanti-product-model-') && github.ref_name != 'validation/luanti-product-model-workers-20261030' }}
         run: |
