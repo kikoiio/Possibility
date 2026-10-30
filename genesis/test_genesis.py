@@ -15,6 +15,12 @@ def draft():
             'layout': {'places': [{'placeId': 'bank', 'space': 'outdoor', 'grid': [0, 0]}], 'connections': []}}
 
 class GenesisTests(unittest.TestCase):
+    def test_shared_community_prompt_preserves_common_start_without_assigning_jobs(self):
+        from genesis.genesis import PROMPT
+        self.assertIn('one common starting place', PROMPT)
+        self.assertIn('unless the user explicitly requests separate starts', PROMPT)
+        self.assertIn('do not assign a predetermined division of labor', PROMPT)
+
     def test_generation_and_private_projection(self):
         seen = []
         def model(system, user):
