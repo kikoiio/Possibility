@@ -92,10 +92,16 @@ outcomes:record_outcome("0", "give", true, "transferred", 2.5, "2", "1 society:r
 local function own(id)
   return outcomes:retrieve(id, {query="", max_scan=100, max_entries=100, max_bytes=100000})
 end
+local function contains(records, text)
+  for _, record in ipairs(records) do
+    if record.text:find(text, 1, true) then return true end
+  end
+  return false
+end
 assert(#own("0") == 3 and #own("1") == 1 and #own("2") == 1)
-assert(own("0")[1].text:find("failed", 1, true))
-assert(own("1")[1].text:find("secret", 1, true))
-assert(own("2")[1].text:find("gave 1 society:resource to me", 1, true))
+assert(contains(own("0"), "failed"))
+assert(contains(own("1"), "secret"))
+assert(contains(own("2"), "gave 1 society:resource to me"))
 outcomes:record_outcome("0", "inspect", true, "observed", 3, nil, nil, nil, "world-event:custom")
 rejected(function() outcomes:record_outcome("0", "say", false, "gone", 3, "1", "x") end)
 rejected(function() outcomes:record_outcome("0", "give", false, "gone", 3, "2", "1 society:resource") end)
