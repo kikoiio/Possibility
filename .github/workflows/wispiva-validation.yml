@@ -694,7 +694,7 @@ jobs:
           XUNFEI_API_KEY: ${{ secrets.XUNFEI_LLM_API_KEY }}
         run: |
           mkdir -p memory-results
-          python3 -B model/memory_eval.py --seeds 11 12 13 14 --max-calls 48 --output memory-results/tasks.json
+          python3 -B model/memory_eval.py --seeds 21 22 23 24 --max-calls 48 --output memory-results/tasks.json
           python3 -B validation/summarize_memory_artifact.py \
             memory-results/tasks.json --output memory-results/public-summary.json
       - name: Soft callback budget tradeoff
