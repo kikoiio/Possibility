@@ -76,7 +76,7 @@ if [[ "$AUDIT_MODEL" -eq 1 ]]; then
 fi
 chmod 700 "$WORLD/private" "$WORLD/private/model-spool" "$spool"
 
-if pgrep -f 'luantiserver' >/dev/null 2>&1; then
+if pgrep -x 'luantiserver' >/dev/null 2>&1; then
   echo "run_product.sh: another luantiserver is running" >&2
   exit 2
 fi
