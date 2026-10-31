@@ -14,13 +14,12 @@ import json
 import os
 from pathlib import Path
 import shutil
-import tempfile
 
 from genesis.compiler import CompileError, compile_plan
-from genesis.store import DraftCorrupt, DraftStore
+from genesis.store import DraftConflict, DraftCorrupt, DraftStore, _check_draft
 from engine.luanti.world_identity import read_world_identity
 from engine.luanti.world_session import WorldSession
-from world.product_contract import build_contract
+from world.product_contract import build_contract, validate_world_contract
 from world.store import CorruptStore, WorldStore
 
 
@@ -83,7 +82,7 @@ def _origin_state(path: Path):
     return state, event
 
 
-def _existing_world_result(target: Path, row, plan, event) -> dict:
+def _existing_world_result(target: Path, row, plan, event, operation_id) -> dict:
     """Accept a retry only when every immutable creation binding still matches."""
     try:
         if target.is_symlink() or not target.is_dir():
@@ -95,11 +94,12 @@ def _existing_world_result(target: Path, row, plan, event) -> dict:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         creation = json.loads(creation_path.read_text(encoding="utf-8"))
-        expected = build_manifest(row, plan, event, world_id)
+        expected = build_manifest(row, plan, event, world_id, operation_id=operation_id)
         expected_creation = {
-            "format": "wispiva-world-creation", "version": 1,
+            "format": "wispiva-world-creation", "version": 2,
             "world_id": world_id, "draft_id": row["id"],
             "revision": row["revision"], "origin_event_id": event["id"],
+            "operation_id": operation_id,
             "manifest": "private/wispiva-origin.json",
             "contract": "private/wispiva-contract.json",
             "intent_sha256": expected.get("intent_sha256"),
@@ -116,12 +116,14 @@ def _existing_world_result(target: Path, row, plan, event) -> dict:
         )
         if any(not path.is_file() or path.is_symlink() for path in required):
             raise ValueError
+        validate_world_contract(target, expected_world_id=world_id)
     except Exception:
         raise WorldCreationError("existing_world_conflict") from None
     return {
         "status": "created", "idempotent": True, "world_path": str(target),
         "world_id": world_id, "draft_id": row["id"],
         "revision": row["revision"], "origin_event_id": event["id"],
+        "operation_id": operation_id,
         "actor_count": len(expected["actors"]),
     }
 
@@ -147,7 +149,7 @@ def _runtime_actors(plan):
     return actors
 
 
-def build_manifest(row, plan, event, world_id):
+def build_manifest(row, plan, event, world_id, *, operation_id=None):
     """Build the detached runtime manifest without writing any files."""
     if not isinstance(world_id, str) or not world_id:
         raise WorldCreationError("invalid_world_id")
@@ -156,7 +158,7 @@ def build_manifest(row, plan, event, world_id):
         raise WorldCreationError("origin_digest_missing")
     manifest = {
         "format": "wispiva-world-manifest",
-        "version": 1,
+        "version": 2 if operation_id is not None else 1,
         "world_id": world_id,
         "draft_id": row["id"],
         "revision": row["revision"],
@@ -167,6 +169,12 @@ def build_manifest(row, plan, event, world_id):
         "actors": _runtime_actors(plan),
         "origin_event": copy.deepcopy(event),
     }
+    if operation_id is not None:
+        if (type(operation_id) is not str or len(operation_id) != 32
+                or any(char not in "0123456789abcdef" for char in operation_id)):
+            raise WorldCreationError("invalid_operation_id")
+        manifest["operation_id"] = operation_id
+        manifest["origin_draft"] = copy.deepcopy(row["draft"])
     # The original user input is private creation provenance. It is retained
     # beside the runtime hand-off and never included in the public spatial view.
     if row.get("intent") is not None:
@@ -234,16 +242,47 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
     _, event = _origin_state(Path(row["target"]))
     if event["data"].get("draft_id") != row["id"] or event["data"].get("revision") != row["revision"]:
         raise WorldCreationError("origin_binding_mismatch")
+    draft_digest = hashlib.sha256(_check_draft(row["draft"]).encode("utf-8")).hexdigest()
+    try:
+        publication = store.begin_product_publication(
+            row["id"], row["revision"], target, draft_digest, event["id"])
+    except DraftConflict as error:
+        raise WorldCreationError("publication_binding_conflict") from error
+    operation_id = publication["operation_id"]
+    if publication["state"] in ("UNKNOWN", "FROZEN"):
+        raise WorldCreationError("publication_" + publication["state"].lower())
     if target.exists() or target.is_symlink():
-        return _existing_world_result(target, row, plan, event)
+        try:
+            result = _existing_world_result(target, row, plan, event, operation_id)
+            if publication["world_id"] not in (None, result["world_id"]):
+                raise WorldCreationError("publication_world_id_conflict")
+            store.complete_product_publication(operation_id, result["world_id"])
+            return result
+        except (WorldCreationError, DraftConflict):
+            try:
+                store.freeze_product_publication(operation_id, state="FROZEN")
+            except DraftConflict:
+                pass
+            raise
+    if publication["state"] == "PUBLISHED":
+        store.freeze_product_publication(operation_id, state="FROZEN")
+        raise WorldCreationError("published_world_missing")
     parent = target.parent
     if not parent.is_dir():
         raise WorldCreationError("invalid_world_parent")
-    stage = Path(tempfile.mkdtemp(prefix=".wispiva-world-", dir=parent))
-    os.chmod(stage, 0o700)
+    stage = parent / (".wispiva-world-" + operation_id)
+    try:
+        stage.mkdir(mode=0o700)
+    except FileExistsError:
+        store.freeze_product_publication(operation_id, state="UNKNOWN")
+        raise WorldCreationError("publication_stage_requires_reconciliation") from None
+    published = False
     try:
         with WorldSession(stage, create=True) as session:
-            manifest = build_manifest(row, plan, event, session.world_id)
+            world_id = session.world_id
+            store.bind_product_publication_world(operation_id, world_id)
+            manifest = build_manifest(row, plan, event, world_id,
+                                      operation_id=operation_id)
         (stage / "private").mkdir(mode=0o700)
         manifest_path = stage / "private" / ".manifest-source.json"
         # Keep this intermediate file private and remove it after installation;
@@ -255,28 +294,35 @@ def create_world(store: DraftStore, draft_id: str, revision: int, target) -> dic
         shutil.copyfile(Path(row["target"]), stage / "private" / "origin.sqlite")
         os.chmod(stage / "private" / "origin.sqlite", 0o600)
         _write_private(stage / "private" / "creation.json", {
-            "format": "wispiva-world-creation", "version": 1,
+            "format": "wispiva-world-creation", "version": 2,
             "world_id": manifest["world_id"], "draft_id": row["id"],
             "revision": row["revision"], "origin_event_id": event["id"],
+            "operation_id": operation_id,
             "manifest": "private/wispiva-origin.json",
             "contract": "private/wispiva-contract.json",
-            "world_id": manifest["world_id"],
-            "origin_event_id": manifest["origin_event_id"],
             "intent_sha256": manifest.get("intent_sha256"),
         })
         _sync_dir(stage / "private")
         _sync_dir(stage)
         os.rename(stage, target)
+        published = True
         _sync_dir(parent)
+        store.complete_product_publication(operation_id, manifest["world_id"])
         return {
             "status": "created", "world_path": str(target),
             "world_id": manifest["world_id"], "draft_id": row["id"],
             "revision": row["revision"], "origin_event_id": event["id"],
+            "operation_id": operation_id,
             "actor_count": len(manifest["actors"]),
         }
     except BaseException:
-        # Retain the staged directory for inspection; never remove evidence
-        # after a failure that may have happened after publication of a file.
+        # If the rename did not happen, retain the staged evidence and freeze.
+        # If it did happen, leave PUBLISHING so an exact retry can verify it.
+        if not published:
+            try:
+                store.freeze_product_publication(operation_id, state="UNKNOWN")
+            except DraftConflict:
+                pass
         raise
 
 

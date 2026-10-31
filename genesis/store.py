@@ -99,6 +99,17 @@ class DraftStore:
                 self.db.execute('BEGIN IMMEDIATE')
                 self.db.execute('CREATE TABLE drafts (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, target TEXT, token TEXT)')
                 self.db.execute('CREATE TABLE draft_intents (draft_id TEXT PRIMARY KEY REFERENCES drafts(id), intent TEXT NOT NULL)')
+                self.db.execute('''CREATE TABLE product_publications (
+                    draft_id TEXT NOT NULL REFERENCES drafts(id),
+                    revision INTEGER NOT NULL,
+                    operation_id TEXT NOT NULL UNIQUE,
+                    world_path TEXT NOT NULL,
+                    draft_sha256 TEXT NOT NULL,
+                    origin_event_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('PUBLISHING','PUBLISHED','UNKNOWN','FROZEN')),
+                    world_id TEXT,
+                    PRIMARY KEY (draft_id, revision)
+                )''')
                 self.db.execute('PRAGMA user_version=1')
                 self.db.execute('COMMIT')
                 _sync_dir(str(self.path.parent))
@@ -110,6 +121,17 @@ class DraftStore:
                     raise DraftCorrupt('invalid draft schema')
                 self.db.execute('BEGIN IMMEDIATE')
                 self.db.execute('CREATE TABLE IF NOT EXISTS draft_intents (draft_id TEXT PRIMARY KEY REFERENCES drafts(id), intent TEXT NOT NULL)')
+                self.db.execute('''CREATE TABLE IF NOT EXISTS product_publications (
+                    draft_id TEXT NOT NULL REFERENCES drafts(id),
+                    revision INTEGER NOT NULL,
+                    operation_id TEXT NOT NULL UNIQUE,
+                    world_path TEXT NOT NULL,
+                    draft_sha256 TEXT NOT NULL,
+                    origin_event_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('PUBLISHING','PUBLISHED','UNKNOWN','FROZEN')),
+                    world_id TEXT,
+                    PRIMARY KEY (draft_id, revision)
+                )''')
                 self.db.execute('COMMIT')
         except Exception:
             if self.db.in_transaction: self.db.execute('ROLLBACK')
@@ -238,6 +260,128 @@ class DraftStore:
         except Exception:
             if self.db.in_transaction: self.db.execute('ROLLBACK')
             raise
+
+    def begin_product_publication(self, draft_id, revision, world_path, draft_sha256,
+                                  origin_event_id):
+        """Durably bind one confirmed draft to exactly one product publication."""
+        if type(revision) is not int or revision < 1:
+            raise ValueError('invalid revision')
+        target = str(Path(world_path).absolute())
+        if (type(draft_sha256) is not str or len(draft_sha256) != 64
+                or type(origin_event_id) is not str or not origin_event_id):
+            raise ValueError('invalid publication binding')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            row = self._row(draft_id)
+            if row['status'] != 'confirmed' or row['revision'] != revision:
+                raise DraftConflict('publication requires the exact confirmed revision')
+            current = self.db.execute(
+                '''SELECT operation_id,world_path,draft_sha256,origin_event_id,state,world_id
+                   FROM product_publications WHERE draft_id=? AND revision=?''',
+                (draft_id, revision)).fetchone()
+            if current is None:
+                operation_id = uuid.uuid4().hex
+                self.db.execute(
+                    '''INSERT INTO product_publications
+                       (draft_id,revision,operation_id,world_path,draft_sha256,origin_event_id,state,world_id)
+                       VALUES (?,?,?,?,?,?,'PUBLISHING',NULL)''',
+                    (draft_id, revision, operation_id, target, draft_sha256, origin_event_id))
+                result = {'draft_id': draft_id, 'revision': revision,
+                          'operation_id': operation_id, 'world_path': target,
+                          'draft_sha256': draft_sha256, 'origin_event_id': origin_event_id,
+                          'state': 'PUBLISHING', 'world_id': None, 'created': True}
+            else:
+                operation_id, old_target, old_digest, old_event, state, world_id = current
+                if (old_target, old_digest, old_event) != (target, draft_sha256, origin_event_id):
+                    raise DraftConflict('publication request binding differs')
+                result = {'draft_id': draft_id, 'revision': revision,
+                          'operation_id': operation_id, 'world_path': old_target,
+                          'draft_sha256': old_digest, 'origin_event_id': old_event,
+                          'state': state, 'world_id': world_id, 'created': False}
+            self.db.execute('COMMIT')
+            return result
+        except Exception:
+            if self.db.in_transaction: self.db.execute('ROLLBACK')
+            raise
+
+    def complete_product_publication(self, operation_id, world_id):
+        """Record that the atomically published directory matches its operation."""
+        if type(operation_id) is not str or len(operation_id) != 32:
+            raise ValueError('invalid operation id')
+        if type(world_id) is not str or not world_id:
+            raise ValueError('invalid world id')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            row = self.db.execute(
+                'SELECT state,world_id FROM product_publications WHERE operation_id=?',
+                (operation_id,)).fetchone()
+            if row is None or row[0] not in ('PUBLISHING', 'PUBLISHED'):
+                raise DraftConflict('publication is not recoverable')
+            if row[1] not in (None, world_id):
+                self.db.execute("UPDATE product_publications SET state='FROZEN' WHERE operation_id=?",
+                                (operation_id,))
+                self.db.execute('COMMIT')
+                raise DraftConflict('published world identity differs')
+            self.db.execute(
+                "UPDATE product_publications SET state='PUBLISHED',world_id=? WHERE operation_id=?",
+                (world_id, operation_id))
+            self.db.execute('COMMIT')
+        except Exception:
+            if self.db.in_transaction: self.db.execute('ROLLBACK')
+            raise
+
+    def bind_product_publication_world(self, operation_id, world_id):
+        """Persist the world identity before the staged directory can be published."""
+        if type(operation_id) is not str or len(operation_id) != 32:
+            raise ValueError('invalid operation id')
+        if type(world_id) is not str or not world_id:
+            raise ValueError('invalid world id')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            row = self.db.execute(
+                'SELECT state,world_id FROM product_publications WHERE operation_id=?',
+                (operation_id,)).fetchone()
+            if row is None or row[0] != 'PUBLISHING':
+                raise DraftConflict('publication is not bindable')
+            if row[1] not in (None, world_id):
+                self.db.execute("UPDATE product_publications SET state='FROZEN' WHERE operation_id=?",
+                                (operation_id,))
+                self.db.execute('COMMIT')
+                raise DraftConflict('publication world identity differs')
+            self.db.execute('UPDATE product_publications SET world_id=? WHERE operation_id=?',
+                            (world_id, operation_id))
+            self.db.execute('COMMIT')
+        except Exception:
+            if self.db.in_transaction: self.db.execute('ROLLBACK')
+            raise
+
+    def freeze_product_publication(self, operation_id, *, state='UNKNOWN'):
+        """Freeze an uncertain or conflicting publication for explicit reconciliation."""
+        if state not in ('UNKNOWN', 'FROZEN'):
+            raise ValueError('invalid frozen state')
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            cursor = self.db.execute(
+                "UPDATE product_publications SET state=? WHERE operation_id=? AND state!='FROZEN'",
+                (state, operation_id))
+            if cursor.rowcount != 1:
+                raise DraftConflict('publication cannot be frozen')
+            self.db.execute('COMMIT')
+        except Exception:
+            if self.db.in_transaction: self.db.execute('ROLLBACK')
+            raise
+
+    def product_publication(self, draft_id, revision):
+        """Read publication state without exposing any draft-private content."""
+        row = self.db.execute(
+            '''SELECT operation_id,world_path,draft_sha256,origin_event_id,state,world_id
+               FROM product_publications WHERE draft_id=? AND revision=?''',
+            (draft_id, revision)).fetchone()
+        if row is None:
+            return None
+        return {'draft_id': draft_id, 'revision': revision, 'operation_id': row[0],
+                'world_path': row[1], 'draft_sha256': row[2],
+                'origin_event_id': row[3], 'state': row[4], 'world_id': row[5]}
 
     @staticmethod
     def _verify(target, event, world, characters):
